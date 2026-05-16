@@ -25,16 +25,16 @@ export const DEFAULT_SESSION_RUNTIME_DEBUG_STATE: SessionRuntimeDebugState = {
 
 export const DEFAULT_WORKSPACE_PREVIEW_STATE: WorkspacePreviewState = {
   activeTargetInput: null,
+  activeInteractionID: null,
   draftUrl: "http://localhost:3000",
   draftTarget: "http://localhost:3000",
   committedUrl: null,
-  mode: "browse",
   reloadToken: 0,
   errorKind: null,
   errorMessage: null,
   navigationHistory: [],
   navigationIndex: -1,
-  comments: [],
+  interactions: [],
   resolvedTarget: null,
   status: "idle",
 }

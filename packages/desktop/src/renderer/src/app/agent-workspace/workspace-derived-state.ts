@@ -409,7 +409,7 @@ export function buildWorkspaceDerivedState({
     ? composerDraftStateByTabKey[activeTabKey] ?? createEmptyComposerDraftState()
     : createEmptyComposerDraftState()
   const activePreviewState = previewByWorkspaceID[activePreviewScopeID] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
-  const canInsertPreviewCommentsIntoDraft = Boolean(activeTabKey)
+  const canInsertPreviewInteractionsIntoDraft = Boolean(activeTabKey)
   const canInsertWorkspaceFileCommentsIntoDraft = Boolean(activeTabKey)
   const composerAttachments = activeTabKey ? composerAttachmentsByTabKey[activeTabKey] ?? [] : []
   const isSending = activeTabKey ? Boolean(isSendingByTabKey[activeTabKey]) : false
@@ -652,7 +652,7 @@ export function buildWorkspaceDerivedState({
     activeWorkspaceFileState,
     activeTurns,
     canvasSessionTabs,
-    canInsertPreviewCommentsIntoDraft,
+    canInsertPreviewInteractionsIntoDraft,
     canInsertWorkspaceFileCommentsIntoDraft,
     composerAttachments,
     createSessionTitle,

@@ -19,6 +19,8 @@ function renderUnifiedPreviewPanel(overrides: Partial<ComponentProps<typeof Unif
     <UnifiedPreviewPanel
       state={createPreviewState()}
       workspaceRoot={workspaceRoot}
+      onActiveInteractionChange={vi.fn()}
+      onCommitInteraction={vi.fn()}
       onDraftUrlChange={vi.fn()}
       onOpen={vi.fn()}
       onOpenExternal={vi.fn()}
@@ -126,6 +128,117 @@ describe("UnifiedPreviewPanel", () => {
     const frame = await screen.findByTitle("Preview of index.html")
     expect(frame).toHaveAttribute("sandbox", "allow-forms allow-popups allow-same-origin allow-scripts")
     expect(frame).toHaveAttribute("src", "fanfande-preview://preview/token/index.html")
+    expect(screen.getByRole("button", { name: "Comment" })).toBeInTheDocument()
+  })
+
+  it("does not show interaction controls for non-web previews", () => {
+    renderUnifiedPreviewPanel({
+      state: createPreviewState({
+        activeTargetInput: "README.md",
+        draftTarget: "README.md",
+        resolvedTarget: {
+          entry: `${workspaceRoot}\\README.md`,
+          externalOpenTarget: {
+            kind: "path",
+            value: `${workspaceRoot}\\README.md`,
+          },
+          input: "README.md",
+          kind: "file",
+          mime: "text/markdown; charset=utf-8",
+          normalizedInput: "README.md",
+          path: `${workspaceRoot}\\README.md`,
+          renderer: "markdown-preview",
+          textReadable: true,
+          title: "README.md",
+          workspaceRoot,
+        },
+        status: "ready",
+      }),
+    })
+
+    expect(screen.queryByRole("button", { name: "Comment" })).toBeNull()
+  })
+
+  it("routes web comment toolbar toggles through the active interaction callback", () => {
+    const onActiveInteractionChange = vi.fn()
+    renderUnifiedPreviewPanel({
+      onActiveInteractionChange,
+      state: createPreviewState({
+        activeTargetInput: "http://localhost:5173",
+        committedUrl: "http://localhost:5173/",
+        draftTarget: "http://localhost:5173/",
+        resolvedTarget: {
+          externalOpenTarget: {
+            kind: "url",
+            value: "http://localhost:5173/",
+          },
+          input: "http://localhost:5173",
+          kind: "url",
+          mime: "text/html",
+          normalizedInput: "http://localhost:5173/",
+          renderer: "url-webview",
+          safePreviewUrl: "http://localhost:5173/",
+          textReadable: false,
+          title: "localhost:5173",
+        },
+        status: "ready",
+      }),
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }))
+
+    expect(onActiveInteractionChange).toHaveBeenCalledWith("web.comment")
+  })
+
+
+  it("commits web comment interactions through the preview interaction host", async () => {
+    const onCommitInteraction = vi.fn()
+    renderUnifiedPreviewPanel({
+      onCommitInteraction,
+      state: createPreviewState({
+        activeInteractionID: "web.comment",
+        activeTargetInput: "http://localhost:5173",
+        committedUrl: "http://localhost:5173/",
+        draftTarget: "http://localhost:5173/",
+        resolvedTarget: {
+          externalOpenTarget: {
+            kind: "url",
+            value: "http://localhost:5173/",
+          },
+          input: "http://localhost:5173",
+          kind: "url",
+          mime: "text/html",
+          normalizedInput: "http://localhost:5173/",
+          renderer: "url-webview",
+          safePreviewUrl: "http://localhost:5173/",
+          textReadable: false,
+          title: "localhost:5173",
+        },
+        status: "ready",
+      }),
+    })
+
+    fireEvent.click(screen.getByTestId("preview-interaction-overlay"), {
+      clientX: 20,
+      clientY: 20,
+    })
+    fireEvent.change(await screen.findByLabelText("Comment text"), {
+      target: { value: "Fix the hero spacing." },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(onCommitInteraction).toHaveBeenCalledWith(expect.objectContaining({
+        pluginID: "web.comment",
+        renderer: "url-webview",
+        targetKey: "http://localhost:5173/",
+        payload: expect.objectContaining({
+          kind: "web-comment",
+          pageUrl: "http://localhost:5173/",
+          text: "Fix the hero spacing.",
+        }),
+      }))
+    })
   })
 
   it("keeps file preview identity on one non-duplicated header line", () => {

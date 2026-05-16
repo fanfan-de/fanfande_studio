@@ -34,7 +34,6 @@ export type WorkspaceMode = "chat" | "cowork" | "code"
 export type RightSidebarView = "changes" | "runtime" | "preview" | "files"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
-export type PreviewMode = "browse" | "comment"
 export type PreviewLoadStatus = "idle" | "resolving" | "ready" | "error"
 export type PreviewRenderer = DesktopPreviewRenderer
 export type ResolvedPreviewTarget = DesktopResolvedPreviewTarget
@@ -290,9 +289,42 @@ export interface LoadedSessionHistoryInfo {
   [key: string]: unknown
 }
 
+export interface LoadedSessionHistoryTurnErrorInfo {
+  name?: string
+  message: string
+  code?: string
+  statusCode?: number
+  retryable?: boolean
+  providerID?: string
+  modelID?: string
+}
+
+export interface LoadedSessionHistoryTurn {
+  id: string
+  sessionID: string
+  projectID: string
+  userMessageID?: string
+  resume?: boolean
+  agent?: string
+  model?: {
+    providerID: string
+    modelID: string
+  }
+  status: "running" | "completed" | "blocked" | "failed" | "cancelled"
+  phase?: string
+  lastMessageID?: string
+  finishReason?: string
+  error?: string
+  errorInfo?: LoadedSessionHistoryTurnErrorInfo
+  createdAt: number
+  updatedAt: number
+  completedAt?: number
+}
+
 export interface LoadedSessionHistoryMessage {
   info: LoadedSessionHistoryInfo
   parts: unknown[]
+  turn?: LoadedSessionHistoryTurn
 }
 
 export interface SessionDiffFile {
@@ -322,47 +354,85 @@ export interface SessionDiffState {
   isStale: boolean
 }
 
-export interface PreviewComment {
-  id: string
-  url: string
-  pageUrl?: string
-  x: number
-  y: number
-  text: string
-  createdAt: number
+export type PreviewInteractionPluginID = "web.comment" | (string & {})
+
+export interface PreviewInteractionRect {
+  bottom?: number
+  height: number
+  left: number
+  right?: number
+  top: number
+  width: number
+}
+
+export type PreviewInteractionAnchor =
+  | {
+      type: "coordinate"
+    }
+  | {
+      type: "element"
+      label?: string
+      path?: string
+      rect?: PreviewInteractionRect
+      selector?: string
+      tagName?: string
+      text?: string
+    }
+
+export interface WebCommentInteractionPayload {
+  kind: "web-comment"
+  anchor?: PreviewInteractionAnchor
   frame?: string
   nodePosition?: string
+  pageUrl: string
   screenshotPath?: string | null
-  anchor?: {
-    type: "coordinate" | "element"
-    label?: string
-    path?: string
-    rect?: {
-      bottom?: number
-      height: number
-      left: number
-      right?: number
-      top: number
-      width: number
+  text: string
+  x: number
+  y: number
+}
+
+export type PreviewInteractionPayload =
+  | WebCommentInteractionPayload
+  | {
+      kind: string
+      [key: string]: unknown
     }
-    selector?: string
-    tagName?: string
-    text?: string
+
+export interface PreviewInteractionRecord {
+  id: string
+  pluginID: PreviewInteractionPluginID
+  targetKey: string
+  renderer: PreviewRenderer
+  createdAt: number
+  payload: PreviewInteractionPayload
+  snapshot?: {
+    mime?: string
+    path?: string
+    title?: string
+    url?: string
   }
+}
+
+export interface PreviewInteractionCommitInput {
+  pluginID: PreviewInteractionPluginID
+  targetKey: string
+  renderer: PreviewRenderer
+  payload: PreviewInteractionPayload
+  snapshot?: PreviewInteractionRecord["snapshot"]
 }
 
 export interface WorkspacePreviewState {
   activeTargetInput: string | null
+  activeInteractionID: PreviewInteractionPluginID | null
   draftUrl: string
   draftTarget: string
   committedUrl: string | null
-  mode: PreviewMode
   reloadToken: number
   errorKind: PreviewErrorKind | null
   errorMessage: string | null
   navigationHistory: string[]
   navigationIndex: number
-  comments: PreviewComment[]
+  interactions: PreviewInteractionRecord[]
   resolvedTarget: ResolvedPreviewTarget | null
   status: PreviewLoadStatus
 }
@@ -493,6 +563,7 @@ export interface SessionRuntimeErrorContext {
     name?: string
     message: string
     code?: string
+    statusCode?: number
     retryable?: boolean
   }
   activeTools: Array<{
@@ -536,7 +607,11 @@ export interface SessionRuntimeTurnSummary {
   llmCalls: SessionRuntimeLlmCallSummary[]
   tools: SessionRuntimeToolSummary[]
   error?: {
+    name?: string
     message: string
+    code?: string
+    statusCode?: number
+    retryable?: boolean
     messageID?: string
     providerID?: string
     modelID?: string
@@ -1086,19 +1161,19 @@ export interface ComposerFileCommentReference {
   prompt: string
 }
 
-export interface ComposerPreviewCommentReference {
+export interface ComposerPreviewInteractionReference {
   source: "preview"
   id: string
   label: string
   title: string
   prompt: string
-  comment: PreviewComment
+  interaction: PreviewInteractionRecord
   pageUrl: string
 }
 
 export type ComposerCommentReference =
   | ComposerFileCommentReference
-  | ComposerPreviewCommentReference
+  | ComposerPreviewInteractionReference
 
 export interface ComposerDraftState {
   lexicalJSON: string
@@ -1124,20 +1199,20 @@ export interface ComposerFileCommentTagData {
   prompt: string
 }
 
-export interface ComposerPreviewCommentTagData {
+export interface ComposerPreviewInteractionTagData {
   kind: "comment"
   source: "preview"
   id: string
   label: string
   title: string
   prompt: string
-  comment: PreviewComment
+  interaction: PreviewInteractionRecord
   pageUrl: string
 }
 
 export type ComposerCommentTagData =
   | ComposerFileCommentTagData
-  | ComposerPreviewCommentTagData
+  | ComposerPreviewInteractionTagData
 
 export interface ComposerSkillTagData {
   kind: "skill"

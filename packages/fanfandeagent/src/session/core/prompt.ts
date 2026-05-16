@@ -22,6 +22,7 @@ import * as ContextWindow from "#session/core/context-window.ts"
 import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
 import * as SessionTitle from "#session/support/title.ts"
 import * as PromptPresets from "#session/support/prompt-presets.ts"
+import * as TurnError from "#session/core/turn-error.ts"
 
 import * as Message from "./message";
 import { resolveTools } from "./resolve-tools.ts";
@@ -343,7 +344,8 @@ function inferFailurePhase(parts: Message.Part[]): RuntimeEvent.TurnRuntimePhase
 
 function emitTurnFailureContext(input: {
     turn: Orchestrator.TurnContext
-    error: unknown
+    error?: unknown
+    errorInfo?: TurnError.TurnErrorInfo
     assistant?: Message.Assistant
     parts: Message.Part[]
 }) {
@@ -356,7 +358,7 @@ function emitTurnFailureContext(input: {
         )
         .map(summarizeRuntimeTool)
     const latestTool = toolParts.length > 0 ? summarizeRuntimeTool(toolParts[toolParts.length - 1]!) : undefined
-    const errorMessage = normalizePromptErrorMessage(input.error)
+    const errorInfo = input.errorInfo ?? TurnError.fromUnknown(input.error)
 
     input.turn.emit("turn.error.context", {
         phase: inferFailurePhase(input.parts),
@@ -369,9 +371,11 @@ function emitTurnFailureContext(input: {
             }
             : undefined,
         error: {
-            name: input.error instanceof Error ? input.error.name : undefined,
-            message: errorMessage,
-            retryable: Boolean((input.error as { isRetryable?: unknown } | null | undefined)?.isRetryable === true),
+            name: errorInfo.name,
+            message: errorInfo.message,
+            code: errorInfo.code,
+            statusCode: errorInfo.statusCode,
+            retryable: errorInfo.retryable,
         },
         activeTools,
         latestTool,
@@ -417,6 +421,61 @@ function emitQueuedTurnCancelled(input: {
     }))
 }
 
+function finishPromptTurnFromResult(
+    turn: Orchestrator.TurnContext,
+    result: RunLoopResult,
+) {
+    const phase = result.status === "blocked"
+        ? "blocked"
+        : result.status === "failed"
+            ? "failed"
+            : "completed"
+
+    Session.updateTurn(turn.turnID, {
+        status: result.status,
+        phase,
+        lastMessageID: result.latest.info.id,
+        finishReason: result.finishReason,
+        error: result.errorInfo?.message,
+        errorInfo: result.errorInfo,
+    })
+
+    if (result.status === "failed") {
+        const errorInfo = result.errorInfo ?? TurnError.fromMessage("Assistant turn failed.", "TurnFailed")
+        emitTurnFailureContext({
+            turn,
+            errorInfo,
+            assistant: result.latest.info.role === "assistant" ? result.latest.info : undefined,
+            parts: result.latest.parts,
+        })
+        turn.emit("turn.state.changed", {
+            phase: "failed",
+            reason: errorInfo.message,
+            messageID: result.latest.info.id,
+        })
+        turn.emit("turn.failed", {
+            error: errorInfo.message,
+            errorInfo,
+            message: result.latest.info,
+            parts: result.latest.parts,
+        })
+        return
+    }
+
+    turn.emit("turn.state.changed", {
+        phase,
+        reason: result.finishReason,
+        messageID: result.latest.info.id,
+    })
+
+    turn.emit("turn.completed", {
+        status: result.status,
+        finishReason: result.finishReason,
+        message: result.latest.info,
+        parts: result.latest.parts,
+    })
+}
+
 export function cancelSession(sessionID: string, options?: { cancelQueued?: boolean; reason?: RuntimeEvent.RuntimeEventPayloadByType["turn.cancelled"]["reason"] }) {
     const turn = Orchestrator.activeTurn(sessionID)
     if (turn) {
@@ -450,8 +509,9 @@ export function cancel(sessionID: string) {
 
 type RunLoopResult = {
     latest: Message.WithParts
-    status: "completed" | "blocked" | "stopped"
+    status: "completed" | "blocked" | "failed"
     finishReason?: string
+    errorInfo?: TurnError.TurnErrorInfo
 }
 
 type AssistantWithParts = Message.WithParts & {
@@ -692,12 +752,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                     tools,
                 });
             } catch (error) {
-                assistantMessage.error = {
-                    name: "UnknownError",
-                    data: {
-                        message: error instanceof Error ? error.message : String(error),
-                    },
-                } as Message.Assistant["error"];
+                assistantMessage.error = TurnError.toAssistantError(error);
                 await persistMessageRecord(assistantMessage, turn);
                 const modelCallEndSnapshot = await persistModelCallPatchPart({
                     sessionID,
@@ -818,15 +873,33 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 part.type === "tool" && part.state.status === "waiting-approval",
         )
         const blockedByQuestion = latest.parts.some(isAskUserQuestionPart)
+        const blocked = blockedByApproval || blockedByQuestion
+        const assistantErrorInfo = latest.info.role === "assistant"
+            ? TurnError.fromAssistantError(latest.info.error)
+            : undefined
+        const stoppedWithoutCompletion = !blocked && !assistantErrorInfo && !isFinalFinishReason(finishReason)
+            ? TurnError.fromMessage(
+                "Assistant turn stopped before producing a final response.",
+                "TurnStoppedWithoutCompletion",
+            )
+            : undefined
+        const errorInfo = assistantErrorInfo ?? stoppedWithoutCompletion
 
         return {
             latest,
-            status: blockedByApproval || blockedByQuestion
-                ? "blocked"
-                : isFinalFinishReason(finishReason)
-                    ? "completed"
-                    : "stopped",
+            status: blocked ? "blocked" : errorInfo ? "failed" : "completed",
             finishReason,
+            errorInfo: errorInfo
+                ? TurnError.withModelContext(
+                    errorInfo,
+                    latest.info.role === "assistant"
+                        ? {
+                            providerID: latest.info.providerID,
+                            modelID: latest.info.modelID,
+                        }
+                        : undefined,
+                )
+                : undefined,
         };
     } finally {
         void controller
@@ -969,25 +1042,7 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
         await sessionTitlePromise
         throwIfAborted(runtime.abort)
 
-        Session.updateTurn(turn.turnID, {
-            status: result.status === "blocked" ? "blocked" : "completed",
-            phase: result.status === "blocked" ? "blocked" : "completed",
-            lastMessageID: result.latest.info.id,
-            finishReason: result.finishReason,
-        })
-
-        turn.emit("turn.state.changed", {
-            phase: result.status === "blocked" ? "blocked" : "completed",
-            reason: result.finishReason,
-            messageID: result.latest.info.id,
-        })
-
-        turn.emit("turn.completed", {
-            status: result.status,
-            finishReason: result.finishReason,
-            message: result.latest.info,
-            parts: result.latest.parts,
-        })
+        finishPromptTurnFromResult(turn, result)
 
         return result.latest as AssistantWithParts
     } catch (error) {
@@ -1008,31 +1063,45 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
 
         if (turn) {
             const status = runtime.abort.aborted ? "cancelled" : "failed"
+            const assistantErrorInfo = latestAssistant?.info.role === "assistant"
+                ? TurnError.fromAssistantError(latestAssistant.info.error)
+                : undefined
+            const errorInfo = TurnError.withModelContext(
+                assistantErrorInfo ?? TurnError.fromUnknown(error),
+                latestAssistant?.info.role === "assistant"
+                    ? {
+                        providerID: latestAssistant.info.providerID,
+                        modelID: latestAssistant.info.modelID,
+                    }
+                    : undefined,
+            )
             Session.updateTurn(turn.turnID, {
                 status,
                 phase: status,
-                error: normalizePromptErrorMessage(error),
+                error: errorInfo.message,
+                errorInfo,
                 lastMessageID: latestAssistant?.info.id,
             })
             if (status === "cancelled") {
                 emitTurnCancelled({
                     turn,
-                    detail: normalizePromptErrorMessage(error),
+                    detail: errorInfo.message,
                 })
             } else {
                 emitTurnFailureContext({
                     turn,
-                    error,
+                    errorInfo,
                     assistant: latestAssistant?.info.role === "assistant" ? latestAssistant.info : undefined,
                     parts: latestAssistant?.parts ?? [],
                 })
                 turn.emit("turn.state.changed", {
                     phase: "failed",
-                    reason: normalizePromptErrorMessage(error),
+                    reason: errorInfo.message,
                     messageID: latestAssistant?.info.id,
                 })
                 turn.emit("turn.failed", {
-                    error: normalizePromptErrorMessage(error),
+                    error: errorInfo.message,
+                    errorInfo,
                     message: latestAssistant?.info,
                     parts: latestAssistant?.parts,
                 })
@@ -1157,25 +1226,7 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
         });
         throwIfAborted(runtime.abort)
 
-        Session.updateTurn(turn.turnID, {
-            status: result.status === "blocked" ? "blocked" : "completed",
-            phase: result.status === "blocked" ? "blocked" : "completed",
-            lastMessageID: result.latest.info.id,
-            finishReason: result.finishReason,
-        })
-
-        turn.emit("turn.state.changed", {
-            phase: result.status === "blocked" ? "blocked" : "completed",
-            reason: result.finishReason,
-            messageID: result.latest.info.id,
-        })
-
-        turn.emit("turn.completed", {
-            status: result.status,
-            finishReason: result.finishReason,
-            message: result.latest.info,
-            parts: result.latest.parts,
-        })
+        finishPromptTurnFromResult(turn, result)
 
         return result.latest as AssistantWithParts
     } catch (error) {
@@ -1185,31 +1236,45 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
         )
         if (turn) {
             const status = runtime.abort.aborted ? "cancelled" : "failed"
+            const assistantErrorInfo = latestAssistant?.info.role === "assistant"
+                ? TurnError.fromAssistantError(latestAssistant.info.error)
+                : undefined
+            const errorInfo = TurnError.withModelContext(
+                assistantErrorInfo ?? TurnError.fromUnknown(error),
+                latestAssistant?.info.role === "assistant"
+                    ? {
+                        providerID: latestAssistant.info.providerID,
+                        modelID: latestAssistant.info.modelID,
+                    }
+                    : undefined,
+            )
             Session.updateTurn(turn.turnID, {
                 status,
                 phase: status,
-                error: normalizePromptErrorMessage(error),
+                error: errorInfo.message,
+                errorInfo,
                 lastMessageID: latestAssistant?.info.id,
             })
             if (status === "cancelled") {
                 emitTurnCancelled({
                     turn,
-                    detail: normalizePromptErrorMessage(error),
+                    detail: errorInfo.message,
                 })
             } else {
                 emitTurnFailureContext({
                     turn,
-                    error,
+                    errorInfo,
                     assistant: latestAssistant?.info.role === "assistant" ? latestAssistant.info : undefined,
                     parts: latestAssistant?.parts ?? [],
                 })
                 turn.emit("turn.state.changed", {
                     phase: "failed",
-                    reason: normalizePromptErrorMessage(error),
+                    reason: errorInfo.message,
                     messageID: latestAssistant?.info.id,
                 })
                 turn.emit("turn.failed", {
-                    error: normalizePromptErrorMessage(error),
+                    error: errorInfo.message,
+                    errorInfo,
                     message: latestAssistant?.info,
                     parts: latestAssistant?.parts,
                 })

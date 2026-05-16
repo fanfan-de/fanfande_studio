@@ -40,20 +40,40 @@ describe("review panel controller", () => {
       draftUrl: "http://localhost:5173",
       draftTarget: "http://localhost:5173",
       committedUrl: "http://localhost:5173",
-      mode: "comment",
+      activeInteractionID: "web.comment",
       reloadToken: 0,
       errorKind: null,
       errorMessage: null,
       navigationHistory: ["http://localhost:5173"],
       navigationIndex: 0,
-      comments: [
+      resolvedTarget: {
+        externalOpenTarget: {
+          kind: "url",
+          value: "http://localhost:5173",
+        },
+        input: "http://localhost:5173",
+        kind: "url",
+        mime: "text/html",
+        normalizedInput: "http://localhost:5173",
+        renderer: "url-webview",
+        safePreviewUrl: "http://localhost:5173",
+        textReadable: false,
+        title: "localhost:5173",
+      },
+      interactions: [
         {
-          id: "comment-1",
-          url: "http://localhost:5173",
-          x: 0.2,
-          y: 0.4,
-          text: "Button is misaligned",
           createdAt: 1,
+          id: "interaction-1",
+          pluginID: "web.comment",
+          renderer: "url-webview",
+          targetKey: "http://localhost:5173",
+          payload: {
+            kind: "web-comment",
+            pageUrl: "http://localhost:5173",
+            x: 0.2,
+            y: 0.4,
+            text: "Button is misaligned",
+          },
         },
       ],
     }
@@ -98,7 +118,7 @@ describe("review panel controller", () => {
     })
 
     act(() => {
-      result.current.controller.handlePreviewInsertCommentsIntoDraft()
+      result.current.controller.handlePreviewInsertInteractionsIntoDraft()
     })
 
     const draftState = result.current.composerDraftStateByTabKey["session:session-1"]

@@ -1664,8 +1664,8 @@ describe("App", () => {
     fireEvent.submit(previewTargetInput.closest("form")!)
 
     expect(await within(inspector).findByTitle("Preview of localhost:3000")).toBeInTheDocument()
-    expect(within(inspector).getByText("localhost:3000")).toBeInTheDocument()
-    expect(within(inspector).queryByRole("button", { name: "Comment" })).not.toBeInTheDocument()
+    expect(within(inspector).getByDisplayValue("http://localhost:3000/")).toBeInTheDocument()
+    expect(within(inspector).getByRole("button", { name: "Comment" })).toBeInTheDocument()
 
     fireEvent.click(within(inspector).getByRole("button", { name: "Open externally" }))
     await waitFor(() => {
@@ -1759,7 +1759,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(document.querySelector("webview.preview-frame")).toBeInTheDocument()
     })
-    expect(within(inspector).queryByRole("button", { name: "Comment" })).not.toBeInTheDocument()
+    expect(within(inspector).getByRole("button", { name: "Comment" })).toBeInTheDocument()
 
     userAgentSpy.mockRestore()
   })

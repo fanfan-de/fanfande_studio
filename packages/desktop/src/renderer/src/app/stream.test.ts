@@ -1862,4 +1862,55 @@ describe("stream trace reducer", () => {
     expect(turns[0]?.kind === "assistant" ? turns[0].runtime.phase : null).toBe("failed")
     expect(turns[0]?.kind === "assistant" ? turns[0].items.map((item) => item.kind) : []).toEqual(["error"])
   })
+
+  it("restores failed assistant turns from turn outcome error info", () => {
+    const turns = buildTurnsFromHistory([
+      {
+        info: {
+          id: "msg-assistant-api-error",
+          sessionID: "session-1",
+          role: "assistant",
+          created: 20,
+          error: {
+            name: "APIError",
+            data: {
+              message: "Internal server error",
+              metadata: {
+                sourceName: "AI_APICallError",
+              },
+            },
+          },
+        },
+        parts: [],
+        turn: {
+          id: "turn-api-error",
+          sessionID: "session-1",
+          projectID: "project-1",
+          status: "failed",
+          phase: "failed",
+          lastMessageID: "msg-assistant-api-error",
+          error: "Internal server error",
+          errorInfo: {
+            name: "AI_APICallError",
+            message: "Internal server error",
+            statusCode: 500,
+            retryable: false,
+            providerID: "anybox",
+            modelID: "deepseek-chat",
+          },
+          createdAt: 10,
+          updatedAt: 30,
+          completedAt: 30,
+        },
+      },
+    ])
+
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.kind === "assistant" ? turns[0].runtime.phase : null).toBe("failed")
+    expect(turns[0]?.kind === "assistant" ? turns[0].items[0] : null).toMatchObject({
+      kind: "error",
+      title: "Backend request failed: AI_APICallError",
+      detail: "Internal server error",
+    })
+  })
 })

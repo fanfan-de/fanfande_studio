@@ -7,6 +7,7 @@ import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
 import { isSessionLimitError } from "#session/runtime/session-limits.ts"
 import * as SessionRunner from "#session/runtime/session-runner.ts"
 import * as Log from "#util/log.ts"
+import * as TurnError from "#session/core/turn-error.ts"
 
 const log = Log.create({ service: "server.session" })
 const STREAM_HEARTBEAT_INTERVAL_MS = 3000
@@ -133,11 +134,13 @@ function createTransportTerminalEvent(input: {
 }
 
 function failedRuntimePayload(error: unknown, phase: string, retryable = false) {
+  const errorInfo = TurnError.fromUnknown(error)
   return {
-    error: error instanceof Error ? error.message : String(error),
+    error: errorInfo.message,
+    errorInfo,
     code: isSessionLimitError(error) ? error.code : undefined,
     phase,
-    retryable,
+    retryable: retryable || errorInfo.retryable,
   } satisfies RuntimeEvent.RuntimeEventPayloadByType["turn.failed"]
 }
 

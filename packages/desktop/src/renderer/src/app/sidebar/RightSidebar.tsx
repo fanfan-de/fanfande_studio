@@ -11,8 +11,8 @@ import { UnifiedPreviewPanel } from "../preview/UnifiedPreviewPanel"
 import { buildRuntimeStatusDescription, formatRuntimeBusyStateLabel, formatRuntimeDuration, formatRuntimeLoadStateLabel, formatRuntimePhaseLabel, formatRuntimeTurnStatusLabel } from "../runtime-debug"
 import { ShellTopMenu, TopMenuViewButton } from "../shared-ui"
 import type {
-  PreviewComment,
-  PreviewMode,
+  PreviewInteractionCommitInput,
+  PreviewInteractionPluginID,
   RightSidebarView,
   SessionDiffState,
   SessionDiffSummary,
@@ -43,20 +43,11 @@ interface RightSidebarProps {
   isRuntimeViewVisible: boolean
   onDiffFileSelect: (file: string | null) => void
   onDiffFileRestore: (file: string) => void | Promise<void>
-  onPreviewAddComment: (input: {
-    frame?: string
-    nodePosition?: string
-    pageUrl?: string
-    screenshotPath?: string | null
-    x: number
-    y: number
-    text: string
-    anchor?: PreviewComment["anchor"]
-  }) => void
+  onPreviewActiveInteractionChange: (pluginID: PreviewInteractionPluginID | null) => void
+  onPreviewCommitInteraction: (input: PreviewInteractionCommitInput) => void
   onPreviewBack: () => void
   onPreviewDraftUrlChange: (value: string) => void
   onPreviewForward: () => void
-  onPreviewModeChange: (mode: PreviewMode) => void
   onPreviewOpen: () => void
   onPreviewOpenExternal: () => void | Promise<void>
   onPreviewOpenUrl: (url: string) => void
@@ -239,11 +230,11 @@ export function RightSidebar({
   isRuntimeViewVisible,
   onDiffFileSelect,
   onDiffFileRestore,
-  onPreviewAddComment,
+  onPreviewActiveInteractionChange,
+  onPreviewCommitInteraction,
   onPreviewBack,
   onPreviewDraftUrlChange,
   onPreviewForward,
-  onPreviewModeChange,
   onPreviewOpen,
   onPreviewOpenExternal,
   onPreviewOpenUrl,
@@ -541,6 +532,8 @@ export function RightSidebar({
             <UnifiedPreviewPanel
               state={activePreviewState}
               onDraftUrlChange={onPreviewDraftUrlChange}
+              onActiveInteractionChange={onPreviewActiveInteractionChange}
+              onCommitInteraction={onPreviewCommitInteraction}
               onOpen={onPreviewOpen}
               onOpenExternal={onPreviewOpenExternal}
               onOpenUrl={onPreviewOpenUrl}

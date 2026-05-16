@@ -706,11 +706,11 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handleAskUserQuestionAnswer,
     handlePickComposerAttachments,
     handlePasteComposerImageAttachments,
-    handlePreviewAddComment,
+    handlePreviewActiveInteractionChange,
     handlePreviewBack,
+    handlePreviewCommitInteraction,
     handlePreviewDraftUrlChange,
     handlePreviewForward,
-    handlePreviewModeChange,
     handlePreviewOpen,
     handlePreviewOpenExternal,
     handlePreviewOpenTarget,
@@ -1662,11 +1662,11 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 isRuntimeViewVisible={isAgentDebugTraceEnabled}
                 onDiffFileSelect={handleActiveSessionDiffFileSelect}
                 onDiffFileRestore={handleActiveSessionDiffFileRestore}
-                onPreviewAddComment={handlePreviewAddComment}
+                onPreviewActiveInteractionChange={handlePreviewActiveInteractionChange}
+                onPreviewCommitInteraction={handlePreviewCommitInteraction}
                 onPreviewBack={handlePreviewBack}
                 onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
                 onPreviewForward={handlePreviewForward}
-                onPreviewModeChange={handlePreviewModeChange}
                 onPreviewOpen={handlePreviewOpen}
                 onPreviewOpenExternal={handlePreviewOpenExternal}
                 onPreviewOpenUrl={handlePreviewOpenUrl}

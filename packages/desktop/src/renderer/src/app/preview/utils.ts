@@ -1,29 +1,9 @@
-import type { PreviewComment, PreviewErrorKind } from "../types"
+import type { PreviewErrorKind } from "../types"
 
 export interface PreviewUrlNormalizeResult {
   errorKind: PreviewErrorKind | null
   errorMessage: string | null
   normalizedUrl: string | null
-}
-
-function getPreviewHostLabel(url: string) {
-  try {
-    return new URL(url).host || "page"
-  } catch {
-    return "page"
-  }
-}
-
-function readPreviewTargetLabel(comment: PreviewComment) {
-  return comment.anchor?.label?.trim() || comment.anchor?.tagName?.trim() || "Preview target"
-}
-
-export function buildPreviewCommentReferenceLabel(url: string, commentIndex: number) {
-  return `preview:${getPreviewHostLabel(url)}#${Math.max(1, commentIndex)}`
-}
-
-export function buildPreviewCommentReferenceTitle(comment: PreviewComment) {
-  return `${readPreviewTargetLabel(comment)} - ${comment.pageUrl ?? comment.url}`
 }
 
 export function normalizePreviewUrlInput(input: string): PreviewUrlNormalizeResult {

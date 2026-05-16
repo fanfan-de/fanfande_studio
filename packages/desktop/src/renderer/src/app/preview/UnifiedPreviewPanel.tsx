@@ -3,8 +3,10 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import type { DesktopLocalPreviewService } from "../../../../shared/desktop-ipc-contract"
 import { OpenExternalIcon, PreviewIcon, ResetIcon } from "../icons"
-import type { ResolvedPreviewTarget, WorkspacePreviewState } from "../types"
-import { getPreviewFailure } from "./PreviewPanel"
+import type { PreviewInteractionCommitInput, PreviewInteractionPluginID, ResolvedPreviewTarget, WorkspacePreviewState } from "../types"
+import { getPreviewFailure } from "./failures"
+import { PreviewInteractionHost, PreviewInteractionToolbar } from "./interactions/PreviewInteractionHost"
+import { getPreviewInteractionPlugins } from "./interactions/registry"
 
 const PREVIEW_QUICK_TARGETS = ["http://localhost:3000", "http://localhost:5173", "http://localhost:8080"] as const
 const TEXT_RENDERERS = new Set(["markdown-preview", "json-viewer", "table-preview", "code-viewer"])
@@ -17,10 +19,13 @@ interface UnifiedPreviewPanelProps {
   onOpenExternal: () => void | Promise<void>
   onOpenUrl: (url: string) => void
   onReload: () => void
+  onActiveInteractionChange: (pluginID: PreviewInteractionPluginID | null) => void
+  onCommitInteraction: (input: PreviewInteractionCommitInput) => void
 }
 
 interface WebviewElement extends HTMLElement {
   reload?: () => void
+  send?: (channel: string, payload?: unknown) => void
 }
 
 type WebviewFailLoadEvent = Event & {
@@ -263,7 +268,10 @@ export function UnifiedPreviewPanel({
   onOpenExternal,
   onOpenUrl,
   onReload,
+  onActiveInteractionChange,
+  onCommitInteraction,
 }: UnifiedPreviewPanelProps) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const webviewRef = useRef<WebviewElement | null>(null)
   const textRequestIDRef = useRef(0)
   const localServiceRequestIDRef = useRef(0)
@@ -279,6 +287,7 @@ export function UnifiedPreviewPanel({
   const [forceIframeFallback, setForceIframeFallback] = useState(false)
   const [frameIsLoading, setFrameIsLoading] = useState(false)
   const [frameLoadError, setFrameLoadError] = useState<FrameLoadError | null>(null)
+  const [webviewReady, setWebviewReady] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [textPreview, setTextPreview] = useState<TextPreviewState>({
     status: "idle",
@@ -294,6 +303,7 @@ export function UnifiedPreviewPanel({
   const shouldRenderText = Boolean(target && TEXT_RENDERERS.has(target.renderer) && target.textReadable && targetPath)
   const shouldUseWebview = target?.renderer === "url-webview" && canUseWebview && !forceIframeFallback
   const canOpenExternal = Boolean(target?.externalOpenTarget || state.committedUrl || draftValue.trim())
+  const interactionPlugins = useMemo(() => getPreviewInteractionPlugins(target), [target])
 
   async function scanLocalPreviewServices() {
     const detectLocalPreviewServices = window.desktop?.detectLocalPreviewServices
@@ -337,6 +347,7 @@ export function UnifiedPreviewPanel({
     setFrameLoadError(null)
     setStatusMessage(null)
     setForceIframeFallback(false)
+    setWebviewReady(false)
     setFrameIsLoading(Boolean(target?.safePreviewUrl && (target.renderer === "url-webview" || target.renderer === "html-preview" || target.renderer === "svg-preview")))
   }, [state.reloadToken, target?.safePreviewUrl, target?.renderer])
 
@@ -348,6 +359,7 @@ export function UnifiedPreviewPanel({
     const readyWebview: WebviewElement = activeWebview
 
     function handleDomReady() {
+      setWebviewReady(true)
       setFrameIsLoading(false)
       setFrameLoadError(null)
       setStatusMessage(null)
@@ -372,6 +384,7 @@ export function UnifiedPreviewPanel({
       if (event.isMainFrame === false || event.errorCode === -3) return
       setFrameIsLoading(false)
       setFrameLoadError(getPreviewFailure(event.errorDescription, event.errorCode))
+      setWebviewReady(false)
     }
 
     readyWebview.addEventListener("dom-ready", handleDomReady as EventListener)
@@ -502,6 +515,7 @@ export function UnifiedPreviewPanel({
         ) : (
           <iframe
             key={`${target.safePreviewUrl}:${state.reloadToken}:iframe`}
+            ref={iframeRef}
             title={frameTitle}
             className="preview-frame"
             sandbox="allow-forms allow-popups allow-same-origin allow-scripts"
@@ -516,6 +530,19 @@ export function UnifiedPreviewPanel({
             }}
           />
         )}
+        {interactionPlugins.length > 0 ? (
+          <PreviewInteractionHost
+            activeInteractionID={state.activeInteractionID}
+            frameKind={shouldUseWebview ? "webview" : "iframe"}
+            frameRefs={{ iframeRef, webviewRef }}
+            interactions={state.interactions}
+            plugins={interactionPlugins}
+            target={target}
+            webviewReady={webviewReady}
+            onActiveInteractionChange={onActiveInteractionChange}
+            onCommitInteraction={onCommitInteraction}
+          />
+        ) : null}
         {frameIsLoading ? (
           <div className="preview-loading-scrim" aria-live="polite">
             Loading preview...
@@ -654,6 +681,11 @@ export function UnifiedPreviewPanel({
             >
               <OpenExternalIcon />
             </button>
+            <PreviewInteractionToolbar
+              activeInteractionID={state.activeInteractionID}
+              target={target}
+              onActiveInteractionChange={onActiveInteractionChange}
+            />
           </form>
           {statusMessage ? <p className="preview-helper-copy unified-preview-status-message">{statusMessage}</p> : null}
         </div>

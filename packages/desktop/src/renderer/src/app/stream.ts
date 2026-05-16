@@ -1688,9 +1688,69 @@ export function buildUserTurn(input: {
   } satisfies UserTurn
 }
 
-function resolveAssistantHistoryState(items: AssistantTraceItem[], info: LoadedSessionHistoryMessage["info"]) {
-  const error = readRecord(info.error)
-  if (error) return "Backend request failed"
+type HistoryErrorPresentation = {
+  name?: string
+  message: string
+  code?: string
+  statusCode?: number
+  retryable?: boolean
+}
+
+function readHistoryErrorPresentation(value: unknown): HistoryErrorPresentation | null {
+  const record = readRecord(value)
+  const message = readString(record?.message).trim()
+  if (!record || !message) return null
+
+  return {
+    name: readString(record.name).trim() || undefined,
+    message,
+    code: readString(record.code).trim() || undefined,
+    statusCode: readOptionalNumber(record.statusCode),
+    retryable: typeof record.retryable === "boolean" ? record.retryable : undefined,
+  }
+}
+
+function readAssistantNamedErrorPresentation(value: unknown): HistoryErrorPresentation | null {
+  const record = readRecord(value)
+  if (!record) return null
+
+  const data = readRecord(record.data)
+  const metadata = readRecord(data?.metadata)
+  const message = (readString(record.message) || readString(data?.message)).trim()
+  if (!message) return null
+
+  return {
+    name: readString(metadata?.sourceName).trim() || readString(record.name).trim() || undefined,
+    message,
+    code: readString(metadata?.code).trim() || undefined,
+    statusCode: readOptionalNumber(data?.statusCode),
+    retryable: typeof data?.isRetryable === "boolean" ? data.isRetryable : undefined,
+  }
+}
+
+function readAssistantHistoryFailure(message: LoadedSessionHistoryMessage): HistoryErrorPresentation | null {
+  if (message.turn?.status === "failed") {
+    const turnError = readHistoryErrorPresentation(message.turn.errorInfo)
+    if (turnError) return turnError
+
+    const turnErrorMessage = readString(message.turn.error).trim()
+    if (turnErrorMessage) return { message: turnErrorMessage }
+  }
+
+  return readAssistantNamedErrorPresentation(message.info.error)
+}
+
+function formatErrorTraceTitle(baseTitle: string, error: HistoryErrorPresentation | null) {
+  return error?.name ? `${baseTitle}: ${error.name}` : baseTitle
+}
+
+function isAssistantHistoryFailed(message: LoadedSessionHistoryMessage) {
+  return Boolean(readAssistantHistoryFailure(message))
+}
+
+function resolveAssistantHistoryState(items: AssistantTraceItem[], message: LoadedSessionHistoryMessage) {
+  if (isAssistantHistoryFailed(message)) return "Backend request failed"
+  const info = message.info
   if (isAssistantHistoryCancelled(info) || items.some((item) => item.status === "cancelled")) return "Backend stream cancelled"
   if (items.some((item) => item.kind === "question")) return "Waiting for your answer"
   if (items.some((item) => item.status === "waiting-approval")) return "Waiting for permission approval"
@@ -1701,9 +1761,9 @@ function resolveAssistantHistoryState(items: AssistantTraceItem[], info: LoadedS
   return "Session history restored"
 }
 
-function resolveAssistantHistoryPhase(items: AssistantTraceItem[], info: LoadedSessionHistoryMessage["info"]): AssistantTurnPhase {
-  const error = readRecord(info.error)
-  if (error) return "failed"
+function resolveAssistantHistoryPhase(items: AssistantTraceItem[], message: LoadedSessionHistoryMessage): AssistantTurnPhase {
+  if (isAssistantHistoryFailed(message)) return "failed"
+  const info = message.info
   if (isAssistantHistoryCancelled(info) || items.some((item) => item.status === "cancelled")) return "cancelled"
   if (items.some((item) => item.kind === "question")) return "blocked"
   if (items.some((item) => item.status === "waiting-approval")) return "waiting_approval"
@@ -1754,8 +1814,8 @@ function buildUserTurnFromHistory(message: LoadedSessionHistoryMessage) {
 
 function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
   let items = mergeTraceParts([], message.parts)
-  const error = readRecord(message.info.error)
-  const errorMessage = readString(error?.message)
+  const failure = readAssistantHistoryFailure(message)
+  const errorMessage = failure?.message ?? ""
   const isCancelled = isAssistantHistoryCancelled(message.info)
 
   if (errorMessage) {
@@ -1764,7 +1824,7 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
       createTraceItem({
         kind: "error",
         label: "Error",
-        title: "Backend request failed",
+        title: formatErrorTraceTitle("Backend request failed", failure),
         detail: errorMessage,
         status: "error",
       }),
@@ -1813,7 +1873,7 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
     ]
   }
 
-  const runtimePhase = resolveAssistantHistoryPhase(items, message.info)
+  const runtimePhase = resolveAssistantHistoryPhase(items, message)
   const createdAt = readNumber(message.info.created) || Date.now()
   const completedAt = readNumber(message.info.completed) || createdAt
 
@@ -1831,7 +1891,7 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
       toolName: resolveAssistantHistoryToolName(items),
       errorMessage: errorMessage || undefined,
     }),
-    state: resolveAssistantHistoryState(items, message.info),
+    state: resolveAssistantHistoryState(items, message),
     items,
     isStreaming: false,
   } satisfies Turn
@@ -2598,7 +2658,8 @@ function applyRuntimeEventToTurn(
 
   if (event.type === "turn.failed") {
     const parts = Array.isArray(payload.parts) ? payload.parts : []
-    const message = readString(payload.error) || "Unknown backend error"
+    const failure = readHistoryErrorPresentation(payload.errorInfo)
+    const message = failure?.message || readString(payload.error) || "Unknown backend error"
     const messageID = resolvePayloadMessageID(payload) || turn.messageID
     const messageTurn = applyAssistantMessageMetadata(turn, payload.message)
     const nextItems = appendTraceItem(
@@ -2606,7 +2667,7 @@ function applyRuntimeEventToTurn(
       createTraceItem({
         kind: "error",
         label: "Error",
-        title: "Runtime turn failed",
+        title: formatErrorTraceTitle("Runtime turn failed", failure),
         detail: message,
         status: "error",
         debugEntries,

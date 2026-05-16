@@ -3,6 +3,7 @@ import * as Identifier from "#id/id.ts"
 import * as Permission from "#permission/schema.ts"
 import * as Message from "#session/core/message.ts"
 import * as Task from "#session/tasks/task-schema.ts"
+import * as TurnError from "#session/core/turn-error.ts"
 
 const ModelRef = z.object({
   providerID: z.string(),
@@ -62,6 +63,7 @@ const TurnCompletedPayload = z.object({
 
 const TurnFailedPayload = z.object({
   error: z.string(),
+  errorInfo: TurnError.TurnErrorInfo.optional(),
   code: z.string().optional(),
   phase: z.string().optional(),
   retryable: z.boolean().optional(),
@@ -222,6 +224,7 @@ const TurnErrorContextPayload = z.object({
     name: z.string().optional(),
     message: z.string(),
     code: z.string().optional(),
+    statusCode: z.number().optional(),
     retryable: z.boolean().optional(),
   }),
   activeTools: ErrorContextToolSummary.array().optional(),

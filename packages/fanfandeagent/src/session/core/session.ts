@@ -11,6 +11,7 @@ import * as EventStore from "#session/runtime/event-store.ts"
 import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
 import * as TaskSchema from "#session/tasks/task-schema.ts"
 import * as ToolResultPersistence from "#session/support/tool-result-persistence.ts"
+import * as TurnError from "#session/core/turn-error.ts"
 
 interface TableRecordMap {
   projects: never
@@ -88,6 +89,7 @@ export const TurnInfo = z
     lastMessageID: Identifier.schema("message").optional(),
     finishReason: z.string().optional(),
     error: z.string().optional(),
+    errorInfo: TurnError.TurnErrorInfo.optional(),
     createdAt: z.number(),
     updatedAt: z.number(),
     completedAt: z.number().optional(),
@@ -109,7 +111,7 @@ export type CreateTurnInput = {
 }
 
 export type UpdateTurnInput = Partial<
-  Pick<TurnInfo, "status" | "phase" | "lastMessageID" | "finishReason" | "error" | "completedAt">
+  Pick<TurnInfo, "status" | "phase" | "lastMessageID" | "finishReason" | "error" | "errorInfo" | "completedAt">
 >
 
 export const SessionInfo = z

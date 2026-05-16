@@ -73,6 +73,7 @@ export type RuntimeErrorContextSummary = {
     name?: string
     message: string
     code?: string
+    statusCode?: number
     retryable?: boolean
   }
   activeTools: Array<{
@@ -117,7 +118,11 @@ export type RuntimeTurnSummary = {
   llmCalls: RuntimeLlmCallSummary[]
   tools: RuntimeToolSummary[]
   error?: {
+    name?: string
     message: string
+    code?: string
+    statusCode?: number
+    retryable?: boolean
     messageID?: string
     providerID?: string
     modelID?: string
@@ -668,10 +673,16 @@ function summarizeRuntimeEvent(event: RuntimeEvent.RuntimeEvent): RuntimeEventSu
       return {
         ...base,
         title: "Turn failed",
-        detail: truncate(event.payload.error, 180),
+        detail: truncate(
+          event.payload.errorInfo?.name
+            ? `${event.payload.errorInfo.name}: ${event.payload.error}`
+            : event.payload.error,
+          180,
+        ),
         tone: "error",
         summary: {
           error: event.payload.error,
+          errorInfo: event.payload.errorInfo,
           message: summarizeMessage(event.payload.message),
           partCount: event.payload.parts?.length ?? 0,
         },
@@ -860,6 +871,10 @@ function updateTurnFromEvent(turn: MutableTurnSummary, event: RuntimeEvent.Runti
       turn.status = "failed"
       turn.error = {
         message: event.payload.error,
+        name: event.payload.errorInfo?.name,
+        code: event.payload.errorInfo?.code,
+        statusCode: event.payload.errorInfo?.statusCode,
+        retryable: event.payload.errorInfo?.retryable,
         ...(summarizeMessage(event.payload.message) ?? {}),
       }
       turn.message = summarizeMessage(event.payload.message)

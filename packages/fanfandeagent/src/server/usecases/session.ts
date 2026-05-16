@@ -546,7 +546,27 @@ export async function listSessionMessages(sessionID: string) {
     messages.push(item)
   }
 
-  return messages
+  const turns = Session.listTurns(sessionID)
+  const turnsByID = new Map(turns.map((turn) => [turn.id, turn]))
+  const turnsByUserMessageID = new Map(
+    turns
+      .filter((turn) => turn.userMessageID)
+      .map((turn) => [turn.userMessageID!, turn]),
+  )
+  const turnsByLastMessageID = new Map(
+    turns
+      .filter((turn) => turn.lastMessageID)
+      .map((turn) => [turn.lastMessageID!, turn]),
+  )
+
+  return messages.map((message) => ({
+    ...message,
+    turn:
+      turnsByID.get(message.info.turnID ?? "") ??
+      (message.info.role === "user"
+        ? turnsByUserMessageID.get(message.info.id)
+        : turnsByLastMessageID.get(message.info.id)),
+  }))
 }
 
 export async function getSessionDiff(sessionID: string) {

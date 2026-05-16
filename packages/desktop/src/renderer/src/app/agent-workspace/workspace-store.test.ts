@@ -127,13 +127,13 @@ describe("workspace store", () => {
     const store = createTestStore()
     const preview: WorkspacePreviewState = {
       ...DEFAULT_WORKSPACE_PREVIEW_STATE,
+      activeInteractionID: null,
       committedUrl: null,
-      comments: [],
       draftUrl: "http://localhost:5173",
       draftTarget: "http://localhost:5173",
       errorKind: null,
       errorMessage: null,
-      mode: "browse",
+      interactions: [],
       navigationHistory: [],
       navigationIndex: -1,
       reloadToken: 1,

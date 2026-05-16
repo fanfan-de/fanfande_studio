@@ -394,9 +394,42 @@ export interface AgentSessionHistoryInfo {
   [key: string]: unknown
 }
 
+export interface AgentSessionHistoryTurnErrorInfo {
+  name?: string
+  message: string
+  code?: string
+  statusCode?: number
+  retryable?: boolean
+  providerID?: string
+  modelID?: string
+}
+
+export interface AgentSessionHistoryTurn {
+  id: string
+  sessionID: string
+  projectID: string
+  userMessageID?: string
+  resume?: boolean
+  agent?: string
+  model?: {
+    providerID: string
+    modelID: string
+  }
+  status: "running" | "completed" | "blocked" | "failed" | "cancelled"
+  phase?: string
+  lastMessageID?: string
+  finishReason?: string
+  error?: string
+  errorInfo?: AgentSessionHistoryTurnErrorInfo
+  createdAt: number
+  updatedAt: number
+  completedAt?: number
+}
+
 export interface AgentSessionHistoryMessage {
   info: AgentSessionHistoryInfo
   parts: unknown[]
+  turn?: AgentSessionHistoryTurn
 }
 
 export interface AgentSessionDiffFile {
@@ -508,6 +541,7 @@ export interface AgentSessionRuntimeErrorContext {
     name?: string
     message: string
     code?: string
+    statusCode?: number
     retryable?: boolean
   }
   activeTools: Array<{
@@ -562,7 +596,11 @@ export interface AgentSessionRuntimeTurnSummary {
   llmCalls: AgentSessionRuntimeLlmCallSummary[]
   tools: AgentSessionRuntimeToolSummary[]
   error?: {
+    name?: string
     message: string
+    code?: string
+    statusCode?: number
+    retryable?: boolean
     messageID?: string
     providerID?: string
     modelID?: string

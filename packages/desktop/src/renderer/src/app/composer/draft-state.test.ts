@@ -47,38 +47,43 @@ function createCommentReference(): ComposerCommentReference {
   }
 }
 
-function createPreviewCommentReference(): ComposerCommentReference {
+function createPreviewInteractionReference(): ComposerCommentReference {
   return {
     source: "preview",
-    id: "preview-comment-1",
+    id: "preview-interaction-1",
     label: "preview:localhost:5174#1",
     title: "button.cta - http://localhost:5174/",
     prompt: "Preview feedback for http://localhost:5174/",
     pageUrl: "http://localhost:5174/",
-    comment: {
-      id: "preview-comment-1",
-      url: "http://localhost:5174/",
-      pageUrl: "http://localhost:5174/",
-      x: 42,
-      y: 35,
-      text: "The CTA overlaps the header.",
+    interaction: {
       createdAt: 1,
-      frame: "iframe",
-      nodePosition: "42%, 35%; target rect 120, 80, 240x48",
-      screenshotPath: "C:\\Users\\codex\\preview-comment-screenshots\\marker.png",
-      anchor: {
-        type: "element",
-        label: "button.cta",
-        selector: "button.cta",
-        path: "html > body > main > button:nth-of-type(1)",
-        rect: {
-          height: 48,
-          left: 120,
-          top: 80,
-          width: 240,
+      id: "preview-interaction-1",
+      pluginID: "web.comment",
+      renderer: "url-webview",
+      targetKey: "http://localhost:5174/",
+      payload: {
+        kind: "web-comment",
+        pageUrl: "http://localhost:5174/",
+        x: 42,
+        y: 35,
+        text: "The CTA overlaps the header.",
+        frame: "iframe",
+        nodePosition: "42%, 35%; target rect 120, 80, 240x48",
+        screenshotPath: "C:\\Users\\codex\\preview-comment-screenshots\\marker.png",
+        anchor: {
+          type: "element",
+          label: "button.cta",
+          selector: "button.cta",
+          path: "html > body > main > button:nth-of-type(1)",
+          rect: {
+            height: 48,
+            left: 120,
+            top: 80,
+            width: 240,
+          },
+          tagName: "button",
+          text: "Launch",
         },
-        tagName: "button",
-        text: "Launch",
       },
     },
   }
@@ -123,7 +128,7 @@ describe("composer draft-state", () => {
   })
 
   it("compiles preview comment tags into browser context while stripping the visible token from the request", () => {
-    const previewReference = createPreviewCommentReference()
+    const previewReference = createPreviewInteractionReference()
     let draftState = createComposerDraftStateFromPlainText("Please fix the header.")
     draftState = appendComposerTagToDraftState(draftState, createComposerCommentTagData(previewReference))
 

@@ -10,6 +10,7 @@ import { Flag } from "#flag/flag.ts"
 import type { LanguageModelUsage } from "ai"
 import type { TurnContext } from "#session/runtime/orchestrator.ts"
 import * as StreamEvents from "#session/runtime/stream-events.ts"
+import * as TurnError from "#session/core/turn-error.ts"
 import {
     createAskUserQuestionMetadataFromInput,
     isAnsweredAskUserQuestionMetadata,
@@ -1294,12 +1295,7 @@ export function create(input: {
                         },
                         onError: (event) => {
                             const reason = normalizeToolError(event.error)
-                            input.Assistant.error = {
-                                name: "UnknownError",
-                                data: {
-                                    message: reason,
-                                },
-                            } as Message.Assistant["error"]
+                            input.Assistant.error = TurnError.toAssistantError(event.error)
                             lifecyclePersistence = persistPartialDraftOnce!(reason)
                             return lifecyclePersistence
                         },
@@ -1752,12 +1748,7 @@ export function create(input: {
                                 break;
                             case 'error':
                                 const streamErrorMessage = normalizeToolError(value.error)
-                                input.Assistant.error = {
-                                    name: "UnknownError",
-                                    data: {
-                                        message: streamErrorMessage,
-                                    },
-                                } as Message.Assistant["error"]
+                                input.Assistant.error = TurnError.toAssistantError(value.error)
                                 emitRuntimeEvent?.("llm.call.failed", {
                                     messageID: input.Assistant.id,
                                     providerID: streamInput.model.providerID,
