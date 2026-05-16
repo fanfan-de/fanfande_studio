@@ -163,6 +163,10 @@ function LocalizedDomBoundary({ children, locale }: { children: ReactNode; local
     if (!root) return
 
     let animationFrame = 0
+    const pendingTextNodes = new Set<Text>()
+    const pendingAttributeElements = new Set<Element>()
+    const pendingTreeElements = new Set<Element>()
+
     const scheduleLocalize = () => {
       if (typeof window.cancelAnimationFrame === "function") {
         window.cancelAnimationFrame(animationFrame)
@@ -176,10 +180,48 @@ function LocalizedDomBoundary({ children, locale }: { children: ReactNode; local
           : (callback: FrameRequestCallback) => window.setTimeout(() => callback(Date.now()), 0)
 
       animationFrame = schedule(() => {
-        localizeTree(root, locale, textSourcesRef.current, attributeSourcesRef.current)
+        const textNodes = Array.from(pendingTextNodes)
+        const attributeElements = Array.from(pendingAttributeElements)
+        const treeElements = Array.from(pendingTreeElements)
+
+        pendingTextNodes.clear()
+        pendingAttributeElements.clear()
+        pendingTreeElements.clear()
+
+        for (const textNode of textNodes) {
+          localizeTextNode(textNode, locale, textSourcesRef.current)
+        }
+        for (const element of attributeElements) {
+          localizeElementAttributes(element, locale, attributeSourcesRef.current)
+        }
+        for (const element of treeElements) {
+          localizeTree(element, locale, textSourcesRef.current, attributeSourcesRef.current)
+        }
       })
     }
-    const observer = new MutationObserver(scheduleLocalize)
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === "characterData" && mutation.target instanceof Text) {
+          pendingTextNodes.add(mutation.target)
+        }
+        if (mutation.type === "attributes" && mutation.target instanceof Element) {
+          pendingAttributeElements.add(mutation.target)
+        }
+        if (mutation.type === "childList") {
+          for (const node of mutation.addedNodes) {
+            if (node instanceof Text) {
+              pendingTextNodes.add(node)
+            } else if (node instanceof Element) {
+              pendingTreeElements.add(node)
+            }
+          }
+        }
+      }
+
+      if (pendingTextNodes.size > 0 || pendingAttributeElements.size > 0 || pendingTreeElements.size > 0) {
+        scheduleLocalize()
+      }
+    })
 
     observer.observe(root, {
       attributeFilter: [...LOCALIZABLE_ATTRIBUTES],
@@ -188,8 +230,6 @@ function LocalizedDomBoundary({ children, locale }: { children: ReactNode; local
       childList: true,
       subtree: true,
     })
-
-    scheduleLocalize()
 
     return () => {
       observer.disconnect()

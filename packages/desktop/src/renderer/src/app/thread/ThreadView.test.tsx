@@ -2078,6 +2078,115 @@ describe("ThreadView auto-scroll", () => {
     expect(threadColumn.scrollTop).toBe(520)
   })
 
+  it("restores the previous viewport when a non-user send-time scroll reset jumps to the top", () => {
+    let assistantDocumentTop = 520
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getRect(this: HTMLElement) {
+      const element = this
+      if (element.classList.contains("thread-column")) {
+        return { x: 0, y: 0, width: 400, height: 400, top: 0, right: 400, bottom: 400, left: 0, toJSON: () => ({}) }
+      }
+      if (element.dataset.turnId === "user-1") {
+        return { x: 0, y: -320, width: 400, height: 80, top: -320, right: 400, bottom: -240, left: 0, toJSON: () => ({}) }
+      }
+      if (element.dataset.turnId === "assistant-1") {
+        const scrollTop = element.closest<HTMLElement>(".thread-column")?.scrollTop ?? 0
+        const top = assistantDocumentTop - scrollTop
+        return { x: 0, y: top, width: 400, height: 160, top, right: 400, bottom: top + 160, left: 0, toJSON: () => ({}) }
+      }
+      return { x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0, toJSON: () => ({}) }
+    })
+
+    try {
+      const { rerender, props, threadColumn } = renderThread(
+        [userTurn("user-1", "Prompt"), assistantTurn("assistant-1", "Working")],
+        { scrollStateKey: "session:session-1" },
+      )
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 1400,
+        scrollTop: 500,
+      })
+      fireEvent.scroll(threadColumn)
+
+      threadColumn.scrollTop = 0
+      fireEvent.scroll(threadColumn)
+
+      expect(threadColumn.scrollTop).toBe(500)
+
+      assistantDocumentTop = 520
+      threadColumn.scrollTop = 0
+      rerender(
+        <ThreadView
+          {...props}
+          activeTurns={[
+            userTurn("user-1", "Prompt"),
+            assistantTurn("assistant-1", "Working"),
+            userTurn("user-2", "Next prompt"),
+          ]}
+        />,
+      )
+
+      expect(threadColumn.scrollTop).toBe(500)
+    } finally {
+      rectSpy.mockRestore()
+    }
+  })
+
+  it("keeps the visible turn anchored when completed history replaces the live turn", () => {
+    let assistantTop = 20
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getRect(this: HTMLElement) {
+      const element = this
+      if (element.classList.contains("thread-column")) {
+        return { x: 0, y: 0, width: 400, height: 400, top: 0, right: 400, bottom: 400, left: 0, toJSON: () => ({}) }
+      }
+      if (element.dataset.turnId === "user-1") {
+        return { x: 0, y: -320, width: 400, height: 80, top: -320, right: 400, bottom: -240, left: 0, toJSON: () => ({}) }
+      }
+      if (element.dataset.turnId === "assistant-1") {
+        return { x: 0, y: assistantTop, width: 400, height: 160, top: assistantTop, right: 400, bottom: assistantTop + 160, left: 0, toJSON: () => ({}) }
+      }
+      return { x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0, toJSON: () => ({}) }
+    })
+
+    try {
+      const { rerender, props, threadColumn } = renderThread(
+        [userTurn("user-1", "Prompt"), assistantTurn("assistant-1", "Working")],
+        { scrollStateKey: "session:session-1" },
+      )
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 1400,
+        scrollTop: 500,
+      })
+      fireEvent.scroll(threadColumn)
+
+      assistantTop = 120
+      threadColumn.scrollTop = 0
+      rerender(
+        <ThreadView
+          {...props}
+          activeTurns={[
+            userTurn("user-1", "Prompt"),
+            assistantTraceTurn("assistant-1", [
+              {
+                id: "assistant-1-text",
+                kind: "text",
+                timestamp: 1,
+                label: "Assistant",
+                text: "Done",
+                status: "completed",
+              },
+            ], false),
+          ]}
+        />,
+      )
+
+      expect(threadColumn.scrollTop).toBe(100)
+    } finally {
+      rectSpy.mockRestore()
+    }
+  })
+
   it("restores independent scroll positions by tab key instead of forcing the bottom", () => {
     const snapshots: Record<string, ThreadScrollSnapshot> = {}
     const readScrollSnapshot = vi.fn((key: string) => snapshots[key] ?? null)

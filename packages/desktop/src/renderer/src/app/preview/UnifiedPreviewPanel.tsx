@@ -180,6 +180,34 @@ function PreviewMeta({ target }: { target: ResolvedPreviewTarget }) {
   )
 }
 
+function getPreviewTitleLabel(target: ResolvedPreviewTarget, draftValue: string) {
+  const title = target.title.trim()
+  const visibleInputs = new Set([target.input.trim(), target.normalizedInput.trim(), draftValue.trim()].filter(Boolean))
+  if (!title || visibleInputs.has(title)) return null
+  return title
+}
+
+function PreviewTargetSummary({
+  draftValue,
+  target,
+}: {
+  draftValue: string
+  target: ResolvedPreviewTarget
+}) {
+  const titleLabel = getPreviewTitleLabel(target, draftValue)
+
+  return (
+    <div className="unified-preview-target-summary">
+      {titleLabel ? (
+        <strong className="unified-preview-target-title" title={titleLabel}>
+          {titleLabel}
+        </strong>
+      ) : null}
+      <PreviewMeta target={target} />
+    </div>
+  )
+}
+
 function EmptyPreviewState({
   localPreviewServices,
   localServiceStatus,
@@ -587,7 +615,7 @@ export function UnifiedPreviewPanel({
       <div className="preview-panel-main">
         <div className="preview-panel-controls">
           <form
-            className="preview-toolbar unified-preview-toolbar"
+            className={target ? "preview-toolbar unified-preview-toolbar has-target-meta" : "preview-toolbar unified-preview-toolbar"}
             onSubmit={(event) => {
               event.preventDefault()
               onOpen()
@@ -603,6 +631,7 @@ export function UnifiedPreviewPanel({
                 aria-label="Preview target"
               />
             </label>
+            {target ? <PreviewTargetSummary draftValue={draftValue} target={target} /> : null}
             <button type="submit" className="secondary-button unified-preview-open-button">
               Open
             </button>
@@ -626,15 +655,6 @@ export function UnifiedPreviewPanel({
               <OpenExternalIcon />
             </button>
           </form>
-          {target ? (
-            <div className="unified-preview-title-row">
-              <div className="unified-preview-title">
-                <strong title={target.title}>{target.title}</strong>
-                <span title={target.normalizedInput}>{target.normalizedInput}</span>
-              </div>
-              <PreviewMeta target={target} />
-            </div>
-          ) : null}
           {statusMessage ? <p className="preview-helper-copy unified-preview-status-message">{statusMessage}</p> : null}
         </div>
 

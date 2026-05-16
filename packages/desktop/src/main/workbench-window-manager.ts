@@ -80,6 +80,11 @@ function getOwnershipSurfaceID(ownership: WorkbenchPanelOwnership) {
   return ownership.ownerSurfaceID ?? ownership.ownerWindowID
 }
 
+function getSharedStateContentSignature(state: WorkbenchSharedState) {
+  const { version: _version, ...content } = state
+  return JSON.stringify(content)
+}
+
 export class WorkbenchWindowManager {
   private readonly createPopoutWindowOptions: () => BrowserWindowConstructorOptions
   private readonly rendererEntryUrl: string
@@ -135,6 +140,8 @@ export class WorkbenchWindowManager {
   }
 
   publishStateSnapshot(snapshot: WorkbenchSharedState) {
+    const previousSignature = getSharedStateContentSignature(this.getSharedState())
+
     for (const [panelID, panelSnapshot] of Object.entries(snapshot.panels)) {
       this.panelSnapshots.set(panelID, panelSnapshot)
     }
@@ -170,9 +177,16 @@ export class WorkbenchWindowManager {
       }
       surface.panelIDs = nextPanelIDs
     }
+
+    const nextStateSignature = getSharedStateContentSignature(this.getSharedState())
+    if (nextStateSignature === previousSignature) {
+      return this.getSharedState()
+    }
+
     this.stateVersion += 1
-    this.broadcast({ reason: "snapshot", state: this.getSharedState() })
-    return this.getSharedState()
+    const nextState = this.getSharedState()
+    this.broadcast({ reason: "snapshot", state: nextState })
+    return nextState
   }
 
   async detachSessionPanel(input: WorkbenchDetachSessionPanelInput): Promise<WorkbenchDetachSessionPanelResult> {

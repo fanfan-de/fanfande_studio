@@ -128,6 +128,40 @@ describe("UnifiedPreviewPanel", () => {
     expect(frame).toHaveAttribute("src", "fanfande-preview://preview/token/index.html")
   })
 
+  it("keeps file preview identity on one non-duplicated header line", () => {
+    const { container } = renderUnifiedPreviewPanel({
+      state: createPreviewState({
+        activeTargetInput: "heroes.csv",
+        draftTarget: "heroes.csv",
+        resolvedTarget: {
+          entry: `${workspaceRoot}\\heroes.csv`,
+          externalOpenTarget: {
+            kind: "path",
+            value: `${workspaceRoot}\\heroes.csv`,
+          },
+          input: "heroes.csv",
+          kind: "file",
+          mime: "text/csv",
+          normalizedInput: "heroes.csv",
+          path: `${workspaceRoot}\\heroes.csv`,
+          renderer: "table-preview",
+          textReadable: true,
+          title: "heroes.csv",
+          workspaceRoot,
+        },
+        status: "ready",
+      }),
+    })
+
+    const toolbar = screen.getByRole("textbox", { name: "Preview target" }).closest(".unified-preview-toolbar")
+    expect(toolbar).not.toBeNull()
+    expect(container.querySelector(".unified-preview-title-row")).toBeNull()
+    expect(screen.getAllByDisplayValue("heroes.csv")).toHaveLength(1)
+    expect(within(toolbar as HTMLElement).getByText("CSV")).toBeInTheDocument()
+    expect(within(toolbar as HTMLElement).getByText("file")).toBeInTheDocument()
+    expect(within(toolbar as HTMLElement).getByText("text/csv")).toBeInTheDocument()
+  })
+
   it("shows the system-open fallback and delegates external opening", () => {
     const onOpenExternal = vi.fn()
     renderUnifiedPreviewPanel({

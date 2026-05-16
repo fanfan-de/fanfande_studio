@@ -76,6 +76,46 @@ vi.mock("electron", () => ({
 import { WorkbenchWindowManager } from "./workbench-window-manager"
 
 describe("WorkbenchWindowManager", () => {
+  it("does not rebroadcast identical renderer snapshots", () => {
+    electronMock.createdWindows.length = 0
+    const mainWindow = new electronMock.BrowserWindow()
+    const manager = new WorkbenchWindowManager({
+      rendererEntryUrl: "http://127.0.0.1:5173/index.html",
+      createPopoutWindowOptions: () => ({
+        width: 1000,
+        height: 700,
+      }),
+    })
+    manager.registerMainWindow(mainWindow as any)
+
+    const snapshot = {
+      version: 0,
+      windows: [],
+      surfaces: [
+        {
+          surfaceID: "main",
+          kind: "main" as const,
+          windowID: "main",
+          ownedPanelIDs: ["session:session-1"],
+        },
+      ],
+      ownership: [],
+      panels: {
+        "session:session-1": {
+          panelID: "session:session-1",
+          reference: { kind: "session" as const, sessionID: "session-1" },
+          title: "Session 1",
+          pane: {},
+        },
+      },
+    }
+
+    manager.publishStateSnapshot(snapshot)
+    manager.publishStateSnapshot(snapshot)
+
+    expect(mainWindow.webContents.sent).toHaveLength(1)
+  })
+
   it("commits ownership only after the popout panel mounts and docks it back on request", async () => {
     electronMock.createdWindows.length = 0
     const mainWindow = new electronMock.BrowserWindow()

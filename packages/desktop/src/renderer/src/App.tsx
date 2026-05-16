@@ -139,6 +139,18 @@ function hasExplicitWorkbenchWindowID() {
   return new URLSearchParams(window.location.search).has("workbenchWindowID")
 }
 
+function areStringArraysEqual(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function areWorkbenchReferencesEqual(
+  left: WorkbenchWindowContext["reference"],
+  right: WorkbenchWindowContext["reference"],
+) {
+  if (!left || !right) return left === right
+  return left.kind === right.kind && left.sessionID === right.sessionID
+}
+
 function getWorkbenchSurfaceID(context: WorkbenchWindowContext) {
   return context.surfaceID ?? (context.kind === "main" ? "main" : context.windowID)
 }
@@ -304,12 +316,23 @@ export function App() {
         const ownership = panelID
           ? event.state.ownership.find((item) => item.panelID === panelID) ?? null
           : null
+        const reference = ownership?.reference ?? current.reference ?? null
+
+        if (
+          event.reason === "snapshot" &&
+          current.surfaceID === surfaceID &&
+          current.panelID === panelID &&
+          areStringArraysEqual(current.ownedPanelIDs, ownedPanelIDs) &&
+          areWorkbenchReferencesEqual(current.reference, reference)
+        ) {
+          return current
+        }
 
         return {
           ...current,
           ownedPanelIDs,
           panelID,
-          reference: ownership?.reference ?? current.reference ?? null,
+          reference,
           state: event.state,
           surfaceID,
         }
