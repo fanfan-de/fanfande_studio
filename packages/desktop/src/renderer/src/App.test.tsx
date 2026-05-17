@@ -56,6 +56,14 @@ async function openProviderSettingsSection() {
   return settingsDialog
 }
 
+function openActivityRailConfigurationView(label: string | RegExp) {
+  const expandConfigurationButton = screen.queryByRole("button", { name: "Show configuration shortcuts" })
+  if (expandConfigurationButton) {
+    fireEvent.click(expandConfigurationButton)
+  }
+  fireEvent.click(screen.getByRole("button", { name: label }))
+}
+
 function setComposerDraftValue(input: HTMLElement, value: string) {
   if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
     fireEvent.change(input, {
@@ -2611,7 +2619,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    openActivityRailConfigurationView("Open skills")
 
     expect(await screen.findByLabelText("Skills top menu")).toBeInTheDocument()
     expect(screen.getByLabelText("Left sidebar top menu")).toBeInTheDocument()
@@ -2708,7 +2716,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    openActivityRailConfigurationView("Open skills")
     await screen.findByText("No skills exist yet. Use + to create the first one.")
 
     fireEvent.click(screen.getByRole("button", { name: "Create global skill or folder" }))
@@ -2819,7 +2827,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    openActivityRailConfigurationView("Open skills")
     expect(await screen.findByRole("textbox", { name: "Global skill editor" })).toHaveValue(content)
 
     fireEvent.click(screen.getByRole("button", { name: "Actions for review" }))
@@ -2854,7 +2862,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    openActivityRailConfigurationView("Open skills")
 
     const openLocationButton = await screen.findByRole("button", { name: "打开文件位置" })
     await waitFor(() => {
@@ -2945,7 +2953,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    openActivityRailConfigurationView("Open skills")
     fireEvent.click(await screen.findByRole("button", { name: "Install skill" }))
     fireEvent.click(await screen.findByRole("menuitem", { name: "From URL" }))
 
@@ -3028,7 +3036,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    openActivityRailConfigurationView("Open skills")
     fireEvent.click(await screen.findByRole("button", { name: "Install skill" }))
     fireEvent.click(await screen.findByRole("menuitem", { name: "From local file" }))
 
@@ -3097,7 +3105,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    openActivityRailConfigurationView("Open skills")
 
     const search = await screen.findByRole("searchbox", { name: "Search skills" })
     expect(search.closest(".skills-tree-search-row")).toBeInTheDocument()
@@ -3167,7 +3175,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    openActivityRailConfigurationView("Open skills")
 
     const editor = await screen.findByRole("textbox", { name: "Global skill editor" })
     expect(editor).toHaveValue(content)
@@ -3236,7 +3244,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    openActivityRailConfigurationView("Open skills")
 
     expect(await screen.findByRole("textbox", { name: "Global skill editor" })).toHaveValue(content)
     const agentBrowserRow = screen.getByRole("button", { name: "agent-browser" })
@@ -3331,7 +3339,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    openActivityRailConfigurationView("Open skills")
 
     const oldDirectoryButton = await screen.findByRole("button", { name: "layout-review" })
     fireEvent.doubleClick(oldDirectoryButton)
@@ -7774,7 +7782,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open prompts" }))
+    openActivityRailConfigurationView("Open prompts")
 
     expect(document.querySelector("#app-sidebar")).toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
@@ -8098,7 +8106,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open tools" }))
+    openActivityRailConfigurationView("Open tools")
 
     expect(screen.getByLabelText("Tools top menu")).toBeInTheDocument()
     expect(document.querySelector("#app-sidebar")).toBeInTheDocument()
@@ -8153,7 +8161,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open MCP" }))
+    openActivityRailConfigurationView("Open MCP")
 
     expect(screen.getByLabelText("MCP top menu")).toBeInTheDocument()
     expect(document.querySelector("#app-sidebar")).toBeInTheDocument()
@@ -8259,6 +8267,42 @@ describe("App", () => {
     expect(appShell!.getAttribute("style")).toContain("--activity-rail-display-width: 54px")
     expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse left sidebar" }).closest(".activity-rail")).not.toBeNull()
+  })
+
+  it("keeps configuration rail entries collapsed at the bottom", () => {
+    const { container } = render(<App />)
+    const leftActivityRail = container.querySelector(".activity-rail:not(.is-right)") as HTMLElement | null
+
+    expect(leftActivityRail).not.toBeNull()
+    expect(within(leftActivityRail!).getByRole("button", { name: "Open workspace" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Open skills" })).not.toBeInTheDocument()
+
+    const configurationToggle = within(leftActivityRail!).getByRole("button", {
+      name: "Show configuration shortcuts",
+    })
+    const configurationFooter = configurationToggle.closest(".activity-rail-footer")
+    expect(configurationToggle).toHaveAttribute("aria-expanded", "false")
+    expect(configurationFooter).not.toBeNull()
+    expect(leftActivityRail!.lastElementChild).toBe(configurationFooter)
+
+    fireEvent.click(configurationToggle)
+
+    const configurationGroup = within(leftActivityRail!).getByLabelText("Configuration views")
+    expect(within(configurationGroup).getByRole("button", { name: "Open skills" })).toBeInTheDocument()
+    expect(within(configurationGroup).getByRole("button", { name: "Open prompts" })).toBeInTheDocument()
+    expect(within(configurationGroup).getByRole("button", { name: "Open MCP" })).toBeInTheDocument()
+    expect(within(configurationGroup).getByRole("button", { name: "Open plugins" })).toBeInTheDocument()
+    expect(within(configurationGroup).getByRole("button", { name: "Open tools" })).toBeInTheDocument()
+    expect(
+      within(leftActivityRail!).getByRole("button", { name: "Hide configuration shortcuts" }),
+    ).toHaveAttribute("aria-expanded", "true")
+
+    fireEvent.click(within(configurationGroup).getByRole("button", { name: "Open prompts" }))
+
+    expect(within(configurationGroup).getByRole("button", { name: "Open prompts" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
   })
 
   it("toggles debug region colors from developer mode settings", async () => {
