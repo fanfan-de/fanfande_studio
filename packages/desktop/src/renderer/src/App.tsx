@@ -366,7 +366,9 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
     handleDeleteSideChatTab,
     handleCreateSessionWorkspaceChange,
     handleOpenSideChat,
+    handleClearComposerParentMessage,
     handleDockviewActiveChange,
+    handleForkFromMessage,
     handleMovePanelIntoSurface,
     handleMovePanelOutOfSurface,
     handlePaneFocus,
@@ -377,6 +379,7 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
     handleRemoveComposerAttachment,
     handleSend,
     handlePlanModeToggle,
+    handleSessionBranchSelect,
     handleSessionModelSelectionChange,
     handleSelectSideChatTab,
     handleTurnDiffSummaryHydrate,
@@ -589,9 +592,12 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
           onCreateSessionWorkspaceChange={handleCreateSessionWorkspaceChange}
           onCreateSideChatTab={handleCreateSideChatTab}
           onDeleteSideChatTab={handleDeleteSideChatTab}
+          onBranchSelect={handleSessionBranchSelect}
+          onClearComposerParentMessage={handleClearComposerParentMessage}
           onDetachSessionPanel={handleDetachSessionPanel}
           onDockBack={handleDockBack}
           onFocusPane={handlePaneFocus}
+          onForkFromMessage={handleForkFromMessage}
           onInspectFileInSidebar={() => undefined}
           onLayoutChange={setDockviewLayout}
           onArtifactLinkOpen={handleArtifactLinkOpen}
@@ -705,8 +711,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handleCreateSessionWorkspaceChange,
     handleLeftSidebarViewChange,
     handleOpenSideChat,
+    handleClearComposerParentMessage,
     handleOpenCreateSessionTab,
     handleDockviewActiveChange,
+    handleForkFromMessage,
     handleMovePanelIntoSurface,
     handleMovePanelOutOfSurface,
     handlePaneFocus,
@@ -740,6 +748,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handleRightSidebarViewChange,
     handleSend,
     handlePlanModeToggle,
+    handleSessionBranchSelect,
     handleSessionDelete,
     handleSessionSelect,
     handleSelectSideChatTab,
@@ -1659,8 +1668,11 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onMoveSessionPanel={handleMoveSessionPanel}
                 onCreateSideChatTab={handleCreateSideChatTab}
                 onDeleteSideChatTab={handleDeleteSideChatTab}
+                onBranchSelect={handleSessionBranchSelect}
+                onClearComposerParentMessage={handleClearComposerParentMessage}
                 onOpenCreateSessionTab={handleOpenCreateSessionTab}
                 onOpenSideChat={handleOpenSideChat}
+                onForkFromMessage={handleForkFromMessage}
                 onPermissionRequestResponse={handlePermissionRequestResponse}
                 onApproveProposedPlan={handleApproveProposedPlan}
                 onToolPermissionModeChange={handleToolPermissionModeChange}

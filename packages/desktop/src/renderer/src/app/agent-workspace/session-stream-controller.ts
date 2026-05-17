@@ -26,6 +26,7 @@ import type {
   Turn,
   WorkspaceGroup,
 } from "../types"
+import { buildSessionMessageTree, type SessionMessageTree } from "../session-message-tree"
 import { mergeUserTurnPresentationState, persistUserTurns, readPersistedUserTurns } from "../user-turn-presentation"
 import { findSession } from "../workspace"
 import {
@@ -638,8 +639,15 @@ function preserveAssistantTurnIdentity(previousTurns: Turn[], nextTurns: Turn[])
   })
 }
 
-export function mergeConversationTurnsFromHistory(previousTurns: Turn[], nextTurns: Turn[]) {
-  return preserveAssistantTurnIdentity(previousTurns, mergeUserTurnPresentationState(previousTurns, nextTurns))
+export function mergeConversationTurnsFromHistory(
+  previousTurns: Turn[],
+  nextTurns: Turn[],
+  options?: { preserveUserPresentation?: boolean },
+) {
+  const turnsWithUserPresentation = options?.preserveUserPresentation === false
+    ? nextTurns
+    : mergeUserTurnPresentationState(previousTurns, nextTurns)
+  return preserveAssistantTurnIdentity(previousTurns, turnsWithUserPresentation)
 }
 
 export function conversationTurnsAreEquivalent(leftTurns: Turn[], rightTurns: Turn[]) {
@@ -809,6 +817,7 @@ interface UseSessionStreamControllerOptions {
   setCanLoadSessionHistory: StateSetter<boolean>
   setContextUsageBySession: StateSetter<Record<string, SessionContextUsage>>
   setConversations: StateSetter<Record<string, Turn[]>>
+  setMessageTreeBySession: StateSetter<Record<string, SessionMessageTree>>
   setPendingPermissionRequestsBySession: StateSetter<Record<string, PermissionRequest[]>>
   setSessionDiffBySession: StateSetter<Record<string, SessionDiffSummary>>
   setSessionDiffStateBySession: StateSetter<Record<string, SessionDiffState>>
@@ -851,6 +860,7 @@ export function useSessionStreamController({
   setCanLoadSessionHistory,
   setContextUsageBySession,
   setConversations,
+  setMessageTreeBySession,
   setPendingPermissionRequestsBySession,
   setSessionDiffBySession,
   setSessionDiffStateBySession,
@@ -1140,12 +1150,18 @@ export function useSessionStreamController({
     }
   }, [])
 
-  function replaceConversationTurnsFromHistory(sessionID: string, nextTurns: Turn[]) {
+  function replaceConversationTurnsFromHistory(
+    sessionID: string,
+    nextTurns: Turn[],
+    options?: { preserveUserPresentation?: boolean },
+  ) {
     bumpConversationVersion(sessionID)
     setConversations((prev) => {
       const currentTurns = prev[sessionID] ?? []
       const previousTurns = currentTurns.length ? currentTurns : readPersistedUserTurns(sessionID)
-      const mergedTurns = reconcileConversationTurns(mergeConversationTurnsFromHistory(previousTurns, nextTurns))
+      const mergedTurns = reconcileConversationTurns(mergeConversationTurnsFromHistory(previousTurns, nextTurns, {
+        preserveUserPresentation: options?.preserveUserPresentation,
+      }))
       if (conversationTurnsAreEquivalent(currentTurns, mergedTurns)) return prev
 
       persistUserTurns(sessionID, mergedTurns)
@@ -1425,12 +1441,34 @@ export function useSessionStreamController({
       const requestID = (historyRequestRef.current[sessionID] ?? 0) + 1
       historyRequestRef.current[sessionID] = requestID
       const baselineVersion = conversationVersionRef.current[sessionID] ?? 0
-      const messages = await agentSession.loadHistory({ backendSessionID })
+      const messages = await agentSession.loadHistory({ backendSessionID }) ?? []
+      const activeMessageID = messages[messages.length - 1]?.info.id ?? null
+      const allMessages = await Promise.resolve(agentSession.loadHistory({ backendSessionID, view: "all" }))
+        .then((nextMessages) => nextMessages ?? messages)
+        .catch((error) => {
+          console.error("[desktop] session message tree refresh failed:", error)
+          return messages
+        })
       if (historyRequestRef.current[sessionID] !== requestID) return
       if (!options.force && (conversationVersionRef.current[sessionID] ?? 0) !== baselineVersion) return
       const nextContextUsage = readLatestSessionContextUsageFromHistory(messages)
+      const nextMessageTree = buildSessionMessageTree(allMessages, activeMessageID)
       startTransition(() => {
-        replaceConversationTurnsFromHistory(sessionID, buildTurnsFromHistory(messages))
+        replaceConversationTurnsFromHistory(sessionID, buildTurnsFromHistory(messages), {
+          preserveUserPresentation: options.preserveUserPresentation,
+        })
+        setMessageTreeBySession((current) => {
+          if (!nextMessageTree) {
+            if (!(sessionID in current)) return current
+            const next = { ...current }
+            delete next[sessionID]
+            return next
+          }
+          return {
+            ...current,
+            [sessionID]: nextMessageTree,
+          }
+        })
         syncSessionContextUsageFromHistory(sessionID, nextContextUsage)
       })
     })

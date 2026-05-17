@@ -11,6 +11,7 @@ import {
   CloseIcon,
   CopyIcon,
   DeleteIcon,
+  ForkIcon,
   MinimizeIcon,
   PaperclipIcon,
   PlusIcon,
@@ -19,6 +20,7 @@ import {
   ToolsIcon,
 } from "../icons"
 import { joinClassNames, writeTextToClipboard } from "../shared-ui"
+import { getSessionMessageIDForTurn, type SessionMessageBranchOption, type SessionMessageTree } from "../session-message-tree"
 import { buildTurnsFromHistory } from "../stream"
 import {
   getAssistantStreamInsertionUserTurns,
@@ -81,8 +83,11 @@ interface ThreadViewProps {
   composerRefreshVersion?: number
   isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
+  messageTree?: SessionMessageTree | null
   showSessionBanner?: boolean
+  onBranchSelect?: (messageID: string) => void | Promise<void>
   onFileChangeSelect?: (file: string) => void
+  onForkFromMessage?: (messageID: string) => void | Promise<void>
   onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onOpenSideChat?: (anchorMessageID: string) => void | Promise<void>
@@ -740,6 +745,16 @@ function isAssistantLatestRenderableTurn(turns: Turn[], assistantIndex: number, 
     followingTurns.every(
       (turn) => turn.kind === "user" && turn.streamInsertion?.assistantTurnID === assistantTurn.id,
     )
+}
+
+function isAssistantFinalMessageInUserTurn(turns: Turn[], assistantIndex: number, assistantTurn: AssistantTurn) {
+  for (let index = assistantIndex + 1; index < turns.length; index += 1) {
+    const candidate = turns[index]
+    if (candidate.kind === "user" && candidate.streamInsertion?.assistantTurnID !== assistantTurn.id) return true
+    if (candidate.kind === "assistant") return false
+  }
+
+  return true
 }
 
 const primaryPermissionDecisions: PermissionDecision[] = ["deny", "allow"]
@@ -3282,6 +3297,39 @@ function InactiveThreadView({ threadColumnRef }: Pick<ThreadViewProps, "threadCo
   )
 }
 
+function BranchSwitcher({
+  onSelect,
+  options,
+}: {
+  onSelect?: (messageID: string) => void | Promise<void>
+  options: SessionMessageBranchOption[]
+}) {
+  if (options.length <= 1) return null
+
+  const activeOption = options.find((option) => option.isActive) ?? options[0]
+
+  return (
+    <label className="assistant-branch-switcher" title="Switch branch">
+      <span className="assistant-branch-switcher-label">Branch</span>
+      <select
+        className="assistant-branch-switcher-select"
+        disabled={!onSelect}
+        value={activeOption?.leafMessageID ?? ""}
+        onChange={(event) => {
+          const messageID = event.currentTarget.value
+          if (messageID) void onSelect?.(messageID)
+        }}
+      >
+        {options.map((option) => (
+          <option key={option.childMessageID} value={option.leafMessageID}>
+            {`${option.index + 1}/${option.total} ${option.preview}`}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 function areArraysShallowEqual<T>(left: readonly T[] | undefined, right: readonly T[] | undefined) {
   if (left === right) return true
   if (!left || !right || left.length !== right.length) return false
@@ -3334,6 +3382,7 @@ function getThreadViewPropsChangeReason(left: ThreadViewProps, right: ThreadView
   if (left.composerRefreshVersion !== right.composerRefreshVersion) return "composerRefreshVersion"
   if (left.isAgentDebugTraceEnabled !== right.isAgentDebugTraceEnabled) return "isAgentDebugTraceEnabled"
   if (left.isResolvingPermissionRequest !== right.isResolvingPermissionRequest) return "isResolvingPermissionRequest"
+  if (left.messageTree !== right.messageTree) return "messageTree"
   if (left.showSessionBanner !== right.showSessionBanner) return "showSessionBanner"
   if (!areArraysShallowEqual(left.pendingPermissionRequests, right.pendingPermissionRequests)) return "pendingPermissionRequests"
   if (left.permissionRequestActionError !== right.permissionRequestActionError) return "permissionRequestActionError"
@@ -3403,8 +3452,11 @@ function VisibleThreadView({
   composerRefreshVersion = 0,
   isAgentDebugTraceEnabled,
   isResolvingPermissionRequest,
+  messageTree = null,
   showSessionBanner = true,
+  onBranchSelect,
   onFileChangeSelect,
+  onForkFromMessage,
   onArtifactLinkOpen,
   onLocalFileLinkOpen,
   onOpenSideChat,
@@ -3968,6 +4020,9 @@ function VisibleThreadView({
               const ephemeralHint = renderedItems.length === 0 ? getAssistantEphemeralHint(turn) : null
               if (renderedItems.length === 0 && !ephemeralHint && insertedUserTurns.length === 0) return null
               const sideChatAnchorMessageID = turn.messageID ?? turn.id
+              const turnMessageID = getSessionMessageIDForTurn(turn)
+              const canExposeBranchControls = isAssistantFinalMessageInUserTurn(activeTurns, turnIndex, turn)
+              const branchOptions = canExposeBranchControls ? messageTree?.branchOptionsByParentID[turnMessageID] ?? [] : []
               const existingSideChatCount = sideChatCountsByAnchorMessageID[sideChatAnchorMessageID] ?? 0
               const lastResponseItems = getLastAssistantResponseSectionItems(traceItems, assistantTraceVisibility)
               const responseCopyText = buildAssistantResponseCopyText(lastResponseItems)
@@ -3976,10 +4031,20 @@ function VisibleThreadView({
                 !turn.isStreaming &&
                 lastResponseItems.length > 0 &&
                 Boolean(onOpenSideChat)
+              const canForkFromMessage =
+                !readOnlySideChat &&
+                !turn.isStreaming &&
+                canExposeBranchControls &&
+                Boolean(onForkFromMessage)
               const activeInlineSideChat = sideChatSession?.origin?.anchorMessageID === sideChatAnchorMessageID ? sideChatSession : null
               const hasAssistantDiffSummary = normalizeTurnDiffSummary(turn.diffSummary).length > 0
               const trailingUserDiffTurn = hasAssistantDiffSummary ? null : getAssistantTrailingUserDiffTurn(activeTurns, turnIndex, turn)
-              const shouldRenderResponseActions = Boolean(responseCopyText || canOpenSideChat)
+              const shouldRenderResponseActions = Boolean(
+                responseCopyText ||
+                canOpenSideChat ||
+                canForkFromMessage ||
+                branchOptions.length > 1,
+              )
               const isLatestAssistantMessage = isAssistantLatestRenderableTurn(activeTurns, turnIndex, turn)
 
               return (
@@ -4100,6 +4165,7 @@ function VisibleThreadView({
                         ) : null}
 
                         <div className="assistant-response-actions">
+                          <BranchSwitcher options={branchOptions} onSelect={onBranchSelect} />
                           {responseCopyText ? (
                             <button
                               className={joinClassNames(
@@ -4139,6 +4205,17 @@ function VisibleThreadView({
                               onClick={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
                             >
                               <SideChatIcon />
+                            </button>
+                          ) : null}
+                          {canForkFromMessage ? (
+                            <button
+                              className="assistant-response-action-button message-action-icon-button"
+                              type="button"
+                              aria-label="Fork from here"
+                              title="Fork from here"
+                              onClick={() => void onForkFromMessage?.(turnMessageID)}
+                            >
+                              <ForkIcon />
                             </button>
                           ) : null}
                         </div>

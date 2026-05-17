@@ -23,6 +23,7 @@ import type {
   Turn,
   WorkspaceGroup,
 } from "../types"
+import type { SessionMessageTree } from "../session-message-tree"
 import {
   getActiveDockviewPanelReference,
   normalizeDockviewLayout,
@@ -149,6 +150,7 @@ interface UseSessionLifecycleControllerOptions {
   setCanLoadSessionHistory: StateSetter<boolean>
   setComposerAttachmentsByTabKey: StateSetter<Record<string, ComposerAttachment[]>>
   setComposerDraftStateByTabKey: StateSetter<Record<string, ComposerDraftState>>
+  setComposerParentMessageIDByTabKey: StateSetter<Record<string, string>>
   setConversations: StateSetter<Record<string, Turn[]>>
   setContextUsageBySession: StateSetter<Record<string, SessionContextUsage>>
   setCreateSessionTabs: StateSetter<CreateSessionTab[]>
@@ -159,6 +161,7 @@ interface UseSessionLifecycleControllerOptions {
   setIsCreatingSessionByTabKey: StateSetter<Record<string, boolean>>
   setIsSendingByTabKey: StateSetter<Record<string, boolean>>
   setPendingPermissionRequestsBySession: StateSetter<Record<string, PermissionRequest[]>>
+  setMessageTreeBySession: StateSetter<Record<string, SessionMessageTree>>
   setSelectedDiffFileBySession: StateSetter<Record<string, string | null>>
   setSelectedFolderID: StateSetter<string | null>
   setSessionDiffBySession: StateSetter<Record<string, SessionDiffSummary>>
@@ -220,6 +223,7 @@ export function useSessionLifecycleController({
   setCanLoadSessionHistory,
   setComposerAttachmentsByTabKey,
   setComposerDraftStateByTabKey,
+  setComposerParentMessageIDByTabKey,
   setContextUsageBySession,
   setConversations,
   setCreateSessionTabs,
@@ -229,6 +233,7 @@ export function useSessionLifecycleController({
   setIsCreatingProject,
   setIsCreatingSessionByTabKey,
   setIsSendingByTabKey,
+  setMessageTreeBySession,
   setPendingPermissionRequestsBySession,
   setSelectedDiffFileBySession,
   setSelectedFolderID,
@@ -266,6 +271,14 @@ export function useSessionLifecycleController({
     })
 
     setPendingPermissionRequestsBySession((prev) => {
+      const next = { ...prev }
+      for (const sessionID of sessionIDs) {
+        delete next[sessionID]
+      }
+      return next
+    })
+
+    setMessageTreeBySession((prev) => {
       const next = { ...prev }
       for (const sessionID of sessionIDs) {
         delete next[sessionID]
@@ -332,6 +345,14 @@ export function useSessionLifecycleController({
     const tabKeys = new Set([...sessionIDs].map((sessionID) => getWorkbenchTabKey(createSessionWorkbenchTab(sessionID))))
 
     setComposerDraftStateByTabKey((prev) => {
+      const next = { ...prev }
+      for (const tabKey of tabKeys) {
+        delete next[tabKey]
+      }
+      return next
+    })
+
+    setComposerParentMessageIDByTabKey((prev) => {
       const next = { ...prev }
       for (const tabKey of tabKeys) {
         delete next[tabKey]

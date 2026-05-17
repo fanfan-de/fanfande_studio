@@ -93,6 +93,7 @@ import type {
   AgentSideChatLink,
   AgentSkillInfo,
   AgentToolPermissionModePayload,
+  AgentWorkspaceSession,
   AgentWorkspaceFileDocument,
   AgentWorkspaceFileSearchResult,
   MenuAnchor,
@@ -2455,10 +2456,29 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
 
   handleDesktopIpc(
     "desktop:agent-session-load-history",
-    async (_event, input: { backendSessionID: string }) => {
+    async (_event, input: { backendSessionID: string; view?: "active" | "all" }) => {
       const sessionID = input.backendSessionID.trim()
+      const search = input.view === "all" ? "?view=all" : ""
       const result = await requestAgentJSON<AgentSessionHistoryMessage[]>(
-        `/api/sessions/${encodeURIComponent(sessionID)}/messages`,
+        `/api/sessions/${encodeURIComponent(sessionID)}/messages${search}`,
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:update-session-active-message",
+    async (_event, input: { sessionID: string; messageID: string }) => {
+      const sessionID = input.sessionID.trim()
+      const result = await requestAgentJSON<AgentWorkspaceSession>(
+        `/api/sessions/${encodeURIComponent(sessionID)}/active-message`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            messageID: input.messageID.trim(),
+          }),
+        },
       )
 
       return result.data
@@ -2509,6 +2529,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     return {
       text: input.text,
       displayText: input.displayText,
+      parentMessageID: input.parentMessageID,
       attachments: input.attachments,
       questionAnswer: input.questionAnswer,
       reasoningEffort: input.reasoningEffort,

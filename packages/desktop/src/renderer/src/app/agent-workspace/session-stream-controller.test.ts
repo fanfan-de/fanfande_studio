@@ -388,6 +388,36 @@ describe("session stream controller helpers", () => {
     })
   })
 
+  it("can replace user presentation when switching active branch history", () => {
+    const previousTurns: Turn[] = [
+      {
+        ...createUserTurn("user-root", "root"),
+        displayText: "root",
+      },
+      createAssistantTurn("assistant-root", "item-root", "Root answer", "source-root", "assistant-root-message"),
+      {
+        ...createUserTurn("user-old-branch", "old branch text"),
+        displayText: "old branch text",
+      },
+    ]
+    const nextTurns: Turn[] = [
+      createUserTurn("user-root", "root"),
+      createAssistantTurn("assistant-root-history", "item-root-history", "Root answer", "source-root", "assistant-root-message"),
+      createUserTurn("user-new-branch", "new branch text"),
+    ]
+
+    const merged = mergeConversationTurnsFromHistory(previousTurns, nextTurns, {
+      preserveUserPresentation: false,
+    })
+
+    expect(merged[2]).toMatchObject({
+      id: "user-new-branch",
+      kind: "user",
+      text: "new branch text",
+    })
+    expect(merged[2]).not.toHaveProperty("displayText", "old branch text")
+  })
+
   it("treats equal conversation turns as equivalent for no-op history refreshes", () => {
     const turns: Turn[] = [
       createUserTurn("user-1", "hello"),

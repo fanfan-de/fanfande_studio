@@ -229,11 +229,13 @@ export function useAgentWorkspace({
   const {
     composerAttachmentsByTabKey,
     composerDraftStateByTabKey,
+    composerParentMessageIDByTabKey,
     composerRefreshVersion,
     isCreatingSessionByTabKey,
     isSendingByTabKey,
     setComposerAttachmentsByTabKey,
     setComposerDraftStateByTabKey,
+    setComposerParentMessageIDByTabKey,
     setComposerRefreshVersion,
     setIsCreatingSessionByTabKey,
     setIsSendingByTabKey,
@@ -248,6 +250,7 @@ export function useAgentWorkspace({
     conversationStore,
     historyRequestRef,
     lastFocusedSessionIDRef,
+    messageTreeBySession,
     pendingPermissionRequestsBySession,
     pendingStreamsRef,
     permissionRequestActionError,
@@ -260,6 +263,7 @@ export function useAgentWorkspace({
     setCancellingSessionIDs,
     setContextUsageBySession,
     setConversations,
+    setMessageTreeBySession,
     setPendingPermissionRequestsBySession,
     setPermissionRequestActionError,
     setPermissionRequestActionRequestID,
@@ -271,6 +275,7 @@ export function useAgentWorkspace({
     activeSideChatSessionIDByParentSessionID,
     composerAttachmentsByTabKey,
     composerDraftStateByTabKey,
+    composerParentMessageIDByTabKey,
     contextUsageBySession,
     conversationActivityBySession,
     conversations: conversationStore.getConversations(),
@@ -279,6 +284,7 @@ export function useAgentWorkspace({
     isInitialWorkspaceLoadPending,
     isSendingByTabKey,
     cancellingSessionIDs,
+    messageTreeBySession,
     pendingPermissionRequestsBySession,
     platform,
     includeWorkbenchSurfaces: false,
@@ -470,6 +476,7 @@ export function useAgentWorkspace({
     setCanLoadSessionHistory,
     setContextUsageBySession,
     setConversations,
+    setMessageTreeBySession,
     setPendingPermissionRequestsBySession,
     setSessionDiffBySession,
     setSessionDiffStateBySession,
@@ -484,6 +491,7 @@ export function useAgentWorkspace({
   })
   const {
     appendConversationTurns,
+    replaceConversationTurns,
     clearRuntimeDebugRefreshTimer,
     clearSessionDiffRefreshTimer,
     ensurePendingPermissionRequestsLoaded,
@@ -494,6 +502,7 @@ export function useAgentWorkspace({
     refreshWorkspaceForSession,
     refreshWorkspaceFromDirectory,
     reloadSessionHistoryForSession,
+    resolveBackendSessionID,
     scheduleSessionDiffRefreshForSession,
     updateAssistantConversationTurn,
   } = streamController
@@ -630,6 +639,7 @@ export function useAgentWorkspace({
     setCanLoadSessionHistory,
     setComposerAttachmentsByTabKey,
     setComposerDraftStateByTabKey,
+    setComposerParentMessageIDByTabKey,
     setContextUsageBySession,
     setConversations,
     setCreateSessionTabs,
@@ -639,6 +649,7 @@ export function useAgentWorkspace({
     setIsCreatingProject,
     setIsCreatingSessionByTabKey,
     setIsSendingByTabKey,
+    setMessageTreeBySession,
     setPendingPermissionRequestsBySession,
     setSelectedDiffFileBySession,
     setSelectedFolderID,
@@ -680,6 +691,8 @@ export function useAgentWorkspace({
     agentSessions,
     cancellingSessionIDs,
     appendConversationTurns,
+    replaceConversationTurns,
+    composerParentMessageIDByTabKey,
     composerAttachmentsByTabKey,
     composerDraftStateByTabKey,
     createSessionForWorkspace,
@@ -702,6 +715,7 @@ export function useAgentWorkspace({
     setCancellingSessionIDs,
     setComposerAttachmentsByTabKey,
     setComposerDraftStateByTabKey,
+    setComposerParentMessageIDByTabKey,
     setCreateSessionTabs,
     setIsSendingByTabKey,
     setPendingPermissionRequestsBySession,
@@ -820,6 +834,50 @@ export function useAgentWorkspace({
     handleCanvasSessionTabClose(sessionID)
   }
 
+  function handleForkFromMessage(messageID: string, input?: { tabKey?: string | null }) {
+    const targetTabKey = input?.tabKey ?? activeTabKey
+    if (!targetTabKey || !messageID.trim()) return
+
+    setComposerParentMessageIDByTabKey((current) => ({
+      ...current,
+      [targetTabKey]: messageID,
+    }))
+  }
+
+  function handleClearComposerParentMessage(input?: { tabKey?: string | null }) {
+    const targetTabKey = input?.tabKey ?? activeTabKey
+    if (!targetTabKey) return
+
+    setComposerParentMessageIDByTabKey((current) => {
+      if (!(targetTabKey in current)) return current
+      const next = { ...current }
+      delete next[targetTabKey]
+      return next
+    })
+  }
+
+  async function handleSessionBranchSelect(input: {
+    messageID: string
+    sessionID?: string | null
+  }) {
+    const sessionID = input.sessionID ?? activeSessionID
+    const messageID = input.messageID.trim()
+    if (!sessionID || !messageID || !window.desktop?.updateSessionActiveMessage) return
+
+    const backendSessionID = resolveBackendSessionID(sessionID)
+    await window.desktop.updateSessionActiveMessage({
+      sessionID: backendSessionID,
+      messageID,
+    })
+    await reloadSessionHistoryForSession(sessionID, backendSessionID, {
+      force: true,
+      mode: "silent",
+      preserveUserPresentation: false,
+      reason: "manual",
+    })
+    refreshWorkspaceForSession(sessionID)
+  }
+
   return {
     activeCreateSessionTabID,
     activePreviewState,
@@ -866,6 +924,7 @@ export function useAgentWorkspace({
     handleCloseCreateSessionTab,
     handleCreateSessionSubmit,
     handleCreateSideChatTab,
+    handleClearComposerParentMessage,
     handleDeleteSideChatTab,
     handleCreateSessionTitleChange,
     handleCreateSessionWorkspaceChange,
@@ -880,6 +939,7 @@ export function useAgentWorkspace({
     handleSplitResize,
     handlePaneTabDrop,
     handlePaneSplit,
+    handleForkFromMessage,
     handleApproveProposedPlan,
     handlePermissionRequestResponse,
     handleAskUserQuestionAnswer,
@@ -920,6 +980,7 @@ export function useAgentWorkspace({
     handleSend,
     handlePlanModeToggle,
     handleSessionDelete,
+    handleSessionBranchSelect,
     handleSessionSelect,
     handleSelectSideChatTab,
     handleSidebarAction,

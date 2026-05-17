@@ -20,6 +20,7 @@ import type {
   WorkspaceGroup,
   WorkspacePreviewState,
 } from "../types"
+import type { SessionMessageTree } from "../session-message-tree"
 import {
   createDockviewActiveStateFromLayout,
   dockviewActiveStatesAreEqual,
@@ -105,6 +106,7 @@ export interface SessionsSliceState {
 export interface ComposerSliceState {
   composerAttachmentsByTabKey: Record<string, ComposerAttachment[]>
   composerDraftStateByTabKey: Record<string, ComposerDraftState>
+  composerParentMessageIDByTabKey: Record<string, string>
   composerRefreshVersion: number
   isCreatingSessionByTabKey: Record<string, boolean>
   isSendingByTabKey: Record<string, boolean>
@@ -117,6 +119,7 @@ export interface AgentStreamSliceState {
   conversationStore: ConversationStoreApi
   contextUsageBySession: Record<string, SessionContextUsage>
   conversations: ConversationMap
+  messageTreeBySession: Record<string, SessionMessageTree>
   pendingPermissionRequestsBySession: Record<string, PermissionRequest[]>
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
@@ -167,6 +170,9 @@ export interface ComposerSliceActions {
   setComposerDraftStateByTabKey: (
     update: WorkspaceStateUpdater<Record<string, ComposerDraftState>>,
   ) => void
+  setComposerParentMessageIDByTabKey: (
+    update: WorkspaceStateUpdater<Record<string, string>>,
+  ) => void
   setComposerRefreshVersion: (update: WorkspaceStateUpdater<number>) => void
   setIsCreatingSessionByTabKey: (update: WorkspaceStateUpdater<Record<string, boolean>>) => void
   setIsSendingByTabKey: (update: WorkspaceStateUpdater<Record<string, boolean>>) => void
@@ -179,6 +185,7 @@ export interface AgentStreamSliceActions {
     update: WorkspaceStateUpdater<Record<string, SessionContextUsage>>,
   ) => void
   setConversations: (update: WorkspaceStateUpdater<ConversationMap>) => void
+  setMessageTreeBySession: (update: WorkspaceStateUpdater<Record<string, SessionMessageTree>>) => void
   setPendingPermissionRequestsBySession: (
     update: WorkspaceStateUpdater<Record<string, PermissionRequest[]>>,
   ) => void
@@ -282,6 +289,7 @@ export function createWorkspaceStore({
             ),
           }
         : {},
+      composerParentMessageIDByTabKey: {},
       composerRefreshVersion: 0,
       isCreatingSessionByTabKey: {},
       isSendingByTabKey: {},
@@ -293,6 +301,7 @@ export function createWorkspaceStore({
       conversationStore,
       contextUsageBySession: {},
       conversations: conversationStore.getConversations(),
+      messageTreeBySession: {},
       pendingPermissionRequestsBySession: {},
       permissionRequestActionError: null,
       permissionRequestActionRequestID: null,
@@ -480,6 +489,13 @@ export function createWorkspaceStore({
             composerDraftStateByTabKey: resolveStateUpdate(state.composer.composerDraftStateByTabKey, update),
           },
         })),
+      setComposerParentMessageIDByTabKey: (update) =>
+        set((state) => ({
+          composer: {
+            ...state.composer,
+            composerParentMessageIDByTabKey: resolveStateUpdate(state.composer.composerParentMessageIDByTabKey, update),
+          },
+        })),
       setComposerRefreshVersion: (update) =>
         set((state) => ({
           composer: {
@@ -543,6 +559,13 @@ export function createWorkspaceStore({
             },
           }
         }),
+      setMessageTreeBySession: (update) =>
+        set((state) => ({
+          agentStream: {
+            ...state.agentStream,
+            messageTreeBySession: resolveStateUpdate(state.agentStream.messageTreeBySession, update),
+          },
+        })),
       setPendingPermissionRequestsBySession: (update) =>
         set((state) => ({
           agentStream: {

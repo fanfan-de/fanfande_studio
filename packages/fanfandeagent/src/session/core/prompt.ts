@@ -57,6 +57,7 @@ export function state() {
 // 外部 prompt API 入参。保存时会被拆成 message 和 part 两层结构。
 export const PromptInput = z.object({
     sessionID: Identifier.schema("session"),
+    parentMessageID: Identifier.schema("message").nullable().optional(),
     model: z
         .object({
             providerID: z.string(),
@@ -1742,6 +1743,31 @@ function clearPendingWorkflowInstruction(sessionID: string) {
     }))
 }
 
+function resolveUserParentMessageID(input: PromptInput, session: Session.SessionInfo | null) {
+    if (!Object.prototype.hasOwnProperty.call(input, "parentMessageID")) {
+        return session?.activeMessageID ?? null
+    }
+
+    const parentMessageID = input.parentMessageID
+    if (parentMessageID === undefined) {
+        return session?.activeMessageID ?? null
+    }
+    if (parentMessageID === null) return null
+
+    const parentMessage = Session.DataBaseRead("messages", parentMessageID) as Message.MessageInfo | null
+    if (!parentMessage) {
+        throw new Error(`Parent message '${parentMessageID}' was not found.`)
+    }
+    if (parentMessage.sessionID !== input.sessionID) {
+        throw new Error("Parent message must belong to the same session.")
+    }
+    if (parentMessage.role === "user" && parentMessage.internal) {
+        throw new Error("Internal messages cannot be used as branch parents.")
+    }
+
+    return parentMessage.id
+}
+
 async function createUserMessage(input: PromptInput, options?: { snapshot?: string }) {
     const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null
     const workflow = Session.normalizeWorkflowState(session?.workflow)
@@ -1750,7 +1776,7 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
     const messageinfo: Message.User = {
         id: Identifier.ascending("message"),
         sessionID: input.sessionID,
-        parentMessageID: session?.activeMessageID ?? null,
+        parentMessageID: resolveUserParentMessageID(input, session),
         role: "user",
         created: Date.now(),
         agent: input.agent ?? "default",

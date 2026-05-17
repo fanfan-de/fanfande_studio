@@ -1207,8 +1207,12 @@ export interface DesktopIpcContract {
     output: { serverID: string; removed: boolean }
   }
   "desktop:agent-session-load-history": {
-    input: { backendSessionID: string }
+    input: { backendSessionID: string; view?: "active" | "all" }
     output: AgentSessionHistoryMessage[]
+  }
+  "desktop:update-session-active-message": {
+    input: { sessionID: string; messageID: string }
+    output: AgentWorkspaceSession
   }
   "desktop:agent-session-send-turn": {
     input: AgentSessionTurnRequestInput
@@ -1346,6 +1350,7 @@ export interface DesktopApiMethods {
   createProjectSession(input: DesktopIpcInput<"desktop:create-project-session">): Promise<DesktopIpcOutput<"desktop:create-project-session">>
   createSideChat(input: DesktopIpcInput<"desktop:create-side-chat">): Promise<DesktopIpcOutput<"desktop:create-side-chat">>
   updateSessionWorkflow(input: DesktopIpcInput<"desktop:update-session-workflow">): Promise<DesktopIpcOutput<"desktop:update-session-workflow">>
+  updateSessionActiveMessage(input: DesktopIpcInput<"desktop:update-session-active-message">): Promise<DesktopIpcOutput<"desktop:update-session-active-message">>
   listSideChats(input: DesktopIpcInput<"desktop:list-side-chats">): Promise<DesktopIpcOutput<"desktop:list-side-chats">>
   getSideChatLink(input: DesktopIpcInput<"desktop:get-side-chat-link">): Promise<DesktopIpcOutput<"desktop:get-side-chat-link">>
   deleteProjectWorkspace(input: DesktopIpcInput<"desktop:delete-project-workspace">): Promise<DesktopIpcOutput<"desktop:delete-project-workspace">>

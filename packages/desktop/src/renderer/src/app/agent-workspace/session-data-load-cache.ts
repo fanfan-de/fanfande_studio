@@ -5,6 +5,7 @@ export type SessionDataLoadReason = "open" | "stream" | "permission" | "manual" 
 export interface SessionDataLoadOptions {
   force?: boolean
   mode?: SessionDataLoadMode
+  preserveUserPresentation?: boolean
   reason?: SessionDataLoadReason
 }
 

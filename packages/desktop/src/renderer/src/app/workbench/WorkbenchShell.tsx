@@ -346,6 +346,9 @@ export interface WorkbenchShellProps {
   onDeleteSideChatTab: WorkbenchPaneSurfaceProps["onDeleteSideChatTab"]
   onOpenCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string) => void
   onOpenSideChat: WorkbenchPaneSurfaceProps["onOpenSideChat"]
+  onBranchSelect: WorkbenchPaneSurfaceProps["onBranchSelect"]
+  onClearComposerParentMessage: WorkbenchPaneSurfaceProps["onClearComposerParentMessage"]
+  onForkFromMessage: WorkbenchPaneSurfaceProps["onForkFromMessage"]
   onAskUserQuestionAnswer: WorkbenchPaneSurfaceProps["onAskUserQuestionAnswer"]
   onApproveProposedPlan: WorkbenchPaneSurfaceProps["onApproveProposedPlan"]
   onPermissionRequestResponse: WorkbenchPaneSurfaceProps["onPermissionRequestResponse"]
@@ -867,6 +870,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           onCreateSideChatTab={props.onCreateSideChatTab}
           onDeleteSideChatTab={props.onDeleteSideChatTab}
           onOpenSideChat={props.onOpenSideChat}
+          onBranchSelect={props.onBranchSelect}
+          onClearComposerParentMessage={props.onClearComposerParentMessage}
+          onForkFromMessage={props.onForkFromMessage}
           onAskUserQuestionAnswer={props.onAskUserQuestionAnswer}
           onApproveProposedPlan={props.onApproveProposedPlan}
           onPermissionRequestResponse={props.onPermissionRequestResponse}

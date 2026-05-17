@@ -60,6 +60,7 @@ interface SendPromptToSessionInput {
   backendSessionID?: string | null
   commentReferences?: ComposerCommentReference[]
   displayText?: string
+  parentMessageID?: string | null
   preserveComposerState?: boolean
   questionAnswer?: {
     questionID: string
@@ -82,6 +83,7 @@ interface SendPromptToSessionEnvironment {
   agentDefaultDirectory: string
   agentSessions: Record<string, string>
   appendConversationTurns: (sessionID: string, nextTurns: Turn[]) => void
+  replaceConversationTurns: (sessionID: string, nextTurns: Turn[]) => void
   getConversationTurns: (sessionID: string) => Turn[]
   pendingStreamsRef: MutableRefObject<Record<string, PendingAgentStream>>
   platform: string
@@ -114,6 +116,7 @@ export async function sendPromptToSession(
     agentDefaultDirectory,
     agentSessions,
     appendConversationTurns,
+    replaceConversationTurns,
     getConversationTurns,
     pendingStreamsRef,
     platform,
@@ -131,6 +134,7 @@ export async function sendPromptToSession(
   const {
     attachments,
     displayText,
+    parentMessageID,
     preserveComposerState,
     questionAnswer,
     reasoningEffort,
@@ -197,7 +201,18 @@ export async function sendPromptToSession(
     }))
   }
 
-  appendConversationTurns(uiSessionID, [userTurn])
+  if (parentMessageID) {
+    const currentTurns = getConversationTurns(uiSessionID)
+    const parentTurnIndex = currentTurns.findIndex((turn) =>
+      turn.kind === "assistant"
+        ? (turn.messageID ?? turn.id) === parentMessageID
+        : turn.id === parentMessageID,
+    )
+    const parentPathTurns = parentTurnIndex >= 0 ? currentTurns.slice(0, parentTurnIndex + 1) : currentTurns
+    replaceConversationTurns(uiSessionID, [...parentPathTurns, userTurn])
+  } else {
+    appendConversationTurns(uiSessionID, [userTurn])
+  }
   setWorkspaces((prev) => {
     const nextUpdatedAt = Date.now()
 
@@ -283,6 +298,7 @@ export async function sendPromptToSession(
         backendSessionID,
         ...(normalizedText ? { text: normalizedText } : {}),
         ...(userTurnDisplayText ? { displayText: userTurnDisplayText } : {}),
+        ...(parentMessageID ? { parentMessageID } : {}),
         ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
         ...(questionAnswer ? { questionAnswer } : {}),
         ...(reasoningEffort ? { reasoningEffort } : {}),
@@ -298,6 +314,7 @@ export async function sendPromptToSession(
       backendSessionID,
       ...(normalizedText ? { text: normalizedText } : {}),
       ...(userTurnDisplayText ? { displayText: userTurnDisplayText } : {}),
+      ...(parentMessageID ? { parentMessageID } : {}),
       ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
       ...(questionAnswer ? { questionAnswer } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),

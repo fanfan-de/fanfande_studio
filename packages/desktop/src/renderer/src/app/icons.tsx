@@ -20,6 +20,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  GitFork,
   Globe,
   LayoutPanelLeft,
   LoaderCircle,
@@ -79,6 +80,7 @@ export const FileTextIcon = createIcon(FileText)
 export const SortIcon = createIcon(SortAsc)
 export const NewItemIcon = createIcon(FilePlus2)
 export const PlusIcon = createIcon(Plus)
+export const ForkIcon = createIcon(GitFork)
 export const SettingsIcon = createIcon(Settings)
 export const PluginIcon = createIcon(Puzzle)
 export const LayoutSidebarLeftIcon = createIcon(LayoutPanelLeft)

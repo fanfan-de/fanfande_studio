@@ -41,6 +41,24 @@ function ComposerPlanModeNotice({ workflow }: { workflow: SessionWorkflowBadgeIn
   )
 }
 
+function ComposerBranchParentNotice({
+  messagePreview,
+  onClear,
+}: {
+  messagePreview?: string
+  onClear: () => void
+}) {
+  return (
+    <div className="composer-branch-parent-notice" role="status">
+      <span className="composer-branch-parent-label">Continuing from</span>
+      <span className="composer-branch-parent-preview">{messagePreview || "selected message"}</span>
+      <button className="composer-branch-parent-clear" type="button" onClick={onClear}>
+        Clear
+      </button>
+    </div>
+  )
+}
+
 function getUserTurnPendingSteerText(turn: UserTurn) {
   return turn.displayText?.trim() || turn.text
 }
@@ -104,6 +122,9 @@ export interface WorkbenchPaneSurfaceProps {
   onCreateSideChatTab: (anchorMessageID: string, options?: { paneID?: string | null; parentSessionID?: string | null }) => Promise<void>
   onDeleteSideChatTab: (sessionID: string) => Promise<void>
   onOpenSideChat: (anchorMessageID: string, options?: { paneID?: string | null; parentSessionID?: string | null }) => Promise<void>
+  onBranchSelect: (input: { messageID: string; sessionID?: string | null }) => Promise<void>
+  onClearComposerParentMessage: (input?: { tabKey?: string | null }) => void
+  onForkFromMessage: (messageID: string, options?: { tabKey?: string | null }) => void
   onAskUserQuestionAnswer: (input: {
     freeformText?: string
     questionID?: string
@@ -221,6 +242,9 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
   onCreateSideChatTab,
   onDeleteSideChatTab,
   onOpenSideChat,
+  onBranchSelect,
+  onClearComposerParentMessage,
+  onForkFromMessage,
   onAskUserQuestionAnswer,
   onApproveProposedPlan,
   onPermissionRequestResponse,
@@ -241,6 +265,9 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
   const threadColumnRef = useRef<HTMLDivElement | null>(null)
   const activeTurns = useConversationTurns(conversationStore, pane.sessionID)
   const activeSideChatTurns = useConversationTurns(conversationStore, pane.activeSideChatSession?.id ?? null)
+  const composerParentMessagePreview = pane.composerParentMessageID
+    ? pane.messageTree?.nodesByID[pane.composerParentMessageID]?.preview
+    : undefined
 
   useLayoutEffect(() => {
     const threadColumn = threadColumnRef.current
@@ -454,6 +481,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                   permissionRequestActionError={permissionRequestActionError}
                   permissionRequestActionRequestID={permissionRequestActionRequestID}
                   activeTurns={activeTurns}
+                  messageTree={pane.messageTree}
                   sideChatAttachments={pane.activeSideChatAttachments}
                   sideChatCountsByAnchorMessageID={pane.sideChatCountsByAnchorMessageID}
                   sideChatDraftState={pane.activeSideChatDraftState}
@@ -472,6 +500,8 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                   readScrollSnapshot={readThreadScrollSnapshot}
                   saveScrollSnapshot={saveThreadScrollSnapshot}
                   onSessionModelSelectionChange={onSessionModelSelectionChange}
+                  onBranchSelect={(messageID) => onBranchSelect({ messageID, sessionID: pane.sessionID })}
+                  onForkFromMessage={(messageID) => onForkFromMessage(messageID, { tabKey: pane.tabKey })}
                   onAskUserQuestionAnswer={(answer) =>
                     onAskUserQuestionAnswer({
                       freeformText: answer.freeformText,
@@ -650,6 +680,12 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                     }
                   />
                 </Profiler>
+                {pane.composerParentMessageID ? (
+                  <ComposerBranchParentNotice
+                    messagePreview={composerParentMessagePreview}
+                    onClear={() => onClearComposerParentMessage({ tabKey: pane.tabKey })}
+                  />
+                ) : null}
                 {composerWorkflowBadge ? <ComposerPlanModeNotice workflow={composerWorkflowBadge} /> : null}
                 <ComposerUtilityBar
                   contextWindow={composer.contextWindow}

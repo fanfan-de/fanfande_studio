@@ -14,6 +14,10 @@ export function useComposerDraftState({ store }: ComposerDraftStateOptions) {
     store,
     (state) => state.composer.composerDraftStateByTabKey as Record<string, ComposerDraftState>,
   )
+  const composerParentMessageIDByTabKey = useWorkspaceStoreSelector(
+    store,
+    (state) => state.composer.composerParentMessageIDByTabKey,
+  )
   const composerRefreshVersion = useWorkspaceStoreSelector(store, (state) => state.composer.composerRefreshVersion)
   const isCreatingSessionByTabKey = useWorkspaceStoreSelector(store, (state) => state.composer.isCreatingSessionByTabKey)
   const isSendingByTabKey = useWorkspaceStoreSelector(store, (state) => state.composer.isSendingByTabKey)
@@ -24,6 +28,10 @@ export function useComposerDraftState({ store }: ComposerDraftStateOptions) {
   const setComposerDraftStateByTabKey = useWorkspaceStoreSelector(
     store,
     (state) => state.composerActions.setComposerDraftStateByTabKey,
+  )
+  const setComposerParentMessageIDByTabKey = useWorkspaceStoreSelector(
+    store,
+    (state) => state.composerActions.setComposerParentMessageIDByTabKey,
   )
   const setComposerRefreshVersion = useWorkspaceStoreSelector(
     store,
@@ -38,11 +46,13 @@ export function useComposerDraftState({ store }: ComposerDraftStateOptions) {
   return {
     composerAttachmentsByTabKey,
     composerDraftStateByTabKey,
+    composerParentMessageIDByTabKey,
     composerRefreshVersion,
     isCreatingSessionByTabKey,
     isSendingByTabKey,
     setComposerAttachmentsByTabKey,
     setComposerDraftStateByTabKey,
+    setComposerParentMessageIDByTabKey,
     setComposerRefreshVersion,
     setIsCreatingSessionByTabKey,
     setIsSendingByTabKey,

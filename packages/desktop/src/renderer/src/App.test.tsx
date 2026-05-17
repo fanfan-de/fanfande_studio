@@ -5638,7 +5638,10 @@ describe("App", () => {
     })
 
     await waitFor(() => {
-      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledTimes(2)
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
+        backendSessionID: "session-atlas-review",
+        view: "all",
+      })
     })
 
     await screen.findByRole("button", { name: /read-file.*等待确认/i })
@@ -5883,39 +5886,41 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.agentSession!.loadHistory = vi
-      .fn()
-      .mockResolvedValueOnce([
-        {
-          info: {
-            id: "msg-user-1",
-            sessionID: "session-atlas-review",
-            role: "user",
-            created: 100,
-          },
-          parts: [{ id: "part-user-1", type: "text", text: "First session prompt" }],
+    const reviewHistory = [
+      {
+        info: {
+          id: "msg-user-1",
+          sessionID: "session-atlas-review",
+          role: "user",
+          created: 100,
         },
-      ])
-      .mockResolvedValueOnce([
-        {
-          info: {
-            id: "msg-user-2",
-            sessionID: "session-atlas-followup",
-            role: "user",
-            created: 110,
-          },
-          parts: [{ id: "part-user-2", type: "text", text: "Second session prompt" }],
+        parts: [{ id: "part-user-1", type: "text", text: "First session prompt" }],
+      },
+    ]
+    const followupHistory = [
+      {
+        info: {
+          id: "msg-user-2",
+          sessionID: "session-atlas-followup",
+          role: "user",
+          created: 110,
         },
-        {
-          info: {
-            id: "msg-assistant-2",
-            sessionID: "session-atlas-followup",
-            role: "assistant",
-            created: 111,
-          },
-          parts: [{ id: "part-text-2", type: "text", text: "Second session reply" }],
+        parts: [{ id: "part-user-2", type: "text", text: "Second session prompt" }],
+      },
+      {
+        info: {
+          id: "msg-assistant-2",
+          sessionID: "session-atlas-followup",
+          role: "assistant",
+          created: 111,
         },
-      ])
+        parts: [{ id: "part-text-2", type: "text", text: "Second session reply" }],
+      },
+    ]
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockImplementation(
+      async ({ backendSessionID }: { backendSessionID: string }) =>
+        backendSessionID === "session-atlas-followup" ? followupHistory : reviewHistory,
+    )
 
     render(<App />)
 
@@ -5929,8 +5934,12 @@ describe("App", () => {
       expect(window.desktop!.agentSession!.loadHistory).toHaveBeenNthCalledWith(1, {
         backendSessionID: "session-atlas-review",
       })
-      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenNthCalledWith(2, {
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenNthCalledWith(3, {
         backendSessionID: "session-atlas-followup",
+      })
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenNthCalledWith(4, {
+        backendSessionID: "session-atlas-followup",
+        view: "all",
       })
     })
   })
@@ -6187,20 +6196,22 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.agentSession!.loadHistory = vi
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          info: {
-            id: "msg-assistant-2",
-            sessionID: "session-atlas-review",
-            role: "assistant",
-            created: 111,
-          },
-          parts: [{ id: "part-text-2", type: "text", text: "Approval recorded and session resumed." }],
+    const resumedHistory = [
+      {
+        info: {
+          id: "msg-assistant-2",
+          sessionID: "session-atlas-review",
+          role: "assistant",
+          created: 111,
         },
-      ])
+        parts: [{ id: "part-text-2", type: "text", text: "Approval recorded and session resumed." }],
+      },
+    ]
+    let historyLoadCount = 0
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockImplementation(async () => {
+      historyLoadCount += 1
+      return historyLoadCount <= 2 ? [] : resumedHistory
+    })
     window.desktop!.agentSession!.loadPermissionRequests = vi
       .fn()
       .mockResolvedValueOnce([
@@ -6253,8 +6264,12 @@ describe("App", () => {
     expect(await screen.findByText("Approval recorded and session resumed.")).toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Tool approval request" })).not.toBeInTheDocument()
     await waitFor(() => {
-      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenNthCalledWith(2, {
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenNthCalledWith(3, {
         backendSessionID: "session-atlas-review",
+      })
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenNthCalledWith(4, {
+        backendSessionID: "session-atlas-review",
+        view: "all",
       })
       expect(window.desktop!.agentSession!.loadPermissionRequests).toHaveBeenNthCalledWith(2, {
         backendSessionID: "session-atlas-review",
@@ -6493,7 +6508,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /read-file output/i }))
     expect(await screen.findByText("README loaded")).toBeInTheDocument()
     expect(screen.queryByText("Waiting for permission approval before the tool can continue.")).not.toBeInTheDocument()
-    expect(screen.getByText("Resumed answer")).toBeInTheDocument()
+    expect(screen.getAllByText("Resumed answer").length).toBeGreaterThan(0)
     expect(getComposerSendButton()).toBeEnabled()
     expect(getComposerSendButton()).toHaveAccessibleName("Stop task")
 
@@ -6501,7 +6516,9 @@ describe("App", () => {
       finishResumeStream?.()
     })
 
-    expect(await screen.findByText("Resumed answer")).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getAllByText("Resumed answer").length).toBeGreaterThan(0)
+    })
 
     await waitFor(() => {
       expect(window.desktop!.agentSession!.loadHistory).toHaveBeenNthCalledWith(3, {

@@ -78,6 +78,15 @@ export function SessionRoutes(options: { ptyRegistry: PtyRegistry }) {
 
   app.get("/:id", (c) => ok(c, SessionUseCase.getSession(c.req.param("id"))))
 
+  app.patch("/:id/active-message", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SessionUseCase.UpdateSessionActiveMessageBody,
+      "Body must include a non-empty 'messageID'",
+    )
+    return ok(c, SessionUseCase.updateSessionActiveMessage(c.req.param("id"), payload))
+  })
+
   app.get("/:id/models", async (c) => ok(c, await SessionUseCase.listSessionModels(c.req.param("id"))))
 
   app.patch("/:id/model-selection", async (c) => {
@@ -98,7 +107,11 @@ export function SessionRoutes(options: { ptyRegistry: PtyRegistry }) {
     return ok(c, SessionUseCase.updateSessionWorkflow(c.req.param("id"), payload))
   })
 
-  app.get("/:id/messages", async (c) => ok(c, await SessionUseCase.listSessionMessages(c.req.param("id"))))
+  app.get("/:id/messages", async (c) =>
+    ok(c, await SessionUseCase.listSessionMessages(c.req.param("id"), {
+      view: c.req.query("view"),
+    })),
+  )
 
   app.get("/:id/assets/:assetID", async (c) => {
     let result: Awaited<ReturnType<typeof ImageAssets.readImageAsset>>

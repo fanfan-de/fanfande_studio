@@ -37,6 +37,7 @@ export interface AgentSessionTurnInput {
   backendSessionID: string
   text?: string
   displayText?: string
+  parentMessageID?: string | null
   attachments?: Array<Pick<ComposerAttachment, "path" | "name">>
   questionAnswer?: {
     questionID: string
@@ -80,7 +81,7 @@ export interface AgentSessionInterruptResult {
 export interface AgentSessionBridge {
   canStream: boolean
   canResumeStream: boolean
-  loadHistory(input: { backendSessionID: string }): Promise<LoadedSessionHistoryMessage[]>
+  loadHistory(input: { backendSessionID: string; view?: "active" | "all" }): Promise<LoadedSessionHistoryMessage[]>
   sendTurn(input: AgentSessionTurnInput): Promise<AgentSessionSendTurnResult>
   resumeTurn(input: { clientTurnID: string; backendSessionID: string }): Promise<AgentSessionSendTurnResult>
   cancelTurn(input: { clientTurnID: string; backendSessionID: string }): Promise<AgentSessionCancelTurnResult>

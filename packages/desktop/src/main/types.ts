@@ -341,6 +341,7 @@ export interface AgentSessionTurnRequestInput {
   backendSessionID: string
   text?: string
   displayText?: string
+  parentMessageID?: string | null
   attachments?: AgentSessionComposerAttachmentInput[]
   questionAnswer?: AgentSessionQuestionAnswerInput
   reasoningEffort?: ReasoningEffort

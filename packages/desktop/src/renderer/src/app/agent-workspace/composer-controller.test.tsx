@@ -100,6 +100,7 @@ function useComposerHarness(input?: {
     "session:session-1": createComposerDraftStateFromPlainText(input?.sessionDraftText ?? "Existing prompt"),
     "create-session:create-1": createComposerDraftStateFromPlainText("New prompt"),
   })
+  const [composerParentMessageIDByTabKey, setComposerParentMessageIDByTabKeyState] = useState<Record<string, string>>({})
   const [isSendingByTabKey, setIsSendingByTabKeyState] = useState<Record<string, boolean>>(input?.initialIsSendingByTabKey ?? {})
   const [pendingPermissionRequestsBySession, setPendingPermissionRequestsBySessionState] = useState<Record<string, PermissionRequest[]>>(
     input?.initialPendingPermissionRequestsBySession ?? {},
@@ -147,6 +148,7 @@ function useComposerHarness(input?: {
     },
     composerAttachmentsByTabKey: attachmentsByTabKey,
     composerDraftStateByTabKey: draftsByTabKey,
+    composerParentMessageIDByTabKey,
     createSessionForWorkspace,
     createSessionTabs,
     getConversationTurns: (sessionID) => turnsRef.current[sessionID] ?? [],
@@ -162,11 +164,16 @@ function useComposerHarness(input?: {
     refreshWorkspaceForSession: vi.fn(),
     refreshWorkspaceFromDirectory: vi.fn(),
     reloadSessionHistoryForSession: vi.fn(async () => undefined),
+    replaceConversationTurns: (sessionID, nextTurns) => {
+      turnsRef.current[sessionID] = nextTurns
+    },
     sessionDirectoryBySession,
     setAgentSessions: (update) => applyUpdate(setAgentSessionsState, agentSessions, update),
     setCancellingSessionIDs: (update) => applyUpdate(setCancellingSessionIDsState, cancellingSessionIDs, update),
     setComposerAttachmentsByTabKey: (update) => applyUpdate(setAttachmentsByTabKeyState, attachmentsByTabKey, update),
     setComposerDraftStateByTabKey: (update) => applyUpdate(setDraftsByTabKeyState, draftsByTabKey, update),
+    setComposerParentMessageIDByTabKey: (update) =>
+      applyUpdate(setComposerParentMessageIDByTabKeyState, composerParentMessageIDByTabKey, update),
     setCreateSessionTabs: (update) => applyUpdate(setCreateSessionTabsState, createSessionTabs, update),
     setIsSendingByTabKey: (update) => applyUpdate(setIsSendingByTabKeyState, isSendingByTabKey, update),
     setPendingPermissionRequestsBySession: (update) =>

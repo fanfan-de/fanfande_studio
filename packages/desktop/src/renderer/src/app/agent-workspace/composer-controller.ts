@@ -102,8 +102,10 @@ interface UseComposerControllerOptions {
   agentSessions: Record<string, string>
   cancellingSessionIDs: Record<string, boolean>
   appendConversationTurns: (sessionID: string, nextTurns: Turn[]) => void
+  replaceConversationTurns: (sessionID: string, nextTurns: Turn[]) => void
   composerAttachmentsByTabKey: Record<string, ComposerAttachment[]>
   composerDraftStateByTabKey: Record<string, ComposerDraftState>
+  composerParentMessageIDByTabKey: Record<string, string>
   createSessionForWorkspace: (
     workspace: WorkspaceGroup,
     options?: {
@@ -133,6 +135,7 @@ interface UseComposerControllerOptions {
   setCancellingSessionIDs: StateSetter<Record<string, boolean>>
   setComposerAttachmentsByTabKey: StateSetter<Record<string, ComposerAttachment[]>>
   setComposerDraftStateByTabKey: StateSetter<Record<string, ComposerDraftState>>
+  setComposerParentMessageIDByTabKey: StateSetter<Record<string, string>>
   setCreateSessionTabs: StateSetter<CreateSessionTab[]>
   setIsSendingByTabKey: StateSetter<Record<string, boolean>>
   setPendingPermissionRequestsBySession: StateSetter<Record<string, PermissionRequest[]>>
@@ -157,8 +160,10 @@ export function useComposerController({
   agentSessions,
   cancellingSessionIDs,
   appendConversationTurns,
+  replaceConversationTurns,
   composerAttachmentsByTabKey,
   composerDraftStateByTabKey,
+  composerParentMessageIDByTabKey,
   createSessionForWorkspace,
   createSessionTabs,
   getConversationTurns,
@@ -179,6 +184,7 @@ export function useComposerController({
   setCancellingSessionIDs,
   setComposerAttachmentsByTabKey,
   setComposerDraftStateByTabKey,
+  setComposerParentMessageIDByTabKey,
   setCreateSessionTabs,
   setIsSendingByTabKey,
   setPendingPermissionRequestsBySession,
@@ -218,6 +224,7 @@ export function useComposerController({
     commentReferences?: ComposerCommentReference[]
     displayText?: string
     preserveComposerState?: boolean
+    parentMessageID?: string | null
     questionAnswer?: {
       questionID: string
       selectedOptions?: string[]
@@ -238,6 +245,7 @@ export function useComposerController({
       agentDefaultDirectory,
       agentSessions,
       appendConversationTurns,
+      replaceConversationTurns,
       getConversationTurns,
       pendingStreamsRef,
       platform,
@@ -289,6 +297,10 @@ export function useComposerController({
     const normalizedQuestionAnswerText = normalizeQuestionAnswerText(input?.questionAnswer)
     const effectiveText = compiledSubmission.transportText || normalizedQuestionAnswerText
     const pendingPermissionRequests = targetSessionID ? pendingPermissionRequestsBySession[targetSessionID] ?? [] : []
+    const parentMessageID =
+      targetTabKey && targetSessionID && !input?.submissionMode
+        ? composerParentMessageIDByTabKey[targetTabKey] ?? undefined
+        : undefined
     const isSending = Boolean(targetTabKey && isSendingByTabKey[targetTabKey])
     const pendingStream = targetSessionID
       ? Object.values(pendingStreamsRef.current).find((stream) => stream.sessionID === targetSessionID && !stream.cancelRequested)
@@ -324,6 +336,7 @@ export function useComposerController({
         commentReferences: compiledSubmission.commentReferences,
         displayText: compiledSubmission.displayText,
         preserveComposerState: input?.preserveComposerState,
+        parentMessageID,
         questionAnswer: input?.questionAnswer,
         reasoningEffort: input?.selectedReasoningEffort,
         references: compiledSubmission.userReferences,
@@ -335,6 +348,14 @@ export function useComposerController({
         text: effectiveText,
         workspace: nextSelection.workspace,
       })
+      if (parentMessageID && targetTabKey) {
+        setComposerParentMessageIDByTabKey((current) => {
+          if (!(targetTabKey in current)) return current
+          const next = { ...current }
+          delete next[targetTabKey]
+          return next
+        })
+      }
       return
     }
 

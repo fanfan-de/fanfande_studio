@@ -334,8 +334,10 @@ try {
       invokeDesktop("desktop:get-session-runtime-debug", input) as Promise<AgentSessionRuntimeDebugSnapshot>,
     updateSessionWorkflow: (input: DesktopIpcInput<"desktop:update-session-workflow">) =>
       invokeDesktop("desktop:update-session-workflow", input) as Promise<DesktopIpcOutput<"desktop:update-session-workflow">>,
+    updateSessionActiveMessage: (input: DesktopIpcInput<"desktop:update-session-active-message">) =>
+      invokeDesktop("desktop:update-session-active-message", input) as Promise<DesktopIpcOutput<"desktop:update-session-active-message">>,
     agentSession: {
-      loadHistory: (input: { backendSessionID: string }) =>
+      loadHistory: (input: { backendSessionID: string; view?: "active" | "all" }) =>
         invokeDesktop("desktop:agent-session-load-history", input) as Promise<AgentSessionHistoryMessage[]>,
       sendTurn: (input: AgentSessionTurnRequestInput) =>
         invokeDesktop("desktop:agent-session-send-turn", input) as Promise<{

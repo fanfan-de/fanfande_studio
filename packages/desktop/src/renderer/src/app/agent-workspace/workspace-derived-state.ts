@@ -18,6 +18,7 @@ import type {
   WorkspaceGroup,
   WorkspacePreviewState,
 } from "../types"
+import type { SessionMessageTree } from "../session-message-tree"
 import { createID } from "../utils"
 import {
   getActiveDockviewPanelReferenceFromState,
@@ -351,9 +352,11 @@ export interface BuildWorkspaceDerivedStateInput {
   cancellingSessionIDs: Record<string, boolean>
   composerAttachmentsByTabKey: Record<string, ComposerAttachment[]>
   composerDraftStateByTabKey: Record<string, ComposerDraftState>
+  composerParentMessageIDByTabKey?: Record<string, string>
   conversationActivityBySession?: ConversationActivityMap
   contextUsageBySession: Record<string, SessionContextUsage>
   conversations: Record<string, Turn[]>
+  messageTreeBySession?: Record<string, SessionMessageTree>
   createSessionTabs: CreateSessionTab[]
   isCreatingSessionByTabKey: Record<string, boolean>
   isInitialWorkspaceLoadPending: boolean
@@ -620,7 +623,9 @@ export function buildWorkbenchSurfaceState(
       : null,
     activeSessionSelectedDiffFile: currentActiveSessionID ? input.selectedDiffFileBySession[currentActiveSessionID] ?? null : null,
     activeTurns: currentActiveSessionID ? input.conversations[currentActiveSessionID] ?? EMPTY_TURNS : EMPTY_TURNS,
+    messageTree: currentActiveSessionID ? input.messageTreeBySession?.[currentActiveSessionID] ?? null : null,
     composerAttachments: currentActiveTabKey ? input.composerAttachmentsByTabKey[currentActiveTabKey] ?? EMPTY_COMPOSER_ATTACHMENTS : EMPTY_COMPOSER_ATTACHMENTS,
+    composerParentMessageID: currentActiveTabKey ? input.composerParentMessageIDByTabKey?.[currentActiveTabKey] ?? null : null,
     composerProjectID:
       input.isInitialWorkspaceLoadPending && currentWorkspace && input.seedWorkspaceIDs.has(currentWorkspace.id)
         ? null
@@ -698,7 +703,9 @@ function createInactiveWorkbenchSurfaceState(surface: Pick<WorkbenchSurfaceState
     activeSessionDirectory: null,
     activeSessionSelectedDiffFile: null,
     activeTurns: EMPTY_TURNS,
+    messageTree: null,
     composerAttachments: EMPTY_COMPOSER_ATTACHMENTS,
+    composerParentMessageID: null,
     composerProjectID: null,
     contextLabel: "Session",
     contextTitle: "Session",
@@ -798,6 +805,7 @@ export function buildWorkspaceDerivedStateInputFromStore(
     cancellingSessionIDs: state.agentStream.cancellingSessionIDs,
     composerAttachmentsByTabKey: state.composer.composerAttachmentsByTabKey,
     composerDraftStateByTabKey: state.composer.composerDraftStateByTabKey,
+    composerParentMessageIDByTabKey: state.composer.composerParentMessageIDByTabKey,
     conversationActivityBySession: state.agentStream.conversationActivityBySession,
     contextUsageBySession: state.agentStream.contextUsageBySession,
     conversations: state.agentStream.conversationStore.getConversations(),
@@ -805,6 +813,7 @@ export function buildWorkspaceDerivedStateInputFromStore(
     isCreatingSessionByTabKey: state.composer.isCreatingSessionByTabKey,
     isInitialWorkspaceLoadPending: state.sessions.isInitialWorkspaceLoadPending,
     isSendingByTabKey: state.composer.isSendingByTabKey,
+    messageTreeBySession: state.agentStream.messageTreeBySession,
     pendingPermissionRequestsBySession: state.agentStream.pendingPermissionRequestsBySession,
     platform,
     previewByWorkspaceID: state.review.previewByWorkspaceID,
@@ -1049,6 +1058,7 @@ export function buildWorkspaceDerivedState({
   cancellingSessionIDs,
   composerAttachmentsByTabKey,
   composerDraftStateByTabKey,
+  composerParentMessageIDByTabKey = {},
   conversationActivityBySession,
   contextUsageBySession,
   conversations,
@@ -1056,6 +1066,7 @@ export function buildWorkspaceDerivedState({
   isCreatingSessionByTabKey,
   isInitialWorkspaceLoadPending,
   isSendingByTabKey,
+  messageTreeBySession = {},
   pendingPermissionRequestsBySession,
   platform,
   previewByWorkspaceID,
@@ -1213,6 +1224,7 @@ export function buildWorkspaceDerivedState({
     cancellingSessionIDs,
     composerAttachmentsByTabKey,
     composerDraftStateByTabKey,
+    composerParentMessageIDByTabKey,
     conversationActivityBySession,
     contextUsageBySession,
     conversations,
@@ -1220,6 +1232,7 @@ export function buildWorkspaceDerivedState({
     isCreatingSessionByTabKey,
     isInitialWorkspaceLoadPending,
     isSendingByTabKey,
+    messageTreeBySession,
     pendingPermissionRequestsBySession,
     platform,
     previewByWorkspaceID,

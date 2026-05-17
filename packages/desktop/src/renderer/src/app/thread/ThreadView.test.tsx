@@ -2,6 +2,7 @@ import { createRef, type ComponentProps } from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTraceItem, type AssistantTraceItemKind, type AssistantTurn, type SessionSummary, type Turn, type UserTurn } from "../types"
+import type { SessionMessageTree } from "../session-message-tree"
 import { ThreadView } from "./ThreadView"
 
 const session: SessionSummary = {
@@ -2046,6 +2047,117 @@ describe("ThreadView message actions", () => {
 
     fireEvent.click(sideChatButtons[0]!)
     expect(onOpenSideChat).toHaveBeenCalledWith("assistant-1")
+  })
+
+  it("only exposes branch controls on the final assistant message in a user turn", () => {
+    const onBranchSelect = vi.fn()
+    const onForkFromMessage = vi.fn()
+    const messageTree: SessionMessageTree = {
+      activeMessageID: "message-final",
+      activePathMessageIDs: ["user-1", "message-final"],
+      branchOptionsByParentID: {
+        "message-reasoning": [
+          {
+            childMessageID: "reasoning-child-1",
+            index: 0,
+            isActive: true,
+            label: "Branch 1",
+            leafMessageID: "reasoning-leaf-1",
+            parentMessageID: "message-reasoning",
+            preview: "Reasoning branch one",
+            total: 2,
+          },
+          {
+            childMessageID: "reasoning-child-2",
+            index: 1,
+            isActive: false,
+            label: "Branch 2",
+            leafMessageID: "reasoning-leaf-2",
+            parentMessageID: "message-reasoning",
+            preview: "Reasoning branch two",
+            total: 2,
+          },
+        ],
+        "message-final": [
+          {
+            childMessageID: "final-child-1",
+            index: 0,
+            isActive: false,
+            label: "Branch 1",
+            leafMessageID: "final-leaf-1",
+            parentMessageID: "message-final",
+            preview: "Final branch one",
+            total: 2,
+          },
+          {
+            childMessageID: "final-child-2",
+            index: 1,
+            isActive: true,
+            label: "Branch 2",
+            leafMessageID: "final-leaf-2",
+            parentMessageID: "message-final",
+            preview: "Final branch two",
+            total: 2,
+          },
+        ],
+      },
+      childIDsByParentID: {},
+      nodesByID: {},
+      sessionID: "session-1",
+    }
+    const reasoningTurn: AssistantTurn = {
+      ...assistantTraceTurn(
+        "assistant-reasoning",
+        [
+          {
+            id: "reasoning-1",
+            kind: "reasoning",
+            timestamp: 1,
+            label: "Reasoning",
+            text: "Checking the options.",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+      messageID: "message-reasoning",
+    }
+    const finalTurn: AssistantTurn = {
+      ...assistantTraceTurn(
+        "assistant-final",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 2,
+            label: "Assistant",
+            text: "Here is the final answer.",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+      messageID: "message-final",
+    }
+
+    const { container } = renderThread([userTurn("user-1", "Prompt"), reasoningTurn, finalTurn], {
+      messageTree,
+      onBranchSelect,
+      onForkFromMessage,
+    })
+
+    expect(container.querySelectorAll(".assistant-branch-switcher")).toHaveLength(1)
+    const forkButtons = screen.getAllByRole("button", { name: "Fork from here" })
+    expect(forkButtons).toHaveLength(1)
+
+    fireEvent.click(forkButtons[0]!)
+    expect(onForkFromMessage).toHaveBeenCalledWith("message-final")
+
+    const branchSelect = container.querySelector(".assistant-branch-switcher-select") as HTMLSelectElement | null
+    expect(branchSelect?.value).toBe("final-leaf-2")
+
+    fireEvent.change(branchSelect!, { target: { value: "final-leaf-1" } })
+    expect(onBranchSelect).toHaveBeenCalledWith("final-leaf-1")
   })
 })
 

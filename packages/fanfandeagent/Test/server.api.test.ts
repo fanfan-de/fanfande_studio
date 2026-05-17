@@ -1552,7 +1552,7 @@ describe("server api", () => {
       expect(secondResponse.status).toBe(201)
       expect(secondBody.success).toBe(true)
       expect(secondBody.data?.id).toBe(firstBody.data?.id)
-      expect((await readFile(markerPath, "utf8")).trim()).toBe(firstBody.data?.id)
+      expect((await readFile(markerPath, "utf8")).trim()).toBe(firstBody.data!.id)
       expect(markerAfter.mtimeMs).toBe(markerBefore.mtimeMs)
     } finally {
       await rm(directory, { recursive: true, force: true })

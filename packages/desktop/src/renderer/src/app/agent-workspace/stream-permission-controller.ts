@@ -33,6 +33,7 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
   )
   const conversationStore = useWorkspaceStoreSelector(store, (state) => state.agentStream.conversationStore)
   const contextUsageBySession = useWorkspaceStoreSelector(store, (state) => state.agentStream.contextUsageBySession)
+  const messageTreeBySession = useWorkspaceStoreSelector(store, (state) => state.agentStream.messageTreeBySession)
   const pendingPermissionRequestsBySession = useWorkspaceStoreSelector(
     store,
     (state) => state.agentStream.pendingPermissionRequestsBySession as Record<string, PermissionRequest[]>,
@@ -56,6 +57,7 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
     (state) => state.agentStreamActions.setContextUsageBySession,
   )
   const setConversations = useWorkspaceStoreSelector(store, (state) => state.agentStreamActions.setConversations)
+  const setMessageTreeBySession = useWorkspaceStoreSelector(store, (state) => state.agentStreamActions.setMessageTreeBySession)
   const setPendingPermissionRequestsBySession = useWorkspaceStoreSelector(
     store,
     (state) => state.agentStreamActions.setPendingPermissionRequestsBySession,
@@ -83,6 +85,7 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
     conversationStore,
     historyRequestRef,
     lastFocusedSessionIDRef,
+    messageTreeBySession,
     pendingPermissionRequestsBySession,
     pendingStreamsRef,
     permissionRequestActionError,
@@ -95,6 +98,7 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
     setCancellingSessionIDs,
     setContextUsageBySession,
     setConversations,
+    setMessageTreeBySession,
     setPendingPermissionRequestsBySession,
     setPermissionRequestActionError,
     setPermissionRequestActionRequestID,

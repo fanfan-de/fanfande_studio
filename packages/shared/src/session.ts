@@ -42,6 +42,7 @@ export const StreamSessionMessageBodySchema = z
   .object({
     text: z.string().optional(),
     displayText: z.string().optional(),
+    parentMessageID: z.string().min(1).nullable().optional(),
     attachments: z.array(SessionAttachmentBodySchema).optional(),
     questionAnswer: SessionQuestionAnswerBodySchema.optional(),
     system: z.string().optional(),

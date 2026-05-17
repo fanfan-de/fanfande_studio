@@ -49,6 +49,10 @@ export const AnswerSessionQuestionBody = StreamSessionQuestionAnswerBody
 
 export const StreamSessionMessageBody = AgentRouteSchemas.sessions.streamMessage.body
 
+export const UpdateSessionActiveMessageBody = z.object({
+  messageID: z.string().min(1),
+})
+
 export const CancelSessionBody = z.object({
   cancelQueued: z.boolean().optional(),
   reason: z.enum(["user", "client-disconnect", "shutdown", "unknown"]).optional(),
@@ -499,6 +503,27 @@ export function getSession(sessionID: string) {
   return mapSessionSummary(requireSession(sessionID))
 }
 
+export function updateSessionActiveMessage(
+  sessionID: string,
+  input: z.infer<typeof UpdateSessionActiveMessageBody>,
+) {
+  requireSession(sessionID)
+  const message = Session.DataBaseRead("messages", input.messageID) as Message.MessageInfo | null
+  if (!message || message.sessionID !== sessionID) {
+    throw new ApiError(404, "MESSAGE_NOT_FOUND", `Message '${input.messageID}' was not found in this session`)
+  }
+  if (message.role === "user" && message.internal) {
+    throw new ApiError(409, "INVALID_ACTIVE_MESSAGE", "Internal messages cannot be used as the active branch head")
+  }
+
+  const session = Session.updateActiveMessageID(sessionID, message.id, { touch: true })
+  if (!session) {
+    throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
+  }
+
+  return mapSessionSummary(session)
+}
+
 export function getSessionPty(sessionID: string, options: { ptyRegistry: PtyRegistry }) {
   requireMainSession(sessionID)
   return options.ptyRegistry.infoBySession(sessionID)
@@ -538,12 +563,17 @@ export function getSessionTask(sessionID: string, taskID: string) {
   return task
 }
 
-export async function listSessionMessages(sessionID: string) {
+export async function listSessionMessages(sessionID: string, input?: { view?: string }) {
   requireSession(sessionID)
 
-  const messages: Message.WithParts[] = []
-  for await (const item of Message.stream(sessionID)) {
-    messages.push(item)
+  const messages: Message.WithParts[] =
+    input?.view === "all"
+      ? Message.listAllWithParts(sessionID)
+      : []
+  if (input?.view !== "all") {
+    for await (const item of Message.stream(sessionID)) {
+      messages.push(item)
+    }
   }
 
   const turns = Session.listTurns(sessionID)
@@ -810,6 +840,7 @@ export async function createMessageStreamResponse(input: {
         throwIfAborted(input.signal)
         const handle = Prompt.promptExecution({
           sessionID: input.sessionID,
+          parentMessageID: input.payload.parentMessageID,
           parts,
           system: input.payload.system,
           agent: input.payload.agent,
