@@ -1326,7 +1326,7 @@ describe("App", () => {
     })
   })
 
-  it("switches Chat and Cowork placeholders without rendering code workspace surfaces", async () => {
+  it("switches the Chat placeholder without rendering code workspace surfaces", async () => {
     render(<App />)
 
     expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true")
@@ -1340,18 +1340,12 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("heading", { name: "Chat workspace" })).toBeInTheDocument()
     expect(screen.getByRole("complementary", { name: "Chat mode sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("group", { name: "Workspace mode" }).querySelectorAll("button")).toHaveLength(2)
     expect(screen.queryByLabelText("Session canvas top menu")).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Changes" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Toggle terminal panel" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: "Cowork" }))
-
-    expect(screen.getByRole("button", { name: "Cowork" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByRole("heading", { name: "Cowork workspace" })).toBeInTheDocument()
-    expect(screen.getByRole("complementary", { name: "Cowork mode sidebar" })).toBeInTheDocument()
-    expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Code" }))
 
@@ -2619,7 +2613,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
 
-    expect(screen.getByLabelText("Skills top menu")).toBeInTheDocument()
+    expect(await screen.findByLabelText("Skills top menu")).toBeInTheDocument()
     expect(screen.getByLabelText("Left sidebar top menu")).toBeInTheDocument()
     expect(document.querySelector("#app-sidebar")).toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
@@ -3447,6 +3441,7 @@ describe("App", () => {
     })
 
     expect(await screen.findByText("Committed to main.")).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Commit message" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: /Push branch/i }))
 
@@ -3637,6 +3632,218 @@ describe("App", () => {
     })
   })
 
+  it("does not poll git capabilities while the quick menu stays open", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.gitGetCapabilities = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Atlas\\client",
+      root: "C:\\Projects\\Atlas",
+      branch: "main",
+      defaultBranch: "main",
+      isGitRepo: true,
+      canCommit: {
+        enabled: true,
+      },
+      canStageAllCommit: {
+        enabled: true,
+      },
+      canPush: {
+        enabled: true,
+      },
+      canCreatePullRequest: {
+        enabled: false,
+        reason: "Switch to a feature branch before creating a pull request.",
+      },
+      canCreateBranch: {
+        enabled: true,
+      },
+    })
+
+    render(<App />)
+
+    await screen.findByRole("button", { name: "Atlas review" })
+    await screen.findByRole("button", { name: "Git" })
+
+    const gitGetCapabilities = window.desktop!.gitGetCapabilities as ReturnType<typeof vi.fn>
+    gitGetCapabilities.mockClear()
+
+    fireEvent.click(screen.getByRole("button", { name: "Git" }))
+
+    await waitFor(() => {
+      expect(gitGetCapabilities).toHaveBeenCalledTimes(1)
+    })
+
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+
+    expect(gitGetCapabilities).toHaveBeenCalledTimes(1)
+  })
+
+  it("shares a git capability request between the quick menu and branch switcher", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.gitGetCapabilities = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Atlas\\client",
+      root: "C:\\Projects\\Atlas",
+      branch: "main",
+      defaultBranch: "main",
+      isGitRepo: true,
+      canCommit: {
+        enabled: true,
+      },
+      canStageAllCommit: {
+        enabled: true,
+      },
+      canPush: {
+        enabled: true,
+      },
+      canCreatePullRequest: {
+        enabled: false,
+        reason: "Switch to a feature branch before creating a pull request.",
+      },
+      canCreateBranch: {
+        enabled: true,
+      },
+    })
+
+    render(<App />)
+
+    await screen.findByRole("button", { name: "Git" })
+    const utilityBar = document.querySelector(".composer-utility-bar") as HTMLElement
+    expect(utilityBar).not.toBeNull()
+    expect(within(utilityBar).getByRole("button", { name: "main" })).toBeInTheDocument()
+    expect(window.desktop!.gitGetCapabilities).toHaveBeenCalledTimes(1)
+  })
+
+  it("checks pull request remote state only when the pull request action runs", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.gitGetCapabilities = vi.fn().mockImplementation(async (input: { includePullRequestRemoteCheck?: boolean }) => ({
+      directory: "C:\\Projects\\Atlas\\client",
+      root: "C:\\Projects\\Atlas",
+      branch: "feature/git-menu",
+      defaultBranch: "main",
+      isGitRepo: true,
+      canCommit: {
+        enabled: true,
+      },
+      canStageAllCommit: {
+        enabled: true,
+      },
+      canPush: {
+        enabled: true,
+      },
+      canCreatePullRequest: input.includePullRequestRemoteCheck
+        ? {
+            enabled: true,
+          }
+        : {
+            enabled: true,
+          },
+      canCreateBranch: {
+        enabled: true,
+      },
+    }))
+
+    render(<App />)
+
+    await screen.findByRole("button", { name: "Git" })
+    const gitGetCapabilities = window.desktop!.gitGetCapabilities as ReturnType<typeof vi.fn>
+    expect(gitGetCapabilities).not.toHaveBeenCalledWith(expect.objectContaining({
+      includePullRequestRemoteCheck: true,
+    }))
+
+    fireEvent.click(screen.getByRole("button", { name: "Git" }))
+    const gitQuickMenu = await screen.findByRole("dialog", { name: "Git quick menu" })
+    fireEvent.click(within(gitQuickMenu).getByRole("button", { name: /Create pull request/i }))
+
+    await waitFor(() => {
+      expect(gitGetCapabilities).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+        directory: "C:\\Projects\\Atlas\\client",
+        includePullRequestRemoteCheck: true,
+      })
+    })
+    await waitFor(() => {
+      expect(window.desktop!.gitCreatePullRequest).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+        directory: "C:\\Projects\\Atlas\\client",
+      })
+    })
+  })
+
   it("keeps the existing workspace while git capabilities load for a stable project id", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
@@ -3784,6 +3991,69 @@ describe("App", () => {
     expect(openFolderWorkspace).not.toHaveBeenCalled()
     expect(getSessionDiff).not.toHaveBeenCalled()
     expect(gitListBranches).not.toHaveBeenCalled()
+  })
+
+  it("keeps the session scroll position when workspace refresh state rerenders the active pane", async () => {
+    const workspace: LoadedFolderWorkspace = {
+      id: "C:\\Projects\\Atlas\\client",
+      directory: "C:\\Projects\\Atlas\\client",
+      name: "client",
+      created: 1,
+      updated: 20,
+      project: {
+        id: "prj_atlas",
+        name: "Atlas",
+        worktree: "C:\\Projects\\Atlas",
+      },
+      sessions: [
+        {
+          id: "session-atlas-review",
+          projectID: "prj_atlas",
+          directory: "C:\\Projects\\Atlas\\client",
+          title: "Atlas review",
+          created: 18,
+          updated: 20,
+        },
+      ],
+    }
+    let workspaceFileChangeListener: ((event: { directory: string; paths: string[] }) => void) | null = null
+    window.desktop!.onWorkspaceFileChange = vi.fn((listener) => {
+      workspaceFileChangeListener = listener
+      return vi.fn(() => {
+        workspaceFileChangeListener = null
+      })
+    })
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([workspace])
+
+    render(<App />)
+
+    await screen.findByRole("button", { name: "Atlas review" })
+    const threadColumn = document.querySelector(".thread-column") as HTMLElement | null
+    expect(threadColumn).not.toBeNull()
+
+    Object.defineProperty(threadColumn, "clientHeight", {
+      configurable: true,
+      value: 400,
+    })
+    Object.defineProperty(threadColumn, "scrollHeight", {
+      configurable: true,
+      value: 1600,
+    })
+    threadColumn!.scrollTop = 520
+    fireEvent.wheel(threadColumn!)
+    fireEvent.scroll(threadColumn!)
+
+    threadColumn!.scrollTop = 0
+    act(() => {
+      workspaceFileChangeListener?.({
+        directory: workspace.directory,
+        paths: ["C:\\Projects\\Atlas\\client\\src\\index.ts"],
+      })
+    })
+
+    await waitFor(() => {
+      expect(threadColumn!.scrollTop).toBe(520)
+    })
   })
 
   it("reopens the workspace when watcher events indicate repository structure changed", async () => {

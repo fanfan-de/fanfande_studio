@@ -153,4 +153,47 @@ describe("workspace watch manager", () => {
 
     manager.dispose()
   })
+
+  it("ignores noisy generated workspace directories", async () => {
+    vi.useFakeTimers()
+
+    const workspaceDirectory = "C:\\Projects\\Atlas\\client"
+    const watchCalls: WatchCall[] = []
+    const watchFactory = vi.fn((target: string, _options: fs.WatchOptions, listener: fs.WatchListener<string>) => {
+      const close = vi.fn()
+      watchCalls.push({
+        target,
+        listener,
+        close,
+      })
+      return {
+        close,
+      } as unknown as fs.FSWatcher
+    })
+
+    const manager = new WorkspaceWatchManager(
+      watchFactory,
+      (target) => target === workspaceDirectory,
+      { platform: "win32" },
+    )
+    const sender = createSender(11)
+
+    manager.updateDirectories(sender, [workspaceDirectory])
+    watchCalls[0]?.listener("change", "node_modules\\pkg\\index.js")
+    watchCalls[0]?.listener("change", "dist\\bundle.js")
+    watchCalls[0]?.listener("change", "src\\App.tsx")
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(sender.sent).toEqual([
+      {
+        channel: "desktop:workspace-file-change",
+        payload: {
+          directory: workspaceDirectory,
+          paths: ["C:\\Projects\\Atlas\\client\\src\\App.tsx"],
+        },
+      },
+    ])
+
+    manager.dispose()
+  })
 })

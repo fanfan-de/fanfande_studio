@@ -48,6 +48,7 @@ import type {
 import { ensureSessionDataLoad } from "./session-data-load-cache"
 import { useAgentSessionStreamEffects } from "./session-stream-hooks"
 import { refreshWorkspaceFromDirectory as refreshWorkspaceFromDirectoryService } from "./workspace-loading-hooks"
+import type { ConversationStoreApi } from "./conversation-store"
 import type { WorkspaceStateUpdater } from "./workspace-store"
 
 const STREAM_DELTA_FLUSH_INTERVAL_MS = 32
@@ -85,6 +86,37 @@ function readRuntimeStreamPayload(value: unknown) {
 function readRuntimeStreamType(streamEvent: { event: string; data: unknown }) {
   if (streamEvent.event !== "runtime") return undefined
   return readString(readRuntimeStreamEvent(streamEvent.data)?.type)
+}
+
+function updateConversationMapWithDeltaGroups(
+  conversations: Record<string, Turn[]>,
+  groupedUpdates: Map<string, Map<string, Array<AgentSessionStreamIPCEvent | AgentStreamIPCEvent>>>,
+) {
+  let nextConversations = conversations
+
+  for (const [sessionID, updatesByTurnID] of groupedUpdates) {
+    const currentTurns = nextConversations[sessionID] ?? []
+    let didUpdateSession = false
+    const nextTurns = currentTurns.map((turn) => {
+      if (turn.kind !== "assistant") return turn
+      const streamEvents = updatesByTurnID.get(turn.id)
+      if (!streamEvents?.length) return turn
+
+      didUpdateSession = true
+      return streamEvents.reduce(
+        (nextTurn, streamEvent) => applyAgentStreamEventToTurn(nextTurn, streamEvent),
+        turn,
+      )
+    })
+
+    if (!didUpdateSession) continue
+    nextConversations = {
+      ...nextConversations,
+      [sessionID]: reconcileConversationTurns(nextTurns),
+    }
+  }
+
+  return nextConversations
 }
 
 export function shouldRefreshRuntimeDebugForStreamEvent(streamEvent: { event: string; data: unknown }) {
@@ -755,7 +787,7 @@ interface UseSessionStreamControllerOptions {
   canLoadSessionHistory: boolean
   contextUsageBySession: Record<string, SessionContextUsage>
   conversationVersionRef: MutableRefObject<Record<string, number>>
-  conversations: Record<string, Turn[]>
+  conversationStore: ConversationStoreApi
   historyRequestRef: MutableRefObject<Record<string, number>>
   isRuntimeDebugEnabled: boolean
   openCanvasSessionIDs: string[]
@@ -797,7 +829,7 @@ export function useSessionStreamController({
   agentSessions,
   canLoadSessionHistory,
   conversationVersionRef,
-  conversations,
+  conversationStore,
   historyRequestRef,
   isRuntimeDebugEnabled,
   openCanvasSessionIDs,
@@ -832,7 +864,7 @@ export function useSessionStreamController({
   workspaces,
 }: UseSessionStreamControllerOptions) {
   const pendingDeltaUpdatesRef = useRef<PendingStreamDeltaUpdate[]>([])
-  const pendingDeltaFlushTimerRef = useRef<number | null>(null)
+  const pendingDeltaFlushHandleRef = useRef<{ id: number; kind: "frame" | "timer" } | null>(null)
 
   function updateSessionContextUsage(sessionID: string, usage: SessionContextUsage | null) {
     setContextUsageBySession((prev) => {
@@ -938,7 +970,7 @@ export function useSessionStreamController({
 
   function resolveUISessionID(backendSessionID: string) {
     const directMatch = agentSessions[backendSessionID]
-    if (directMatch === backendSessionID || conversations[backendSessionID]) {
+    if (directMatch === backendSessionID || conversationStore.hasSession(backendSessionID)) {
       return backendSessionID
     }
 
@@ -948,7 +980,7 @@ export function useSessionStreamController({
       }
     }
 
-    return conversations[backendSessionID] ? backendSessionID : null
+    return conversationStore.hasSession(backendSessionID) ? backendSessionID : null
   }
 
   function resolveBackendSessionID(sessionID: string) {
@@ -957,7 +989,7 @@ export function useSessionStreamController({
 
   function findAssistantTurnIDByMessageID(sessionID: string, messageID: string | undefined) {
     if (!messageID) return undefined
-    const turn = conversations[sessionID]?.find(
+    const turn = conversationStore.getSessionTurns(sessionID).find(
       (candidate): candidate is AssistantTurn => candidate.kind === "assistant" && candidate.messageID === messageID,
     )
     return turn?.id
@@ -1021,9 +1053,14 @@ export function useSessionStreamController({
   }
 
   function clearPendingDeltaFlushTimer() {
-    if (pendingDeltaFlushTimerRef.current === null) return
-    window.clearTimeout(pendingDeltaFlushTimerRef.current)
-    pendingDeltaFlushTimerRef.current = null
+    const handle = pendingDeltaFlushHandleRef.current
+    if (!handle) return
+    if (handle.kind === "frame") {
+      window.cancelAnimationFrame(handle.id)
+    } else {
+      window.clearTimeout(handle.id)
+    }
+    pendingDeltaFlushHandleRef.current = null
   }
 
   function flushPendingDeltaUpdates() {
@@ -1036,47 +1073,46 @@ export function useSessionStreamController({
     pendingDeltaUpdatesRef.current = []
     clearPendingDeltaFlushTimer()
 
-    const groupedUpdates: Array<{
-      events: PendingStreamDeltaUpdate["event"][]
-      target: StreamEventUpdateTarget
-    }> = []
+    const groupedUpdates = new Map<string, Map<string, PendingStreamDeltaUpdate["event"][]>>()
 
     for (const update of pendingUpdates) {
-      const previousGroup = groupedUpdates[groupedUpdates.length - 1]
-      if (
-        previousGroup &&
-        previousGroup.target.sessionID === update.target.sessionID &&
-        previousGroup.target.assistantTurnID === update.target.assistantTurnID
-      ) {
-        previousGroup.events.push(update.event)
-        continue
-      }
+      const updatesByTurnID = groupedUpdates.get(update.target.sessionID) ?? new Map<string, PendingStreamDeltaUpdate["event"][]>()
+      const events = updatesByTurnID.get(update.target.assistantTurnID) ?? []
+      events.push(update.event)
+      updatesByTurnID.set(update.target.assistantTurnID, events)
+      groupedUpdates.set(update.target.sessionID, updatesByTurnID)
+    }
 
-      groupedUpdates.push({
-        target: update.target,
-        events: [update.event],
-      })
+    for (const sessionID of groupedUpdates.keys()) {
+      bumpConversationVersion(sessionID)
     }
 
     startTransition(() => {
-      for (const group of groupedUpdates) {
-        updateAssistantConversationTurn(group.target.sessionID, group.target.assistantTurnID, (turn) =>
-          group.events.reduce(
-            (nextTurn, streamEvent) => applyAgentStreamEventToTurn(nextTurn, streamEvent),
-            turn,
-          ),
-        )
-      }
+      setConversations((prev) => updateConversationMapWithDeltaGroups(prev, groupedUpdates))
     })
   }
 
   function schedulePendingDeltaFlush() {
-    if (pendingDeltaFlushTimerRef.current !== null) return
+    if (pendingDeltaFlushHandleRef.current !== null) return
 
-    pendingDeltaFlushTimerRef.current = window.setTimeout(() => {
-      pendingDeltaFlushTimerRef.current = null
-      flushPendingDeltaUpdates()
-    }, STREAM_DELTA_FLUSH_INTERVAL_MS)
+    if (window.requestAnimationFrame) {
+      pendingDeltaFlushHandleRef.current = {
+        id: window.requestAnimationFrame(() => {
+          pendingDeltaFlushHandleRef.current = null
+          flushPendingDeltaUpdates()
+        }),
+        kind: "frame",
+      }
+      return
+    }
+
+    pendingDeltaFlushHandleRef.current = {
+      id: window.setTimeout(() => {
+        pendingDeltaFlushHandleRef.current = null
+        flushPendingDeltaUpdates()
+      }, STREAM_DELTA_FLUSH_INTERVAL_MS),
+      kind: "timer",
+    }
   }
 
   function applyStreamEventToAssistantTurn(

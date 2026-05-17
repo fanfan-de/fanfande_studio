@@ -144,8 +144,8 @@ describe("Sidebar", () => {
 
     expect(screen.getByRole("group", { name: "Workspace mode" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-pressed", "false")
-    expect(screen.getByRole("button", { name: "Cowork" })).toHaveAttribute("aria-pressed", "false")
     expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("group", { name: "Workspace mode" }).querySelectorAll("button")).toHaveLength(2)
   })
 
   it("requests workspace mode changes from the segmented selector", () => {
@@ -153,10 +153,10 @@ describe("Sidebar", () => {
     renderSidebar({ onWorkspaceModeChange })
 
     fireEvent.click(screen.getByRole("button", { name: "Chat" }))
-    fireEvent.click(screen.getByRole("button", { name: "Cowork" }))
+    fireEvent.click(screen.getByRole("button", { name: "Code" }))
 
     expect(onWorkspaceModeChange).toHaveBeenNthCalledWith(1, "chat")
-    expect(onWorkspaceModeChange).toHaveBeenNthCalledWith(2, "cowork")
+    expect(onWorkspaceModeChange).toHaveBeenNthCalledWith(2, "code")
   })
 
   it("keeps the code workspace tree in Code mode", () => {
@@ -166,17 +166,10 @@ describe("Sidebar", () => {
     expect(screen.getByRole("button", { name: "Unread" })).toBeInTheDocument()
   })
 
-  it("replaces the code workspace tree with Chat and Cowork placeholders", () => {
-    const { unmount } = renderSidebar({ workspaceMode: "chat" })
+  it("replaces the code workspace tree with the Chat placeholder", () => {
+    renderSidebar({ workspaceMode: "chat" })
 
     expect(screen.getByText("Chat projects")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Unread" })).not.toBeInTheDocument()
-
-    unmount()
-    renderSidebar({ workspaceMode: "cowork" })
-
-    expect(screen.getByText("Cowork projects")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Unread" })).not.toBeInTheDocument()
   })

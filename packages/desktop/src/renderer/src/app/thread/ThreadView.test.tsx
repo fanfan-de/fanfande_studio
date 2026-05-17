@@ -2566,6 +2566,41 @@ describe("ThreadView auto-scroll", () => {
     expect(threadColumn.scrollTop).toBe(520)
   })
 
+  it("does not treat mouse hover movement as scroll intent when recovering a top reset", () => {
+    const snapshots: Record<string, ThreadScrollSnapshot> = {}
+    const readScrollSnapshot = vi.fn((key: string) => snapshots[key] ?? null)
+    const saveScrollSnapshot = vi.fn((key: string, snapshot: ThreadScrollSnapshot) => {
+      snapshots[key] = snapshot
+    })
+    const { threadColumn } = renderThread(
+      [assistantTurn("assistant-1", "Working")],
+      {
+        scrollStateKey: "session:session-1",
+        readScrollSnapshot,
+        saveScrollSnapshot,
+      },
+    )
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 1600,
+      scrollTop: 520,
+    })
+    fireEvent.pointerDown(threadColumn)
+    fireEvent.scroll(threadColumn)
+
+    expect(snapshots["session:session-1"]?.scrollTop).toBe(520)
+
+    fireEvent.pointerMove(threadColumn, {
+      buttons: 0,
+      pointerType: "mouse",
+    })
+    threadColumn.scrollTop = 0
+    fireEvent.scroll(threadColumn)
+
+    expect(threadColumn.scrollTop).toBe(520)
+    expect(snapshots["session:session-1"]?.scrollTop).toBe(520)
+  })
+
   it("does not overwrite a previous session position with a delayed save after switching tabs", async () => {
     const snapshots: Record<string, ThreadScrollSnapshot> = {}
     const readScrollSnapshot = vi.fn((key: string) => snapshots[key] ?? null)

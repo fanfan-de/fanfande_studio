@@ -3,7 +3,7 @@ import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitS
 import { ChevronDownIcon } from "../icons"
 import { commitGit, createGitBranch, createGitPullRequest, getGitCapabilities, hasGitQuickMenuClient, pushGit, type GitCapabilitiesState } from "./client"
 
-const GIT_QUICK_MENU_REFRESH_INTERVAL_MS = 2000
+const GIT_STATE_CHANGED_REFRESH_DEBOUNCE_MS = 300
 
 export function GitQuickMenuButton({ projectID, directory }: { projectID: string | null; directory: string | null }) {
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -12,6 +12,7 @@ export function GitQuickMenuButton({ projectID, directory }: { projectID: string
   const branchInputRef = useRef<HTMLInputElement | null>(null)
   const loadRequestRef = useRef(0)
   const visibleLoadRequestRef = useRef(0)
+  const gitStateRefreshTimerRef = useRef<number | null>(null)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [activeForm, setActiveForm] = useState<"commit" | "branch" | null>(null)
   const [commitMessage, setCommitMessage] = useState("")
@@ -31,13 +32,17 @@ export function GitQuickMenuButton({ projectID, directory }: { projectID: string
 
   const handleGitStateChanged = useEffectEvent((detail: { directory: string }) => {
     if (!isMatchingGitStateChangedDetail(detail, directory)) return
-    void refreshCapabilities()
+    scheduleGitStateRefresh()
   })
 
   async function refreshCapabilities({
+    bypassCache = false,
+    includePullRequestRemoteCheck = false,
     reportError = false,
     silent = false,
   }: {
+    bypassCache?: boolean
+    includePullRequestRemoteCheck?: boolean
     reportError?: boolean
     silent?: boolean
   } = {}) {
@@ -59,6 +64,9 @@ export function GitQuickMenuButton({ projectID, directory }: { projectID: string
       const nextCapabilities = await getGitCapabilities({
         projectID,
         directory,
+        ...(includePullRequestRemoteCheck ? { includePullRequestRemoteCheck: true } : {}),
+      }, {
+        bypassCache,
       })
 
       if (loadRequestRef.current !== requestID) {
@@ -89,9 +97,24 @@ export function GitQuickMenuButton({ projectID, directory }: { projectID: string
 
   const refreshCapabilitiesSilently = useEffectEvent((reportError = false) => {
     void refreshCapabilities({
+      bypassCache: true,
       reportError,
       silent: true,
     })
+  })
+
+  const scheduleGitStateRefresh = useEffectEvent(() => {
+    if (gitStateRefreshTimerRef.current !== null) {
+      window.clearTimeout(gitStateRefreshTimerRef.current)
+    }
+
+    gitStateRefreshTimerRef.current = window.setTimeout(() => {
+      gitStateRefreshTimerRef.current = null
+      void refreshCapabilities({
+        bypassCache: true,
+        silent: true,
+      })
+    }, GIT_STATE_CHANGED_REFRESH_DEBOUNCE_MS)
   })
 
   useEffect(() => {
@@ -108,6 +131,12 @@ export function GitQuickMenuButton({ projectID, directory }: { projectID: string
 
   useEffect(() => subscribeToGitStateChanged(handleGitStateChanged), [handleGitStateChanged])
 
+  useEffect(() => () => {
+    if (gitStateRefreshTimerRef.current !== null) {
+      window.clearTimeout(gitStateRefreshTimerRef.current)
+    }
+  }, [])
+
   useEffect(() => {
     if (!isMenuOpen) return
 
@@ -117,7 +146,6 @@ export function GitQuickMenuButton({ projectID, directory }: { projectID: string
       refreshCapabilitiesSilently()
     }
 
-    const intervalID = window.setInterval(refreshVisibleCapabilities, GIT_QUICK_MENU_REFRESH_INTERVAL_MS)
     const handleWindowFocus = () => {
       refreshVisibleCapabilities()
     }
@@ -130,7 +158,6 @@ export function GitQuickMenuButton({ projectID, directory }: { projectID: string
     document.addEventListener("visibilitychange", handleVisibilityChange)
 
     return () => {
-      window.clearInterval(intervalID)
       window.removeEventListener("focus", handleWindowFocus)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
@@ -210,7 +237,6 @@ export function GitQuickMenuButton({ projectID, directory }: { projectID: string
         ...(stageAll ? { stageAll: true } : {}),
       })
       setCommitMessage("")
-      setActiveForm(null)
       setStatus({
         tone: "success",
         text: result.summary,
@@ -338,10 +364,27 @@ export function GitQuickMenuButton({ projectID, directory }: { projectID: string
     setActiveForm(null)
     setStatus({
       tone: "neutral",
-      text: "Creating pull request...",
+      text: "Checking pull request status...",
     })
 
     try {
+      const nextCapabilities = await refreshCapabilities({
+        bypassCache: true,
+        includePullRequestRemoteCheck: true,
+        silent: true,
+      })
+      if (!nextCapabilities?.canCreatePullRequest.enabled) {
+        setStatus({
+          tone: "error",
+          text: nextCapabilities?.canCreatePullRequest.reason ?? "A pull request cannot be created right now.",
+        })
+        return
+      }
+
+      setStatus({
+        tone: "neutral",
+        text: "Creating pull request...",
+      })
       const result = await createGitPullRequest({
         projectID,
         directory,

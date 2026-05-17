@@ -6,7 +6,6 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CodeModeIcon,
-  CoworkModeIcon,
   DeleteIcon,
   FileTextIcon,
   FolderIcon,
@@ -36,7 +35,6 @@ import { WorkspaceModeSidebarPlaceholder } from "../workspace-mode/WorkspaceMode
 
 const workspaceModeOptions = [
   { mode: "chat" as const, label: "Chat", Icon: SideChatIcon },
-  { mode: "cowork" as const, label: "Cowork", Icon: CoworkModeIcon },
   { mode: "code" as const, label: "Code", Icon: CodeModeIcon },
 ]
 

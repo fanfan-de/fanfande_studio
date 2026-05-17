@@ -7,6 +7,18 @@ import { DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL } from "../shared/desktop-i
 export const WORKSPACE_FILE_CHANGE_EVENT_CHANNEL = DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL
 
 const WORKSPACE_WATCH_DEBOUNCE_MS = 300
+const IGNORED_WORKSPACE_WATCH_DIRECTORIES = new Set([
+  ".cache",
+  ".next",
+  ".turbo",
+  ".vite",
+  "build",
+  "coverage",
+  "dist",
+  "node_modules",
+  "out",
+  "target",
+])
 
 export type { WorkspaceFileChangeIPCEvent }
 
@@ -52,6 +64,15 @@ function isGitPath(directory: string, changedPath: string, pathModule: PathModul
   const relativePath = pathModule.relative(directory, changedPath)
   if (!relativePath) return false
   return relativePath === ".git" || relativePath.startsWith(`.git${pathModule.sep}`)
+}
+
+function isIgnoredWorkspacePath(directory: string, changedPath: string, pathModule: PathModule) {
+  if (isGitPath(directory, changedPath, pathModule)) return false
+  const relativePath = pathModule.relative(directory, changedPath)
+  if (!relativePath || relativePath.startsWith("..") || pathModule.isAbsolute(relativePath)) return false
+  return relativePath
+    .split(/[\\/]+/)
+    .some((segment) => IGNORED_WORKSPACE_WATCH_DIRECTORIES.has(segment))
 }
 
 function resolveChangedPath(baseDirectory: string, filename: string | Buffer | null | undefined, pathModule: PathModule) {
@@ -203,6 +224,10 @@ export class WorkspaceWatchManager {
 
   private recordChange(state: DirectoryWatchState, baseDirectory: string, filename: string | Buffer | null | undefined) {
     const changedPath = resolveChangedPath(baseDirectory, filename, this.pathModule)
+    if (baseDirectory === state.directory && isIgnoredWorkspacePath(state.directory, changedPath, this.pathModule)) {
+      return
+    }
+
     state.pendingPaths.add(changedPath)
 
     if (baseDirectory === state.directory ? isGitPath(state.directory, changedPath, this.pathModule) : true) {

@@ -1,29 +1,17 @@
 import { useEffect, useEffectEvent, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitStateChanged } from "./git-events"
+import {
+  checkoutGitBranch,
+  createGitBranch,
+  getGitCapabilities,
+  hasGitQuickMenuClient,
+  listGitBranches,
+  type GitBranchSummary,
+  type GitCapabilitiesState,
+} from "./git/client"
 import { ChevronDownIcon } from "./icons"
 
-type GitCapabilityState = {
-  enabled: boolean
-  reason?: string
-}
-
-type GitCapabilitiesState = {
-  directory: string
-  root: string | null
-  branch: string | null
-  defaultBranch: string | null
-  isGitRepo: boolean
-  canCommit: GitCapabilityState
-  canPush: GitCapabilityState
-  canCreatePullRequest: GitCapabilityState
-  canCreateBranch: GitCapabilityState
-}
-
-type GitBranchSummary = {
-  name: string
-  kind: "local" | "remote"
-  current: boolean
-}
+const GIT_STATE_CHANGED_REFRESH_DEBOUNCE_MS = 300
 
 interface GitBranchSwitcherProps {
   projectID: string | null
@@ -36,6 +24,8 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
   const branchInputRef = useRef<HTMLInputElement | null>(null)
   const capabilitiesRequestRef = useRef(0)
   const branchesRequestRef = useRef(0)
+  const gitStateRefreshTimerRef = useRef<number | null>(null)
+  const scheduledBranchesRefreshRef = useRef(false)
   const [capabilities, setCapabilities] = useState<GitCapabilitiesState | null>(null)
   const [branches, setBranches] = useState<GitBranchSummary[]>([])
   const [branchName, setBranchName] = useState("")
@@ -47,16 +37,13 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
   const [pendingAction, setPendingAction] = useState<"checkout" | "create" | null>(null)
   const [pendingBranchName, setPendingBranchName] = useState<string | null>(null)
 
-  const gitCheckoutBranch = window.desktop?.gitCheckoutBranch
-  const gitCreateBranch = window.desktop?.gitCreateBranch
-  const gitGetCapabilities = window.desktop?.gitGetCapabilities
-  const gitListBranches = window.desktop?.gitListBranches
+  const hasGitClient = hasGitQuickMenuClient()
   const hasCurrentGitCapabilities =
     capabilities?.isGitRepo === true &&
     isMatchingGitStateChangedDetail({ directory: capabilities.directory }, directory)
 
-  async function refreshCapabilities(reportError = false) {
-    if (!projectID || !directory || !gitGetCapabilities) {
+  async function refreshCapabilities(reportError = false, options?: { bypassCache?: boolean }) {
+    if (!projectID || !directory || !hasGitClient) {
       setCapabilities(null)
       setBranches([])
       setIsLoadingCapabilities(false)
@@ -68,9 +55,11 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
     setIsLoadingCapabilities(true)
 
     try {
-      const nextCapabilities = await gitGetCapabilities({
+      const nextCapabilities = await getGitCapabilities({
         projectID,
         directory,
+      }, {
+        bypassCache: options?.bypassCache === true,
       })
 
       if (capabilitiesRequestRef.current !== requestID) {
@@ -105,7 +94,7 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
   }
 
   async function refreshBranches(reportError = false) {
-    if (!projectID || !directory || !gitListBranches || !hasCurrentGitCapabilities) {
+    if (!projectID || !directory || !hasCurrentGitCapabilities) {
       setBranches([])
       setIsLoadingBranches(false)
       return []
@@ -116,7 +105,7 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
     setIsLoadingBranches(true)
 
     try {
-      const nextBranches = await gitListBranches({
+      const nextBranches = await listGitBranches({
         projectID,
         directory,
       })
@@ -155,13 +144,37 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
 
   const handleGitStateChanged = useEffectEvent((detail: { directory: string; branchesChanged?: boolean }) => {
     if (!isMatchingGitStateChangedDetail(detail, directory)) return
-    void refreshCapabilities()
     if (detail.branchesChanged || isPanelOpen) {
-      void refreshBranches()
+      scheduledBranchesRefreshRef.current = true
     }
+    scheduleGitStateRefresh()
+  })
+
+  const scheduleGitStateRefresh = useEffectEvent(() => {
+    if (gitStateRefreshTimerRef.current !== null) {
+      window.clearTimeout(gitStateRefreshTimerRef.current)
+    }
+
+    gitStateRefreshTimerRef.current = window.setTimeout(() => {
+      gitStateRefreshTimerRef.current = null
+      const shouldRefreshBranches = scheduledBranchesRefreshRef.current
+      scheduledBranchesRefreshRef.current = false
+      void refreshCapabilities(false, {
+        bypassCache: true,
+      })
+      if (shouldRefreshBranches) {
+        void refreshBranches()
+      }
+    }, GIT_STATE_CHANGED_REFRESH_DEBOUNCE_MS)
   })
 
   useEffect(() => subscribeToGitStateChanged(handleGitStateChanged), [handleGitStateChanged])
+
+  useEffect(() => () => {
+    if (gitStateRefreshTimerRef.current !== null) {
+      window.clearTimeout(gitStateRefreshTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (!isPanelOpen) return
@@ -211,7 +224,7 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
   }, [isCreateDialogOpen])
 
   async function handleCheckoutBranch(name: string) {
-    if (!projectID || !directory || !gitCheckoutBranch) {
+    if (!projectID || !directory) {
       setErrorMessage("The current workspace is unavailable.")
       return
     }
@@ -221,13 +234,13 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
     setErrorMessage("")
 
     try {
-      const result = await gitCheckoutBranch({
+      const result = await checkoutGitBranch({
         projectID,
         directory,
         name,
       })
       setIsPanelOpen(false)
-      await Promise.all([refreshCapabilities(), refreshBranches()]).catch((error) => {
+      await Promise.all([refreshCapabilities(false, { bypassCache: true }), refreshBranches()]).catch((error) => {
         console.error("[desktop] git branch switcher refresh failed:", error)
       })
       notifyGitStateChanged({
@@ -255,7 +268,7 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
       return
     }
 
-    if (!projectID || !directory || !gitCreateBranch) {
+    if (!projectID || !directory) {
       setErrorMessage("The current workspace is unavailable.")
       return
     }
@@ -265,14 +278,14 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
     setErrorMessage("")
 
     try {
-      const result = await gitCreateBranch({
+      const result = await createGitBranch({
         projectID,
         directory,
         name,
       })
       setIsCreateDialogOpen(false)
       setBranchName("")
-      await Promise.all([refreshCapabilities(), refreshBranches(true)]).catch((error) => {
+      await Promise.all([refreshCapabilities(false, { bypassCache: true }), refreshBranches(true)]).catch((error) => {
         console.error("[desktop] git branch switcher refresh failed:", error)
       })
       notifyGitStateChanged({
@@ -293,7 +306,7 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
     void handleCreateAndCheckoutBranch()
   }
 
-  if (!projectID || !directory || !gitGetCapabilities) {
+  if (!projectID || !directory || !hasGitClient) {
     return null
   }
 

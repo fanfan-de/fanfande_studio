@@ -30,6 +30,13 @@ import { sortWorkspaceGroups } from "../workspace"
 import {
   DEFAULT_WORKSPACE_FILE_REVIEW_STATE
 } from "./review-preview-state"
+import {
+  conversationActivityMapsAreEqual,
+  createConversationStore,
+  type ConversationActivityMap,
+  type ConversationMap,
+  type ConversationStoreApi,
+} from "./conversation-store"
 
 export const seedWorkspaceIDs = new Set(seedWorkspaces.map((workspace) => workspace.id))
 const PINNED_WORKSPACE_IDS_STORAGE_KEY = "desktop.workspace.pinnedWorkspaceIDs.v1"
@@ -106,8 +113,10 @@ export interface ComposerSliceState {
 export interface AgentStreamSliceState {
   agentSessions: Record<string, string>
   cancellingSessionIDs: Record<string, boolean>
+  conversationActivityBySession: ConversationActivityMap
+  conversationStore: ConversationStoreApi
   contextUsageBySession: Record<string, SessionContextUsage>
-  conversations: typeof initialConversations
+  conversations: ConversationMap
   pendingPermissionRequestsBySession: Record<string, PermissionRequest[]>
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
@@ -169,7 +178,7 @@ export interface AgentStreamSliceActions {
   setContextUsageBySession: (
     update: WorkspaceStateUpdater<Record<string, SessionContextUsage>>,
   ) => void
-  setConversations: (update: WorkspaceStateUpdater<typeof initialConversations>) => void
+  setConversations: (update: WorkspaceStateUpdater<ConversationMap>) => void
   setPendingPermissionRequestsBySession: (
     update: WorkspaceStateUpdater<Record<string, PermissionRequest[]>>,
   ) => void
@@ -241,6 +250,7 @@ export function createWorkspaceStore({
   const initialWorkspace = shouldUseSeedData ? initialSelection.workspace : null
   const initialPinnedWorkspaceIDs = readPinnedWorkspaceIDs()
   const initialDockviewActiveState = createDockviewActiveStateFromLayout(initialDockviewLayout)
+  const conversationStore = createConversationStore(shouldUseSeedData ? initialConversations : {})
 
   return createStore<WorkspaceStore>((set) => ({
     workbench: {
@@ -279,8 +289,10 @@ export function createWorkspaceStore({
     agentStream: {
       agentSessions: {},
       cancellingSessionIDs: {},
+      conversationActivityBySession: conversationStore.getActivityBySession(),
+      conversationStore,
       contextUsageBySession: {},
-      conversations: shouldUseSeedData ? initialConversations : {},
+      conversations: conversationStore.getConversations(),
       pendingPermissionRequestsBySession: {},
       permissionRequestActionError: null,
       permissionRequestActionRequestID: null,
@@ -513,12 +525,24 @@ export function createWorkspaceStore({
           },
         })),
       setConversations: (update) =>
-        set((state) => ({
-          agentStream: {
-            ...state.agentStream,
-            conversations: resolveStateUpdate(state.agentStream.conversations, update),
-          },
-        })),
+        set((state) => {
+          const previousActivityBySession = state.agentStream.conversationStore.getActivityBySession()
+          const didUpdate = state.agentStream.conversationStore.updateConversations(update)
+          if (!didUpdate) return state
+
+          const conversationActivityBySession = state.agentStream.conversationStore.getActivityBySession()
+          if (conversationActivityMapsAreEqual(previousActivityBySession, conversationActivityBySession)) {
+            return state
+          }
+
+          return {
+            agentStream: {
+              ...state.agentStream,
+              conversationActivityBySession,
+              conversations: state.agentStream.conversationStore.getConversations(),
+            },
+          }
+        }),
       setPendingPermissionRequestsBySession: (update) =>
         set((state) => ({
           agentStream: {

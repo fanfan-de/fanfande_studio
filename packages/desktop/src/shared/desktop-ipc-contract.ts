@@ -183,6 +183,11 @@ export type GitCapabilities = {
   canCreatePullRequest: GitCapabilityState
   canCreateBranch: GitCapabilityState
 }
+export type GitGetCapabilitiesInput = {
+  projectID: string
+  directory: string
+  includePullRequestRemoteCheck?: boolean
+}
 export type GitBranchSummary = {
   name: string
   kind: "local" | "remote"
@@ -798,7 +803,7 @@ export interface DesktopIpcContract {
     output: DesktopReadPreviewTextResult
   }
   "desktop:git-get-capabilities": {
-    input: { projectID: string; directory: string }
+    input: GitGetCapabilitiesInput
     output: GitCapabilities
   }
   "desktop:git-commit": {

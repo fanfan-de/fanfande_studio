@@ -20,6 +20,8 @@ describe("git api client", () => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url)
 
       if (url.pathname === "/api/projects/prj_project-atlas/git/capabilities") {
+        expect(url.searchParams.get("directory")).toBe("C:\\Projects\\Atlas\\client")
+        expect(url.searchParams.has("includePullRequestRemoteCheck")).toBe(false)
         return jsonResponse({
           success: true,
           data: {
@@ -58,6 +60,55 @@ describe("git api client", () => {
     })
 
     expect(result.root).toBe("C:\\Projects\\Atlas")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("requests remote pull request checks only when explicitly requested", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url)
+
+      if (url.pathname === "/api/projects/prj_project-atlas/git/capabilities") {
+        expect(url.searchParams.get("directory")).toBe("C:\\Projects\\Atlas\\client")
+        expect(url.searchParams.get("includePullRequestRemoteCheck")).toBe("true")
+        return jsonResponse({
+          success: true,
+          data: {
+            directory: "C:\\Projects\\Atlas\\client",
+            root: "C:\\Projects\\Atlas",
+            branch: "feature/git-menu",
+            defaultBranch: "main",
+            isGitRepo: true,
+            canCommit: {
+              enabled: true,
+            },
+            canStageAllCommit: {
+              enabled: true,
+            },
+            canPush: {
+              enabled: false,
+            },
+            canCreatePullRequest: {
+              enabled: true,
+            },
+            canCreateBranch: {
+              enabled: true,
+            },
+          },
+        })
+      }
+
+      throw new Error(`Unexpected request: ${url.pathname}${url.search}`)
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = await getGitCapabilities({
+      projectID: "prj_project-atlas",
+      directory: "C:\\Projects\\Atlas\\client",
+      includePullRequestRemoteCheck: true,
+    })
+
+    expect(result.canCreatePullRequest.enabled).toBe(true)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 

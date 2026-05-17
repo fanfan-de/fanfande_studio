@@ -43,6 +43,14 @@ interface CommandResult {
   exitCode: number
 }
 
+interface RunCommandOptions {
+  disableOptionalLocks?: boolean
+}
+
+export interface GitCapabilitiesOptions {
+  includePullRequestRemoteCheck?: boolean
+}
+
 function resolveCommandBinary(names: string[]) {
   for (const name of names) {
     const resolved = Bun.which(name)
@@ -56,10 +64,10 @@ function trimCommandOutput(value: string) {
   return value.replace(/\r\n/g, "\n").trim()
 }
 
-async function runCommand(binary: string, args: string[], cwd: string): Promise<CommandResult> {
+async function runCommand(binary: string, args: string[], cwd: string, options?: RunCommandOptions): Promise<CommandResult> {
   const proc = Bun.spawn([binary, ...args], {
     cwd,
-    env: process.env,
+    env: options?.disableOptionalLocks === true ? { ...process.env, GIT_OPTIONAL_LOCKS: "0" } : process.env,
     stdout: "pipe",
     stderr: "pipe",
   })
@@ -277,7 +285,61 @@ function extractUrl(value: string) {
 }
 
 async function inspectStagedChanges(directory: string, gitBinary: string) {
-  return runCommand(gitBinary, ["diff", "--cached", "--name-only"], directory)
+  return runCommand(gitBinary, ["diff", "--cached", "--name-only"], directory, {
+    disableOptionalLocks: true,
+  })
+}
+
+async function inspectWorktreeStatus(directory: string, gitBinary: string) {
+  return runCommand(gitBinary, ["status", "--porcelain"], directory, {
+    disableOptionalLocks: true,
+  })
+}
+
+function resolveLocalPullRequestCapability(input: {
+  branch: string | null
+  defaultBranch: string | null
+  hasHeadCommit: boolean
+  hasUpstream: boolean
+}): GitCapability {
+  if (!input.branch) {
+    return { enabled: false, reason: "The current worktree is on a detached HEAD." }
+  }
+  if (!input.hasHeadCommit) {
+    return { enabled: false, reason: "Create the first commit before opening a pull request." }
+  }
+  if (!input.hasUpstream) {
+    return { enabled: false, reason: "Push the current branch before creating a pull request." }
+  }
+  if (input.defaultBranch && input.branch === input.defaultBranch) {
+    return { enabled: false, reason: "Switch to a feature branch before creating a pull request." }
+  }
+
+  return { enabled: true }
+}
+
+async function resolveRemotePullRequestCapability(
+  directory: string,
+  branch: string | null,
+  localCapability: GitCapability,
+): Promise<GitCapability> {
+  if (!localCapability.enabled) return localCapability
+
+  const ghBinary = resolveCommandBinary(GH_BINARY_NAMES)
+  if (!ghBinary) {
+    return { enabled: false, reason: "GitHub CLI is not installed." }
+  }
+  if (!await canAccessGhRepository(directory, ghBinary)) {
+    return {
+      enabled: false,
+      reason: "GitHub CLI cannot access the current repository.",
+    }
+  }
+
+  const existingPullRequestUrl = await findOpenPullRequestUrl(directory, ghBinary, branch)
+  return existingPullRequestUrl
+    ? { enabled: false, reason: "An open pull request already exists for this branch." }
+    : { enabled: true }
 }
 
 export async function resolveGitRepositoryRoot(directory: string) {
@@ -290,7 +352,7 @@ export async function resolveGitRepositoryRoot(directory: string) {
   return resolveGitRoot(targetDirectory, gitBinary)
 }
 
-export async function getGitCapabilities(directory: string): Promise<GitCapabilities> {
+export async function getGitCapabilities(directory: string, options?: GitCapabilitiesOptions): Promise<GitCapabilities> {
   const targetDirectory = requireDirectory(directory)
   const gitBinary = resolveCommandBinary(GIT_BINARY_NAMES)
 
@@ -307,7 +369,7 @@ export async function getGitCapabilities(directory: string): Promise<GitCapabili
   const hasHeadCommit = await resolveHeadCommit(targetDirectory, gitBinary)
   const stagedDiff = await inspectStagedChanges(targetDirectory, gitBinary)
   const hasStagedChanges = stagedDiff.exitCode === 0 && Boolean(stagedDiff.stdout)
-  const status = await runCommand(gitBinary, ["status", "--porcelain"], targetDirectory)
+  const status = await inspectWorktreeStatus(targetDirectory, gitBinary)
   const hasWorktreeChanges = status.exitCode === 0 && Boolean(status.stdout)
   const upstream = await resolveUpstream(targetDirectory, gitBinary)
   const hasUpstream = Boolean(upstream)
@@ -352,31 +414,15 @@ export async function getGitCapabilities(directory: string): Promise<GitCapabili
         reason: "Create the first commit before creating a branch.",
       }
 
-  let canCreatePullRequest: GitCapability
-  if (!branch) {
-    canCreatePullRequest = { enabled: false, reason: "The current worktree is on a detached HEAD." }
-  } else if (!hasHeadCommit) {
-    canCreatePullRequest = { enabled: false, reason: "Create the first commit before opening a pull request." }
-  } else if (!hasUpstream) {
-    canCreatePullRequest = { enabled: false, reason: "Push the current branch before creating a pull request." }
-  } else if (defaultBranch && branch === defaultBranch) {
-    canCreatePullRequest = { enabled: false, reason: "Switch to a feature branch before creating a pull request." }
-  } else {
-    const ghBinary = resolveCommandBinary(GH_BINARY_NAMES)
-    if (!ghBinary) {
-      canCreatePullRequest = { enabled: false, reason: "GitHub CLI is not installed." }
-    } else if (!await canAccessGhRepository(targetDirectory, ghBinary)) {
-      canCreatePullRequest = {
-        enabled: false,
-        reason: "GitHub CLI cannot access the current repository.",
-      }
-    } else {
-      const existingPullRequestUrl = await findOpenPullRequestUrl(targetDirectory, ghBinary, branch)
-      canCreatePullRequest = existingPullRequestUrl
-        ? { enabled: false, reason: "An open pull request already exists for this branch." }
-        : { enabled: true }
-    }
-  }
+  const localPullRequestCapability = resolveLocalPullRequestCapability({
+    branch,
+    defaultBranch,
+    hasHeadCommit,
+    hasUpstream,
+  })
+  const canCreatePullRequest = options?.includePullRequestRemoteCheck === true
+    ? await resolveRemotePullRequestCapability(targetDirectory, branch, localPullRequestCapability)
+    : localPullRequestCapability
 
   return {
     directory: targetDirectory,
@@ -616,7 +662,9 @@ export async function checkoutGitBranch(directory: string, name: string): Promis
 
 export async function createGitPullRequest(directory: string): Promise<GitActionResult> {
   const targetDirectory = requireDirectory(directory)
-  const capabilities = await getGitCapabilities(targetDirectory)
+  const capabilities = await getGitCapabilities(targetDirectory, {
+    includePullRequestRemoteCheck: true,
+  })
 
   if (!capabilities.isGitRepo || !capabilities.root) {
     throw new Error("The current workspace is not a Git repository.")

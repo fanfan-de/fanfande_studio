@@ -18,6 +18,12 @@ export interface GitCapabilities {
   canCreateBranch: GitCapabilityState
 }
 
+export interface GitGetCapabilitiesInput {
+  projectID: string
+  directory: string
+  includePullRequestRemoteCheck?: boolean
+}
+
 export interface GitActionResult {
   directory: string
   root: string
@@ -38,11 +44,15 @@ function encodeProjectPath(projectID: string, suffix: string) {
   return `/api/projects/${encodeURIComponent(projectID)}/git/${suffix}`
 }
 
-export async function getGitCapabilities(input: { projectID: string; directory: string }): Promise<GitCapabilities> {
-  const pathname = encodeProjectPath(
-    input.projectID.trim(),
-    `capabilities?directory=${encodeURIComponent(input.directory.trim())}`,
-  )
+export async function getGitCapabilities(input: GitGetCapabilitiesInput): Promise<GitCapabilities> {
+  const params = new URLSearchParams({
+    directory: input.directory.trim(),
+  })
+  if (input.includePullRequestRemoteCheck === true) {
+    params.set("includePullRequestRemoteCheck", "true")
+  }
+
+  const pathname = encodeProjectPath(input.projectID.trim(), `capabilities?${params.toString()}`)
   const response = await requestAgentJSON<GitCapabilities>(pathname)
   return response.data
 }

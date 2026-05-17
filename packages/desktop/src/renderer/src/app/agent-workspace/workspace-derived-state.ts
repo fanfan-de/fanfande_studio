@@ -33,6 +33,7 @@ import {
 } from "../workbench/dockview-state"
 import { findWorkspaceByID, isSideChatSession, isWorkspaceAvailable } from "../workspace"
 import type { WorkbenchPaneRenderSnapshot } from "../../../../shared/desktop-ipc-contract"
+import type { ConversationActivityMap } from "./conversation-store"
 import {
   DEFAULT_SESSION_DIFF_STATE,
   DEFAULT_SESSION_RUNTIME_DEBUG_STATE,
@@ -254,7 +255,25 @@ function getSessionIDFromTabKey(tabKey: string) {
 function getRunningSessionIDs(
   conversations: Record<string, Turn[]>,
   isSendingByTabKey: Record<string, boolean>,
+  conversationActivityBySession?: ConversationActivityMap,
 ) {
+  if (conversationActivityBySession) {
+    const sessionIDs = new Set<string>()
+
+    for (const [tabKey, isSending] of Object.entries(isSendingByTabKey)) {
+      const sessionID = isSending ? getSessionIDFromTabKey(tabKey) : null
+      if (sessionID) sessionIDs.add(sessionID)
+    }
+
+    for (const [sessionID, activity] of Object.entries(conversationActivityBySession)) {
+      if (activity.hasStreamingAssistantTurn) {
+        sessionIDs.add(sessionID)
+      }
+    }
+
+    return Array.from(sessionIDs)
+  }
+
   const cachedBySendingState = runningSessionIDsCache.get(conversations)
   const cached = cachedBySendingState?.get(isSendingByTabKey)
   if (cached) return cached
@@ -291,6 +310,7 @@ function isRuntimeDebugBusy(debug: SessionRuntimeDebugSnapshot | null | undefine
 
 function isSessionInterruptible(input: {
   cancellingSessionIDs: Record<string, boolean>
+  conversationActivityBySession?: ConversationActivityMap
   conversations: Record<string, Turn[]>
   isSendingByTabKey: Record<string, boolean>
   sessionID: string | null | undefined
@@ -301,7 +321,11 @@ function isSessionInterruptible(input: {
   return (
     Boolean(input.tabKey && input.isSendingByTabKey[input.tabKey]) ||
     Boolean(input.cancellingSessionIDs[input.sessionID]) ||
-    hasStreamingAssistantTurn(input.conversations[input.sessionID] ?? []) ||
+    (
+      input.conversationActivityBySession
+        ? Boolean(input.conversationActivityBySession[input.sessionID]?.hasStreamingAssistantTurn)
+        : hasStreamingAssistantTurn(input.conversations[input.sessionID] ?? [])
+    ) ||
     isRuntimeDebugBusy(input.sessionRuntimeDebugBySession[input.sessionID])
   )
 }
@@ -327,6 +351,7 @@ export interface BuildWorkspaceDerivedStateInput {
   cancellingSessionIDs: Record<string, boolean>
   composerAttachmentsByTabKey: Record<string, ComposerAttachment[]>
   composerDraftStateByTabKey: Record<string, ComposerDraftState>
+  conversationActivityBySession?: ConversationActivityMap
   contextUsageBySession: Record<string, SessionContextUsage>
   conversations: Record<string, Turn[]>
   createSessionTabs: CreateSessionTab[]
@@ -551,6 +576,7 @@ export function buildWorkbenchSurfaceState(
     shouldBuildVisibleThreadState &&
     isSessionInterruptible({
       cancellingSessionIDs: input.cancellingSessionIDs,
+      conversationActivityBySession: input.conversationActivityBySession,
       conversations: input.conversations,
       isSendingByTabKey: input.isSendingByTabKey,
       sessionID: paneActiveSideChatSession?.id,
@@ -621,6 +647,7 @@ export function buildWorkbenchSurfaceState(
       shouldBuildVisibleThreadState &&
       isSessionInterruptible({
         cancellingSessionIDs: input.cancellingSessionIDs,
+        conversationActivityBySession: input.conversationActivityBySession,
         conversations: input.conversations,
         isSendingByTabKey: input.isSendingByTabKey,
         sessionID: currentSession?.id,
@@ -732,6 +759,9 @@ export function workbenchPaneStatesAreEqual(left: WorkbenchPaneState | null, rig
 
   for (const key of leftKeys) {
     if (!Object.prototype.hasOwnProperty.call(right, key)) return false
+    if (key === "activeTurns" || key === "activeSideChatTurns") {
+      continue
+    }
     if (key === "tabs") {
       if (!workbenchPaneTabsAreEqual(left.tabs, right.tabs)) return false
       continue
@@ -768,8 +798,9 @@ export function buildWorkspaceDerivedStateInputFromStore(
     cancellingSessionIDs: state.agentStream.cancellingSessionIDs,
     composerAttachmentsByTabKey: state.composer.composerAttachmentsByTabKey,
     composerDraftStateByTabKey: state.composer.composerDraftStateByTabKey,
+    conversationActivityBySession: state.agentStream.conversationActivityBySession,
     contextUsageBySession: state.agentStream.contextUsageBySession,
-    conversations: state.agentStream.conversations,
+    conversations: state.agentStream.conversationStore.getConversations(),
     createSessionTabs: state.sessions.createSessionTabs,
     isCreatingSessionByTabKey: state.composer.isCreatingSessionByTabKey,
     isInitialWorkspaceLoadPending: state.sessions.isInitialWorkspaceLoadPending,
@@ -1018,6 +1049,7 @@ export function buildWorkspaceDerivedState({
   cancellingSessionIDs,
   composerAttachmentsByTabKey,
   composerDraftStateByTabKey,
+  conversationActivityBySession,
   contextUsageBySession,
   conversations,
   createSessionTabs,
@@ -1135,6 +1167,7 @@ export function buildWorkspaceDerivedState({
   const activeSideChatIsCancelling = activeSideChatSession ? Boolean(cancellingSessionIDs[activeSideChatSession.id]) : false
   const activeSideChatIsInterruptible = isSessionInterruptible({
     cancellingSessionIDs,
+    conversationActivityBySession,
     conversations,
     isSendingByTabKey,
     sessionID: activeSideChatSession?.id,
@@ -1159,6 +1192,7 @@ export function buildWorkspaceDerivedState({
   const isCancelling = activeSession ? Boolean(cancellingSessionIDs[activeSession.id]) : false
   const isInterruptible = isSessionInterruptible({
     cancellingSessionIDs,
+    conversationActivityBySession,
     conversations,
     isSendingByTabKey,
     sessionID: activeSession?.id,
@@ -1166,7 +1200,7 @@ export function buildWorkspaceDerivedState({
     tabKey: activeTabKey,
   })
   const isCreatingSession = activeTabKey ? Boolean(isCreatingSessionByTabKey[activeTabKey]) : false
-  const runningSessionIDs = getRunningSessionIDs(conversations, isSendingByTabKey)
+  const runningSessionIDs = getRunningSessionIDs(conversations, isSendingByTabKey, conversationActivityBySession)
   const canvasSessionTabs = focusedPane
     ? focusedPane.views.flatMap((reference) => {
         if (reference.kind !== "session") return []
@@ -1179,6 +1213,7 @@ export function buildWorkspaceDerivedState({
     cancellingSessionIDs,
     composerAttachmentsByTabKey,
     composerDraftStateByTabKey,
+    conversationActivityBySession,
     contextUsageBySession,
     conversations,
     createSessionTabs,

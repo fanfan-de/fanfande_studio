@@ -1,5 +1,5 @@
 import { type ReactNode } from "react"
-import { CodeModeIcon, CoworkModeIcon, SideChatIcon } from "../icons"
+import { CodeModeIcon, SideChatIcon } from "../icons"
 import { ShellTopMenu } from "../shared-ui"
 import type { WorkspaceMode } from "../types"
 
@@ -18,13 +18,6 @@ const WORKSPACE_MODE_META: Record<WorkspaceMode, WorkspaceModeMeta> = {
     sidebarTitle: "Chat projects",
     title: "Chat workspace",
     Icon: SideChatIcon,
-  },
-  cowork: {
-    description: "Shared cowork projects will appear here.",
-    label: "Cowork",
-    sidebarTitle: "Cowork projects",
-    title: "Cowork workspace",
-    Icon: CoworkModeIcon,
   },
   code: {
     description: "Code mode is the current project workspace.",

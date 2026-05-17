@@ -819,6 +819,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       reference,
     )
     const workspaces = useWorkspaceStoreSelector(props.store, (state) => state.sessions.workspaces)
+    const conversationStore = props.store.getState().agentStream.conversationStore
     const paneProfiler = useMemo(
       () => createRendererProfilerOnRender("WorkbenchPaneSurface commit", () => ({
         groupID,
@@ -845,6 +846,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         <WorkbenchPaneSurface
           assistantTraceVisibility={props.assistantTraceVisibility}
           composerRefreshVersion={props.composerRefreshVersion}
+          conversationStore={conversationStore}
           isResolvingPermissionRequest={props.isResolvingPermissionRequest}
           isAgentDebugTraceEnabled={props.isAgentDebugTraceEnabled}
           isSavingToolPermissionMode={props.isSavingToolPermissionMode}

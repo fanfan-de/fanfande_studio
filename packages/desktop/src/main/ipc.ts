@@ -1085,7 +1085,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   handleDesktopIpc("desktop:resolve-preview-target", async (_event, input) => resolvePreviewTarget(input))
   handleDesktopIpc("desktop:read-preview-text", async (_event, input) => readPreviewText(input))
 
-  handleDesktopIpc("desktop:git-get-capabilities", async (_event, input: { projectID: string; directory: string }) =>
+  handleDesktopIpc("desktop:git-get-capabilities", async (_event, input) =>
     getGitCapabilities(input),
   )
 

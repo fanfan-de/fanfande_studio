@@ -22,7 +22,6 @@ import {
   FolderOpen,
   Globe,
   LayoutPanelLeft,
-  ListChecks,
   LoaderCircle,
   MessageSquare,
   Minus,
@@ -87,7 +86,6 @@ export const LayoutSidebarRightIcon = createIcon(PanelRight)
 export const LeftSidebarIcon = createIcon(PanelLeft)
 export const RightSidebarIcon = createIcon(PanelRight)
 export const SideChatIcon = createIcon(MessageSquare)
-export const CoworkModeIcon = createIcon(ListChecks)
 export const CodeModeIcon = createIcon(Code2)
 export const SessionRunningIcon = createIcon(LoaderCircle)
 export const LeftSidebarCollapseIcon = createIcon(PanelLeftClose)

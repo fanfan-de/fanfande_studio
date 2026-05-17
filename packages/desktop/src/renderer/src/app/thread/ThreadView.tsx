@@ -465,7 +465,7 @@ function UserTurnBubble({ turn }: { turn: UserTurn }) {
   )
 }
 
-function UserTurnArticle({
+const UserTurnArticle = memo(function UserTurnArticle({
   className,
   copied,
   diffCard,
@@ -508,7 +508,7 @@ function UserTurnArticle({
       ) : null}
     </article>
   )
-}
+})
 
 function normalizeTurnDiffSummary(diffSummary: SessionDiffSummary | undefined): AssistantTraceFileChange[] {
   return diffSummary?.diffs
@@ -1157,7 +1157,7 @@ function AssistantTurnPlaceholder({ message }: { message: string }) {
   )
 }
 
-function AssistantTurnSections({
+const AssistantTurnSections = memo(function AssistantTurnSections({
   answeredQuestionIDs,
   assistantTurnPhase,
   isQuestionAnswerDisabled = false,
@@ -1235,9 +1235,9 @@ function AssistantTurnSections({
       })}
     </>
   )
-}
+})
 
-function AssistantTurnSectionsWithStreamInsertions({
+const AssistantTurnSectionsWithStreamInsertions = memo(function AssistantTurnSectionsWithStreamInsertions({
   answeredQuestionIDs,
   assistantTurnPhase,
   copiedUserTurnID,
@@ -1343,7 +1343,7 @@ function AssistantTurnSectionsWithStreamInsertions({
   renderSegment(items.slice(cursor), "segment-final")
 
   return <>{nodes}</>
-}
+})
 
 function TraceImagePreview({
   item,
@@ -3185,7 +3185,7 @@ const traceItemRenderers = {
   error: ErrorTraceItemView,
 } satisfies Record<AssistantTraceItemKind, ComponentType<TraceItemRendererProps>>
 
-function TraceItemView({
+const TraceItemView = memo(function TraceItemView({
   answeredQuestionIDs,
   assistantTurnPhase,
   item,
@@ -3246,7 +3246,7 @@ function TraceItemView({
       traceVisibility={traceVisibility}
     />
   )
-}
+})
 
 function PermissionRequestCard({
   actionError,
@@ -3606,6 +3606,7 @@ function VisibleThreadView({
   const scrollRestoreFrameRef = useRef<number | null>(null)
   const contentResizeObserverRef = useRef<ResizeObserver | null>(null)
   const contentMutationObserverRef = useRef<MutationObserver | null>(null)
+  const observedThreadContentRef = useRef<WeakSet<Element>>(new WeakSet())
   const lastUserScrollIntentAtRef = useRef(0)
   const userScrollIntentVersionRef = useRef(0)
   const consumedUserScrollIntentVersionRef = useRef(0)
@@ -3977,10 +3978,16 @@ function VisibleThreadView({
     const resizeObserver = new ResizeObserver(() => {
       syncThreadScrollAfterLayoutChange(effectiveScrollStateKey)
     })
+    observedThreadContentRef.current = new WeakSet()
     const observeThreadContent = () => {
-      resizeObserver.observe(threadColumn)
+      if (!observedThreadContentRef.current.has(threadColumn)) {
+        resizeObserver.observe(threadColumn)
+        observedThreadContentRef.current.add(threadColumn)
+      }
       for (const child of Array.from(threadColumn.children)) {
+        if (observedThreadContentRef.current.has(child)) continue
         resizeObserver.observe(child)
+        observedThreadContentRef.current.add(child)
       }
     }
 
@@ -4001,10 +4008,11 @@ function VisibleThreadView({
       if (contentResizeObserverRef.current === resizeObserver) {
         contentResizeObserverRef.current = null
       }
+      observedThreadContentRef.current = new WeakSet()
       contentMutationObserverRef.current?.disconnect()
       contentMutationObserverRef.current = null
     }
-  }, [activeTurns, effectiveScrollStateKey, pendingPermissionRequests.length, threadColumnRef])
+  }, [effectiveScrollStateKey, threadColumnRef])
 
   useLayoutEffect(() => {
     const threadColumn = threadColumnRef.current
@@ -4050,6 +4058,11 @@ function VisibleThreadView({
   function handleThreadScrollIntent() {
     lastUserScrollIntentAtRef.current = Date.now()
     userScrollIntentVersionRef.current += 1
+  }
+
+  function handleThreadPointerMoveIntent(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "mouse" && event.buttons === 0) return
+    handleThreadScrollIntent()
   }
 
   function hasRecentThreadScrollIntent() {
@@ -4119,7 +4132,7 @@ function VisibleThreadView({
         className="thread-column"
         onKeyDownCapture={handleThreadScrollIntent}
         onPointerDownCapture={handleThreadScrollIntent}
-        onPointerMoveCapture={handleThreadScrollIntent}
+        onPointerMoveCapture={handleThreadPointerMoveIntent}
         onScroll={handleThreadScroll}
         onWheelCapture={handleThreadScrollIntent}
       >

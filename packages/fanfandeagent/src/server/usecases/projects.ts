@@ -37,6 +37,11 @@ export const UpdateProjectMcpSelectionBody = Config.ProjectMcpSelection
 
 export const GitDirectoryQuery = z.object({
   directory: z.string().min(1),
+  includePullRequestRemoteCheck: z.preprocess((value) => {
+    if (value === "true") return true
+    if (value === "false") return false
+    return value
+  }, z.boolean().optional()),
 })
 
 export const GitCommitBody = z.object({
@@ -340,7 +345,9 @@ export async function getProjectGitCapabilities(
   input: z.infer<typeof GitDirectoryQuery>,
 ) {
   const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
-  return Git.getGitCapabilities(directory)
+  return Git.getGitCapabilities(directory, {
+    includePullRequestRemoteCheck: input.includePullRequestRemoteCheck === true,
+  })
 }
 
 export async function commitProjectGitChanges(

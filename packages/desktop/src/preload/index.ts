@@ -222,7 +222,7 @@ try {
       invokeDesktop("desktop:resolve-preview-target", input) as Promise<DesktopResolvedPreviewTarget>,
     readPreviewText: (input: DesktopIpcInput<"desktop:read-preview-text">) =>
       invokeDesktop("desktop:read-preview-text", input) as Promise<DesktopReadPreviewTextResult>,
-    gitGetCapabilities: (input: { projectID: string; directory: string }) =>
+    gitGetCapabilities: (input: DesktopIpcInput<"desktop:git-get-capabilities">) =>
       invokeDesktop("desktop:git-get-capabilities", input) as Promise<GitCapabilities>,
     gitCommit: (input: { projectID: string; directory: string; message: string; stageAll?: boolean }) =>
       invokeDesktop("desktop:git-commit", input) as Promise<GitActionResult>,

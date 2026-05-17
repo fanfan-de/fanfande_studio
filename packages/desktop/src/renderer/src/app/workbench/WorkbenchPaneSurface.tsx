@@ -1,10 +1,7 @@
-import { memo, Profiler, useMemo, useRef } from "react"
-import {
-  Composer,
-  CreateSessionCanvas,
-  SessionCanvasTopMenu,
-  ThreadView,
-} from "../components"
+import { memo, Profiler, useLayoutEffect, useMemo, useRef } from "react"
+import { CreateSessionCanvas } from "../canvas/CreateSessionCanvas"
+import { SessionCanvasTopMenu } from "../canvas/SessionCanvasTopMenu"
+import { Composer } from "../composer/Composer"
 import { ComposerTaskProgress } from "../composer/ComposerTaskProgress"
 import { ComposerUtilityBar } from "../ComposerUtilityBar"
 import { getSessionWorkflowBadge, type SessionWorkflowBadge as SessionWorkflowBadgeInfo } from "../session-workflow"
@@ -28,8 +25,12 @@ import type {
 import { useProjectComposer } from "../use-project-composer"
 import { createRendererProfilerOnRender } from "../perf-profiler"
 import { isSideChatSession } from "../workspace"
-import type { ThreadScrollSnapshot } from "../thread/ThreadView"
+import { ThreadView, type ThreadScrollSnapshot } from "../thread/ThreadView"
 import type { WorkbenchPaneState } from "../agent-workspace/workspace-derived-state"
+import { useConversationTurns, type ConversationStoreApi } from "../agent-workspace/conversation-store"
+
+const THREAD_TOP_RESET_THRESHOLD_PX = 2
+const THREAD_RESTORE_MIN_SCROLL_TOP_PX = 32
 
 function ComposerPlanModeNotice({ workflow }: { workflow: SessionWorkflowBadgeInfo }) {
   return (
@@ -71,6 +72,7 @@ function ComposerPendingSteerDrawer({ turns }: { turns: UserTurn[] }) {
 export interface WorkbenchPaneSurfaceProps {
   assistantTraceVisibility: AssistantTraceVisibility
   composerRefreshVersion: number
+  conversationStore: ConversationStoreApi
   isResolvingPermissionRequest: boolean
   isAgentDebugTraceEnabled: boolean
   isSavingToolPermissionMode: boolean
@@ -199,6 +201,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface(props: Wo
 const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
   assistantTraceVisibility,
   composerRefreshVersion,
+  conversationStore,
   isResolvingPermissionRequest,
   isAgentDebugTraceEnabled,
   isSavingToolPermissionMode,
@@ -237,6 +240,23 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
   onTurnDiffSummaryHydrate,
 }: WorkbenchPaneSurfaceProps) {
   const threadColumnRef = useRef<HTMLDivElement | null>(null)
+  const activeTurns = useConversationTurns(conversationStore, pane.sessionID)
+  const activeSideChatTurns = useConversationTurns(conversationStore, pane.activeSideChatSession?.id ?? null)
+
+  useLayoutEffect(() => {
+    const threadColumn = threadColumnRef.current
+    const scrollStateKey = pane.tabKey
+    if (!threadColumn || !scrollStateKey) return
+    if (threadColumn.scrollTop > THREAD_TOP_RESET_THRESHOLD_PX) return
+
+    const snapshot = readThreadScrollSnapshot(scrollStateKey)
+    if (!snapshot || snapshot.pinnedToBottom || snapshot.scrollTop <= THREAD_RESTORE_MIN_SCROLL_TOP_PX) return
+
+    const maxScrollTop = Math.max(0, threadColumn.scrollHeight - threadColumn.clientHeight)
+    if (maxScrollTop <= THREAD_TOP_RESET_THRESHOLD_PX) return
+
+    threadColumn.scrollTop = Math.min(snapshot.scrollTop, maxScrollTop)
+  })
 
   const composer = useProjectComposer({
     attachmentPaths: pane.composerAttachments.map((attachment) => attachment.path),
@@ -248,7 +268,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
   })
   const readOnlySideChat = isSideChatSession(pane.activeSession)
   const showGitControls = pane.isActivePanel && !readOnlySideChat
-  const pendingSteerTurns = getPendingStreamInsertionUserTurns(pane.activeTurns)
+  const pendingSteerTurns = getPendingStreamInsertionUserTurns(activeTurns)
   const composerWorkflowBadge = !readOnlySideChat ? getSessionWorkflowBadge(pane.activeSession?.workflow) : null
   const createSessionWorkflowBadge =
     pane.createSessionInitialWorkflowMode === "planning"
@@ -291,11 +311,11 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
       paneID: pane.id,
       sessionID: pane.sessionID,
       tabKey: pane.tabKey,
-      turnCount: pane.activeTurns.length,
-      sideChatTurnCount: pane.activeSideChatTurns.length,
+      turnCount: activeTurns.length,
+      sideChatTurnCount: activeSideChatTurns.length,
       isThreadVisible: pane.isActivePanel,
     })),
-    [pane.activeSideChatTurns.length, pane.activeTurns.length, pane.id, pane.isActivePanel, pane.sessionID, pane.tabKey],
+    [activeSideChatTurns.length, activeTurns.length, pane.id, pane.isActivePanel, pane.sessionID, pane.tabKey],
   )
 
   return (
@@ -434,7 +454,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                   pendingPermissionRequests={pane.pendingPermissionRequests}
                   permissionRequestActionError={permissionRequestActionError}
                   permissionRequestActionRequestID={permissionRequestActionRequestID}
-                  activeTurns={pane.activeTurns}
+                  activeTurns={activeTurns}
                   sideChatAttachments={pane.activeSideChatAttachments}
                   sideChatCountsByAnchorMessageID={pane.sideChatCountsByAnchorMessageID}
                   sideChatDraftState={pane.activeSideChatDraftState}
@@ -446,7 +466,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                   sideChatPermissionRequestActionRequestID={permissionRequestActionRequestID}
                   sideChatSession={pane.activeSideChatSession}
                   sideChatSessionsByAnchorMessageID={pane.sideChatSessionsByAnchorMessageID}
-                  sideChatTurns={pane.activeSideChatTurns}
+                  sideChatTurns={activeSideChatTurns}
                   scrollStateKey={pane.tabKey}
                   threadColumnRef={threadColumnRef}
                   isThreadVisible={pane.isActivePanel}

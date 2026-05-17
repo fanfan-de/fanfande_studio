@@ -1,18 +1,12 @@
-import { Profiler, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, Profiler, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import type { SerializedDockview } from "dockview-react"
-import {
-  ActivityRail,
-  BuiltinToolsPage,
-  GlobalSkillsPage,
-  McpServersPage,
-  PluginsPage,
-  PromptPresetsPage,
-  RightSidebar,
-  SettingsPage,
-  Sidebar,
-  SidebarResizer,
-  WindowChrome,
-} from "./app/components"
+import { ActivityRail } from "./app/sidebar/ActivityRail"
+import { BuiltinToolsPage } from "./app/tools/BuiltinToolsPage"
+import { McpServersPage } from "./app/mcp/McpServersPage"
+import { RightSidebar } from "./app/sidebar/RightSidebar"
+import { Sidebar } from "./app/sidebar/Sidebar"
+import { SidebarResizer } from "./app/sidebar/SidebarResizer"
+import { WindowChrome } from "./app/chrome/WindowChrome"
 import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
 import {
   useWorkspaceStoreSelector,
@@ -40,6 +34,11 @@ import {
 } from "./app/agent-workspace/workspace-derived-state"
 import { WorkspaceModeCanvasPlaceholder, WorkspaceModeRightPlaceholder } from "./app/workspace-mode/WorkspaceModePlaceholder"
 import type { WorkbenchSharedState, WorkbenchWindowContext } from "../../shared/desktop-ipc-contract"
+
+const GlobalSkillsPage = lazy(() => import("./app/skills/GlobalSkillsPage").then((module) => ({ default: module.GlobalSkillsPage })))
+const PluginsPage = lazy(() => import("./app/plugins/PluginsPage").then((module) => ({ default: module.PluginsPage })))
+const PromptPresetsPage = lazy(() => import("./app/prompts/PromptPresetsPage").then((module) => ({ default: module.PromptPresetsPage })))
+const SettingsPage = lazy(() => import("./app/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })))
 
 const WORKBENCH_TERMINAL_STORAGE_KEY = "desktop.terminal.workspace.v3:workbench"
 
@@ -1427,51 +1426,54 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
           }
         >
           {isPromptEditorView ? (
-            <PromptPresetsPage
-              deletingPromptPresetID={deletingPromptPresetID}
-              hideNavigator
-              isCreatingPromptPreset={isCreatingPromptPreset}
-              isLoadingPromptPreset={isLoadingPromptPreset}
-              isLoadingPrompts={isLoadingPrompts}
-              isInstallingPromptUrlPrompts={isInstallingPromptUrlPrompts}
-              isPreviewingPromptUrlInstall={isPreviewingPromptUrlInstall}
-              isPromptDirty={isPromptDirty}
-              isPromptUrlInstallDialogOpen={isPromptUrlInstallDialogOpen}
-              isSavingPromptPresetSelection={isSavingPromptPresetSelection}
-              message={message}
-              promptDraftContent={promptDraftContent}
-              promptDraftLabel={promptDraftLabel}
-              promptLoadError={promptLoadError}
-              promptRoot={promptRoot}
-              promptPresets={promptPresets}
-              promptPresetSelection={promptPresetSelection}
-              promptUrlInstallMessage={promptUrlInstallMessage}
-              promptUrlInstallPreview={promptUrlInstallPreview}
-              promptUrlInstallSource={promptUrlInstallSource}
-              resettingPromptPresetID={resettingPromptPresetID}
-              savingPromptPresetID={savingPromptPresetID}
-              selectedPromptPreset={selectedPromptPreset}
-              selectedPromptUrlInstallIDs={selectedPromptUrlInstallIDs}
-              windowControls={windowControls}
-              onCreatePromptPreset={createPromptPreset}
-              onDeletePromptPreset={deletePromptPreset}
-              onDismissMessage={dismissMessage}
-              onInstallPromptsFromUrl={installPromptsFromUrl}
-              onPromptUrlInstallDialogClose={closePromptUrlInstallDialog}
-              onPromptUrlInstallDialogOpen={openPromptUrlInstallDialog}
-              onPromptUrlInstallPromptToggle={togglePromptUrlInstallPrompt}
-              onPromptUrlInstallSourceChange={setPromptUrlInstallSourceValue}
-              onPromptDraftChange={setPromptDraftValue}
-              onPromptDraftLabelChange={setPromptDraftLabelValue}
-              onPromptPresetSelect={selectPromptPreset}
-              onPromptPresetSelectionChange={setPromptPresetSelectionValue}
-              onPreviewPromptUrlInstall={previewPromptUrlInstall}
-              onOpenPromptFolder={openPromptFolder}
-              onResetPromptPreset={resetPromptPreset}
-              onSavePromptPreset={savePromptPreset}
-            />
+            <Suspense fallback={null}>
+              <PromptPresetsPage
+                deletingPromptPresetID={deletingPromptPresetID}
+                hideNavigator
+                isCreatingPromptPreset={isCreatingPromptPreset}
+                isLoadingPromptPreset={isLoadingPromptPreset}
+                isLoadingPrompts={isLoadingPrompts}
+                isInstallingPromptUrlPrompts={isInstallingPromptUrlPrompts}
+                isPreviewingPromptUrlInstall={isPreviewingPromptUrlInstall}
+                isPromptDirty={isPromptDirty}
+                isPromptUrlInstallDialogOpen={isPromptUrlInstallDialogOpen}
+                isSavingPromptPresetSelection={isSavingPromptPresetSelection}
+                message={message}
+                promptDraftContent={promptDraftContent}
+                promptDraftLabel={promptDraftLabel}
+                promptLoadError={promptLoadError}
+                promptRoot={promptRoot}
+                promptPresets={promptPresets}
+                promptPresetSelection={promptPresetSelection}
+                promptUrlInstallMessage={promptUrlInstallMessage}
+                promptUrlInstallPreview={promptUrlInstallPreview}
+                promptUrlInstallSource={promptUrlInstallSource}
+                resettingPromptPresetID={resettingPromptPresetID}
+                savingPromptPresetID={savingPromptPresetID}
+                selectedPromptPreset={selectedPromptPreset}
+                selectedPromptUrlInstallIDs={selectedPromptUrlInstallIDs}
+                windowControls={windowControls}
+                onCreatePromptPreset={createPromptPreset}
+                onDeletePromptPreset={deletePromptPreset}
+                onDismissMessage={dismissMessage}
+                onInstallPromptsFromUrl={installPromptsFromUrl}
+                onPromptUrlInstallDialogClose={closePromptUrlInstallDialog}
+                onPromptUrlInstallDialogOpen={openPromptUrlInstallDialog}
+                onPromptUrlInstallPromptToggle={togglePromptUrlInstallPrompt}
+                onPromptUrlInstallSourceChange={setPromptUrlInstallSourceValue}
+                onPromptDraftChange={setPromptDraftValue}
+                onPromptDraftLabelChange={setPromptDraftLabelValue}
+                onPromptPresetSelect={selectPromptPreset}
+                onPromptPresetSelectionChange={setPromptPresetSelectionValue}
+                onPreviewPromptUrlInstall={previewPromptUrlInstall}
+                onOpenPromptFolder={openPromptFolder}
+                onResetPromptPreset={resetPromptPreset}
+                onSavePromptPreset={savePromptPreset}
+              />
+            </Suspense>
           ) : isGlobalSkillsView ? (
-            <GlobalSkillsPage
+            <Suspense fallback={null}>
+              <GlobalSkillsPage
               creatingGlobalSkillName={creatingGlobalSkillName}
               creatingGlobalSkillDraftKind={creatingGlobalSkillDraftKind}
               creatingGlobalSkillParentDirectory={creatingGlobalSkillParentDirectory}
@@ -1540,8 +1542,9 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onRenameGlobalSkillDraftCancel={handleRenameGlobalSkillDraftCancel}
               onRenameGlobalSkillDraftChange={handleRenameGlobalSkillDraftChange}
               onRenameGlobalSkillDraftStart={handleRenameGlobalSkillDraftStart}
-              onSave={handleSaveGlobalSkillFile}
-            />
+                onSave={handleSaveGlobalSkillFile}
+              />
+            </Suspense>
           ) : isMcpServersView ? (
             <McpServersPage
               activeMcpServerID={activeMcpServerID}
@@ -1566,36 +1569,38 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onStartNewMcpServer={startNewMcpServer}
             />
           ) : isPluginsView ? (
-            <PluginsPage
-              activePluginID={activePluginID}
-              deletingPluginID={deletingPluginID}
-              diagnosingPluginConnectorID={diagnosingPluginConnectorID}
-              diagnosingPluginID={diagnosingPluginID}
-              installingPluginID={installingPluginID}
-              installedPlugins={installedPlugins}
-              isLoading={isLoadingPlugins}
-              loadError={pluginsError}
-              message={message}
-              pluginCatalog={pluginCatalog}
-              pluginConnectorStatuses={pluginConnectorStatuses}
-              pluginDiagnostics={pluginDiagnostics}
-              pluginDraft={pluginDraft}
-              updatingPluginID={updatingPluginID}
-              windowControls={windowControls}
-              onDeleteInstalledPlugin={deleteInstalledPlugin}
-              onDeleteInstalledPluginConnectorApiKey={deleteInstalledPluginConnectorApiKey}
-              onDiagnoseInstalledPlugin={diagnoseInstalledPlugin}
-              onDiagnoseInstalledPluginConnector={diagnoseInstalledPluginConnector}
-              onDismissMessage={dismissMessage}
-              onInstallPlugin={installPlugin}
-              onPluginDraftAppApiKeyChange={setPluginDraftAppApiKey}
-              onPluginDraftConfigChange={setPluginDraftConfigValue}
-              onPluginSelect={selectPlugin}
-              onSaveInstalledPluginConnectorApiKey={saveInstalledPluginConnectorApiKey}
-              onSaveInstalledPluginConfig={saveInstalledPluginConfig}
-              onSetInstalledPluginEnabled={setInstalledPluginEnabled}
-              savingPluginConnectorID={savingPluginConnectorID}
-            />
+            <Suspense fallback={null}>
+              <PluginsPage
+                activePluginID={activePluginID}
+                deletingPluginID={deletingPluginID}
+                diagnosingPluginConnectorID={diagnosingPluginConnectorID}
+                diagnosingPluginID={diagnosingPluginID}
+                installingPluginID={installingPluginID}
+                installedPlugins={installedPlugins}
+                isLoading={isLoadingPlugins}
+                loadError={pluginsError}
+                message={message}
+                pluginCatalog={pluginCatalog}
+                pluginConnectorStatuses={pluginConnectorStatuses}
+                pluginDiagnostics={pluginDiagnostics}
+                pluginDraft={pluginDraft}
+                updatingPluginID={updatingPluginID}
+                windowControls={windowControls}
+                onDeleteInstalledPlugin={deleteInstalledPlugin}
+                onDeleteInstalledPluginConnectorApiKey={deleteInstalledPluginConnectorApiKey}
+                onDiagnoseInstalledPlugin={diagnoseInstalledPlugin}
+                onDiagnoseInstalledPluginConnector={diagnoseInstalledPluginConnector}
+                onDismissMessage={dismissMessage}
+                onInstallPlugin={installPlugin}
+                onPluginDraftAppApiKeyChange={setPluginDraftAppApiKey}
+                onPluginDraftConfigChange={setPluginDraftConfigValue}
+                onPluginSelect={selectPlugin}
+                onSaveInstalledPluginConnectorApiKey={saveInstalledPluginConnectorApiKey}
+                onSaveInstalledPluginConfig={saveInstalledPluginConfig}
+                onSetInstalledPluginEnabled={setInstalledPluginEnabled}
+                savingPluginConnectorID={savingPluginConnectorID}
+              />
+            </Suspense>
           ) : isBuiltinToolsView ? (
             <BuiltinToolsPage
               activeToolKind={activeBuiltinToolKind}
@@ -1748,75 +1753,77 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
         ) : null}
 
         {isOpen ? (
-          <SettingsPage
-            activeMcpServerID={activeMcpServerID}
-            activeMcpServerDiagnostic={activeMcpServerDiagnostic}
-            archivedSessions={archivedSessions}
-            archivedSessionsError={archivedSessionsError}
-            catalog={catalog}
-            deletingArchivedSessionID={deletingArchivedSessionID}
-            deletingMcpServerID={deletingMcpServerID}
-            deletingProviderID={deletingProviderID}
-            appearanceConfigError={appearanceConfigError}
-            appearanceConfigPath={appearanceConfigPath}
-            appearanceConfigPreview={appearanceConfigPreview}
-            appearanceOverrides={appearanceOverrides}
-            appearanceTokenValues={appearanceTokenValues}
-            assistantTraceVisibility={assistantTraceVisibility}
-            brandTheme={brandTheme}
-            colorMode={colorMode}
-            isActivityRailVisible={isActivityRailVisible}
-            isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
-            isDebugLineColorsEnabled={isDebugLineColorsEnabled}
-            isDebugUiRegionsEnabled={isDebugUiRegionsEnabled}
-            isLoading={isLoading}
-            isLoadingArchivedSessions={isLoadingArchivedSessions}
-            isOpen={isOpen}
-            isRefreshingProviderCatalog={isRefreshingProviderCatalog}
-            loadError={loadError}
-            mcpServerDraft={mcpServerDraft}
-            mcpServers={mcpServers}
-            message={message}
-            models={models}
-            providerDrafts={providerDrafts}
-            restoringArchivedSessionID={restoringArchivedSessionID}
-            savingMcpServerID={savingMcpServerID}
-            savingProviderID={savingProviderID}
-            testingProviderID={testingProviderID}
-            selectionDraft={selectionDraft}
-            onBrandThemeChange={handleBrandThemeChange}
-            onColorModeChange={handleColorModeChange}
-            onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
-            onAppearancePaletteReset={handleAppearancePaletteReset}
-            onAppearanceTokenChange={handleAppearanceTokenChange}
-            onAppearanceTokenReset={handleAppearanceTokenReset}
-            onAssistantTraceVisibilityChange={handleAssistantTraceVisibilityChange}
-            onAgentDebugTraceChange={handleAgentDebugTraceChange}
-            onDebugLineColorsChange={handleDebugLineColorsChange}
-            onDebugUiRegionsChange={handleDebugUiRegionsChange}
-            onClose={closeSettings}
-            onDismissMessage={dismissMessage}
-            onDeleteArchivedSession={deleteArchivedSession}
-            onDeleteMcpServer={deleteMcpServer}
-            onDeleteProvider={deleteProvider}
-            onDeleteProviderAuthSession={deleteProviderAuthSession}
-            onMcpServerDraftChange={setMcpServerDraftValue}
-            onMcpToolPolicyChange={setMcpToolPolicy}
-            onMcpServerSelect={selectMcpServer}
-            onProviderAuthMethodChange={setProviderAuthMethod}
-            onProviderDraftChange={setProviderDraftValue}
-            onRefreshProviderCatalog={refreshProviderCatalog}
-            onLoadArchivedSessions={loadArchivedSessions}
-            onRestoreArchivedSession={restoreArchivedSession}
-            onSaveMcpServer={saveMcpServer}
-            onSaveProviderApiKey={saveProviderApiKey}
-            onSaveProvider={saveProvider}
-            onSelectionChange={setSelectionDraftValue}
-            onTestProviderConnection={testProviderConnection}
-            onStartProviderAuthFlow={startProviderAuthFlow}
-            onStartNewMcpServer={startNewMcpServer}
-            onCancelProviderAuthFlow={cancelProviderAuthFlow}
-          />
+          <Suspense fallback={null}>
+            <SettingsPage
+              activeMcpServerID={activeMcpServerID}
+              activeMcpServerDiagnostic={activeMcpServerDiagnostic}
+              archivedSessions={archivedSessions}
+              archivedSessionsError={archivedSessionsError}
+              catalog={catalog}
+              deletingArchivedSessionID={deletingArchivedSessionID}
+              deletingMcpServerID={deletingMcpServerID}
+              deletingProviderID={deletingProviderID}
+              appearanceConfigError={appearanceConfigError}
+              appearanceConfigPath={appearanceConfigPath}
+              appearanceConfigPreview={appearanceConfigPreview}
+              appearanceOverrides={appearanceOverrides}
+              appearanceTokenValues={appearanceTokenValues}
+              assistantTraceVisibility={assistantTraceVisibility}
+              brandTheme={brandTheme}
+              colorMode={colorMode}
+              isActivityRailVisible={isActivityRailVisible}
+              isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+              isDebugLineColorsEnabled={isDebugLineColorsEnabled}
+              isDebugUiRegionsEnabled={isDebugUiRegionsEnabled}
+              isLoading={isLoading}
+              isLoadingArchivedSessions={isLoadingArchivedSessions}
+              isOpen={isOpen}
+              isRefreshingProviderCatalog={isRefreshingProviderCatalog}
+              loadError={loadError}
+              mcpServerDraft={mcpServerDraft}
+              mcpServers={mcpServers}
+              message={message}
+              models={models}
+              providerDrafts={providerDrafts}
+              restoringArchivedSessionID={restoringArchivedSessionID}
+              savingMcpServerID={savingMcpServerID}
+              savingProviderID={savingProviderID}
+              testingProviderID={testingProviderID}
+              selectionDraft={selectionDraft}
+              onBrandThemeChange={handleBrandThemeChange}
+              onColorModeChange={handleColorModeChange}
+              onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
+              onAppearancePaletteReset={handleAppearancePaletteReset}
+              onAppearanceTokenChange={handleAppearanceTokenChange}
+              onAppearanceTokenReset={handleAppearanceTokenReset}
+              onAssistantTraceVisibilityChange={handleAssistantTraceVisibilityChange}
+              onAgentDebugTraceChange={handleAgentDebugTraceChange}
+              onDebugLineColorsChange={handleDebugLineColorsChange}
+              onDebugUiRegionsChange={handleDebugUiRegionsChange}
+              onClose={closeSettings}
+              onDismissMessage={dismissMessage}
+              onDeleteArchivedSession={deleteArchivedSession}
+              onDeleteMcpServer={deleteMcpServer}
+              onDeleteProvider={deleteProvider}
+              onDeleteProviderAuthSession={deleteProviderAuthSession}
+              onMcpServerDraftChange={setMcpServerDraftValue}
+              onMcpToolPolicyChange={setMcpToolPolicy}
+              onMcpServerSelect={selectMcpServer}
+              onProviderAuthMethodChange={setProviderAuthMethod}
+              onProviderDraftChange={setProviderDraftValue}
+              onRefreshProviderCatalog={refreshProviderCatalog}
+              onLoadArchivedSessions={loadArchivedSessions}
+              onRestoreArchivedSession={restoreArchivedSession}
+              onSaveMcpServer={saveMcpServer}
+              onSaveProviderApiKey={saveProviderApiKey}
+              onSaveProvider={saveProvider}
+              onSelectionChange={setSelectionDraftValue}
+              onTestProviderConnection={testProviderConnection}
+              onStartProviderAuthFlow={startProviderAuthFlow}
+              onStartNewMcpServer={startNewMcpServer}
+              onCancelProviderAuthFlow={cancelProviderAuthFlow}
+            />
+          </Suspense>
         ) : null}
         </main>
       </div>
