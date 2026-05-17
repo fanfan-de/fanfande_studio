@@ -2257,13 +2257,69 @@ describe("ThreadView auto-scroll", () => {
     expect(threadColumn.scrollTop).toBe(420)
   })
 
-  it("defaults to the latest content when a saved tab snapshot is at the top", () => {
+  it("records the viewport focused turn when saving a session scroll position", () => {
+    const snapshots: Record<string, ThreadScrollSnapshot> = {}
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getRect(this: HTMLElement) {
+      const element = this
+      if (element.classList.contains("thread-column")) {
+        return { x: 0, y: 0, width: 600, height: 500, top: 0, right: 600, bottom: 500, left: 0, toJSON: () => ({}) }
+      }
+      if (element.dataset.turnId === "user-1") {
+        return { x: 0, y: -260, width: 600, height: 320, top: -260, right: 600, bottom: 60, left: 0, toJSON: () => ({}) }
+      }
+      if (element.dataset.turnId === "assistant-1") {
+        return { x: 0, y: 80, width: 600, height: 260, top: 80, right: 600, bottom: 340, left: 0, toJSON: () => ({}) }
+      }
+      if (element.dataset.turnId === "assistant-2") {
+        return { x: 0, y: 360, width: 600, height: 260, top: 360, right: 600, bottom: 620, left: 0, toJSON: () => ({}) }
+      }
+
+      return { x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0, toJSON: () => ({}) }
+    })
+
+    try {
+      const { threadColumn } = renderThread(
+        [
+          userTurn("user-1", "Older prompt"),
+          assistantTurn("assistant-1", "Centered agent reply"),
+          assistantTurn("assistant-2", "Lower agent reply"),
+        ],
+        {
+          scrollStateKey: "session:session-1",
+          readScrollSnapshot: (key) => snapshots[key] ?? null,
+          saveScrollSnapshot: (key, snapshot) => {
+            snapshots[key] = snapshot
+          },
+        },
+      )
+      setScrollMetrics(threadColumn, {
+        clientHeight: 500,
+        scrollHeight: 1800,
+        scrollTop: 620,
+      })
+
+      fireEvent.pointerDown(threadColumn)
+      fireEvent.scroll(threadColumn)
+
+      expect(snapshots["session:session-1"]?.anchor).toEqual({
+        kind: "focus-turn",
+        turnID: "assistant-1",
+        offsetWithinViewport: 80,
+      })
+    } finally {
+      rectSpy.mockRestore()
+    }
+  })
+
+  it("defaults to the latest content when a non-user saved tab snapshot is at the top", () => {
     const snapshots: Record<string, ThreadScrollSnapshot> = {
       "session:session-2": {
         scrollTop: 0,
         scrollHeight: 1200,
         clientHeight: 400,
         pinnedToBottom: false,
+        hasScrollableContent: true,
+        origin: "restore",
         updatedAt: 1,
       },
     }
@@ -2291,6 +2347,62 @@ describe("ThreadView auto-scroll", () => {
     )
 
     expect(threadColumn.scrollTop).toBe(1200)
+  })
+
+  it("restores an explicit user scroll position at the top of a session", async () => {
+    const snapshots: Record<string, ThreadScrollSnapshot> = {}
+    const readScrollSnapshot = vi.fn((key: string) => snapshots[key] ?? null)
+    const saveScrollSnapshot = vi.fn((key: string, snapshot: ThreadScrollSnapshot) => {
+      snapshots[key] = snapshot
+    })
+    const { rerender, props, threadColumn } = renderThread(
+      [assistantTurn("assistant-1", "Working")],
+      {
+        scrollStateKey: "session:session-1",
+        readScrollSnapshot,
+        saveScrollSnapshot,
+      },
+    )
+
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 1400,
+      scrollTop: 0,
+    })
+    fireEvent.pointerDown(threadColumn)
+    fireEvent.scroll(threadColumn)
+    await waitForAnimationFrame()
+
+    expect(snapshots["session:session-1"]?.scrollTop).toBe(0)
+    expect(snapshots["session:session-1"]?.origin).toBe("user")
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={sessionB}
+        activeTurns={[assistantTurn("assistant-2", "Other session")]}
+        scrollStateKey="session:session-2"
+      />,
+    )
+
+    expect(threadColumn.scrollTop).toBe(1400)
+
+    Object.defineProperty(threadColumn, "scrollHeight", {
+      configurable: true,
+      value: 1400,
+    })
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={session}
+        activeTurns={[assistantTurn("assistant-1", "Working")]}
+        scrollStateKey="session:session-1"
+      />,
+    )
+
+    expect(threadColumn.scrollTop).toBe(0)
+    expect(snapshots["session:session-1"]?.origin).toBe("user")
   })
 
   it("keeps a new session pinned to the latest content while loaded history expands", async () => {
@@ -2363,6 +2475,356 @@ describe("ThreadView auto-scroll", () => {
     await waitForAnimationFrame()
 
     expect(threadColumn.scrollTop).toBe(1600)
+  })
+
+  it("ignores non-user top scroll resets while waiting for new session history", async () => {
+    const snapshots: Record<string, ThreadScrollSnapshot> = {}
+    const { rerender, props, threadColumn } = renderThread([], {
+      activeSession: sessionB,
+      scrollStateKey: "session:session-2",
+      readScrollSnapshot: (key) => snapshots[key] ?? null,
+      saveScrollSnapshot: (key, snapshot) => {
+        snapshots[key] = snapshot
+      },
+    })
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 1600,
+      scrollTop: 0,
+    })
+
+    fireEvent.scroll(threadColumn)
+    await waitForAnimationFrame()
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={sessionB}
+        activeTurns={[assistantTurn("assistant-2", "Delayed loaded history")]}
+        scrollStateKey="session:session-2"
+      />,
+    )
+
+    Object.defineProperty(threadColumn, "scrollHeight", {
+      configurable: true,
+      value: 1600,
+    })
+
+    await waitForAnimationFrame()
+
+    expect(threadColumn.scrollTop).toBe(1600)
+    expect(snapshots["session:session-2"]?.scrollTop).toBe(1600)
+  })
+
+  it("does not overwrite a remembered non-bottom position with a non-user top reset", async () => {
+    const snapshots: Record<string, ThreadScrollSnapshot> = {}
+    const readScrollSnapshot = vi.fn((key: string) => snapshots[key] ?? null)
+    const saveScrollSnapshot = vi.fn((key: string, snapshot: ThreadScrollSnapshot) => {
+      snapshots[key] = snapshot
+    })
+    const { rerender, props, threadColumn } = renderThread(
+      [assistantTurn("assistant-1", "Working")],
+      {
+        scrollStateKey: "session:session-1",
+        readScrollSnapshot,
+        saveScrollSnapshot,
+      },
+    )
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 1600,
+      scrollTop: 520,
+    })
+    fireEvent.pointerDown(threadColumn)
+    fireEvent.scroll(threadColumn)
+
+    expect(snapshots["session:session-1"]?.scrollTop).toBe(520)
+
+    threadColumn.scrollTop = 0
+    fireEvent.scroll(threadColumn)
+
+    expect(threadColumn.scrollTop).toBe(520)
+    expect(snapshots["session:session-1"]?.scrollTop).toBe(520)
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={sessionB}
+        activeTurns={[assistantTurn("assistant-2", "Other session")]}
+        scrollStateKey="session:session-2"
+      />,
+    )
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={session}
+        activeTurns={[assistantTurn("assistant-1", "Working")]}
+        scrollStateKey="session:session-1"
+      />,
+    )
+
+    expect(threadColumn.scrollTop).toBe(520)
+  })
+
+  it("does not overwrite a previous session position with a delayed save after switching tabs", async () => {
+    const snapshots: Record<string, ThreadScrollSnapshot> = {}
+    const readScrollSnapshot = vi.fn((key: string) => snapshots[key] ?? null)
+    const saveScrollSnapshot = vi.fn((key: string, snapshot: ThreadScrollSnapshot) => {
+      snapshots[key] = snapshot
+    })
+    const { rerender, props, threadColumn } = renderThread(
+      [assistantTurn("assistant-1", "Working")],
+      {
+        scrollStateKey: "session:session-1",
+        readScrollSnapshot,
+        saveScrollSnapshot,
+      },
+    )
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 1600,
+      scrollTop: 520,
+    })
+
+    fireEvent.pointerDown(threadColumn)
+    fireEvent.scroll(threadColumn)
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={sessionB}
+        activeTurns={[assistantTurn("assistant-2", "Other session")]}
+        scrollStateKey="session:session-2"
+      />,
+    )
+
+    threadColumn.scrollTop = 0
+    await waitForAnimationFrame()
+
+    expect(snapshots["session:session-1"]?.scrollTop).toBe(520)
+
+    Object.defineProperty(threadColumn, "scrollHeight", {
+      configurable: true,
+      value: 1600,
+    })
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={session}
+        activeTurns={[assistantTurn("assistant-1", "Working")]}
+        scrollStateKey="session:session-1"
+      />,
+    )
+
+    expect(threadColumn.scrollTop).toBe(520)
+  })
+
+  it("keeps a saved non-bottom position while restored session content is not scrollable yet", () => {
+    const snapshots: Record<string, ThreadScrollSnapshot> = {
+      "session:session-1": {
+        scrollTop: 520,
+        scrollHeight: 1600,
+        clientHeight: 400,
+        pinnedToBottom: false,
+        hasScrollableContent: true,
+        origin: "user",
+        updatedAt: 1,
+      },
+    }
+    const { rerender, props, threadColumn } = renderThread(
+      [assistantTurn("assistant-2", "Other session")],
+      {
+        activeSession: sessionB,
+        scrollStateKey: "session:session-2",
+        readScrollSnapshot: (key) => snapshots[key] ?? null,
+        saveScrollSnapshot: (key, snapshot) => {
+          snapshots[key] = snapshot
+        },
+      },
+    )
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 400,
+      scrollTop: 0,
+    })
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={session}
+        activeTurns={[]}
+        scrollStateKey="session:session-1"
+      />,
+    )
+
+    expect(threadColumn.scrollTop).toBe(0)
+    expect(snapshots["session:session-1"]?.scrollTop).toBe(520)
+
+    Object.defineProperty(threadColumn, "scrollHeight", {
+      configurable: true,
+      value: 1600,
+    })
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={session}
+        activeTurns={[assistantTurn("assistant-1", "Working")]}
+        scrollStateKey="session:session-1"
+      />,
+    )
+
+    expect(threadColumn.scrollTop).toBe(520)
+  })
+
+  it("restores a remembered non-bottom position when a shown panel has been reset to the top", () => {
+    const originalResizeObserver = globalThis.ResizeObserver
+    const resizeCallbacks: ResizeObserverCallback[] = []
+    class TestResizeObserver implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallbacks.push(callback)
+      }
+
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    globalThis.ResizeObserver = TestResizeObserver
+
+    try {
+      const snapshots: Record<string, ThreadScrollSnapshot> = {
+        "session:session-1": {
+          scrollTop: 520,
+          scrollHeight: 1600,
+          clientHeight: 400,
+          pinnedToBottom: false,
+          hasScrollableContent: true,
+          origin: "user",
+          updatedAt: 1,
+        },
+      }
+      const { threadColumn } = renderThread([assistantTurn("assistant-1", "Working")], {
+        scrollStateKey: "session:session-1",
+        readScrollSnapshot: (key) => snapshots[key] ?? null,
+        saveScrollSnapshot: (key, snapshot) => {
+          snapshots[key] = snapshot
+        },
+      })
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 1600,
+        scrollTop: 0,
+      })
+
+      resizeCallbacks.forEach((callback) => callback([], {} as ResizeObserver))
+      expect(threadColumn.scrollTop).toBe(520)
+
+      threadColumn.scrollTop = 0
+      resizeCallbacks.forEach((callback) => callback([], {} as ResizeObserver))
+
+      expect(threadColumn.scrollTop).toBe(520)
+      expect(snapshots["session:session-1"]?.scrollTop).toBe(520)
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver
+    }
+  })
+
+  it("defaults a new session to the latest assistant message when layout is available", () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getRect(this: HTMLElement) {
+      const element = this
+      if (element.classList.contains("thread-column")) {
+        return { x: 0, y: 0, width: 600, height: 500, top: 0, right: 600, bottom: 500, left: 0, toJSON: () => ({}) }
+      }
+
+      const scrollTop = element.closest<HTMLElement>(".thread-column")?.scrollTop ?? 0
+      if (element.dataset.turnId === "assistant-1") {
+        const top = 120 - scrollTop
+        return { x: 0, y: top, width: 600, height: 220, top, right: 600, bottom: top + 220, left: 0, toJSON: () => ({}) }
+      }
+      if (element.dataset.turnId === "user-2") {
+        const top = 1280 - scrollTop
+        return { x: 0, y: top, width: 600, height: 120, top, right: 600, bottom: top + 120, left: 0, toJSON: () => ({}) }
+      }
+      if (element.dataset.turnId === "assistant-2") {
+        const top = 1700 - scrollTop
+        return { x: 0, y: top, width: 600, height: 420, top, right: 600, bottom: top + 420, left: 0, toJSON: () => ({}) }
+      }
+
+      return { x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0, toJSON: () => ({}) }
+    })
+
+    try {
+      const { rerender, props, threadColumn } = renderThread([], {
+        activeSession: sessionB,
+        scrollStateKey: "session:session-2",
+        readScrollSnapshot: () => null,
+        saveScrollSnapshot: vi.fn(),
+      })
+      setScrollMetrics(threadColumn, {
+        clientHeight: 500,
+        scrollHeight: 2400,
+        scrollTop: 0,
+      })
+
+      rerender(
+        <ThreadView
+          {...props}
+          activeSession={sessionB}
+          activeTurns={[
+            assistantTurn("assistant-1", "Older agent reply"),
+            userTurn("user-2", "Follow up"),
+            assistantTurn("assistant-2", "Latest agent reply"),
+          ]}
+          scrollStateKey="session:session-2"
+        />,
+      )
+
+      expect(threadColumn.scrollTop).toBe(1692)
+    } finally {
+      rectSpy.mockRestore()
+    }
+  })
+
+  it("keeps a new session pinned when rendered history changes size without a React update", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver
+    const resizeCallbacks: ResizeObserverCallback[] = []
+    class TestResizeObserver implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallbacks.push(callback)
+      }
+
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    globalThis.ResizeObserver = TestResizeObserver
+
+    try {
+      const { threadColumn } = renderThread([assistantTurn("assistant-2", "Loaded history")], {
+        activeSession: sessionB,
+        scrollStateKey: "session:session-2",
+        readScrollSnapshot: () => null,
+        saveScrollSnapshot: vi.fn(),
+      })
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 800,
+        scrollTop: 800,
+      })
+
+      await waitForAnimationFrames(15)
+      Object.defineProperty(threadColumn, "scrollHeight", {
+        configurable: true,
+        value: 1800,
+      })
+
+      resizeCallbacks.forEach((callback) => callback([], {} as ResizeObserver))
+
+      expect(threadColumn.scrollTop).toBe(1800)
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver
+    }
   })
 
   it("restores against a saved turn anchor when message heights shift", () => {
