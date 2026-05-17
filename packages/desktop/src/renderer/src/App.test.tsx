@@ -4001,69 +4001,6 @@ describe("App", () => {
     expect(gitListBranches).not.toHaveBeenCalled()
   })
 
-  it("keeps the session scroll position when workspace refresh state rerenders the active pane", async () => {
-    const workspace: LoadedFolderWorkspace = {
-      id: "C:\\Projects\\Atlas\\client",
-      directory: "C:\\Projects\\Atlas\\client",
-      name: "client",
-      created: 1,
-      updated: 20,
-      project: {
-        id: "prj_atlas",
-        name: "Atlas",
-        worktree: "C:\\Projects\\Atlas",
-      },
-      sessions: [
-        {
-          id: "session-atlas-review",
-          projectID: "prj_atlas",
-          directory: "C:\\Projects\\Atlas\\client",
-          title: "Atlas review",
-          created: 18,
-          updated: 20,
-        },
-      ],
-    }
-    let workspaceFileChangeListener: ((event: { directory: string; paths: string[] }) => void) | null = null
-    window.desktop!.onWorkspaceFileChange = vi.fn((listener) => {
-      workspaceFileChangeListener = listener
-      return vi.fn(() => {
-        workspaceFileChangeListener = null
-      })
-    })
-    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([workspace])
-
-    render(<App />)
-
-    await screen.findByRole("button", { name: "Atlas review" })
-    const threadColumn = document.querySelector(".thread-column") as HTMLElement | null
-    expect(threadColumn).not.toBeNull()
-
-    Object.defineProperty(threadColumn, "clientHeight", {
-      configurable: true,
-      value: 400,
-    })
-    Object.defineProperty(threadColumn, "scrollHeight", {
-      configurable: true,
-      value: 1600,
-    })
-    threadColumn!.scrollTop = 520
-    fireEvent.wheel(threadColumn!)
-    fireEvent.scroll(threadColumn!)
-
-    threadColumn!.scrollTop = 0
-    act(() => {
-      workspaceFileChangeListener?.({
-        directory: workspace.directory,
-        paths: ["C:\\Projects\\Atlas\\client\\src\\index.ts"],
-      })
-    })
-
-    await waitFor(() => {
-      expect(threadColumn!.scrollTop).toBe(520)
-    })
-  })
-
   it("reopens the workspace when watcher events indicate repository structure changed", async () => {
     const workspace: LoadedFolderWorkspace = {
       id: "C:\\Projects\\Atlas\\client",

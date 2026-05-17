@@ -64,7 +64,6 @@ import { isSideChatSession } from "../workspace"
 type ProposedPlanConfirmHandler = (input: { planMarkdown: string }) => void | Promise<void>
 type ProposedPlanCardStatus = "idle" | "cancelled" | "confirming" | "confirmed"
 export type ThreadTurnMotion = "history" | "new" | "live"
-
 type ThreadScrollMode = "follow" | "detached"
 
 export interface ThreadScrollSnapshot {
@@ -161,10 +160,6 @@ type QuestionAnswerHandler = (input: {
   freeformText?: string
 }) => void | Promise<void>
 
-const THREAD_BOTTOM_LOCK_THRESHOLD_PX = 32
-const THREAD_LATEST_AGENT_TOP_PADDING_PX = 8
-const THREAD_USER_SCROLL_INTENT_WINDOW_MS = 800
-const THREAD_TOP_RESET_THRESHOLD_PX = 2
 const IMAGE_LIGHTBOX_BODY_CLASS = "is-image-lightbox-open"
 const IMAGE_LIGHTBOX_FOCUSABLE_SELECTOR = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 const IMAGE_LIGHTBOX_MIN_ZOOM = 0.5
@@ -173,6 +168,11 @@ const PROPOSED_PLAN_OPEN_TAG = "<proposed_plan>"
 const PROPOSED_PLAN_CLOSE_TAG = "</proposed_plan>"
 const IMAGE_LIGHTBOX_ZOOM_STEP = 0.1
 const IMAGE_TALL_RATIO_THRESHOLD = 1.8
+const THREAD_BOTTOM_LOCK_THRESHOLD_PX = 32
+const THREAD_LATEST_AGENT_TOP_PADDING_PX = 8
+const THREAD_USER_SCROLL_INTENT_WINDOW_MS = 800
+const THREAD_TOP_RESET_THRESHOLD_PX = 2
+const threadScrollSnapshots = new Map<string, ThreadScrollSnapshot>()
 
 type ImagePreviewFitMode = "fit-width" | "fit-contain"
 
@@ -3489,16 +3489,22 @@ function VisibleThreadView({
     }
     latestScrollSnapshotRef.current = snapshot
     latestScrollSnapshotKeyRef.current = key
+    threadScrollSnapshots.set(key, snapshot)
     return snapshot
   }
 
   function rememberThreadScrollSnapshot(key: string, snapshot: ThreadScrollSnapshot) {
     latestScrollSnapshotRef.current = snapshot
     latestScrollSnapshotKeyRef.current = key
+    threadScrollSnapshots.set(key, snapshot)
   }
 
   function readLatestThreadScrollSnapshotForKey(key = effectiveScrollStateKey) {
     return latestScrollSnapshotKeyRef.current === key ? latestScrollSnapshotRef.current : null
+  }
+
+  function readStoredThreadScrollSnapshot(key = effectiveScrollStateKey) {
+    return readScrollSnapshot?.(key) ?? threadScrollSnapshots.get(key) ?? null
   }
 
   function persistThreadScrollSnapshot(
@@ -3506,26 +3512,26 @@ function VisibleThreadView({
     mode: ThreadScrollMode = scrollModeRef.current,
   ) {
     const threadColumn = threadColumnRef.current
-    if (!threadColumn) return
+    if (!threadColumn || !key) return
 
     const snapshot = captureThreadScrollSnapshot(threadColumn, key, mode)
-    if (!saveScrollSnapshot || !key) return
-
-    saveScrollSnapshot(key, snapshot)
+    saveScrollSnapshot?.(key, snapshot)
   }
 
   function persistLatestThreadScrollSnapshot(key = effectiveScrollStateKey) {
     const snapshot = readLatestThreadScrollSnapshotForKey(key)
-    if (!saveScrollSnapshot || !key || !snapshot) return false
+    if (!key || !snapshot) return false
 
-    saveScrollSnapshot(key, snapshot)
+    threadScrollSnapshots.set(key, snapshot)
+    saveScrollSnapshot?.(key, snapshot)
     return true
   }
 
   function saveThreadScrollSnapshotValue(key: string, snapshot: ThreadScrollSnapshot) {
-    if (!saveScrollSnapshot || !key) return
+    if (!key) return
 
-    saveScrollSnapshot(key, snapshot)
+    threadScrollSnapshots.set(key, snapshot)
+    saveScrollSnapshot?.(key, snapshot)
   }
 
   function setThreadScrollTop(threadColumn: HTMLDivElement, scrollTop: number) {
@@ -3577,7 +3583,7 @@ function VisibleThreadView({
 
     const snapshot =
       getRestorableThreadScrollSnapshot(readLatestThreadScrollSnapshotForKey(key)) ??
-      getRestorableThreadScrollSnapshot(readScrollSnapshot?.(key) ?? null)
+      getRestorableThreadScrollSnapshot(readStoredThreadScrollSnapshot(key))
     if (!snapshot) return false
 
     return restoreDetachedThreadPosition(threadColumn, snapshot, key)
@@ -3751,7 +3757,7 @@ function VisibleThreadView({
     }
 
     currentScrollStateKeyRef.current = effectiveScrollStateKey
-    restoreSavedThreadPosition(threadColumn, readScrollSnapshot?.(effectiveScrollStateKey) ?? null, effectiveScrollStateKey)
+    restoreSavedThreadPosition(threadColumn, readStoredThreadScrollSnapshot(effectiveScrollStateKey), effectiveScrollStateKey)
   }, [effectiveScrollStateKey, readScrollSnapshot, threadColumnRef])
 
   useLayoutEffect(() => {
