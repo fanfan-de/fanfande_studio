@@ -280,6 +280,7 @@ export interface LoadedSessionHistoryInfo {
   sessionID: string
   role: "user" | "assistant"
   created: number
+  parentMessageID?: string | null
   completed?: number
   diffSummary?: SessionDiffSummary
   error?: {

@@ -65,7 +65,7 @@ export function project(event: RuntimeEvent.RuntimeEvent) {
       })
       return
     case "message.recorded":
-      Session.upsertMessage(event.payload.message)
+      Session.recordMessage(event.payload.message)
       return
     case "part.recorded":
       Session.upsertPart(event.payload.part)

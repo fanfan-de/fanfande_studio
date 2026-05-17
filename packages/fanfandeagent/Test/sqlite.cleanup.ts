@@ -15,6 +15,22 @@ process.env.FanFande_PROMPTS_ROOT = promptRoot
 const Sqlite = await import("#database/Sqlite.ts")
 Sqlite.setDatabaseFile(databaseFile)
 
+async function removeWithRetry(target: string, attempts = 10) {
+  let lastError: unknown
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      Bun.gc(true)
+      await rm(target, { recursive: true, force: true })
+      return
+    } catch (error) {
+      lastError = error
+      await Bun.sleep(50 * (attempt + 1))
+    }
+  }
+
+  throw lastError
+}
+
 afterAll(async () => {
   Sqlite.closeDatabase()
   if (previousDatabaseFile === undefined) {
@@ -27,6 +43,6 @@ afterAll(async () => {
   } else {
     process.env.FanFande_PROMPTS_ROOT = previousPromptRoot
   }
-  await rm(databaseRoot, { recursive: true, force: true })
-  await rm(promptRoot, { recursive: true, force: true })
+  await removeWithRetry(databaseRoot)
+  await removeWithRetry(promptRoot)
 })

@@ -133,6 +133,7 @@ export const SessionInfo = z
       })
       .optional(),
     title: z.string(),
+    activeMessageID: z.string().nullable().optional(),
     version: z.string(),
     workflow: z
       .object({
@@ -436,8 +437,73 @@ function ensureSessionTables() {
     CREATE INDEX IF NOT EXISTS "idx_side_chat_links_parent_anchor"
     ON "side_chat_links" ("parentSessionID", "anchorMessageID", "createdAt");
   `)
+  db.db.run(`
+    CREATE INDEX IF NOT EXISTS "idx_messages_session_parent_created"
+    ON "messages" ("sessionID", "parentMessageID", "created", "id");
+  `)
+  db.db.run(`
+    CREATE INDEX IF NOT EXISTS "idx_messages_session_created"
+    ON "messages" ("sessionID", "created", "id");
+  `)
+
+  backfillLegacySessionTrees()
 
   sessionTablesGeneration = db.getDatabaseGeneration()
+}
+
+function backfillLegacySessionTrees(sessionIDs?: string[]) {
+  const targetSessionIDs = sessionIDs ? new Set(sessionIDs) : undefined
+  const sessions = db.findManyWithSchema("sessions", SessionInfo)
+
+  for (const session of sessions) {
+    if (targetSessionIDs && !targetSessionIDs.has(session.id)) continue
+    if (session.activeMessageID) continue
+
+    const messages = db.findManyWithSchema("messages", Message.MessageInfo, {
+      where: [{ column: "sessionID", value: session.id }],
+      orderBy: [
+        { column: "created", direction: "ASC" },
+        { column: "id", direction: "ASC" },
+      ],
+    })
+    if (messages.length === 0) continue
+    if (messages.some((message) => Boolean(message.parentMessageID))) continue
+
+    let previousMessageID: string | null = null
+    const updates = messages.map((message) => {
+      const parentMessageID = previousMessageID
+      previousMessageID = message.id
+      if (message.role === "assistant") {
+        return {
+          ...message,
+          parentMessageID,
+          parentID: message.parentID || parentMessageID || "",
+        } satisfies Message.MessageInfo
+      }
+      return {
+        ...message,
+        parentMessageID,
+      } satisfies Message.MessageInfo
+    })
+    const activeMessageID = updates[updates.length - 1]!.id
+
+    const commitBackfill = db.db.transaction((nextMessages: Message.MessageInfo[], nextActiveMessageID: string) => {
+      for (const message of nextMessages) {
+        db.updateByIdWithSchema("messages", message.id, message, Message.MessageInfo)
+      }
+      db.updateByIdWithSchema(
+        "sessions",
+        session.id,
+        normalizeSessionInfo({
+          ...session,
+          activeMessageID: nextActiveMessageID,
+        }),
+        SessionInfo,
+      )
+    })
+
+    commitBackfill(updates, activeMessageID)
+  }
 }
 
 function DataBaseCreate<T extends Exclude<TableName, "projects">>(tableName: T, tableRecord: TableRecordMap[T]): void {
@@ -480,6 +546,46 @@ function upsertMessage(message: Message.MessageInfo) {
   }
 
   db.insertOneWithSchema("messages", message, Message.MessageInfo)
+}
+
+function getActiveMessageID(sessionID: string): string | null {
+  const existing = DataBaseRead("sessions", sessionID) as SessionInfo | null
+  return existing?.activeMessageID ?? null
+}
+
+function updateActiveMessageID(
+  sessionID: string,
+  activeMessageID: string | null,
+  options?: {
+    touch?: boolean
+  },
+): SessionInfo | null {
+  const existing = DataBaseRead("sessions", sessionID) as SessionInfo | null
+  if (!existing) return null
+
+  const next: SessionInfo = {
+    ...existing,
+    activeMessageID,
+    time: options?.touch
+      ? {
+          ...existing.time,
+          updated: Date.now(),
+        }
+      : existing.time,
+  }
+
+  updateSessionRecord(next)
+  return next
+}
+
+function recordMessage(message: Message.MessageInfo) {
+  ensureSessionTables()
+  const existing = db.findById("messages", Message.MessageInfo, message.id)
+  const currentActiveMessageID = getActiveMessageID(message.sessionID)
+  upsertMessage(message)
+  if (!existing || !currentActiveMessageID || currentActiveMessageID === message.id) {
+    updateActiveMessageID(message.sessionID, message.id)
+  }
 }
 
 function upsertPart(part: Message.Part) {
@@ -1163,7 +1269,8 @@ function restoreArchivedSession(sessionID: string): SessionInfo | null {
   })
 
   commitRestore(archived, restoredSession)
-  return restoredSession
+  backfillLegacySessionTrees([restoredSession.id])
+  return (DataBaseRead("sessions", restoredSession.id) as SessionInfo | null) ?? restoredSession
 }
 
 function deleteArchivedSession(sessionID: string): ArchivedSessionRecord | null {
@@ -1241,7 +1348,7 @@ function removeProjectSessions(projectID: string): SessionInfo[] {
 }
 
 const updateMessage = fn(Message.MessageInfo, (msg) => {
-  upsertMessage(msg)
+  recordMessage(msg)
 })
 
 const updatePart = fn(Message.Part, (part) => {
@@ -1319,6 +1426,7 @@ export {
   DEFAULT_SESSION_TITLE,
   isDefaultSessionTitle,
   getSessionOrigin,
+  getActiveMessageID,
   getSessionModelSelection,
   getSideChatContext,
   getSideChatLink,
@@ -1327,6 +1435,8 @@ export {
   removeProjectSessions,
   removeSession,
   restoreArchivedSession,
+  recordMessage,
+  updateActiveMessageID,
   updateSessionTitle,
   updateTurn,
   updateSessionModelSelection,

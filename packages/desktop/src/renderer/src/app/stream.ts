@@ -1964,14 +1964,19 @@ function buildCompactionMarkerTurn(message: LoadedSessionHistoryMessage, items: 
 export function buildTurnsFromHistory(messages: LoadedSessionHistoryMessage[]) {
   const turns: Turn[] = []
   let pendingCompactionItems: AssistantTraceItem[] = []
+  const hasParentMetadata = messages.some((message) =>
+    Object.prototype.hasOwnProperty.call(message.info, "parentMessageID"),
+  )
+  const orderedMessages = hasParentMetadata
+    ? messages
+    : [...messages].sort((left, right) => {
+        const leftCreated = readNumber(left.info.created)
+        const rightCreated = readNumber(right.info.created)
+        if (leftCreated !== rightCreated) return leftCreated - rightCreated
+        return left.info.id.localeCompare(right.info.id)
+      })
 
-  for (const message of [...messages]
-    .sort((left, right) => {
-      const leftCreated = readNumber(left.info.created)
-      const rightCreated = readNumber(right.info.created)
-      if (leftCreated !== rightCreated) return leftCreated - rightCreated
-      return left.info.id.localeCompare(right.info.id)
-    })) {
+  for (const message of orderedMessages) {
     if (isCompactionHistoryMessage(message)) {
       pendingCompactionItems = upsertTraceItems(pendingCompactionItems, buildCompactionItemsFromHistory(message))
       continue

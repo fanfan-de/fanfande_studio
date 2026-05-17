@@ -781,7 +781,7 @@ export function create(input: {
             return
         }
 
-        await Session.updateMessage(input.Assistant)
+        await Session.recordMessage(input.Assistant)
     }
 
     const emitRuntimePhase = (

@@ -2,6 +2,72 @@ import { describe, expect, it } from "vitest"
 import { applyAgentStreamEventToTurn, buildStreamingAssistantTurn, buildTurnsFromHistory, buildUserTurn, buildUserTurnText } from "./stream"
 
 describe("stream trace reducer", () => {
+  it("trusts backend order when history includes parent metadata", () => {
+    const turns = buildTurnsFromHistory([
+      {
+        info: {
+          id: "assistant-root",
+          sessionID: "session-tree",
+          role: "assistant",
+          created: 100,
+          parentMessageID: null,
+        },
+        parts: [],
+      },
+      {
+        info: {
+          id: "assistant-branch-head",
+          sessionID: "session-tree",
+          role: "assistant",
+          created: 300,
+          parentMessageID: "assistant-root",
+        },
+        parts: [],
+      },
+      {
+        info: {
+          id: "assistant-middle",
+          sessionID: "session-tree",
+          role: "assistant",
+          created: 200,
+          parentMessageID: "assistant-root",
+        },
+        parts: [],
+      },
+    ])
+
+    expect(turns.map((turn) => turn.id)).toEqual([
+      "assistant-root",
+      "assistant-branch-head",
+      "assistant-middle",
+    ])
+  })
+
+  it("keeps legacy created/id sorting when history has no parent metadata", () => {
+    const turns = buildTurnsFromHistory([
+      {
+        info: {
+          id: "assistant-newer",
+          sessionID: "session-legacy",
+          role: "assistant",
+          created: 200,
+        },
+        parts: [],
+      },
+      {
+        info: {
+          id: "assistant-older",
+          sessionID: "session-legacy",
+          role: "assistant",
+          created: 100,
+        },
+        parts: [],
+      },
+    ])
+
+    expect(turns.map((turn) => turn.id)).toEqual(["assistant-older", "assistant-newer"])
+  })
+
   it("reduces canonical runtime events into an assistant turn", () => {
     let turn = buildStreamingAssistantTurn("Show runtime trace")
 

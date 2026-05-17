@@ -139,7 +139,7 @@ async function persistMessageRecord(
         return
     }
 
-    await Session.updateMessage(message)
+    await Session.recordMessage(message)
 }
 
 async function persistRecoveredToolError(
@@ -710,7 +710,16 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             })
             throwIfAborted(abort)
 
-            const assistantMessage = createAssistantMessage(sessionID, lastUser, model, agent.name, assistantMessageID, turn.turnID);
+            const assistantParentMessageID = Session.getActiveMessageID(sessionID) ?? lastUser.id
+            const assistantMessage = createAssistantMessage(
+                sessionID,
+                lastUser,
+                model,
+                agent.name,
+                assistantMessageID,
+                turn.turnID,
+                assistantParentMessageID,
+            );
             currentAssistant = assistantMessage;
             await persistMessageRecord(assistantMessage, turn);
             Session.updateTurn(turn.turnID, {
@@ -1303,27 +1312,7 @@ type LoopRuntimeInput = {
 
 // 从 messages + parts 重建模型上下文，避免内存态与数据库脱节。
 function loadMessagesWithParts(sessionID: string): Message.WithParts[] {
-    const messageInfos = db.findManyWithSchema("messages", Message.MessageInfo, {
-        where: [{ column: "sessionID", value: sessionID }],
-        orderBy: [{ column: "created", direction: "ASC" }],
-    });
-
-    const allParts = db.findManyWithSchema("parts", Message.Part, {
-        where: [{ column: "sessionID", value: sessionID }],
-        orderBy: [{ column: "id", direction: "ASC" }],
-    });
-
-    const partsByMessageID = new Map<string, Message.Part[]>();
-    for (const part of allParts) {
-        const list = partsByMessageID.get(part.messageID) ?? [];
-        list.push(part);
-        partsByMessageID.set(part.messageID, list);
-    }
-
-    return messageInfos.map((messageInfo) => ({
-        info: messageInfo,
-        parts: partsByMessageID.get(messageInfo.id) ?? [],
-    }));
+    return Message.listActiveBranch(sessionID)
 }
 
 function findBlockingAssistantInteractionAfterUser(
@@ -1567,14 +1556,17 @@ function createAssistantMessage(
     agentName: string,
     messageID: string = Identifier.ascending("message"),
     turnID?: string,
+    parentMessageID?: string | null,
 ): Message.Assistant {
+    const normalizedParentMessageID = parentMessageID ?? lastUser.id ?? null
     return {
         id: messageID,
         sessionID,
         turnID,
+        parentMessageID: normalizedParentMessageID,
         role: "assistant",
         created: Date.now(),
-        parentID: "",
+        parentID: normalizedParentMessageID ?? "",
         modelID: model.id,
         providerID: model.providerID,
         agent: agentName,
@@ -1758,6 +1750,7 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
     const messageinfo: Message.User = {
         id: Identifier.ascending("message"),
         sessionID: input.sessionID,
+        parentMessageID: session?.activeMessageID ?? null,
         role: "user",
         created: Date.now(),
         agent: input.agent ?? "default",

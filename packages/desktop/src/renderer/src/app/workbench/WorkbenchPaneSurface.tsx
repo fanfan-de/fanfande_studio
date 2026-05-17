@@ -30,7 +30,6 @@ import type { WorkbenchPaneState } from "../agent-workspace/workspace-derived-st
 import { useConversationTurns, type ConversationStoreApi } from "../agent-workspace/conversation-store"
 
 const THREAD_TOP_RESET_THRESHOLD_PX = 2
-const THREAD_RESTORE_MIN_SCROLL_TOP_PX = 32
 
 function ComposerPlanModeNotice({ workflow }: { workflow: SessionWorkflowBadgeInfo }) {
   return (
@@ -250,7 +249,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
     if (threadColumn.scrollTop > THREAD_TOP_RESET_THRESHOLD_PX) return
 
     const snapshot = readThreadScrollSnapshot(scrollStateKey)
-    if (!snapshot || snapshot.pinnedToBottom || snapshot.scrollTop <= THREAD_RESTORE_MIN_SCROLL_TOP_PX) return
+    if (!snapshot || snapshot.pinnedToBottom || snapshot.scrollTop <= THREAD_TOP_RESET_THRESHOLD_PX) return
 
     const maxScrollTop = Math.max(0, threadColumn.scrollHeight - threadColumn.clientHeight)
     if (maxScrollTop <= THREAD_TOP_RESET_THRESHOLD_PX) return

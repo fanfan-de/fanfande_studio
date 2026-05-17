@@ -620,6 +620,7 @@ const Base = z.object({
     id: z.string(),
     sessionID: z.string(),
     turnID: Identifier.schema("turn").optional(),
+    parentMessageID: z.string().nullable().optional(),
 })
 export const ReasoningEffort = ReasoningEffortSchema.meta({
     ref: "ReasoningEffort",
@@ -759,8 +760,7 @@ export const Event = {
     )
 }
 
-// TODO: move message streaming/query helpers out of message.ts after the schema settles.
-export async function* stream(sessionID: string): AsyncGenerator<WithParts> {
+function loadSessionMessages(sessionID: string): MessageInfo[] {
     const messages = db.findManyWithSchema("messages", MessageInfo, {
         where: [{ column: "sessionID", value: sessionID }],
         orderBy: [
@@ -769,6 +769,13 @@ export async function* stream(sessionID: string): AsyncGenerator<WithParts> {
         ],
     })
 
+    return messages
+}
+
+function attachParts(messages: MessageInfo[]): WithParts[] {
+    if (messages.length === 0) return []
+
+    const sessionID = messages[0]!.sessionID
     const parts = db.findManyWithSchema("parts", Part, {
         where: [{ column: "sessionID", value: sessionID }],
         orderBy: [{ column: "id", direction: "ASC" }],
@@ -781,11 +788,98 @@ export async function* stream(sessionID: string): AsyncGenerator<WithParts> {
         partsByMessageID.set(part.messageID, list)
     }
 
-    for (const message of messages) {
-        yield {
-            info: message,
-            parts: partsByMessageID.get(message.id) ?? [],
+    return messages.map((message) => ({
+        info: message,
+        parts: partsByMessageID.get(message.id) ?? [],
+    }))
+}
+
+function readActiveMessageID(sessionID: string): string | null | undefined {
+    try {
+        const row = db.db
+            .prepare(`SELECT "activeMessageID" FROM "sessions" WHERE "id" = ? LIMIT 1`)
+            .get(sessionID) as { activeMessageID?: unknown } | undefined
+        if (!row) return undefined
+        return typeof row.activeMessageID === "string" && row.activeMessageID.trim()
+            ? row.activeMessageID
+            : null
+    } catch (error) {
+        log.warn("failed to read session active message head", {
+            sessionID,
+            error: error instanceof Error ? error.message : String(error),
+        })
+        return undefined
+    }
+}
+
+function fallbackToLinearHistory(sessionID: string, messages: MessageInfo[], reason: string, details?: Record<string, unknown>) {
+    log.warn("falling back to linear session history", {
+        sessionID,
+        reason,
+        ...details,
+    })
+    return messages
+}
+
+function resolveActiveBranchMessages(sessionID: string, messages: MessageInfo[]): MessageInfo[] {
+    if (messages.length === 0) return []
+
+    const activeMessageID = readActiveMessageID(sessionID)
+    if (!activeMessageID) {
+        return fallbackToLinearHistory(sessionID, messages, "missing_active_message_id")
+    }
+
+    const messageByID = new Map(messages.map((message) => [message.id, message]))
+    let currentID: string | null | undefined = activeMessageID
+    const seen = new Set<string>()
+    const path: MessageInfo[] = []
+
+    while (currentID) {
+        if (seen.has(currentID)) {
+            return fallbackToLinearHistory(sessionID, messages, "cycle_detected", {
+                messageID: currentID,
+            })
         }
+        seen.add(currentID)
+
+        const message = messageByID.get(currentID)
+        if (!message) {
+            const referenced = db.findById("messages", MessageInfo, currentID)
+            const reason = currentID === activeMessageID
+                ? (referenced ? "cross_session_active_message" : "missing_active_message")
+                : (referenced ? "cross_session_parent" : "missing_parent")
+            return fallbackToLinearHistory(sessionID, messages, reason, {
+                messageID: currentID,
+                parentSessionID: referenced?.sessionID,
+            })
+        }
+
+        if (message.sessionID !== sessionID) {
+            return fallbackToLinearHistory(sessionID, messages, "cross_session_parent", {
+                messageID: message.id,
+                parentSessionID: message.sessionID,
+            })
+        }
+
+        path.push(message)
+        currentID = message.parentMessageID
+    }
+
+    return path.reverse()
+}
+
+export function listAllWithParts(sessionID: string): WithParts[] {
+    return attachParts(loadSessionMessages(sessionID))
+}
+
+export function listActiveBranch(sessionID: string): WithParts[] {
+    return attachParts(resolveActiveBranchMessages(sessionID, loadSessionMessages(sessionID)))
+}
+
+// TODO: move message streaming/query helpers out of message.ts after the schema settles.
+export async function* stream(sessionID: string): AsyncGenerator<WithParts> {
+    for (const message of listActiveBranch(sessionID)) {
+        yield message
     }
 }
 
