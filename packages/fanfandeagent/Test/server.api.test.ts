@@ -498,6 +498,59 @@ async function createGitRepo(root: string, seed: string) {
   await $`git commit -m init`.cwd(root).quiet()
 }
 
+async function writeProjectSelectionPluginPackage(installRoot: string) {
+  const packageRoot = join(installRoot, "project-lab", "0.1.0")
+  const manifestRoot = join(packageRoot, ".fanfande-plugin")
+  const skillRoot = join(packageRoot, "skills", "project-helper")
+  await mkdir(manifestRoot, { recursive: true })
+  await mkdir(skillRoot, { recursive: true })
+
+  await writeFile(join(skillRoot, "SKILL.md"), [
+    "---",
+    "name: Project Helper",
+    "description: Fixture plugin skill for project selection tests.",
+    "---",
+    "",
+    "# Project Helper",
+    "",
+    "Use this skill in project selection route tests.",
+    "",
+  ].join("\n"))
+
+  await writeFile(join(manifestRoot, "plugin.json"), JSON.stringify({
+    name: "project-lab",
+    version: "0.1.0",
+    description: "Fixture plugin package for project selection tests.",
+    author: "Fanfande Tests",
+    interface: {
+      displayName: "Project Lab",
+      shortDescription: "Project selection fixture package.",
+      developerName: "Fanfande Tests",
+      category: "Docs",
+    },
+    mcpServers: [
+      {
+        id: "notes",
+        name: "Project Notes",
+        risk: "low",
+        tools: [
+          {
+            name: "list_notes",
+            description: "List project notes.",
+            readOnly: true,
+          },
+        ],
+        runtime: {
+          transport: "stdio",
+          command: "node",
+          args: ["server.js"],
+        },
+      },
+    ],
+    skills: "skills",
+  }, null, 2))
+}
+
 async function createBareGitRemote(root: string) {
   await mkdir(root, { recursive: true })
   await $`git init --bare`.cwd(root).quiet()
@@ -2000,11 +2053,15 @@ describe("server api", () => {
   test("project plugin selection routes should persist project-scoped installed plugin ids", async () => {
     const app = createServerApp()
     const repositoryRoot = await createTempDirectory("fanfande-plugin-selection-project-")
+    const pluginInstallRoot = await createTempDirectory("fanfande-plugin-selection-install-")
+    const previousPluginInstallDir = process.env.FANFANDE_PLUGIN_INSTALL_DIR
 
     try {
+      process.env.FANFANDE_PLUGIN_INSTALL_DIR = pluginInstallRoot
+      await writeProjectSelectionPluginPackage(pluginInstallRoot)
       await createGitRepo(repositoryRoot, "plugin-selection-project")
 
-      const installResponse = await app.request("http://localhost/api/plugins/installed/build-web-apps", {
+      const installResponse = await app.request("http://localhost/api/plugins/installed/project-lab", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ enabled: true }),
@@ -2026,7 +2083,7 @@ describe("server api", () => {
       const listBody = (await listResponse.json()) as ProjectPluginListEnvelope
 
       expect(listResponse.status).toBe(200)
-      expect(listBody.data?.map((plugin) => plugin.pluginID)).toContain("build-web-apps")
+      expect(listBody.data?.map((plugin) => plugin.pluginID)).toContain("project-lab")
 
       const beforeSkillsResponse = await app.request(`http://localhost/api/projects/${projectID}/skills`)
       const beforeSkillsBody = (await beforeSkillsResponse.json()) as SkillListEnvelope
@@ -2036,14 +2093,14 @@ describe("server api", () => {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          pluginIDs: ["build-web-apps", "missing-plugin", "build-web-apps"],
+          pluginIDs: ["project-lab", "missing-plugin", "project-lab"],
         }),
       })
       const updateBody = (await updateResponse.json()) as ProjectPluginSelectionEnvelope
 
       expect(updateResponse.status).toBe(200)
       expect(updateBody.data).toEqual({
-        pluginIDs: ["build-web-apps"],
+        pluginIDs: ["project-lab"],
       })
 
       const readResponse = await app.request(`http://localhost/api/projects/${projectID}/plugins/selection`)
@@ -2051,7 +2108,7 @@ describe("server api", () => {
 
       expect(readResponse.status).toBe(200)
       expect(readBody.data).toEqual({
-        pluginIDs: ["build-web-apps"],
+        pluginIDs: ["project-lab"],
       })
 
       const afterSkillsResponse = await app.request(`http://localhost/api/projects/${projectID}/skills`)
@@ -2060,10 +2117,16 @@ describe("server api", () => {
       expect(afterSkillsResponse.status).toBe(200)
       expect(afterSkillsBody.data?.some((skill) => skill.scope === "plugin")).toBe(true)
     } finally {
-      await app.request("http://localhost/api/plugins/installed/build-web-apps", {
+      await app.request("http://localhost/api/plugins/installed/project-lab", {
         method: "DELETE",
       })
+      if (previousPluginInstallDir === undefined) {
+        delete process.env.FANFANDE_PLUGIN_INSTALL_DIR
+      } else {
+        process.env.FANFANDE_PLUGIN_INSTALL_DIR = previousPluginInstallDir
+      }
       await rm(repositoryRoot, { recursive: true, force: true })
+      await rm(pluginInstallRoot, { recursive: true, force: true })
     }
   })
 

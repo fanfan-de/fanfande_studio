@@ -22,3 +22,7 @@ export async function setAutomaticUpdatesEnabled(
 export async function checkForAppUpdates(): Promise<DesktopIpcOutput<"desktop:check-for-app-updates"> | null> {
   return window.desktop?.checkForAppUpdates?.() ?? null
 }
+
+export async function getStoragePaths(): Promise<DesktopIpcOutput<"desktop:get-storage-paths"> | null> {
+  return window.desktop?.getStoragePaths?.() ?? null
+}

@@ -124,7 +124,15 @@ export function SettingsRoutes() {
     ok(c, await SettingsUseCase.removeMcpServer(c.req.param("serverID"))),
   )
 
-  app.get("/plugins/catalog", async (c) => ok(c, SettingsUseCase.listPluginCatalog()))
+  app.get("/plugins/catalog", async (c) => {
+    const payload = parseQuery(
+      { freshness: c.req.query("freshness") },
+      SettingsUseCase.PluginCatalogQuery,
+      "INVALID_QUERY",
+      "Query parameter 'freshness' must be 'cached' or 'fresh'.",
+    )
+    return ok(c, await SettingsUseCase.listPluginCatalog(payload))
+  })
 
   app.get("/plugins/installed", async (c) => ok(c, SettingsUseCase.listInstalledPlugins()))
 

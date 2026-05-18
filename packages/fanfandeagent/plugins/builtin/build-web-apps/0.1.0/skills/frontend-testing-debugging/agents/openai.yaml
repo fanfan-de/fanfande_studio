@@ -1,3 +1,0 @@
-interface:
-  display_name: "Frontend Testing Debugging"
-  short_description: "Debug and validate rendered frontend apps with Browser-first testing loops"

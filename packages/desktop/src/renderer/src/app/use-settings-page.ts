@@ -27,6 +27,7 @@ import type {
 } from "./types"
 import { mergeMcpToolPolicyDefaults } from "./mcp/mcp-tool-policies"
 import { parseMcpConfigJson } from "./mcp/mcp-config-import"
+import { arePluginCatalogsEqual } from "./plugin-catalog"
 
 interface SettingsMessage {
   tone: "success" | "error"
@@ -458,6 +459,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [pluginDiagnostics, setPluginDiagnostics] = useState<Record<string, McpServerDiagnostic>>({})
   const [pluginConnectorStatuses, setPluginConnectorStatuses] = useState<Record<string, PluginConnectorStatus[]>>({})
   const [activePluginID, setActivePluginID] = useState<string | null>(null)
+  const activePluginIDRef = useRef<string | null>(null)
   const [pluginDraft, setPluginDraft] = useState<PluginDraftState>(() => buildPluginDraft(undefined))
   const [builtinTools, setBuiltinTools] = useState<BuiltinToolSummary[]>([])
   const [builtinToolSelection, setBuiltinToolSelection] = useState<BuiltinToolSelection>(EMPTY_BUILTIN_TOOL_SELECTION)
@@ -873,6 +875,38 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
+  function applyPluginSnapshot(
+    nextCatalog: PluginCatalogItem[],
+    nextInstalled: InstalledPlugin[],
+    nextConnectorStatuses: Record<string, PluginConnectorStatus[]>,
+  ) {
+    setPluginCatalog(nextCatalog)
+    setInstalledPlugins(nextInstalled)
+    setPluginConnectorStatuses(nextConnectorStatuses)
+    setPluginDiagnostics((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([pluginID]) =>
+          nextInstalled.some((plugin) => plugin.pluginID === pluginID),
+        ),
+      ),
+    )
+
+    const currentActivePluginID = activePluginIDRef.current
+    const preferredPluginID =
+      currentActivePluginID && nextCatalog.some((plugin) => plugin.id === currentActivePluginID)
+        ? currentActivePluginID
+        : null
+    setActivePluginSelection(preferredPluginID)
+    const nextActivePlugin = nextCatalog.find((plugin) => plugin.id === preferredPluginID)
+    const nextInstalledPlugin = nextInstalled.find((plugin) => plugin.pluginID === preferredPluginID) ?? null
+    setPluginDraft(buildPluginDraft(nextActivePlugin, nextInstalledPlugin))
+  }
+
+  function setActivePluginSelection(pluginID: string | null) {
+    activePluginIDRef.current = pluginID
+    setActivePluginID(pluginID)
+  }
+
   async function loadPlugins(optionsArg?: LoadSettingsOptions) {
     const getPluginCatalog = window.desktop?.getPluginCatalog
     const getInstalledPlugins = window.desktop?.getInstalledPlugins
@@ -881,7 +915,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setInstalledPlugins([])
       setPluginDiagnostics({})
       setPluginConnectorStatuses({})
-      setActivePluginID(null)
+      setActivePluginSelection(null)
       setPluginDraft(buildPluginDraft(undefined))
       setPluginsError("Desktop plugin APIs are unavailable.")
       return
@@ -894,40 +928,33 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setPluginsError(null)
 
     try {
-      const [nextCatalog, nextInstalled] = await Promise.all([
-        getPluginCatalog(),
+      const [cachedCatalog, nextInstalled] = await Promise.all([
+        getPluginCatalog({ freshness: "cached" }),
         getInstalledPlugins(),
       ])
       if (pluginsRequestIDRef.current !== requestID) return
       const nextConnectorStatuses = await loadPluginConnectorStatusesForInstalled(nextInstalled)
       if (pluginsRequestIDRef.current !== requestID) return
 
-      setPluginCatalog(nextCatalog)
-      setInstalledPlugins(nextInstalled)
-      setPluginConnectorStatuses(nextConnectorStatuses)
-      setPluginDiagnostics((current) =>
-        Object.fromEntries(
-          Object.entries(current).filter(([pluginID]) =>
-            nextInstalled.some((plugin) => plugin.pluginID === pluginID),
-          ),
-        ),
-      )
+      applyPluginSnapshot(cachedCatalog, nextInstalled, nextConnectorStatuses)
 
-      const preferredPluginID =
-        (activePluginID && nextCatalog.some((plugin) => plugin.id === activePluginID)
-          ? activePluginID
-          : nextCatalog[0]?.id) ?? null
-      setActivePluginID(preferredPluginID)
-      const nextActivePlugin = nextCatalog.find((plugin) => plugin.id === preferredPluginID)
-      const nextInstalledPlugin = nextInstalled.find((plugin) => plugin.pluginID === preferredPluginID) ?? null
-      setPluginDraft(buildPluginDraft(nextActivePlugin, nextInstalledPlugin))
+      void getPluginCatalog({ freshness: "fresh" })
+        .then((freshCatalog) => {
+          if (pluginsRequestIDRef.current !== requestID) return
+          if (arePluginCatalogsEqual(cachedCatalog, freshCatalog)) return
+          applyPluginSnapshot(freshCatalog, nextInstalled, nextConnectorStatuses)
+        })
+        .catch((error) => {
+          if (pluginsRequestIDRef.current !== requestID) return
+          console.error("[desktop] background plugin catalog refresh failed:", error)
+        })
     } catch (error) {
       if (pluginsRequestIDRef.current !== requestID) return
       setPluginCatalog([])
       setInstalledPlugins([])
       setPluginDiagnostics({})
       setPluginConnectorStatuses({})
-      setActivePluginID(null)
+      setActivePluginSelection(null)
       setPluginDraft(buildPluginDraft(undefined))
       setPluginsError(getErrorMessage(error))
     } finally {
@@ -1178,8 +1205,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!plugin) return
 
     const installed = installedPlugins.find((item) => item.pluginID === pluginID) ?? null
-    setActivePluginID(pluginID)
+    setActivePluginSelection(pluginID)
     setPluginDraft(buildPluginDraft(plugin, installed))
+  }
+
+  function clearPluginSelection() {
+    setActivePluginSelection(null)
+    setPluginDraft(buildPluginDraft(undefined))
   }
 
   function setPluginDraftConfigValue(key: string, value: string) {
@@ -2318,7 +2350,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       })
       await loadPlugins({ silent: true })
       await notifyPluginCapabilitiesUpdated()
-      setActivePluginID(pluginID)
+      setActivePluginSelection(pluginID)
       setPluginDraft(buildPluginDraft(plugin, installed))
       setMessage({
         tone: "success",
@@ -2352,7 +2384,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       })
       await loadPlugins({ silent: true })
       await notifyPluginCapabilitiesUpdated()
-      setActivePluginID(pluginID)
+      setActivePluginSelection(pluginID)
       setPluginDraft(buildPluginDraft(plugin, installed))
       setMessage({
         tone: "success",
@@ -2405,7 +2437,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         return next
       })
       const nextPlugin = pluginCatalog.find((plugin) => plugin.id !== pluginID) ?? pluginCatalog[0]
-      setActivePluginID(nextPlugin?.id ?? null)
+      setActivePluginSelection(nextPlugin?.id ?? null)
       setPluginDraft(buildPluginDraft(nextPlugin))
       setMessage({
         tone: "success",
@@ -2704,6 +2736,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     selectPromptPreset,
     selectMcpServer,
     selectPlugin,
+    clearPluginSelection,
     selectionDraft,
     setMcpServerDraftValue,
     setMcpToolPolicy,

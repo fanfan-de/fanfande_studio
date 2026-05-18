@@ -32,6 +32,7 @@ import {
 import type { ApplicationMenus } from "./menu"
 import { readLocaleConfigSnapshot, writeLocaleConfigSnapshot } from "./locale-config"
 import { detectLocalPreviewServices } from "./local-preview-services"
+import { resolveManagedAgentDataDir } from "./managed-agent"
 import { openMonitorWindow } from "./monitor-window"
 import { readPreviewText, resolvePreviewTarget } from "./preview-targets"
 import { PtyProxyManager } from "./pty-proxy"
@@ -667,6 +668,24 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   )
 
   handleDesktopIpc("desktop:check-for-app-updates", async () => checkForAppUpdates({ manual: true }))
+
+  handleDesktopIpc("desktop:get-storage-paths", async () => {
+    const appData = app.getPath("userData")
+    const agentRoot = resolveManagedAgentDataDir()
+    const paths = {
+      appData,
+      agentRoot,
+      agentData: path.join(agentRoot, "data"),
+      agentCache: path.join(agentRoot, "cache"),
+      installedPlugins: path.join(agentRoot, "data", "plugins", "installed"),
+      pluginRegistryCache: path.join(agentRoot, "data", "plugins", "registry-cache"),
+      pluginInstallTemp: path.join(agentRoot, "cache", "plugin-installs"),
+    }
+
+    await Promise.all(Object.values(paths).map((directory) => mkdir(directory, { recursive: true })))
+
+    return DesktopIpcSchemas.getStoragePaths.output.parse(paths)
+  })
 
   handleDesktopIpc("desktop:get-window-state", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -1676,8 +1695,14 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     return result.data
   })
 
-  handleDesktopIpc("desktop:get-plugin-catalog", async () => {
-    const result = await requestAgentJSON<AgentPluginCatalogItem[]>("/api/plugins/catalog")
+  handleDesktopIpc("desktop:get-plugin-catalog", async (
+    _event,
+    input?: DesktopIpcInput<"desktop:get-plugin-catalog">,
+  ) => {
+    const path = input?.freshness === "cached"
+      ? "/api/plugins/catalog?freshness=cached"
+      : "/api/plugins/catalog"
+    const result = await requestAgentJSON<AgentPluginCatalogItem[]>(path)
 
     return result.data
   })

@@ -15,9 +15,16 @@ function createPlugin(overrides: Partial<CatalogPlugin> = {}): CatalogPlugin {
     id,
     name: overrides.name ?? "Filesystem",
     description: overrides.description ?? "Expose a local directory to MCP.",
+    longDescription: overrides.longDescription,
     version: overrides.version ?? "1.0.0",
     publisher: overrides.publisher ?? "Fanfande",
     category: overrides.category ?? "Code",
+    iconUrl: overrides.iconUrl,
+    thumbnailUrl: overrides.thumbnailUrl,
+    heroImageUrl: overrides.heroImageUrl,
+    screenshots: overrides.screenshots ?? [],
+    tags: overrides.tags ?? [],
+    brandColor: overrides.brandColor,
     risk: overrides.risk ?? "high",
     permissions: overrides.permissions ?? ["Read access inside the configured root path"],
     tools: overrides.tools ?? [
@@ -178,6 +185,7 @@ function createProps(overrides: Partial<PluginsPageProps> = {}): PluginsPageProp
     onInstallPlugin: vi.fn(),
     onPluginDraftAppApiKeyChange: vi.fn(),
     onPluginDraftConfigChange: vi.fn(),
+    onPluginDeselect: vi.fn(),
     onPluginSelect: vi.fn(),
     onSaveInstalledPluginConnectorApiKey: vi.fn(),
     onSaveInstalledPluginConfig: vi.fn(),
@@ -194,8 +202,42 @@ describe("PluginsPage", () => {
     expect(screen.getByRole("region", { name: "Plugin marketplace layout" })).toBeInTheDocument()
     expect(screen.queryByText("Plugin module is under development")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Install" }))
+    fireEvent.click(screen.getByRole("button", { name: "Install Filesystem" }))
     expect(onInstallPlugin).toHaveBeenCalledWith("filesystem")
+  })
+
+  it("opens selected plugin details as a second-level view and returns to the marketplace", () => {
+    const onPluginDeselect = vi.fn()
+    const onPluginSelect = vi.fn()
+    const { rerender } = render(
+      <PluginsPage
+        {...createProps({
+          onPluginDeselect,
+          onPluginSelect,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Filesystem not installed" }))
+    expect(onPluginSelect).toHaveBeenCalledWith("filesystem")
+
+    rerender(
+      <PluginsPage
+        {...createProps({
+          activePluginID: "filesystem",
+          onPluginDeselect,
+          onPluginSelect,
+        })}
+      />,
+    )
+
+    expect(screen.queryByRole("region", { name: "Plugin marketplace layout" })).not.toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "Selected plugin details" })).toBeInTheDocument()
+    expect(screen.getByRole("navigation", { name: "Plugin detail breadcrumb" })).toHaveTextContent("插件")
+    expect(screen.getByRole("heading", { name: "Filesystem", level: 1 })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "插件" }))
+    expect(onPluginDeselect).toHaveBeenCalledTimes(1)
   })
 
   it("filters plugins by search and category and selects a plugin from the list", () => {
@@ -221,11 +263,42 @@ describe("PluginsPage", () => {
     expect(screen.getByRole("button", { name: "Docs not installed" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Filesystem not installed" })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Docs" }))
+    fireEvent.change(screen.getByLabelText("Category"), {
+      target: {
+        value: "Docs",
+      },
+    })
     expect(screen.getByRole("button", { name: "Docs not installed" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Docs not installed" }))
     expect(onPluginSelect).toHaveBeenCalledWith("docs")
+  })
+
+  it("renders rich marketplace metadata in plugin details", () => {
+    const imageUrl = "https://cdn.example.test/filesystem.png"
+    render(
+      <PluginsPage
+        {...createProps({
+          activePluginID: "filesystem",
+          pluginCatalog: [
+            createPlugin({
+              longDescription: "A longer plugin marketplace description.",
+              tags: ["files", "local"],
+              thumbnailUrl: imageUrl,
+              heroImageUrl: imageUrl,
+              screenshots: [imageUrl],
+              brandColor: "#112233",
+            }),
+          ],
+        })}
+      />,
+    )
+
+    expect(screen.getByText("A longer plugin marketplace description.")).toBeInTheDocument()
+    expect(screen.getByText("files")).toBeInTheDocument()
+    expect(screen.getByText("local")).toBeInTheDocument()
+    expect(screen.getByAltText("Filesystem screenshot 1")).toHaveAttribute("src", imageUrl)
+    expect(screen.getByText("#112233")).toBeInTheDocument()
   })
 
   it("saves installed plugin configuration and exposes lifecycle actions", () => {

@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fanfande Studio 插件系统设计结构说明</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --paper: #ffffff;
+      --ink: #1d2430;
+      --muted: #617084;
+      --line: #d9e0ea;
+      --soft: #eef2f7;
+      --accent: #285ea8;
+      --accent-soft: #e8f0fb;
+      --ok: #16724a;
+      --warn: #9b5c00;
+      --danger: #a83a3a;
+      --code: #0f1724;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      line-height: 1.68;
+    }
+
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 40px 24px 64px;
+    }
+
+    article {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(31, 43, 64, 0.08);
+      overflow: hidden;
+    }
+
+    header {
+      padding: 40px 44px 28px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    }
+
+    section {
+      padding: 30px 44px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    section:last-child {
+      border-bottom: 0;
+    }
+
+    h1,
+    h2,
+    h3 {
+      line-height: 1.24;
+      margin: 0;
+      color: var(--ink);
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: 32px;
+      margin-bottom: 12px;
+    }
+
+    h2 {
+      font-size: 22px;
+      margin-bottom: 16px;
+    }
+
+    h3 {
+      font-size: 17px;
+      margin: 24px 0 10px;
+    }
+
+    p {
+      margin: 10px 0;
+    }
+
+    ul,
+    ol {
+      margin: 10px 0 0;
+      padding-left: 22px;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    code,
+    pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: var(--soft);
+      color: var(--code);
+      font-size: 0.92em;
+    }
+
+    pre {
+      overflow: auto;
+      padding: 16px;
+      border-radius: 8px;
+      background: #101827;
+      color: #eef5ff;
+      font-size: 13px;
+      line-height: 1.55;
+      margin: 12px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--soft);
+      color: #26364a;
+      font-weight: 650;
+    }
+
+    .lead {
+      color: var(--muted);
+      max-width: 860px;
+      font-size: 16px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      padding: 4px 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .callout {
+      border: 1px solid #c8d7ec;
+      background: var(--accent-soft);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin: 16px 0;
+    }
+
+    .callout strong {
+      color: var(--accent);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin: 16px 0;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      background: #fff;
+    }
+
+    .card h3 {
+      margin-top: 0;
+    }
+
+    .tag-low {
+      color: var(--ok);
+      font-weight: 650;
+    }
+
+    .tag-medium {
+      color: var(--warn);
+      font-weight: 650;
+    }
+
+    .tag-high {
+      color: var(--danger);
+      font-weight: 650;
+    }
+
+    @media (max-width: 760px) {
+      main {
+        padding: 18px 12px 40px;
+      }
+
+      header,
+      section {
+        padding: 24px 20px;
+      }
+
+      h1 {
+        font-size: 26px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <article>
+      <header>
+        <h1>Fanfande Studio 当前插件系统设计结构说明</h1>
+        <p class="lead">
+          本文档根据当前仓库代码整理，说明插件包的文件结构、插件清单格式、agent 侧插件管理逻辑、desktop 侧 IPC/UI 连接方式，以及插件在安装后如何进入 MCP、技能和项目会话运行链路。
+        </p>
+        <div class="meta">
+          <span class="pill">代码范围：packages/fanfandeagent 与 packages/desktop</span>
+          <span class="pill">核心实现：packages/fanfandeagent/src/plugin/plugin.ts</span>
+          <span class="pill">生成日期：2026-05-18</span>
+        </div>
+      </header>
+
+      <section>
+        <h2>1. 总体定位</h2>
+        <p>
+          当前插件系统的核心并不在 Electron renderer 内，而是在 <code>packages/fanfandeagent</code> 中实现。插件被设计成一类“能力包”，一个插件包可以声明三类能力：
+        </p>
+        <ul>
+          <li><strong>MCP server</strong>：插件安装后会生成一个或多个全局 MCP server 配置，供项目会话按选择加载。</li>
+          <li><strong>Skill</strong>：插件可以携带 <code>SKILL.md</code> 工作流说明，安装并在项目中选中插件后，这些技能会进入技能发现范围。</li>
+          <li><strong>App connector</strong>：插件可以声明需要 API key 的远程 MCP 连接器，密钥由认证存储管理，运行时再解析到远程请求头或授权字段。</li>
+        </ul>
+        <div class="callout">
+          <strong>关键结论：</strong>
+          插件包提供能力定义，安装记录保存启用状态和配置，项目配置保存“当前项目选中了哪些插件”。会话运行时最终通过项目 MCP 解析与技能发现，把被选中的插件能力纳入当前会话。
+        </div>
+      </section>
+
+      <section>
+        <h2>2. 插件包文件结构</h2>
+        <p>
+          插件包的约定入口是 <code>.fanfande-plugin/plugin.json</code>。运行时只扫描已下载安装到本机数据目录的插件包：
+        </p>
+        <pre><code>&lt;agent-data&gt;/plugins/installed/&lt;plugin-id&gt;/&lt;version&gt;/.fanfande-plugin/plugin.json</code></pre>
+        <p>
+          系统也支持非版本化目录：
+        </p>
+        <pre><code>&lt;agent-data&gt;/plugins/installed/&lt;plugin-id&gt;/.fanfande-plugin/plugin.json</code></pre>
+        <p>
+          版本化目录和非版本化目录都会被扫描。同一个搜索根内如果出现多个同名插件，系统会按 manifest 的 <code>version</code> 选择较新的版本。
+        </p>
+
+        <h3>推荐目录形态</h3>
+        <pre><code>&lt;plugin-id&gt;/
+  &lt;version&gt;/
+    .fanfande-plugin/
+      plugin.json
+    skills/
+      &lt;skill-directory&gt;/
+        SKILL.md
+        references/
+        scripts/
+        assets/
+    assets/
+      app-icon.png
+      composer-icon.svg
+    server.js
+    package.json</code></pre>
+
+        <table>
+          <thead>
+            <tr>
+              <th>路径</th>
+              <th>作用</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>.fanfande-plugin/plugin.json</code></td>
+              <td>插件清单。声明插件元信息、MCP server、技能目录、App connector、权限说明和运行时模板。</td>
+            </tr>
+            <tr>
+              <td><code>skills/&lt;skill&gt;/SKILL.md</code></td>
+              <td>插件内置技能。系统会读取 frontmatter 中的 <code>name</code>、<code>description</code>，生成 <code>plugin:&lt;plugin-id&gt;:&lt;skill-directory&gt;</code> 形式的技能 ID。</td>
+            </tr>
+            <tr>
+              <td><code>skills/&lt;skill&gt;/references</code></td>
+              <td>技能附加资料。不会被自动全量加载，只有技能说明要求读取时才通过技能资源工具访问。</td>
+            </tr>
+            <tr>
+              <td><code>assets</code></td>
+              <td>界面图标、截图或技能资源。manifest 的 <code>interface.logo</code>、<code>composerIcon</code> 可引用这里的资源。</td>
+            </tr>
+            <tr>
+              <td><code>server.js</code> 或其他运行文件</td>
+              <td>stdio MCP 插件可把命令、参数、环境变量写在 manifest 的 <code>runtime</code> 中，由安装逻辑生成 MCP 配置。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>内置插件策略</h3>
+        <div class="callout">
+          当前项目不再保留内置插件包。所有插件都必须先通过 catalog 下载/安装，落到 <code>plugins/installed</code> 数据目录后，agent 才会扫描和启用。
+        </div>
+      </section>
+
+      <section>
+        <h2>3. plugin.json 设计结构</h2>
+        <p>
+          manifest 由 Zod schema 校验，文件必须是严格 JSON。核心字段如下：
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>字段</th>
+              <th>类型</th>
+              <th>用途</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>name</code></td>
+              <td>string</td>
+              <td>插件 ID 的来源。系统会 trim 并转小写作为 <code>pluginID</code>。</td>
+            </tr>
+            <tr>
+              <td><code>version</code></td>
+              <td>string</td>
+              <td>版本选择和安装记录使用。版本化包中同名插件按此字段比较。</td>
+            </tr>
+            <tr>
+              <td><code>description</code></td>
+              <td>string</td>
+              <td>默认描述。若 <code>interface.shortDescription</code> 存在，目录展示优先使用后者。</td>
+            </tr>
+            <tr>
+              <td><code>author</code></td>
+              <td>string 或 object</td>
+              <td>发布者信息。object 支持 <code>name</code>、<code>email</code>、<code>url</code>。</td>
+            </tr>
+            <tr>
+              <td><code>homepage</code>、<code>repository</code>、<code>license</code>、<code>keywords</code></td>
+              <td>可选</td>
+              <td>用于目录展示、文档链接和元信息。</td>
+            </tr>
+            <tr>
+              <td><code>interface</code></td>
+              <td>object</td>
+              <td>桌面插件页展示信息，包括名称、短描述、长描述、分类、图标、品牌色、默认提示等。</td>
+            </tr>
+            <tr>
+              <td><code>mcpServers</code></td>
+              <td>array</td>
+              <td>声明一个或多个 MCP server 模板。安装后转换为全局 MCP server 配置。</td>
+            </tr>
+            <tr>
+              <td><code>skills</code></td>
+              <td>string 或 string[]</td>
+              <td>技能根目录声明。不写时默认扫描 <code>skills</code>。</td>
+            </tr>
+            <tr>
+              <td><code>apps</code></td>
+              <td>array</td>
+              <td>声明 App connector。安装后生成远程 MCP server 绑定，API key 单独保存。</td>
+            </tr>
+            <tr>
+              <td><code>commands</code>、<code>agents</code></td>
+              <td>string 或 string[]</td>
+              <td>已纳入 schema，但当前核心安装链路主要消费 MCP、skills、apps。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>interface 字段</h3>
+        <p>
+          <code>interface</code> 用于桌面端目录展示，不直接决定运行时行为。常用字段包括：
+        </p>
+        <ul>
+          <li><code>displayName</code>：插件页展示名称。</li>
+          <li><code>shortDescription</code>、<code>longDescription</code>：列表和详情描述。</li>
+          <li><code>developerName</code>：发布者展示名称。</li>
+          <li><code>category</code>：目录分类，系统归一化到 <code>Code</code>、<code>Browser</code>、<code>Git</code>、<code>Database</code>、<code>Docs</code>、<code>Automation</code>、<code>Design</code>。</li>
+          <li><code>capabilities</code>、<code>websiteURL</code>、<code>privacyPolicyURL</code>、<code>termsOfServiceURL</code>：供界面展示或后续扩展使用。</li>
+          <li><code>composerIcon</code>、<code>logo</code>、<code>screenshots</code>、<code>brandColor</code>：视觉素材字段。</li>
+        </ul>
+
+        <h3>mcpServers 字段</h3>
+        <p>
+          每个 MCP server 声明会被归一化为 <code>PluginMcpServerCatalogEntry</code>：
+        </p>
+        <pre><code>{
+  "id": "notes",
+  "name": "Manifest Notes",
+  "description": "Optional detail",
+  "risk": "low",
+  "permissions": ["Starts a stdio MCP server"],
+  "tools": [
+    {
+      "name": "list_notes",
+      "title": "List Notes",
+      "description": "List notes.",
+      "readOnly": true
+    }
+  ],
+  "configFields": [
+    {
+      "key": "ROOT_PATH",
+      "label": "Root path",
+      "type": "path",
+      "required": true,
+      "defaultValue": "~"
+    }
+  ],
+  "runtime": {
+    "transport": "stdio",
+    "command": "node",
+    "args": ["server.js"],
+    "timeoutMs": 30000
+  },
+  "installReview": ["Review text shown before install."]
+}</code></pre>
+
+        <p>
+          <code>id</code> 可省略。省略时系统使用 <code>default</code>，生成的 MCP server ID 为 <code>plugin.&lt;plugin-id&gt;</code>；如果有显式 ID，例如 <code>notes</code>，则生成 <code>plugin.&lt;plugin-id&gt;.notes</code>。
+        </p>
+
+        <h3>runtime 字段</h3>
+        <div class="grid">
+          <div class="card">
+            <h3>stdio runtime</h3>
+            <ul>
+              <li><code>transport: "stdio"</code></li>
+              <li><code>command</code>：启动命令。</li>
+              <li><code>args</code>：命令参数，可使用 <code>${CONFIG_KEY}</code> 占位符。</li>
+              <li><code>env</code>：进程环境变量，也可使用占位符。</li>
+              <li><code>cwd</code>、<code>timeoutMs</code>、<code>toolPolicies</code>：可选运行配置。</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>remote runtime</h3>
+            <ul>
+              <li><code>transport: "remote"</code></li>
+              <li><code>serverUrl</code> 或 <code>connectorId</code> 至少一个可解析。</li>
+              <li><code>authorization</code>、<code>headers</code>：远程请求认证信息。</li>
+              <li><code>allowedTools</code>、<code>requireApproval</code>：控制工具暴露和审批策略。</li>
+              <li><code>provider</code> 当前 schema 支持 <code>openai</code>。</li>
+            </ul>
+          </div>
+        </div>
+
+        <h3>apps 字段</h3>
+        <p>
+          App connector 用于“需要用户保存 API key 才能连接”的远程 MCP。它声明 <code>credential</code> 字段，安装插件时生成一个远程 MCP server，但不会把 API key 写入 MCP 配置。
+        </p>
+        <pre><code>{
+  "appID": "docs",
+  "name": "Docs API",
+  "credential": {
+    "key": "DOCS_API_KEY",
+    "label": "Docs API key",
+    "type": "password",
+    "required": true,
+    "secret": true
+  },
+  "runtime": {
+    "transport": "remote",
+    "serverUrl": "https://docs.example.test/mcp",
+    "headers": {
+      "x-api-key": "${DOCS_API_KEY}"
+    },
+    "allowedTools": {
+      "readOnly": true
+    },
+    "requireApproval": "always"
+  }
+}</code></pre>
+        <p>
+          对应生成的 connector ID 为 <code>plugin-app:&lt;plugin-id&gt;:&lt;appID&gt;</code>，MCP server ID 为 <code>plugin.&lt;plugin-id&gt;.app.&lt;appID&gt;</code>。
+        </p>
+      </section>
+
+      <section>
+        <h2>4. 插件系统在项目中的实现</h2>
+        <h3>4.1 agent 侧是插件系统的主体</h3>
+        <p>
+          <code>packages/fanfandeagent/src/plugin/plugin.ts</code> 是插件系统的主体文件，承担以下职责：
+        </p>
+        <ul>
+          <li>定义 manifest、catalog、installed record、connector status 等 Zod schema。</li>
+          <li>扫描插件包目录，读取并校验 <code>.fanfande-plugin/plugin.json</code>。</li>
+          <li>把原始 manifest 归一化成 UI 和 API 可消费的 <code>PluginCatalogItem</code>。</li>
+          <li>安装、更新、删除插件，并同步生成或删除 MCP server 配置。</li>
+          <li>保存和删除 App connector API key，并在远程 MCP 连接时解析真实认证信息。</li>
+          <li>列出已安装插件技能根目录，供技能系统发现插件技能。</li>
+        </ul>
+
+        <h3>4.2 插件目录发现</h3>
+        <p>
+          插件扫描入口只使用下载安装到本机数据目录的插件包搜索根：
+        </p>
+        <ul>
+          <li><code>FANFANDE_PLUGIN_INSTALL_DIR</code>：测试或显式配置时使用的插件安装目录。</li>
+          <li><code>&lt;agent-data&gt;/plugins/installed</code>：默认插件安装目录。</li>
+        </ul>
+        <p>
+          搜索根下会扫描一级插件目录，并同时检查非版本化 manifest 与子目录版本化 manifest。同名插件按 manifest 的 <code>version</code> 选择最新版本。
+        </p>
+
+        <h3>4.3 目录归一化</h3>
+        <p>
+          <code>normalizeCatalogItem</code> 会把 manifest 转换成统一的目录项：
+        </p>
+        <ul>
+          <li><code>id</code>：由 <code>manifest.name</code> 归一化而来。</li>
+          <li><code>name</code>：优先使用 <code>interface.displayName</code>。</li>
+          <li><code>publisher</code>：优先使用 <code>interface.developerName</code>，否则使用 author。</li>
+          <li><code>category</code>：把 <code>Coding</code>、<code>Engineering</code> 映射为 <code>Code</code>，把 <code>Documentation</code>、<code>Productivity</code> 映射为 <code>Docs</code>。</li>
+          <li><code>risk</code>：从 MCP server、App connector、skills 推导最高风险，skills-only 插件按 low 参与计算。</li>
+          <li><code>permissions</code>、<code>tools</code>、<code>configFields</code>：从所有 MCP server 和 App connector 汇总。</li>
+          <li><code>skills</code>：扫描技能目录并生成技能预览。</li>
+        </ul>
+
+        <h3>4.4 安装记录</h3>
+        <p>
+          已安装插件存储在 SQLite 表 <code>installed_plugins</code> 中，主键是 <code>pluginID</code>。记录结构包括：
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>字段</th>
+              <th>含义</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>pluginID</code>、<code>version</code></td>
+              <td>安装的插件 ID 与当前 catalog 版本。</td>
+            </tr>
+            <tr>
+              <td><code>enabled</code></td>
+              <td>插件整体启用状态。同步到所有由插件生成的 MCP server。</td>
+            </tr>
+            <tr>
+              <td><code>mcpServerID</code>、<code>mcpServerIDs</code></td>
+              <td>兼容旧字段和当前多 server 列表。由 manifest 的 MCP server 与 App connector 生成。</td>
+            </tr>
+            <tr>
+              <td><code>skillIDs</code></td>
+              <td>安装时快照出的插件技能 ID，例如 <code>plugin:my-plugin:review</code>。</td>
+            </tr>
+            <tr>
+              <td><code>connectorIDs</code></td>
+              <td>App connector 的认证存储 ID，例如 <code>plugin-app:manifest-lab:docs</code>。</td>
+            </tr>
+            <tr>
+              <td><code>config</code></td>
+              <td>插件配置值。用于替换 runtime 中的 <code>${CONFIG_KEY}</code> 占位符。</td>
+            </tr>
+            <tr>
+              <td><code>installedAt</code>、<code>updatedAt</code></td>
+              <td>安装与更新时间戳。</td>
+            </tr>
+            <tr>
+              <td><code>lastDiagnostic</code>、<code>lastConnectorDiagnostics</code></td>
+              <td>最近一次 MCP 诊断结果。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>4.5 安装流程</h3>
+        <ol>
+          <li>前端调用 desktop IPC <code>desktop:install-plugin</code>。</li>
+          <li>主进程转发到 agent API：<code>PUT /api/plugins/installed/:pluginID</code>。</li>
+          <li>agent 调用 <code>Plugin.install(pluginID, input)</code>。</li>
+          <li>系统查找 catalog 插件；如果插件不存在返回 <code>PLUGIN_NOT_FOUND</code>，如果风险为 <code>critical</code> 则拒绝安装。</li>
+          <li>系统校验和归一化配置：必填字段必须有值；没有显式值时使用 <code>defaultValue</code>；其他额外配置会保留。</li>
+          <li>生成 <code>mcpServerIDs</code>、<code>skillIDs</code>、<code>connectorIDs</code>。</li>
+          <li>写入 <code>installed_plugins</code> 表。</li>
+          <li>调用 <code>Config.setMcpServer(GLOBAL_CONFIG_ID, serverID, runtimeBinding)</code>，把插件能力写成全局 MCP server 配置。</li>
+        </ol>
+
+        <h3>4.6 MCP runtime 绑定</h3>
+        <p>
+          插件安装后不会直接运行 MCP server，而是生成全局 MCP 配置。会话真正需要工具时，MCP manager 通过 <code>Config.resolveProjectMcpServers(projectID)</code> 找到当前项目可用 server，并按 server 配置创建 transport。
+        </p>
+        <p>
+          stdio runtime 会生成 <code>command</code>、<code>args</code>、<code>env</code>、<code>cwd</code> 等字段。生成时会使用安装记录中的 <code>config</code> 替换 <code>${CONFIG_KEY}</code> 占位符。
+        </p>
+        <p>
+          remote runtime 会生成 <code>serverUrl</code>、<code>authorization</code>、<code>headers</code>、<code>allowedTools</code>、<code>requireApproval</code> 等字段。普通 remote MCP 可以直接写 <code>serverUrl</code>；App connector remote MCP 则先写入 <code>connectorId</code>，实际认证信息运行时再解析。
+        </p>
+
+        <h3>4.7 App connector 密钥处理</h3>
+        <p>
+          App connector 的 API key 不写入全局 MCP 配置。保存 API key 时，agent 调用认证模块写入 provider credential，connector ID 形如 <code>plugin-app:&lt;plugin-id&gt;:&lt;appID&gt;</code>。
+        </p>
+        <p>
+          MCP client 创建 remote transport 时，如果发现 server 配置里有 <code>connectorId</code>，会动态导入插件模块并调用 <code>resolveConnectorRemoteServer(connectorId)</code>。该函数会：
+        </p>
+        <ol>
+          <li>解析 connector ID，找到插件和 app 声明。</li>
+          <li>确认插件已安装且启用。</li>
+          <li>从认证存储读取激活的 API key。</li>
+          <li>把 API key 合并到临时配置对象中。</li>
+          <li>替换 app runtime 的 <code>serverUrl</code>、<code>authorization</code>、<code>headers</code> 占位符。</li>
+        </ol>
+        <p>
+          这样全局 MCP 配置只包含 <code>connectorId</code>，不会持久化真实密钥；真实密钥只在建立远程 MCP transport 时进入请求配置。
+        </p>
+      </section>
+
+      <section>
+        <h2>5. Desktop 侧连接方式</h2>
+        <h3>5.1 主进程 IPC</h3>
+        <p>
+          Electron 主进程在 <code>packages/desktop/src/main/ipc.ts</code> 注册插件相关 IPC。它们本质上是 agent API 的薄封装：
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Desktop IPC</th>
+              <th>Agent API</th>
+              <th>作用</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>desktop:get-plugin-catalog</code></td>
+              <td><code>GET /api/plugins/catalog</code></td>
+              <td>读取插件目录。</td>
+            </tr>
+            <tr>
+              <td><code>desktop:get-installed-plugins</code></td>
+              <td><code>GET /api/plugins/installed</code></td>
+              <td>读取已安装插件。</td>
+            </tr>
+            <tr>
+              <td><code>desktop:install-plugin</code></td>
+              <td><code>PUT /api/plugins/installed/:pluginID</code></td>
+              <td>安装插件并写入 MCP 绑定。</td>
+            </tr>
+            <tr>
+              <td><code>desktop:update-installed-plugin</code></td>
+              <td><code>PATCH /api/plugins/installed/:pluginID</code></td>
+              <td>保存配置或启停插件。</td>
+            </tr>
+            <tr>
+              <td><code>desktop:delete-installed-plugin</code></td>
+              <td><code>DELETE /api/plugins/installed/:pluginID</code></td>
+              <td>删除安装记录、MCP 绑定和 connector credential。</td>
+            </tr>
+            <tr>
+              <td><code>desktop:get-installed-plugin-diagnostic</code></td>
+              <td><code>GET /api/plugins/installed/:pluginID/diagnostic</code></td>
+              <td>诊断插件主 MCP server。</td>
+            </tr>
+            <tr>
+              <td><code>desktop:get-installed-plugin-connectors</code></td>
+              <td><code>GET /api/plugins/installed/:pluginID/connectors</code></td>
+              <td>读取 App connector 连接状态。</td>
+            </tr>
+            <tr>
+              <td><code>desktop:save-installed-plugin-connector-api-key</code></td>
+              <td><code>PUT /api/plugins/installed/:pluginID/connectors/:appID/api-key</code></td>
+              <td>保存 App connector API key。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>5.2 Renderer 插件管理页</h3>
+        <p>
+          Renderer 的状态管理主要在 <code>packages/desktop/src/renderer/src/app/use-settings-page.ts</code>，展示组件在 <code>packages/desktop/src/renderer/src/app/plugins/PluginsPage.tsx</code>。
+        </p>
+        <ul>
+          <li><code>loadPlugins</code> 同时读取 catalog 和 installed 列表，并为已安装插件加载 connector 状态。</li>
+          <li><code>installPlugin</code> 使用当前 draft config 安装插件，然后刷新插件列表和 MCP 能力。</li>
+          <li><code>updateInstalledPlugin</code> 保存配置或启停插件。</li>
+          <li><code>deleteInstalledPlugin</code> 删除插件并刷新相关诊断与 connector 状态。</li>
+          <li><code>saveInstalledPluginConnectorApiKey</code> 保存或清空 app connector API key。</li>
+        </ul>
+        <p>
+          <code>PluginsPage</code> 负责目录过滤、详情展示、风险标签、工具预览、MCP bindings、安装审查、配置表单和 connector 表单。界面层不会自己解释 manifest，而是消费 agent 返回的 <code>PluginCatalogItem</code> 和 <code>InstalledPlugin</code>。
+        </p>
+      </section>
+
+      <section>
+        <h2>6. 项目级启用与会话运行</h2>
+        <p>
+          插件安装是全局行为，项目级选择决定某个项目会话中哪些插件 MCP server 和插件技能可用。
+        </p>
+
+        <h3>6.1 项目插件选择</h3>
+        <p>
+          agent 项目 API 提供：
+        </p>
+        <ul>
+          <li><code>GET /api/projects/:id/plugins</code>：返回所有已启用的已安装插件。</li>
+          <li><code>GET /api/projects/:id/plugins/selection</code>：返回当前项目选中的插件 ID，且会过滤掉未安装或未启用的插件。</li>
+          <li><code>PUT /api/projects/:id/plugins/selection</code>：保存项目选中的插件 ID。</li>
+        </ul>
+        <p>
+          desktop renderer 中的 <code>use-project-composer.ts</code> 会读取这些接口，把插件显示为 composer 顶部菜单里的可选项，并在用户切换时调用 <code>updateProjectPluginSelection</code>。
+        </p>
+
+        <h3>6.2 MCP server 解析</h3>
+        <p>
+          项目 MCP server 解析由 <code>Config.resolveProjectMcpServers(projectID)</code> 完成。它会读取项目配置中的 <code>selected_plugins</code>，把每个插件 ID 映射为 <code>plugin.&lt;pluginID&gt;</code> 前缀，然后从全局 MCP server 列表中挑出匹配的 server。
+        </p>
+        <p>
+          如果项目显式设置了 <code>selected_mcp_servers</code>，返回结果会包含显式选择的 MCP server 加上选中插件生成的 MCP server；如果没有显式 MCP 选择，则返回项目级 MCP server，并补充选中插件生成的全局 MCP server。
+        </p>
+
+        <h3>6.3 技能发现</h3>
+        <p>
+          技能系统默认扫描项目技能 <code>.anybox/skills</code> 和用户技能 <code>~/.anybox/skills</code>。插件技能由 <code>Plugin.listInstalledPluginSkillRoots(pluginIDs)</code> 提供根目录，只有已安装、已启用，并且在当前项目选中的插件会进入技能扫描范围。
+        </p>
+        <p>
+          会话构建 prompt 时，会通过 <code>Skill.resolveTurnSkillIDs</code> 结合项目选中的插件 ID 过滤可用技能，再由 <code>SystemPrompt.skills</code> 生成技能目录提示。技能内容本身仍然遵守渐进加载：只有模型明确调用 load-skill 时才读取完整 <code>SKILL.md</code>。
+        </p>
+      </section>
+
+      <section>
+        <h2>7. 构建与打包</h2>
+        <p>
+          Desktop 构建脚本 <code>packages/desktop/scripts/prepare-agent-runtime.mjs</code> 只打包 agent server、Bun、node-pty 和 workspace dependencies，不复制任何插件包。
+        </p>
+        <p>
+          校验脚本 <code>packages/desktop/scripts/verify-agent-runtime.mjs</code> 会拒绝包含 <code>plugins/builtin</code> 或 <code>plugins/registry/plugin-registry.json</code> 的 runtime。
+        </p>
+      </section>
+
+      <section>
+        <h2>8. 安全与约束</h2>
+        <ul>
+          <li><strong>风险等级：</strong>插件和 server 支持 <code>low</code>、<code>medium</code>、<code>high</code>、<code>critical</code>。安装逻辑拒绝 <code>critical</code> 风险插件，UI 也禁止安装。</li>
+          <li><strong>路径越界防护：</strong>插件技能目录解析使用 package root 相对路径校验，阻止 manifest 把技能目录指向包外路径。</li>
+          <li><strong>配置校验：</strong>安装和更新时会校验必填配置字段，并用默认值补齐。</li>
+          <li><strong>密钥处理：</strong>普通 MCP config field 仍会存在安装记录中；App connector 的 API key 则通过认证存储保存，不写入全局 MCP server 配置。</li>
+          <li><strong>权限说明：</strong>manifest 中的 <code>permissions</code> 和 <code>installReview</code> 会展示在插件详情页，帮助安装前审查。</li>
+          <li><strong>运行时审批：</strong>MCP 工具仍受 MCP server 配置中的 <code>toolPolicies</code>、<code>allowedTools</code>、<code>requireApproval</code> 约束。</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>9. 从插件到会话可用能力的完整链路</h2>
+        <ol>
+          <li>插件作者在 <code>.fanfande-plugin/plugin.json</code> 声明元信息、MCP server、skills 或 apps。</li>
+          <li>agent catalog API 拉取远程插件元数据，用户安装时下载插件包到本机 <code>plugins/installed</code> 目录。</li>
+          <li>agent 扫描已下载插件 manifest，归一化为 <code>PluginCatalogItem</code>。</li>
+          <li>desktop 插件页展示 catalog，用户选择安装。</li>
+          <li>agent 安装插件，写入 <code>installed_plugins</code>，并生成全局 MCP server 配置。</li>
+          <li>用户在某个项目的 composer 菜单里选择插件，项目配置写入 <code>selected_plugins</code>。</li>
+          <li>MCP manager 解析项目 MCP server 时，把选中插件生成的全局 MCP server 注入当前项目可用 server 列表。</li>
+          <li>技能系统根据项目选中的插件 ID 扫描插件技能根目录，把插件技能放入当前会话可发现技能列表。</li>
+          <li>会话运行时按 MCP transport 启动 stdio server 或连接 remote server；App connector 在连接时动态解析 API key。</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>10. 主要源码位置索引</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>文件</th>
+              <th>职责</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>packages/fanfandeagent/src/plugin/plugin.ts</code></td>
+              <td>插件 schema、manifest 扫描、catalog 归一化、安装/更新/删除、MCP 绑定、connector 密钥解析、插件技能根目录。</td>
+            </tr>
+            <tr>
+              <td><code>packages/fanfandeagent/src/server/routes/settings.ts</code></td>
+              <td>插件设置 API 路由：catalog、installed、diagnostic、connectors。</td>
+            </tr>
+            <tr>
+              <td><code>packages/fanfandeagent/src/server/usecases/settings.ts</code></td>
+              <td>设置 API use case，负责把 PluginError 转成 API error。</td>
+            </tr>
+            <tr>
+              <td><code>packages/fanfandeagent/src/server/routes/projects.ts</code></td>
+              <td>项目插件选择 API 路由。</td>
+            </tr>
+            <tr>
+              <td><code>packages/fanfandeagent/src/server/usecases/projects.ts</code></td>
+              <td>项目插件列表、选择、技能和 MCP selection 关联逻辑。</td>
+            </tr>
+            <tr>
+              <td><code>packages/fanfandeagent/src/config/config.ts</code></td>
+              <td>全局/项目配置，保存 <code>selected_plugins</code>，解析项目 MCP server。</td>
+            </tr>
+            <tr>
+              <td><code>packages/fanfandeagent/src/skill/skill.ts</code></td>
+              <td>插件技能发现、项目技能过滤、prompt 技能目录生成。</td>
+            </tr>
+            <tr>
+              <td><code>packages/fanfandeagent/src/mcp/client.ts</code></td>
+              <td>创建 stdio 或 remote MCP transport，remote connector 运行时解析。</td>
+            </tr>
+            <tr>
+              <td><code>packages/fanfandeagent/src/mcp/manager.ts</code></td>
+              <td>按项目解析 active MCP servers，发现工具并管理 MCP client 生命周期。</td>
+            </tr>
+            <tr>
+              <td><code>packages/desktop/src/main/ipc.ts</code></td>
+              <td>desktop IPC 到 agent plugin/project API 的转发层。</td>
+            </tr>
+            <tr>
+              <td><code>packages/desktop/src/renderer/src/app/use-settings-page.ts</code></td>
+              <td>插件设置页状态管理和操作函数。</td>
+            </tr>
+            <tr>
+              <td><code>packages/desktop/src/renderer/src/app/plugins/PluginsPage.tsx</code></td>
+              <td>插件目录和详情 UI。</td>
+            </tr>
+            <tr>
+              <td><code>packages/desktop/src/renderer/src/app/use-project-composer.ts</code></td>
+              <td>项目 composer 中插件选项加载和切换。</td>
+            </tr>
+            <tr>
+              <td><code>packages/desktop/scripts/prepare-agent-runtime.mjs</code></td>
+              <td>desktop 构建 managed agent runtime，不复制插件包。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </article>
+  </main>
+</body>
+</html>

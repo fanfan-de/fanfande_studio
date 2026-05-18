@@ -1447,6 +1447,13 @@ export interface PluginConfigField {
   description?: string
 }
 
+export interface PluginPackageDownload {
+  type: "zip"
+  url?: string
+  sha256?: string
+  size?: number
+}
+
 export interface PluginStdioRuntime {
   transport: "stdio"
   command: string
@@ -1509,10 +1516,17 @@ export interface PluginCatalogItem {
   id: string
   name: string
   description: string
+  longDescription?: string
   version: string
   publisher: string
   category: PluginCategory
   icon?: string
+  iconUrl?: string
+  thumbnailUrl?: string
+  heroImageUrl?: string
+  screenshots: string[]
+  tags: string[]
+  brandColor?: string
   homepage?: string
   documentationUrl?: string
   risk: PluginRisk
@@ -1524,6 +1538,9 @@ export interface PluginCatalogItem {
   skills: PluginSkillPreview[]
   apps: PluginAppConnector[]
   installReview?: string[]
+  source?: "package" | "registry"
+  download?: PluginPackageDownload
+  installable?: boolean
 }
 
 export interface InstalledPlugin {
@@ -1539,6 +1556,7 @@ export interface InstalledPlugin {
   updatedAt: number
   lastDiagnostic?: McpServerDiagnostic
   lastConnectorDiagnostics?: Record<string, McpServerDiagnostic>
+  missingPackage?: boolean
 }
 
 export interface PluginConnectorStatus {

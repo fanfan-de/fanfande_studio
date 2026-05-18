@@ -1064,6 +1064,13 @@ export interface AgentPluginConfigField {
   description?: string
 }
 
+export interface AgentPluginPackageDownload {
+  type: "zip"
+  url?: string
+  sha256?: string
+  size?: number
+}
+
 export interface AgentPluginStdioRuntime {
   transport: "stdio"
   command: string
@@ -1126,10 +1133,17 @@ export interface AgentPluginCatalogItem {
   id: string
   name: string
   description: string
+  longDescription?: string
   version: string
   publisher: string
   category: AgentPluginCategory
   icon?: string
+  iconUrl?: string
+  thumbnailUrl?: string
+  heroImageUrl?: string
+  screenshots: string[]
+  tags: string[]
+  brandColor?: string
   homepage?: string
   documentationUrl?: string
   risk: AgentPluginRisk
@@ -1141,6 +1155,9 @@ export interface AgentPluginCatalogItem {
   skills: AgentPluginSkillPreview[]
   apps: AgentPluginAppConnector[]
   installReview?: string[]
+  source?: "package" | "registry"
+  download?: AgentPluginPackageDownload
+  installable?: boolean
 }
 
 export interface AgentInstalledPlugin {
@@ -1156,6 +1173,7 @@ export interface AgentInstalledPlugin {
   updatedAt: number
   lastDiagnostic?: AgentMcpServerDiagnostic
   lastConnectorDiagnostics?: Record<string, AgentMcpServerDiagnostic>
+  missingPackage?: boolean
 }
 
 export interface AgentPluginInstallInput {

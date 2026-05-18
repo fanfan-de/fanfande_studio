@@ -23,6 +23,16 @@ type PluginCatalogEnvelope = JsonEnvelope<
   Array<{
     id: string
     name: string
+    description: string
+    thumbnailUrl?: string
+    screenshots: string[]
+    installable?: boolean
+    source?: string
+    download?: {
+      type: string
+      url?: string
+      sha256?: string
+    }
     version: string
     risk: string
     runtime?: {
@@ -115,7 +125,10 @@ type SingleConnectorStatusEnvelope = JsonEnvelope<{
 }>
 
 let activeRoot: string | null = null
-let previousPluginPackageDirs: string | undefined
+let previousPluginInstallDir: string | undefined
+let previousPluginRegistryIndexURL: string | undefined
+let previousPluginRegistryCacheDir: string | undefined
+let previousFetch: typeof fetch | undefined
 
 async function removeTreeWithRetry(path: string) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -133,14 +146,25 @@ async function useTempDatabase() {
   activeRoot = await mkdtemp(join(tmpdir(), "fanfande-plugin-api-"))
   Sqlite.setDatabaseFile(join(activeRoot, "plugin.db"))
   Sqlite.closeDatabase()
-  previousPluginPackageDirs = process.env.FanFande_PLUGIN_PACKAGE_DIRS
+  previousPluginInstallDir = process.env.FANFANDE_PLUGIN_INSTALL_DIR
+  previousPluginRegistryIndexURL = process.env.FANFANDE_PLUGIN_REGISTRY_INDEX_URL
+  previousPluginRegistryCacheDir = process.env.FANFANDE_PLUGIN_REGISTRY_CACHE_DIR
+  previousFetch = globalThis.fetch
+  process.env.FANFANDE_PLUGIN_INSTALL_DIR = join(activeRoot, "installed-plugins")
+  process.env.FANFANDE_PLUGIN_REGISTRY_INDEX_URL = "off"
+  process.env.FANFANDE_PLUGIN_REGISTRY_CACHE_DIR = join(activeRoot, "registry-cache")
   await Auth.clearProvider("plugin-app:manifest-lab:docs")
+}
+
+function pluginInstallRoot() {
+  if (!activeRoot) throw new Error("Temp root has not been initialized.")
+  return process.env.FANFANDE_PLUGIN_INSTALL_DIR ?? join(activeRoot, "installed-plugins")
 }
 
 async function writeManifestPluginPackage() {
   if (!activeRoot) throw new Error("Temp root has not been initialized.")
 
-  const packageSourceRoot = join(activeRoot, "plugin-packages")
+  const packageSourceRoot = pluginInstallRoot()
   const packageRoot = join(packageSourceRoot, "manifest-lab")
   const versionRoot = join(packageRoot, "0.1.0")
   const manifestRoot = join(versionRoot, ".fanfande-plugin")
@@ -233,14 +257,71 @@ async function writeManifestPluginPackage() {
     ],
   }, null, 2))
 
-  process.env.FanFande_PLUGIN_PACKAGE_DIRS = packageSourceRoot
+  return packageSourceRoot
+}
+
+async function writeConfigRequiredPluginPackage() {
+  if (!activeRoot) throw new Error("Temp root has not been initialized.")
+
+  const packageSourceRoot = pluginInstallRoot()
+  const packageRoot = join(packageSourceRoot, "config-lab", "0.1.0")
+  const manifestRoot = join(packageRoot, ".fanfande-plugin")
+  await mkdir(manifestRoot, { recursive: true })
+
+  await writeFile(join(manifestRoot, "plugin.json"), JSON.stringify({
+    name: "config-lab",
+    version: "0.1.0",
+    description: "Fixture plugin package with a required MCP configuration field.",
+    author: "Fanfande Tests",
+    interface: {
+      displayName: "Config Lab",
+      shortDescription: "Configuration fixture package.",
+      developerName: "Fanfande Tests",
+      category: "Docs",
+    },
+    mcpServers: [
+      {
+        id: "docs",
+        name: "Config Docs",
+        risk: "low",
+        configFields: [
+          {
+            key: "DOCS_TOKEN",
+            label: "Docs token",
+            type: "password",
+            required: true,
+            secret: true,
+          },
+        ],
+        tools: [
+          {
+            name: "search_docs",
+            description: "Search docs.",
+            readOnly: true,
+          },
+        ],
+        runtime: {
+          transport: "remote",
+          serverUrl: "https://docs.example.test/mcp",
+          headers: {
+            authorization: "Bearer ${DOCS_TOKEN}",
+          },
+          allowedTools: {
+            readOnly: true,
+          },
+          requireApproval: "never",
+        },
+      },
+    ],
+  }, null, 2))
+
   return packageSourceRoot
 }
 
 async function writeCriticalPluginPackage() {
   if (!activeRoot) throw new Error("Temp root has not been initialized.")
 
-  const packageSourceRoot = join(activeRoot, "critical-plugin-packages")
+  const packageSourceRoot = pluginInstallRoot()
   const packageRoot = join(packageSourceRoot, "critical-lab")
   const manifestRoot = join(packageRoot, ".fanfande-plugin")
   await mkdir(manifestRoot, { recursive: true })
@@ -279,14 +360,13 @@ async function writeCriticalPluginPackage() {
     ],
   }, null, 2))
 
-  process.env.FanFande_PLUGIN_PACKAGE_DIRS = packageSourceRoot
   return packageSourceRoot
 }
 
 async function writeVersionedPluginPackage() {
   if (!activeRoot) throw new Error("Temp root has not been initialized.")
 
-  const packageSourceRoot = join(activeRoot, "versioned-plugin-packages")
+  const packageSourceRoot = pluginInstallRoot()
   const packageRoot = join(packageSourceRoot, "version-lab")
   const versions = [
     ["0.1.0", "Version Lab Old"],
@@ -329,18 +409,33 @@ async function writeVersionedPluginPackage() {
     }, null, 2))
   }
 
-  process.env.FanFande_PLUGIN_PACKAGE_DIRS = packageSourceRoot
   return packageSourceRoot
 }
 
 afterEach(async () => {
   await Auth.clearProvider("plugin-app:manifest-lab:docs")
-  if (previousPluginPackageDirs === undefined) {
-    delete process.env.FanFande_PLUGIN_PACKAGE_DIRS
+  if (previousPluginInstallDir === undefined) {
+    delete process.env.FANFANDE_PLUGIN_INSTALL_DIR
   } else {
-    process.env.FanFande_PLUGIN_PACKAGE_DIRS = previousPluginPackageDirs
+    process.env.FANFANDE_PLUGIN_INSTALL_DIR = previousPluginInstallDir
   }
-  previousPluginPackageDirs = undefined
+  if (previousPluginRegistryIndexURL === undefined) {
+    delete process.env.FANFANDE_PLUGIN_REGISTRY_INDEX_URL
+  } else {
+    process.env.FANFANDE_PLUGIN_REGISTRY_INDEX_URL = previousPluginRegistryIndexURL
+  }
+  if (previousPluginRegistryCacheDir === undefined) {
+    delete process.env.FANFANDE_PLUGIN_REGISTRY_CACHE_DIR
+  } else {
+    process.env.FANFANDE_PLUGIN_REGISTRY_CACHE_DIR = previousPluginRegistryCacheDir
+  }
+  if (previousFetch) {
+    globalThis.fetch = previousFetch
+  }
+  previousPluginInstallDir = undefined
+  previousPluginRegistryIndexURL = undefined
+  previousPluginRegistryCacheDir = undefined
+  previousFetch = undefined
   Sqlite.closeDatabase()
   Sqlite.setDatabaseFile()
   Sqlite.closeDatabase()
@@ -351,8 +446,9 @@ afterEach(async () => {
 })
 
 describe("plugin marketplace API", () => {
-  test("returns a stable curated plugin catalog without critical risk entries", async () => {
+  test("returns installed plugin package catalog entries without critical risk entries", async () => {
     await useTempDatabase()
+    await writeManifestPluginPackage()
     const app = createServerApp()
 
     const response = await app.request("/api/plugins/catalog")
@@ -361,36 +457,175 @@ describe("plugin marketplace API", () => {
     expect(response.status).toBe(200)
     expect(body.success).toBe(true)
     expect(body.data?.length).toBeGreaterThan(0)
-    expect(body.data?.some((plugin) => plugin.id === "build-web-apps")).toBe(true)
-    expect(body.data?.some((plugin) => plugin.id === "github")).toBe(true)
+    expect(body.data?.some((plugin) => plugin.id === "manifest-lab")).toBe(true)
     expect(body.data?.every((plugin) => plugin.risk !== "critical")).toBe(true)
     expect(body.data?.every((plugin) => plugin.mcpServers.length + plugin.skills.length + plugin.apps.length > 0)).toBe(true)
 
-    const buildWebAppsPlugin = body.data?.find((plugin) => plugin.id === "build-web-apps")
-    expect(buildWebAppsPlugin?.skills.map((skill) => skill.directory).toSorted()).toEqual([
-      "frontend-app-builder",
-      "frontend-testing-debugging",
-      "react-best-practices",
-      "shadcn-best-practices",
-      "stripe-best-practices",
-      "supabase-best-practices",
-    ])
+    const manifestPlugin = body.data?.find((plugin) => plugin.id === "manifest-lab")
+    expect(manifestPlugin?.source).toBe("package")
+    expect(manifestPlugin?.installable).toBe(true)
+    expect(manifestPlugin?.skills.map((skill) => skill.directory)).toEqual(["review"])
+  })
+
+  test("loads remote plugin metadata from an index URL and falls back to cached metadata", async () => {
+    await useTempDatabase()
+    const app = createServerApp()
+    process.env.FANFANDE_PLUGIN_REGISTRY_INDEX_URL = "https://registry.example.test/index.json"
+
+    const remotePluginMeta = {
+      name: "remote-lab",
+      version: "1.2.3",
+      description: "Remote fixture plugin.",
+      author: "Remote Tests",
+      keywords: ["remote"],
+      interface: {
+        displayName: "Remote Lab",
+        shortDescription: "Remote fixture.",
+        longDescription: "Remote fixture marketplace details.",
+        developerName: "Remote Tests",
+        category: "Docs",
+        thumbnailUrl: "./relative-thumbnail.png",
+        screenshots: [
+          "./relative-screenshot.png",
+          "https://cdn.example.test/remote-lab.png",
+        ],
+      },
+      package: {
+        type: "zip",
+        url: "https://cdn.example.test/remote-lab.zip",
+        sha256: "a".repeat(64),
+      },
+      mcpServers: [
+        {
+          id: "docs",
+          name: "Remote Docs",
+          risk: "low",
+          tools: [
+            {
+              name: "search_remote_docs",
+              description: "Search remote docs.",
+              readOnly: true,
+            },
+          ],
+          runtime: {
+            transport: "remote",
+            serverUrl: "https://docs.example.test/mcp",
+            allowedTools: {
+              readOnly: true,
+            },
+            requireApproval: "never",
+          },
+        },
+      ],
+    }
+
+    let failNetwork = false
+    let fetchCount = 0
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      fetchCount += 1
+      if (failNetwork) throw new Error("offline")
+
+      const url = typeof input === "string"
+        ? input
+        : input instanceof URL ? input.toString() : input.url
+      if (url === "https://registry.example.test/index.json") {
+        return new Response(JSON.stringify(["https://plugins.example.test/remote-lab"]), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        })
+      }
+      if (url === "https://plugins.example.test/remote-lab/plugin.meta.json") {
+        return new Response(JSON.stringify(remotePluginMeta), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        })
+      }
+
+      return new Response("not found", { status: 404 })
+    }) as typeof fetch
+
+    const firstResponse = await app.request("/api/plugins/catalog")
+    const firstBody = (await firstResponse.json()) as PluginCatalogEnvelope
+    const firstRemotePlugin = firstBody.data?.find((plugin) => plugin.id === "remote-lab")
+
+    expect(firstResponse.status).toBe(200)
+    expect(firstRemotePlugin?.name).toBe("Remote Lab")
+    expect(firstRemotePlugin?.source).toBe("registry")
+    expect(firstRemotePlugin?.installable).toBe(true)
+    expect(firstRemotePlugin?.download?.url).toBe("https://cdn.example.test/remote-lab.zip")
+    expect(firstRemotePlugin?.thumbnailUrl).toBeUndefined()
+    expect(firstRemotePlugin?.screenshots).toEqual(["https://cdn.example.test/remote-lab.png"])
+
+    const fetchCountBeforeCachedMode = fetchCount
+    const cachedModeResponse = await app.request("/api/plugins/catalog?freshness=cached")
+    const cachedModeBody = (await cachedModeResponse.json()) as PluginCatalogEnvelope
+    const cachedModeRemotePlugin = cachedModeBody.data?.find((plugin) => plugin.id === "remote-lab")
+
+    expect(cachedModeResponse.status).toBe(200)
+    expect(cachedModeRemotePlugin?.name).toBe("Remote Lab")
+    expect(fetchCount).toBe(fetchCountBeforeCachedMode)
+
+    failNetwork = true
+    const cachedResponse = await app.request("/api/plugins/catalog")
+    const cachedBody = (await cachedResponse.json()) as PluginCatalogEnvelope
+    const cachedRemotePlugin = cachedBody.data?.find((plugin) => plugin.id === "remote-lab")
+
+    expect(cachedResponse.status).toBe(200)
+    expect(cachedRemotePlugin?.name).toBe("Remote Lab")
+  })
+
+  test("shows remote metadata without a package as catalog-only", async () => {
+    await useTempDatabase()
+    const app = createServerApp()
+    process.env.FANFANDE_PLUGIN_REGISTRY_INDEX_URL = "https://registry.example.test/index.json"
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = typeof input === "string"
+        ? input
+        : input instanceof URL ? input.toString() : input.url
+      if (url === "https://registry.example.test/index.json") {
+        return new Response(JSON.stringify(["https://plugins.example.test/meta-only"]), { status: 200 })
+      }
+      if (url === "https://plugins.example.test/meta-only/plugin.meta.json") {
+        return new Response(JSON.stringify({
+          name: "meta-only",
+          version: "1.0.0",
+          description: "Remote plugin without a package.",
+          interface: {
+            displayName: "Meta Only",
+            shortDescription: "Catalog only.",
+            category: "Docs",
+          },
+          mcpServers: [],
+          skills: [],
+        }), { status: 200 })
+      }
+      return new Response("not found", { status: 404 })
+    }) as typeof fetch
+
+    const response = await app.request("/api/plugins/catalog")
+    const body = (await response.json()) as PluginCatalogEnvelope
+    const plugin = body.data?.find((item) => item.id === "meta-only")
+
+    expect(response.status).toBe(200)
+    expect(plugin?.name).toBe("Meta Only")
+    expect(plugin?.installable).toBe(false)
   })
 
   test("installs, disables, diagnoses, and removes a plugin-backed MCP server", async () => {
     await useTempDatabase()
+    await writeManifestPluginPackage()
     const app = createServerApp()
-    const root = activeRoot ?? "~"
 
-    const installResponse = await app.request("/api/plugins/installed/filesystem", {
+    const installResponse = await app.request("/api/plugins/installed/manifest-lab", {
       method: "PUT",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        config: {
-          ROOT_PATH: root,
-        },
         enabled: true,
       }),
     })
@@ -398,17 +633,20 @@ describe("plugin marketplace API", () => {
 
     expect(installResponse.status).toBe(200)
     expect(installBody.success).toBe(true)
-    expect(installBody.data?.pluginID).toBe("filesystem")
-    expect(installBody.data?.mcpServerID).toBe("plugin.filesystem")
-    expect(installBody.data?.mcpServerIDs).toEqual(["plugin.filesystem"])
+    expect(installBody.data?.pluginID).toBe("manifest-lab")
+    expect(installBody.data?.mcpServerID).toBe("plugin.manifest-lab.notes")
+    expect(installBody.data?.mcpServerIDs).toEqual([
+      "plugin.manifest-lab.notes",
+      "plugin.manifest-lab.app.docs",
+    ])
 
-    const server = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.filesystem")
+    const server = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.manifest-lab.notes")
     expect(server?.transport).toBe("stdio")
     expect(server?.enabled).toBe(true)
-    expect(server?.name).toBe("Filesystem")
-    expect(server?.transport === "stdio" ? server.args?.at(-1) : undefined).toBe(root)
+    expect(server?.name).toBe("Manifest Notes")
+    expect(server?.transport === "stdio" ? server.args : undefined).toEqual(["server.js"])
 
-    const disableResponse = await app.request("/api/plugins/installed/filesystem", {
+    const disableResponse = await app.request("/api/plugins/installed/manifest-lab", {
       method: "PATCH",
       headers: {
         "content-type": "application/json",
@@ -418,42 +656,46 @@ describe("plugin marketplace API", () => {
       }),
     })
     const disableBody = (await disableResponse.json()) as InstalledPluginEnvelope
-    const disabledServer = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.filesystem")
+    const disabledServer = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.manifest-lab.notes")
 
     expect(disableResponse.status).toBe(200)
     expect(disableBody.data?.enabled).toBe(false)
     expect(disabledServer?.enabled).toBe(false)
 
-    const diagnosticResponse = await app.request("/api/plugins/installed/filesystem/diagnostic")
+    const diagnosticResponse = await app.request("/api/plugins/installed/manifest-lab/diagnostic")
     const diagnosticBody = (await diagnosticResponse.json()) as DiagnosticEnvelope
 
     expect(diagnosticResponse.status).toBe(200)
     expect(diagnosticBody.success).toBe(true)
-    expect(diagnosticBody.data?.serverID).toBe("plugin.filesystem")
+    expect(diagnosticBody.data?.serverID).toBe("plugin.manifest-lab.notes")
     expect(diagnosticBody.data?.enabled).toBe(false)
     expect(diagnosticBody.data?.ok).toBe(false)
     expect(diagnosticBody.data?.error).toBe("Server is disabled.")
 
     const listResponse = await app.request("/api/plugins/installed")
     const listBody = (await listResponse.json()) as InstalledPluginsEnvelope
-    expect(listBody.data?.some((plugin) => plugin.pluginID === "filesystem")).toBe(true)
+    expect(listBody.data?.some((plugin) => plugin.pluginID === "manifest-lab")).toBe(true)
 
-    const deleteResponse = await app.request("/api/plugins/installed/filesystem", {
+    const deleteResponse = await app.request("/api/plugins/installed/manifest-lab", {
       method: "DELETE",
     })
     const deleteBody = (await deleteResponse.json()) as DeletePluginEnvelope
 
     expect(deleteResponse.status).toBe(200)
     expect(deleteBody.data?.removed).toBe(true)
-    expect(deleteBody.data?.mcpServerIDs).toEqual(["plugin.filesystem"])
-    expect(await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.filesystem")).toBeUndefined()
+    expect(deleteBody.data?.mcpServerIDs).toEqual([
+      "plugin.manifest-lab.notes",
+      "plugin.manifest-lab.app.docs",
+    ])
+    expect(await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.manifest-lab.notes")).toBeUndefined()
   })
 
   test("rejects installs that omit required plugin configuration", async () => {
     await useTempDatabase()
+    await writeConfigRequiredPluginPackage()
     const app = createServerApp()
 
-    const response = await app.request("/api/plugins/installed/github", {
+    const response = await app.request("/api/plugins/installed/config-lab", {
       method: "PUT",
       headers: {
         "content-type": "application/json",

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent, type PointerEvent } from "react"
 import { APPEARANCE_TOKEN_GROUPS, type AppearanceTokenMap, type AppearanceTokenName } from "../../../../shared/appearance"
-import type { DesktopAppUpdateSettings } from "../../../../shared/desktop-ipc-contract"
+import type { DesktopAppUpdateSettings, DesktopStoragePaths } from "../../../../shared/desktop-ipc-contract"
 import {
   ArchiveIcon,
   CloseIcon,
@@ -45,6 +45,7 @@ import { McpToolsPolicyPanel } from "../mcp/McpToolsPolicyPanel"
 import { clamp, formatTime } from "../utils"
 import {
   checkForAppUpdates,
+  getStoragePaths,
   getAppUpdateSettings,
   openExternalUrl,
   openMonitorWindow,
@@ -712,6 +713,48 @@ type AppUpdateStatus = {
   text: string
 }
 
+const storagePathItems: Array<{
+  key: keyof DesktopStoragePaths
+  label: string
+  description: string
+}> = [
+  {
+    key: "appData",
+    label: "Application data",
+    description: "Electron settings, UI preferences, and desktop-managed files.",
+  },
+  {
+    key: "agentRoot",
+    label: "Agent root",
+    description: "Managed agent home directory used by the desktop app.",
+  },
+  {
+    key: "agentData",
+    label: "Agent data",
+    description: "Agent database-adjacent data, plugin records, and durable state.",
+  },
+  {
+    key: "installedPlugins",
+    label: "Installed plugins",
+    description: "Downloaded plugin package folders.",
+  },
+  {
+    key: "pluginRegistryCache",
+    label: "Plugin registry cache",
+    description: "Cached plugin catalog metadata.",
+  },
+  {
+    key: "agentCache",
+    label: "Agent cache",
+    description: "Runtime caches and re-downloadable temporary data.",
+  },
+  {
+    key: "pluginInstallTemp",
+    label: "Plugin install temp",
+    description: "Temporary plugin zip extraction directory.",
+  },
+]
+
 const SETTINGS_PAGE_DRAG_MARGIN = 16
 
 interface SettingsPageOffset {
@@ -924,6 +967,8 @@ export function SettingsPage({
     const [activeSection, setActiveSection] = useState<SettingsSectionKey>("general")
     const [appUpdateSettings, setAppUpdateSettings] = useState<DesktopAppUpdateSettings | null>(null)
     const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus | null>(null)
+    const [storagePaths, setStoragePaths] = useState<DesktopStoragePaths | null>(null)
+    const [storagePathStatus, setStoragePathStatus] = useState<AppUpdateStatus | null>(null)
     const [isCheckingAppUpdate, setIsCheckingAppUpdate] = useState(false)
     const [isSavingAutomaticUpdates, setIsSavingAutomaticUpdates] = useState(false)
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
@@ -1055,6 +1100,29 @@ export function SettingsPage({
           setAppUpdateStatus({
             tone: "error",
             text: `Unable to load update settings. ${message}`,
+          })
+        })
+
+      return () => {
+        disposed = true
+      }
+    }, [isOpen])
+
+    useEffect(() => {
+      if (!isOpen) return
+
+      let disposed = false
+      void getStoragePaths()
+        .then((paths) => {
+          if (disposed || !paths) return
+          setStoragePaths(paths)
+        })
+        .catch((error: unknown) => {
+          if (disposed) return
+          const message = error instanceof Error ? error.message : String(error)
+          setStoragePathStatus({
+            tone: "error",
+            text: `Unable to load storage paths. ${message}`,
           })
         })
 
@@ -1294,6 +1362,47 @@ export function SettingsPage({
         })
       } finally {
         setIsSavingAutomaticUpdates(false)
+      }
+    }
+
+    async function handleOpenStoragePath(targetPath: string) {
+      const openPath = window.desktop?.openPath
+      if (!openPath) {
+        setStoragePathStatus({
+          tone: "error",
+          text: "Opening storage folders is unavailable in this desktop shell.",
+        })
+        return
+      }
+
+      try {
+        await openPath({ targetPath })
+        setStoragePathStatus({
+          tone: "success",
+          text: "Opened storage folder.",
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setStoragePathStatus({
+          tone: "error",
+          text: `Unable to open storage folder. ${message}`,
+        })
+      }
+    }
+
+    async function handleCopyStoragePath(targetPath: string) {
+      try {
+        await writeTextToClipboard(targetPath)
+        setStoragePathStatus({
+          tone: "success",
+          text: "Storage path copied.",
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setStoragePathStatus({
+          tone: "error",
+          text: `Unable to copy storage path. ${message}`,
+        })
       }
     }
 
@@ -1569,6 +1678,54 @@ export function SettingsPage({
 
                     {appUpdateStatus ? (
                       <p className={`settings-about-status is-${appUpdateStatus.tone}`}>{appUpdateStatus.text}</p>
+                    ) : null}
+                  </section>
+
+                  <section className="settings-panel settings-storage-panel" aria-label="Storage locations">
+                    <div className="settings-section-header">
+                      <div>
+                        <span className="label">Storage</span>
+                        <h3>Storage Locations</h3>
+                      </div>
+                      <p>Open or copy the folders used for app data, managed agent data, plugins, and caches.</p>
+                    </div>
+                    <div className="settings-storage-list">
+                      {storagePaths ? (
+                        storagePathItems.map((item) => {
+                          const targetPath = storagePaths[item.key]
+
+                          return (
+                            <div key={item.key} className="settings-storage-row">
+                              <div className="settings-storage-copy">
+                                <strong>{item.label}</strong>
+                                <span>{item.description}</span>
+                                <code title={targetPath}>{targetPath}</code>
+                              </div>
+                              <div className="settings-storage-actions">
+                                <button
+                                  className="secondary-button"
+                                  type="button"
+                                  onClick={() => void handleCopyStoragePath(targetPath)}
+                                >
+                                  Copy
+                                </button>
+                                <button
+                                  className="secondary-button"
+                                  type="button"
+                                  onClick={() => void handleOpenStoragePath(targetPath)}
+                                >
+                                  Open
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })
+                      ) : (
+                        <p className="settings-helper-text">Loading storage paths...</p>
+                      )}
+                    </div>
+                    {storagePathStatus ? (
+                      <p className={`settings-about-status is-${storagePathStatus.tone}`}>{storagePathStatus.text}</p>
                     ) : null}
                   </section>
 

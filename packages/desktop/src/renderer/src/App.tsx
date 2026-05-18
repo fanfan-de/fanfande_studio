@@ -880,6 +880,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     builtinToolsError,
     catalog,
     closeSettings,
+    clearPluginSelection,
     deleteArchivedSession,
     deleteInstalledPlugin,
     deleteInstalledPluginConnectorApiKey,
@@ -1603,6 +1604,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onInstallPlugin={installPlugin}
                 onPluginDraftAppApiKeyChange={setPluginDraftAppApiKey}
                 onPluginDraftConfigChange={setPluginDraftConfigValue}
+                onPluginDeselect={clearPluginSelection}
                 onPluginSelect={selectPlugin}
                 onSaveInstalledPluginConnectorApiKey={saveInstalledPluginConnectorApiKey}
                 onSaveInstalledPluginConfig={saveInstalledPluginConfig}

@@ -11,32 +11,10 @@ const pythonExecutable = process.platform === "win32"
   ? path.join(dependenciesDir, "python", "python.exe")
   : path.join(dependenciesDir, "python", "bin", "python3")
 
-function findBuiltinPluginManifest(pluginID) {
-  const pluginRoot = path.join(runtimeDir, "plugins", "builtin", pluginID)
-  const legacyManifest = path.join(pluginRoot, ".fanfande-plugin", "plugin.json")
-  if (fs.existsSync(legacyManifest)) return legacyManifest
-
-  if (!fs.existsSync(pluginRoot)) return path.join(pluginRoot, "1.0.0", ".fanfande-plugin", "plugin.json")
-
-  const versionEntries = fs
-    .readdirSync(pluginRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
-    .map((entry) => path.join(pluginRoot, entry.name, ".fanfande-plugin", "plugin.json"))
-
-  return versionEntries.find((manifestPath) => fs.existsSync(manifestPath))
-    ?? path.join(pluginRoot, "1.0.0", ".fanfande-plugin", "plugin.json")
-}
-
 const requiredFiles = [
   path.join(runtimeDir, "agent-server.js"),
   path.join(runtimeDir, bunExecutableName),
   path.join(runtimeDir, "node_modules", "node-pty", "package.json"),
-  findBuiltinPluginManifest("build-web-apps"),
-  findBuiltinPluginManifest("context7"),
-  findBuiltinPluginManifest("filesystem"),
-  findBuiltinPluginManifest("github"),
-  findBuiltinPluginManifest("playwright"),
-  findBuiltinPluginManifest("postgres"),
   path.join(dependenciesDir, "manifest.json"),
   pythonExecutable,
 ]
@@ -47,6 +25,20 @@ if (missing.length > 0) {
   for (const filePath of missing) {
     console.error(`- ${filePath}`)
   }
+  process.exit(1)
+}
+
+const builtinPluginsRoot = path.join(runtimeDir, "plugins", "builtin")
+if (fs.existsSync(builtinPluginsRoot)) {
+  console.error("[desktop][build] agent runtime must not include bundled plugin packages:")
+  console.error(`- ${builtinPluginsRoot}`)
+  process.exit(1)
+}
+
+const pluginRegistryPath = path.join(runtimeDir, "plugins", "registry", "plugin-registry.json")
+if (fs.existsSync(pluginRegistryPath)) {
+  console.error("[desktop][build] agent runtime must not include a bundled plugin registry:")
+  console.error(`- ${pluginRegistryPath}`)
   process.exit(1)
 }
 

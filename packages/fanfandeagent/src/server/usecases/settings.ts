@@ -78,6 +78,9 @@ export const InstallSkillLocalFileBody = z.object({
 export const UpdateMcpServerBody = Config.McpServerInput
 export const UpdateGlobalProviderBody = Config.Provider
 export const UpdateGlobalModelSelectionBody = Config.ModelSelection
+export const PluginCatalogQuery = z.object({
+  freshness: z.enum(["cached", "fresh"]).optional(),
+})
 export const InstallPluginBody = Plugin.InstallPluginInput
 export const UpdateInstalledPluginBody = Plugin.UpdateInstalledPluginInput
 export const SavePluginConnectorApiKeyBody = Plugin.SavePluginConnectorApiKeyInput
@@ -238,9 +241,14 @@ function toPluginApiError(error: unknown) {
         return new ApiError(404, error.code, error.message)
       case "PLUGIN_ALREADY_INSTALLED":
         return new ApiError(409, error.code, error.message)
+      case "PLUGIN_PACKAGE_DOWNLOAD_FAILED":
+      case "PLUGIN_REGISTRY_UNAVAILABLE":
+        return new ApiError(502, error.code, error.message)
       case "PLUGIN_CONFIG_INVALID":
       case "PLUGIN_RISK_NOT_ALLOWED":
       case "PLUGIN_CONNECTOR_NOT_CONNECTED":
+      case "PLUGIN_PACKAGE_UNAVAILABLE":
+      case "PLUGIN_PACKAGE_INVALID":
         return new ApiError(400, error.code, error.message)
     }
   }
@@ -680,8 +688,8 @@ export async function removeMcpServer(serverID: string) {
   }
 }
 
-export function listPluginCatalog() {
-  return Plugin.listCatalog()
+export async function listPluginCatalog(input: z.infer<typeof PluginCatalogQuery> = {}) {
+  return input.freshness === "cached" ? Plugin.listCachedCatalog() : await Plugin.listCatalog()
 }
 
 export function listInstalledPlugins() {

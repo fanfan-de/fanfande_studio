@@ -1,4 +1,7 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { createHash, randomUUID } from "node:crypto"
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs"
+import { cp, mkdir, rm, writeFile } from "node:fs/promises"
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import matter from "gray-matter"
@@ -6,18 +9,35 @@ import z from "zod"
 import * as Auth from "#auth/auth.ts"
 import * as Config from "#config/config.ts"
 import * as db from "#database/Sqlite.ts"
+import * as Global from "#global/global.ts"
 import { toCreateTableSQL, withPrimaryKey, zodObjectToColumnDefs } from "#database/parser.ts"
 import * as Mcp from "#mcp/manager.ts"
 
 const INSTALLED_PLUGINS_TABLE = "installed_plugins"
 const PLUGIN_MANIFEST_PATH = join(".fanfande-plugin", "plugin.json")
+const PLUGIN_REGISTRY_PATH = join("plugins", "registry", "plugin-registry.json")
+const PLUGIN_REGISTRY_CACHE_PATH = join("plugins", "registry-cache", "plugin-registry-cache.json")
 const DEFAULT_SKILLS_DIRECTORY = "skills"
 const API_KEY_METHOD = "api-key"
 const PLUGIN_APP_CONNECTOR_PREFIX = "plugin-app:"
+const PLUGIN_INSTALL_DIR_ENV = "FANFANDE_PLUGIN_INSTALL_DIR"
+const PLUGIN_REGISTRY_FILES_ENV = "FANFANDE_PLUGIN_REGISTRY_FILES"
+const PLUGIN_REGISTRY_INDEX_URL_ENV = "FANFANDE_PLUGIN_REGISTRY_INDEX_URL"
+const PLUGIN_REGISTRY_CACHE_DIR_ENV = "FANFANDE_PLUGIN_REGISTRY_CACHE_DIR"
+const DEFAULT_PLUGIN_REGISTRY_INDEX_URL = "https://raw.githubusercontent.com/fanfan-de/Anybox-Plugins/main/index.json"
+const MAX_PLUGIN_PACKAGE_BYTES = 100 * 1024 * 1024
+const MAX_PLUGIN_REGISTRY_INDEX_BYTES = 256 * 1024
+const MAX_PLUGIN_META_BYTES = 1024 * 1024
+const MAX_REMOTE_PLUGIN_META_COUNT = 200
+const PLUGIN_REGISTRY_FETCH_TIMEOUT_MS = 8000
 
 type PluginManifestSource = {
   manifest: PluginManifest
   packageRoot?: string
+  managedInstall?: boolean
+  download?: PluginPackageDownload
+  skillPreviews?: PluginSkillPreview[]
+  source: "package" | "registry"
 }
 
 export type PluginErrorCode =
@@ -28,6 +48,10 @@ export type PluginErrorCode =
   | "PLUGIN_RISK_NOT_ALLOWED"
   | "PLUGIN_CONNECTOR_NOT_FOUND"
   | "PLUGIN_CONNECTOR_NOT_CONNECTED"
+  | "PLUGIN_REGISTRY_UNAVAILABLE"
+  | "PLUGIN_PACKAGE_UNAVAILABLE"
+  | "PLUGIN_PACKAGE_DOWNLOAD_FAILED"
+  | "PLUGIN_PACKAGE_INVALID"
 
 export class PluginError extends Error {
   readonly code: PluginErrorCode
@@ -69,6 +93,16 @@ export const PluginConfigField = z
   })
   .strict()
 export type PluginConfigField = z.infer<typeof PluginConfigField>
+
+export const PluginPackageDownload = z
+  .object({
+    type: z.literal("zip"),
+    url: z.string().min(1).optional(),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
+    size: z.number().int().positive().optional(),
+  })
+  .strict()
+export type PluginPackageDownload = z.infer<typeof PluginPackageDownload>
 
 const PluginRuntimeBase = {
   timeoutMs: z.number().int().positive().optional(),
@@ -211,6 +245,9 @@ const PluginInterface = z
     defaultPrompt: z.union([z.string(), z.array(z.string())]).optional(),
     composerIcon: z.string().optional(),
     logo: z.string().optional(),
+    iconUrl: z.string().optional(),
+    thumbnailUrl: z.string().optional(),
+    heroImageUrl: z.string().optional(),
     screenshots: z.array(z.string()).optional(),
     brandColor: z.string().optional(),
   })
@@ -252,15 +289,43 @@ export const PluginManifest = z
   .strict()
 export type PluginManifest = z.infer<typeof PluginManifest>
 
+const PluginRegistrySkillPreview = PluginSkillPreview.omit({ id: true })
+  .extend({
+    id: z.string().min(1).optional(),
+  })
+  .strict()
+
+const PluginRegistryItem = PluginManifest.extend({
+  id: z.string().min(1).optional(),
+  package: PluginPackageDownload.optional(),
+  skillPreviews: z.array(PluginRegistrySkillPreview).optional(),
+}).strict()
+
+const PluginRegistry = z
+  .object({
+    schemaVersion: z.literal(1),
+    plugins: z.array(PluginRegistryItem),
+  })
+  .strict()
+
+const PluginRegistryIndex = z.array(z.string().min(1))
+
 export const PluginCatalogItem = z
   .object({
     id: z.string().min(1),
     name: z.string().min(1),
     description: z.string().min(1),
+    longDescription: z.string().optional(),
     version: z.string().min(1),
     publisher: z.string().min(1),
     category: PluginCategory,
     icon: z.string().optional(),
+    iconUrl: z.string().optional(),
+    thumbnailUrl: z.string().optional(),
+    heroImageUrl: z.string().optional(),
+    screenshots: z.array(z.string()),
+    tags: z.array(z.string()),
+    brandColor: z.string().optional(),
     homepage: z.string().optional(),
     documentationUrl: z.string().optional(),
     risk: PluginRisk,
@@ -272,6 +337,9 @@ export const PluginCatalogItem = z
     skills: z.array(PluginSkillPreview),
     apps: z.array(PluginAppConnector),
     installReview: z.array(z.string()).optional(),
+    source: z.enum(["package", "registry"]).optional(),
+    download: PluginPackageDownload.optional(),
+    installable: z.boolean().optional(),
   })
   .strict()
 export type PluginCatalogItem = z.infer<typeof PluginCatalogItem>
@@ -290,6 +358,7 @@ export const InstalledPlugin = z
     updatedAt: z.number().int().positive(),
     lastDiagnostic: PluginDiagnostic.optional(),
     lastConnectorDiagnostics: z.record(z.string(), PluginDiagnostic).optional(),
+    missingPackage: z.boolean().optional(),
   })
   .strict()
 export type InstalledPlugin = Omit<
@@ -362,6 +431,53 @@ function now() {
 
 function uniqueStrings(items: Array<string | undefined>) {
   return [...new Set(items.map((item) => item?.trim()).filter((item): item is string => Boolean(item)))]
+}
+
+function displayAssetURL(value: string | undefined) {
+  const trimmed = value?.trim()
+  if (!trimmed) return undefined
+  return /^(https?:\/\/|data:image\/)/i.test(trimmed) ? trimmed : undefined
+}
+
+function pluginRegistryCachePath() {
+  const configured = process.env[PLUGIN_REGISTRY_CACHE_DIR_ENV]?.trim()
+  return resolve(configured || join(Global.Path.data, dirname(PLUGIN_REGISTRY_CACHE_PATH)), "plugin-registry-cache.json")
+}
+
+function pluginRegistryIndexURL() {
+  const configured = process.env[PLUGIN_REGISTRY_INDEX_URL_ENV]?.trim()
+  if (configured && /^(off|none|disabled)$/i.test(configured)) return undefined
+  return configured || DEFAULT_PLUGIN_REGISTRY_INDEX_URL
+}
+
+function assertHTTPSURL(rawUrl: string, label: string) {
+  let url: URL
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    throw new PluginError("PLUGIN_REGISTRY_UNAVAILABLE", `${label} is invalid.`)
+  }
+
+  if (url.protocol !== "https:") {
+    throw new PluginError("PLUGIN_REGISTRY_UNAVAILABLE", `${label} must use https.`)
+  }
+  if (url.username || url.password) {
+    throw new PluginError("PLUGIN_REGISTRY_UNAVAILABLE", `${label} must not contain credentials.`)
+  }
+
+  return url
+}
+
+function normalizePluginBaseURL(rawUrl: string) {
+  const url = assertHTTPSURL(rawUrl.trim(), "Plugin base URL")
+  if (url.search || url.hash) {
+    throw new PluginError("PLUGIN_REGISTRY_UNAVAILABLE", "Plugin base URL must not contain query parameters or fragments.")
+  }
+  return url.toString().replace(/\/+$/, "")
+}
+
+function pluginMetaURL(baseURL: string) {
+  return `${normalizePluginBaseURL(baseURL)}/plugin.meta.json`
 }
 
 function riskWeight(risk: PluginRisk) {
@@ -447,24 +563,31 @@ function safeReadPluginManifest(packageRoot: string) {
   }
 }
 
-function packageSearchRoots() {
-  const roots: string[] = []
-  const moduleRoot = dirname(fileURLToPath(import.meta.url))
-  const builtinRoots = [
-    join(moduleRoot, "plugins", "builtin"),
-    resolve(moduleRoot, "..", "..", "plugins", "builtin"),
-  ]
-  roots.push(...builtinRoots.filter((root) => existsSync(root)))
-
-  const configured = process.env["FanFande_PLUGIN_PACKAGE_DIRS"]?.trim()
-  if (configured) {
-    roots.push(...configured.split(delimiter).map((entry) => entry.trim()).filter(Boolean))
-  }
-
-  return uniqueStrings(roots.map((root) => resolve(root)))
+function moduleRoot() {
+  return dirname(fileURLToPath(import.meta.url))
 }
 
-function readPackageManifestsFromRoot(root: string) {
+function installedPluginPackagesRoot() {
+  const configured = process.env[PLUGIN_INSTALL_DIR_ENV]?.trim()
+  return resolve(configured || join(Global.Path.data, "plugins", "installed"))
+}
+
+function packageSearchRoots() {
+  const roots: Array<{ root: string; managedInstall: boolean }> = [{
+    root: installedPluginPackagesRoot(),
+    managedInstall: true,
+  }]
+
+  const seen = new Set<string>()
+  return roots.flatMap((entry) => {
+    const root = resolve(entry.root)
+    if (seen.has(root)) return []
+    seen.add(root)
+    return [{ root, managedInstall: entry.managedInstall }]
+  })
+}
+
+function readPackageManifestsFromRoot(root: string, managedInstall: boolean) {
   if (!existsSync(root)) return []
 
   return readdirSync(root, { withFileTypes: true })
@@ -474,7 +597,7 @@ function readPackageManifestsFromRoot(root: string) {
       const sources: PluginManifestSource[] = []
       const manifest = safeReadPluginManifest(packageRoot)
       if (manifest) {
-        sources.push({ manifest, packageRoot })
+        sources.push({ manifest, packageRoot, managedInstall, source: "package" })
       }
 
       const versionedSources = readdirSync(packageRoot, { withFileTypes: true })
@@ -482,7 +605,7 @@ function readPackageManifestsFromRoot(root: string) {
         .flatMap((child) => {
           const versionRoot = join(packageRoot, child.name)
           const versionManifest = safeReadPluginManifest(versionRoot)
-          return versionManifest ? [{ manifest: versionManifest, packageRoot: versionRoot }] : []
+          return versionManifest ? [{ manifest: versionManifest, packageRoot: versionRoot, managedInstall, source: "package" as const }] : []
         })
 
       sources.push(...versionedSources)
@@ -490,11 +613,198 @@ function readPackageManifestsFromRoot(root: string) {
     })
 }
 
-function listManifestSources() {
+function registryFilePaths() {
+  const root = moduleRoot()
+  const files = [
+    join(root, PLUGIN_REGISTRY_PATH),
+    resolve(root, "..", "..", PLUGIN_REGISTRY_PATH),
+  ]
+
+  const configured = process.env[PLUGIN_REGISTRY_FILES_ENV]?.trim()
+  if (configured) {
+    files.push(...configured.split(delimiter).map((entry) => entry.trim()).filter(Boolean))
+  }
+
+  return uniqueStrings(files.map((filePath) => resolve(filePath))).filter((filePath) => existsSync(filePath))
+}
+
+function safeReadPluginRegistry(filePath: string) {
+  try {
+    const raw = readFileSync(filePath, "utf8")
+    return PluginRegistry.parse(JSON.parse(raw))
+  } catch {
+    return undefined
+  }
+}
+
+async function fetchJSONWithSchema<T>(
+  url: string,
+  schema: z.ZodType<T>,
+  maxBytes: number,
+  label: string,
+): Promise<T> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), PLUGIN_REGISTRY_FETCH_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        accept: "application/json",
+        "user-agent": "Fanfande-Studio-Plugin-Registry",
+      },
+      signal: controller.signal,
+    }).catch((error) => {
+      throw new PluginError(
+        "PLUGIN_REGISTRY_UNAVAILABLE",
+        error instanceof Error ? `${label} could not be loaded: ${error.message}` : `${label} could not be loaded.`,
+      )
+    })
+
+    if (!response.ok) {
+      throw new PluginError("PLUGIN_REGISTRY_UNAVAILABLE", `${label} returned HTTP ${response.status}.`)
+    }
+
+    const declaredLength = Number(response.headers.get("content-length") ?? "0")
+    if (declaredLength > maxBytes) {
+      throw new PluginError("PLUGIN_REGISTRY_UNAVAILABLE", `${label} is larger than the allowed size.`)
+    }
+
+    const text = await response.text()
+    if (Buffer.byteLength(text, "utf8") > maxBytes) {
+      throw new PluginError("PLUGIN_REGISTRY_UNAVAILABLE", `${label} is larger than the allowed size.`)
+    }
+
+    return schema.parse(JSON.parse(text))
+  } catch (error) {
+    if (error instanceof PluginError) throw error
+    throw new PluginError(
+      "PLUGIN_REGISTRY_UNAVAILABLE",
+      error instanceof Error ? `${label} is invalid: ${error.message}` : `${label} is invalid.`,
+    )
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function normalizeRegistrySkillPreviews(pluginID: string, previews: z.infer<typeof PluginRegistrySkillPreview>[] | undefined) {
+  return (previews ?? []).map((preview) =>
+    PluginSkillPreview.parse({
+      id: preview.id ?? skillIDForPlugin(pluginID, preview.directory),
+      name: preview.name,
+      description: preview.description,
+      directory: preview.directory,
+    }),
+  )
+}
+
+function registryItemToManifestSource(item: z.infer<typeof PluginRegistryItem>): PluginManifestSource {
+  const pluginID = normalizeManifestID(item.id ?? item.name)
+  const { id: _id, package: download, skillPreviews, ...manifestInput } = item
+  const manifest = PluginManifest.parse({
+    ...manifestInput,
+    name: pluginID,
+  })
+  return {
+    manifest,
+    download,
+    skillPreviews: normalizeRegistrySkillPreviews(pluginID, skillPreviews),
+    source: "registry",
+  }
+}
+
+function sourceToRegistryItem(source: PluginManifestSource) {
+  return PluginRegistryItem.parse({
+    id: normalizeManifestID(source.manifest.name),
+    ...source.manifest,
+    package: source.download,
+    skillPreviews: source.skillPreviews,
+  })
+}
+
+async function fetchRegistryIndex() {
+  const indexURL = pluginRegistryIndexURL()
+  if (!indexURL) return []
+
+  const url = assertHTTPSURL(indexURL, "Plugin registry index URL").toString()
+  const entries = await fetchJSONWithSchema(url, PluginRegistryIndex, MAX_PLUGIN_REGISTRY_INDEX_BYTES, "Plugin registry index")
+  if (entries.length > MAX_REMOTE_PLUGIN_META_COUNT) {
+    throw new PluginError("PLUGIN_REGISTRY_UNAVAILABLE", "Plugin registry index contains too many plugin URLs.")
+  }
+
+  return uniqueStrings(entries.map(normalizePluginBaseURL))
+}
+
+async function fetchPluginMeta(baseURL: string) {
+  const item = await fetchJSONWithSchema(
+    pluginMetaURL(baseURL),
+    PluginRegistryItem,
+    MAX_PLUGIN_META_BYTES,
+    "Plugin metadata",
+  )
+  return registryItemToManifestSource(item)
+}
+
+function listCachedRemoteRegistryManifestSources() {
+  const registry = safeReadPluginRegistry(pluginRegistryCachePath())
+  if (!registry) return []
+  return registry.plugins.map(registryItemToManifestSource)
+}
+
+async function writeRemoteRegistryCache(sources: PluginManifestSource[]) {
+  const filePath = pluginRegistryCachePath()
+  const registry = PluginRegistry.parse({
+    schemaVersion: 1,
+    plugins: sources.map(sourceToRegistryItem),
+  })
+  await mkdir(dirname(filePath), { recursive: true })
+  await writeFile(filePath, `${JSON.stringify(registry, null, 2)}\n`)
+}
+
+async function listRemoteRegistryManifestSources() {
+  const indexURL = pluginRegistryIndexURL()
+  if (!indexURL) return listCachedRemoteRegistryManifestSources()
+
+  try {
+    const baseURLs = await fetchRegistryIndex()
+    const settled = await Promise.allSettled(baseURLs.map((baseURL) => fetchPluginMeta(baseURL)))
+    const sources = settled.flatMap((result) => result.status === "fulfilled" ? [result.value] : [])
+    if (baseURLs.length > 0 && sources.length === 0) {
+      throw new PluginError("PLUGIN_REGISTRY_UNAVAILABLE", "Plugin registry did not return any valid plugin metadata.")
+    }
+    await writeRemoteRegistryCache(sources)
+    return sources
+  } catch (error) {
+    const cached = listCachedRemoteRegistryManifestSources()
+    if (cached.length > 0) return cached
+    if (error instanceof PluginError) throw error
+    throw new PluginError(
+      "PLUGIN_REGISTRY_UNAVAILABLE",
+      error instanceof Error ? error.message : "Plugin registry could not be loaded.",
+    )
+  }
+}
+
+function listRegistryManifestSources() {
   const byID = new Map<string, PluginManifestSource>()
-  for (const root of packageSearchRoots()) {
+
+  for (const filePath of registryFilePaths()) {
+    const registry = safeReadPluginRegistry(filePath)
+    if (!registry) continue
+
+    for (const item of registry.plugins) {
+      const source = registryItemToManifestSource(item)
+      byID.set(normalizeManifestID(source.manifest.name), source)
+    }
+  }
+
+  return [...byID.values()]
+}
+
+function listPackageManifestSources() {
+  const byID = new Map<string, PluginManifestSource>()
+  for (const entry of packageSearchRoots()) {
     const byRootID = new Map<string, PluginManifestSource>()
-    for (const source of readPackageManifestsFromRoot(root)) {
+    for (const source of readPackageManifestsFromRoot(entry.root, entry.managedInstall)) {
       const pluginID = normalizeManifestID(source.manifest.name)
       const existing = byRootID.get(pluginID)
       if (!existing || compareManifestVersions(source.manifest.version, existing.manifest.version) > 0) {
@@ -508,6 +818,59 @@ function listManifestSources() {
   }
 
   return [...byID.values()]
+}
+
+function mergeManifestSources(...groups: PluginManifestSource[][]) {
+  const byID = new Map<string, PluginManifestSource>()
+  for (const group of groups) {
+    for (const source of group) {
+      byID.set(normalizeManifestID(source.manifest.name), source)
+    }
+  }
+  return [...byID.values()]
+}
+
+function listManifestSources() {
+  return mergeManifestSources(
+    listRegistryManifestSources(),
+    listCachedRemoteRegistryManifestSources(),
+    listPackageManifestSources(),
+  )
+}
+
+async function listManifestSourcesFresh() {
+  const localRegistrySources = listRegistryManifestSources()
+  const packageSources = listPackageManifestSources()
+  let remoteRegistrySources: PluginManifestSource[] = []
+  try {
+    remoteRegistrySources = await listRemoteRegistryManifestSources()
+  } catch (error) {
+    if (localRegistrySources.length === 0 && packageSources.length === 0) throw error
+  }
+
+  return mergeManifestSources(
+    localRegistrySources,
+    remoteRegistrySources,
+    packageSources,
+  )
+}
+
+function getPackageManifestSource(pluginID: string) {
+  const normalizedPluginID = normalizePluginID(pluginID)
+  return listPackageManifestSources().find((entry) => normalizeManifestID(entry.manifest.name) === normalizedPluginID)
+}
+
+async function getRegistryManifestSource(pluginID: string) {
+  const normalizedPluginID = normalizePluginID(pluginID)
+  const localRegistrySources = listRegistryManifestSources()
+  let remoteRegistrySources: PluginManifestSource[] = []
+  try {
+    remoteRegistrySources = await listRemoteRegistryManifestSources()
+  } catch (error) {
+    if (localRegistrySources.length === 0) throw error
+  }
+  const sources = mergeManifestSources(localRegistrySources, remoteRegistrySources)
+  return sources.find((entry) => normalizeManifestID(entry.manifest.name) === normalizedPluginID)
 }
 
 function skillIDForPlugin(pluginID: string, directoryName: string) {
@@ -595,13 +958,23 @@ function normalizeMcpServers(manifest: PluginManifest): PluginMcpServerCatalogEn
   })
 }
 
-function normalizeCatalogItem(source: { manifest: PluginManifest; packageRoot?: string }): PluginCatalogItem {
+function normalizeCatalogItem(source: PluginManifestSource): PluginCatalogItem {
   const { manifest, packageRoot } = source
   const pluginID = normalizeManifestID(manifest.name)
   const mcpServers = normalizeMcpServers(manifest)
   const apps = manifest.apps ?? []
-  const skills = discoverSkillPreviews(pluginID, manifest, packageRoot)
+  const skills = packageRoot
+    ? discoverSkillPreviews(pluginID, manifest, packageRoot)
+    : source.skillPreviews ?? []
   const icon = manifest.interface?.logo ?? manifest.interface?.composerIcon
+  const iconUrl = displayAssetURL(manifest.interface?.iconUrl) ??
+    displayAssetURL(manifest.interface?.logo) ??
+    displayAssetURL(manifest.interface?.composerIcon)
+  const thumbnailUrl = displayAssetURL(manifest.interface?.thumbnailUrl) ??
+    displayAssetURL(manifest.interface?.heroImageUrl) ??
+    iconUrl
+  const heroImageUrl = displayAssetURL(manifest.interface?.heroImageUrl) ?? thumbnailUrl
+  const screenshots = uniqueStrings((manifest.interface?.screenshots ?? []).map(displayAssetURL))
   const risk = highestRisk([
     ...mcpServers.map((server) => server.risk),
     ...apps.map((app) => app.risk ?? "medium"),
@@ -612,10 +985,17 @@ function normalizeCatalogItem(source: { manifest: PluginManifest; packageRoot?: 
     id: pluginID,
     name: manifest.interface?.displayName ?? manifest.name,
     description: manifest.interface?.shortDescription ?? manifest.description,
+    longDescription: manifest.interface?.longDescription ?? manifest.description,
     version: manifest.version,
     publisher: manifest.interface?.developerName ?? authorName(manifest.author),
     category: normalizeCategory(manifest.interface?.category),
     icon,
+    iconUrl,
+    thumbnailUrl,
+    heroImageUrl,
+    screenshots,
+    tags: uniqueStrings([...(manifest.keywords ?? []), ...(manifest.interface?.capabilities ?? [])]),
+    brandColor: manifest.interface?.brandColor,
     homepage: manifest.homepage ?? manifest.interface?.websiteURL,
     documentationUrl: manifest.repository ?? manifest.homepage ?? manifest.interface?.websiteURL,
     risk,
@@ -636,6 +1016,9 @@ function normalizeCatalogItem(source: { manifest: PluginManifest; packageRoot?: 
       ...mcpServers.flatMap((server) => server.installReview ?? []),
       ...apps.flatMap((app) => app.installReview ?? []),
     ]),
+    source: source.source,
+    download: source.download,
+    installable: Boolean(packageRoot || (source.download?.url && source.download.sha256)),
   })
 }
 
@@ -647,8 +1030,8 @@ function dedupeConfigFields(fields: PluginConfigField[]) {
   return [...byKey.values()]
 }
 
-function listCatalogInternal() {
-  return listManifestSources().map(normalizeCatalogItem)
+function listCatalogInternal(sources = listManifestSources()) {
+  return sources.map(normalizeCatalogItem)
 }
 
 export function mcpServerIDForPlugin(pluginID: string, serverID?: string) {
@@ -693,6 +1076,24 @@ function assertCatalogPlugin(pluginID: string) {
   return item
 }
 
+function assertPackagePlugin(pluginID: string) {
+  const normalizedPluginID = normalizePluginID(pluginID)
+  const source = getPackageManifestSource(normalizedPluginID)
+  if (!source) {
+    throw new PluginError(
+      "PLUGIN_PACKAGE_UNAVAILABLE",
+      `Plugin '${pluginID}' is not downloaded locally. Install it from the plugin catalog first.`,
+    )
+  }
+
+  const item = normalizeCatalogItem(source)
+  if (item.risk === "critical") {
+    throw new PluginError("PLUGIN_RISK_NOT_ALLOWED", `Plugin '${pluginID}' has a risk level that is not allowed.`)
+  }
+
+  return item
+}
+
 function assertPluginApp(plugin: PluginCatalogItem, appID: string) {
   const app = plugin.apps.find((item) => item.appID === appID.trim())
   if (!app) {
@@ -715,6 +1116,7 @@ function normalizeInstalledRecord(record: z.infer<typeof InstalledPlugin> | null
     skillIDs,
     connectorIDs,
     lastConnectorDiagnostics: record.lastConnectorDiagnostics ?? {},
+    missingPackage: !getPackageManifestSource(record.pluginID),
   }
 }
 
@@ -778,6 +1180,14 @@ function replaceRecordPlaceholders(record: Record<string, string> | undefined, c
   return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
 
+function runtimeConfigForPlugin(plugin: PluginCatalogItem, installed: InstalledPlugin) {
+  const source = getPackageManifestSource(plugin.id)
+  return {
+    ...installed.config,
+    PLUGIN_ROOT: source?.packageRoot ?? "",
+  }
+}
+
 function runtimeBindingForMcpServer(
   plugin: PluginCatalogItem,
   server: PluginMcpServerCatalogEntry,
@@ -785,15 +1195,16 @@ function runtimeBindingForMcpServer(
 ): Config.McpServerInput {
   const serverName = server.name || plugin.name
   const enabled = installed.enabled
+  const runtimeConfig = runtimeConfigForPlugin(plugin, installed)
 
   if (server.runtime.transport === "stdio") {
     return {
       name: serverName,
       transport: "stdio",
-      command: replacePlaceholders(server.runtime.command, installed.config),
-      args: server.runtime.args?.map((arg) => replacePlaceholders(arg, installed.config)),
-      env: replaceRecordPlaceholders(server.runtime.env, installed.config),
-      cwd: replaceOptionalPlaceholders(server.runtime.cwd, installed.config),
+      command: replacePlaceholders(server.runtime.command, runtimeConfig),
+      args: server.runtime.args?.map((arg) => replacePlaceholders(arg, runtimeConfig)),
+      env: replaceRecordPlaceholders(server.runtime.env, runtimeConfig),
+      cwd: replaceOptionalPlaceholders(server.runtime.cwd, runtimeConfig),
       toolPolicies: server.runtime.toolPolicies,
       enabled,
       timeoutMs: server.runtime.timeoutMs,
@@ -804,10 +1215,10 @@ function runtimeBindingForMcpServer(
     name: serverName,
     transport: "remote",
     provider: server.runtime.provider,
-    serverUrl: replaceOptionalPlaceholders(server.runtime.serverUrl, installed.config),
-    connectorId: replaceOptionalPlaceholders(server.runtime.connectorId, installed.config),
-    authorization: replaceOptionalPlaceholders(server.runtime.authorization, installed.config),
-    headers: replaceRecordPlaceholders(server.runtime.headers, installed.config),
+    serverUrl: replaceOptionalPlaceholders(server.runtime.serverUrl, runtimeConfig),
+    connectorId: replaceOptionalPlaceholders(server.runtime.connectorId, runtimeConfig),
+    authorization: replaceOptionalPlaceholders(server.runtime.authorization, runtimeConfig),
+    headers: replaceRecordPlaceholders(server.runtime.headers, runtimeConfig),
     serverDescription: server.runtime.serverDescription,
     allowedTools: server.runtime.allowedTools,
     toolPolicies: server.runtime.toolPolicies,
@@ -871,7 +1282,7 @@ async function syncPluginRuntimeBindings(plugin: PluginCatalogItem, installed: I
 
 async function writeInstalled(record: InstalledPlugin) {
   ensureInstalledPluginsTable()
-  const plugin = assertCatalogPlugin(record.pluginID)
+  const plugin = assertPackagePlugin(record.pluginID)
   const parsed = normalizeInstalledRecord(InstalledPlugin.parse(record))
   if (!parsed) throw new PluginError("INSTALLED_PLUGIN_NOT_FOUND", `Plugin '${record.pluginID}' is not installed.`)
 
@@ -880,11 +1291,19 @@ async function writeInstalled(record: InstalledPlugin) {
   return parsed
 }
 
-export function listCatalog() {
-  return listCatalogInternal().toSorted((left, right) => {
+function sortCatalog(items: PluginCatalogItem[]) {
+  return items.toSorted((left, right) => {
     const category = left.category.localeCompare(right.category)
     return category === 0 ? left.name.localeCompare(right.name) : category
   })
+}
+
+export async function listCatalog() {
+  return sortCatalog(listCatalogInternal(await listManifestSourcesFresh()))
+}
+
+export function listCachedCatalog() {
+  return sortCatalog(listCatalogInternal(listManifestSources()))
 }
 
 export function getCatalogItem(pluginID: string) {
@@ -900,7 +1319,7 @@ export function listInstalled() {
 }
 
 export function listEnabledInstalled() {
-  return listInstalled().filter((plugin) => plugin.enabled)
+  return listInstalled().filter((plugin) => plugin.enabled && !plugin.missingPackage)
 }
 
 export function resolveEnabledInstalledPluginIDs(pluginIDs: string[]) {
@@ -922,8 +1341,224 @@ export function getInstalled(pluginID: string) {
   return readInstalled(pluginID)
 }
 
+function assertPluginPathSegment(value: string) {
+  if (/^[a-z0-9][a-z0-9._-]*$/i.test(value)) return value
+  throw new PluginError("PLUGIN_PACKAGE_INVALID", `Plugin package path segment is invalid: ${value}`)
+}
+
+function assertSupportedPackageURL(rawUrl: string) {
+  let url: URL
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    throw new PluginError("PLUGIN_PACKAGE_INVALID", "Plugin package URL is invalid.")
+  }
+
+  if (url.protocol !== "https:") {
+    throw new PluginError("PLUGIN_PACKAGE_INVALID", "Plugin packages must be downloaded over https.")
+  }
+  if (url.username || url.password) {
+    throw new PluginError("PLUGIN_PACKAGE_INVALID", "Plugin package URLs must not contain credentials.")
+  }
+
+  return url
+}
+
+function sha256Hex(bytes: Uint8Array) {
+  return createHash("sha256").update(bytes).digest("hex")
+}
+
+function assertPathInside(root: string, candidate: string) {
+  const relativePath = relative(root, candidate)
+  if (relativePath && (relativePath.startsWith("..") || isAbsolute(relativePath))) {
+    throw new PluginError("PLUGIN_PACKAGE_INVALID", "Plugin archive contains a path outside the extraction directory.")
+  }
+}
+
+function validateExtractedTree(root: string) {
+  const realRoot = realpathSync(root)
+  const visit = (current: string) => {
+    const stat = lstatSync(current)
+    if (stat.isSymbolicLink()) {
+      throw new PluginError("PLUGIN_PACKAGE_INVALID", "Plugin archives must not contain symbolic links.")
+    }
+
+    assertPathInside(realRoot, realpathSync(current))
+    if (!stat.isDirectory()) return
+
+    for (const entry of readdirSync(current)) {
+      visit(join(current, entry))
+    }
+  }
+
+  visit(root)
+}
+
+function extractZipArchive(zipPath: string, destination: string) {
+  const result = process.platform === "win32"
+    ? spawnSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "& { param($zipPath, $destination) Expand-Archive -LiteralPath $zipPath -DestinationPath $destination -Force }",
+        zipPath,
+        destination,
+      ],
+      { encoding: "utf8", windowsHide: true },
+    )
+    : spawnSync("unzip", ["-q", zipPath, "-d", destination], { encoding: "utf8", windowsHide: true })
+
+  if (result.status !== 0) {
+    const detail = (result.stderr || result.stdout || "").trim()
+    throw new PluginError(
+      "PLUGIN_PACKAGE_INVALID",
+      detail ? `Could not extract plugin package: ${detail}` : "Could not extract plugin package.",
+    )
+  }
+
+  validateExtractedTree(destination)
+}
+
+function findPackageRootsWithManifest(root: string, depth = 0): string[] {
+  const manifest = safeReadPluginManifest(root)
+  const matches = manifest ? [root] : []
+  if (depth >= 4) return matches
+
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue
+    matches.push(...findPackageRootsWithManifest(join(root, entry.name), depth + 1))
+  }
+
+  return matches
+}
+
+function matchingPackageRootForRegistry(stagingRoot: string, registrySource: PluginManifestSource) {
+  const expectedID = normalizeManifestID(registrySource.manifest.name)
+  const expectedVersion = registrySource.manifest.version
+  const matches = findPackageRootsWithManifest(stagingRoot).filter((packageRoot) => {
+    const manifest = safeReadPluginManifest(packageRoot)
+    return Boolean(
+      manifest &&
+        normalizeManifestID(manifest.name) === expectedID &&
+        manifest.version === expectedVersion,
+    )
+  })
+
+  if (matches.length !== 1) {
+    throw new PluginError(
+      "PLUGIN_PACKAGE_INVALID",
+      `Plugin package must contain exactly one manifest matching ${expectedID}@${expectedVersion}.`,
+    )
+  }
+
+  return matches[0]!
+}
+
+async function downloadPluginPackage(registrySource: PluginManifestSource) {
+  const pluginID = normalizePluginID(registrySource.manifest.name)
+  const download = registrySource.download
+  if (!download?.url || !download.sha256) {
+    throw new PluginError(
+      "PLUGIN_PACKAGE_UNAVAILABLE",
+      `Plugin '${pluginID}' does not provide a downloadable package yet.`,
+    )
+  }
+
+  const url = assertSupportedPackageURL(download.url)
+  const response = await fetch(url, {
+    headers: {
+      accept: "application/zip,application/octet-stream,*/*",
+      "user-agent": "Fanfande-Studio-Plugin-Installer",
+    },
+  }).catch((error) => {
+    throw new PluginError(
+      "PLUGIN_PACKAGE_DOWNLOAD_FAILED",
+      error instanceof Error ? error.message : "Could not download plugin package.",
+    )
+  })
+
+  if (!response.ok) {
+    throw new PluginError(
+      "PLUGIN_PACKAGE_DOWNLOAD_FAILED",
+      `Could not download plugin package (${response.status}).`,
+    )
+  }
+
+  const declaredLength = Number(response.headers.get("content-length") ?? "0")
+  const sizeLimit = Math.min(download.size ? Math.max(download.size * 2, download.size + 1024 * 1024) : MAX_PLUGIN_PACKAGE_BYTES, MAX_PLUGIN_PACKAGE_BYTES)
+  if (declaredLength > sizeLimit) {
+    throw new PluginError("PLUGIN_PACKAGE_INVALID", "Plugin package is larger than the allowed download size.")
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer())
+  if (bytes.byteLength === 0 || bytes.byteLength > sizeLimit) {
+    throw new PluginError("PLUGIN_PACKAGE_INVALID", "Plugin package is empty or too large.")
+  }
+  if (download.size && bytes.byteLength !== download.size) {
+    throw new PluginError("PLUGIN_PACKAGE_INVALID", "Plugin package size does not match the registry metadata.")
+  }
+
+  const actualHash = sha256Hex(bytes)
+  if (actualHash.toLowerCase() !== download.sha256.toLowerCase()) {
+    throw new PluginError("PLUGIN_PACKAGE_INVALID", "Plugin package checksum does not match the registry metadata.")
+  }
+
+  const safeID = assertPluginPathSegment(pluginID)
+  const safeVersion = assertPluginPathSegment(registrySource.manifest.version)
+  const tempRoot = join(Global.Path.cache, "plugin-installs", `${safeID}-${safeVersion}-${randomUUID()}`)
+  const zipPath = join(tempRoot, "package.zip")
+  const stagingRoot = join(tempRoot, "extract")
+  const finalRoot = join(installedPluginPackagesRoot(), safeID, safeVersion)
+
+  await mkdir(stagingRoot, { recursive: true })
+  await writeFile(zipPath, bytes)
+
+  try {
+    extractZipArchive(zipPath, stagingRoot)
+    const packageRoot = matchingPackageRootForRegistry(stagingRoot, registrySource)
+    await rm(finalRoot, { recursive: true, force: true })
+    await mkdir(dirname(finalRoot), { recursive: true })
+    await cp(packageRoot, finalRoot, { recursive: true })
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true }).catch(() => {})
+  }
+
+  const installedManifest = safeReadPluginManifest(finalRoot)
+  if (!installedManifest) {
+    throw new PluginError("PLUGIN_PACKAGE_INVALID", "Installed plugin package is missing its manifest.")
+  }
+
+  return finalRoot
+}
+
+async function ensurePluginPackageAvailable(pluginID: string) {
+  const existing = getPackageManifestSource(pluginID)
+  if (existing) return existing
+
+  const registrySource = await getRegistryManifestSource(pluginID)
+  if (!registrySource) {
+    throw new PluginError("PLUGIN_NOT_FOUND", `Plugin '${pluginID}' was not found in the curated catalog.`)
+  }
+
+  const registryItem = normalizeCatalogItem(registrySource)
+  if (registryItem.risk === "critical") {
+    throw new PluginError("PLUGIN_RISK_NOT_ALLOWED", `Plugin '${pluginID}' has a risk level that is not allowed.`)
+  }
+
+  await downloadPluginPackage(registrySource)
+  const installedSource = getPackageManifestSource(pluginID)
+  if (!installedSource) {
+    throw new PluginError("PLUGIN_PACKAGE_INVALID", `Plugin '${pluginID}' was downloaded but could not be loaded.`)
+  }
+  return installedSource
+}
+
 export async function install(pluginID: string, input: InstallPluginInput) {
-  const plugin = assertCatalogPlugin(pluginID)
+  await ensurePluginPackageAvailable(pluginID)
+  const plugin = assertPackagePlugin(pluginID)
   const existing = readInstalled(plugin.id)
   const timestamp = now()
   const record: InstalledPlugin = {
@@ -945,7 +1580,7 @@ export async function install(pluginID: string, input: InstallPluginInput) {
 }
 
 export async function update(pluginID: string, input: UpdateInstalledPluginInput) {
-  const plugin = assertCatalogPlugin(pluginID)
+  const plugin = assertPackagePlugin(pluginID)
   const existing = readInstalled(plugin.id)
   if (!existing) {
     throw new PluginError("INSTALLED_PLUGIN_NOT_FOUND", `Plugin '${pluginID}' is not installed.`)
@@ -969,7 +1604,8 @@ export async function update(pluginID: string, input: UpdateInstalledPluginInput
 export async function remove(pluginID: string) {
   const normalizedPluginID = normalizePluginID(pluginID)
   const existing = readInstalled(normalizedPluginID)
-  const plugin = getCatalogItem(normalizedPluginID)
+  const source = getPackageManifestSource(normalizedPluginID)
+  const plugin = source ? normalizeCatalogItem(source) : getCatalogItem(normalizedPluginID)
   const mcpServerIDs = existing?.mcpServerIDs ?? (plugin ? generatedMcpServerIDs(plugin) : [mcpServerIDForPlugin(normalizedPluginID)])
   const connectorIDs = existing?.connectorIDs ?? (plugin ? generatedConnectorIDs(plugin) : [])
 
@@ -977,6 +1613,9 @@ export async function remove(pluginID: string) {
   const removedCount = existing ? db.deleteById(INSTALLED_PLUGINS_TABLE, normalizedPluginID, "pluginID") : 0
   await Promise.all(mcpServerIDs.map((serverID) => Config.removeMcpServer(Config.GLOBAL_CONFIG_ID, serverID)))
   await Promise.all(connectorIDs.map((connectorID) => Auth.clearProvider(connectorID)))
+  if (source?.managedInstall && source.packageRoot) {
+    await rm(source.packageRoot, { recursive: true, force: true }).catch(() => {})
+  }
 
   return {
     pluginID: normalizedPluginID,
@@ -989,7 +1628,7 @@ export async function remove(pluginID: string) {
 
 export async function diagnose(pluginID: string) {
   const normalizedPluginID = normalizePluginID(pluginID)
-  const plugin = assertCatalogPlugin(normalizedPluginID)
+  const plugin = assertPackagePlugin(normalizedPluginID)
   const installed = readInstalled(normalizedPluginID)
   if (!installed) {
     throw new PluginError("INSTALLED_PLUGIN_NOT_FOUND", `Plugin '${pluginID}' is not installed.`)
@@ -1023,7 +1662,7 @@ export async function diagnose(pluginID: string) {
 }
 
 export async function listConnectorStatuses(pluginID: string): Promise<PluginConnectorStatus[]> {
-  const plugin = assertCatalogPlugin(pluginID)
+  const plugin = assertPackagePlugin(pluginID)
   const installed = readInstalled(plugin.id)
   if (!installed) {
     throw new PluginError("INSTALLED_PLUGIN_NOT_FOUND", `Plugin '${pluginID}' is not installed.`)
@@ -1053,7 +1692,7 @@ async function connectorStatusFor(
 }
 
 export async function saveConnectorApiKey(pluginID: string, appID: string, input: SavePluginConnectorApiKeyInput) {
-  const plugin = assertCatalogPlugin(pluginID)
+  const plugin = assertPackagePlugin(pluginID)
   const installed = readInstalled(plugin.id)
   if (!installed) {
     throw new PluginError("INSTALLED_PLUGIN_NOT_FOUND", `Plugin '${pluginID}' is not installed.`)
@@ -1092,7 +1731,7 @@ export async function removeConnectorApiKey(pluginID: string, appID: string) {
 }
 
 export async function diagnoseConnector(pluginID: string, appID: string) {
-  const plugin = assertCatalogPlugin(pluginID)
+  const plugin = assertPackagePlugin(pluginID)
   const installed = readInstalled(plugin.id)
   if (!installed) {
     throw new PluginError("INSTALLED_PLUGIN_NOT_FOUND", `Plugin '${pluginID}' is not installed.`)
@@ -1132,7 +1771,7 @@ export async function resolveConnectorRemoteServer(connectorID: string): Promise
     throw new PluginError("PLUGIN_CONNECTOR_NOT_FOUND", `Connector '${connectorID}' is not a plugin app connector.`)
   }
 
-  const plugin = assertCatalogPlugin(parsed.pluginID)
+  const plugin = assertPackagePlugin(parsed.pluginID)
   const installed = readInstalled(plugin.id)
   if (!installed || !installed.enabled) {
     throw new PluginError("PLUGIN_CONNECTOR_NOT_CONNECTED", `Plugin '${plugin.id}' is not installed or enabled.`)
@@ -1145,7 +1784,7 @@ export async function resolveConnectorRemoteServer(connectorID: string): Promise
   }
 
   const config = {
-    ...installed.config,
+    ...runtimeConfigForPlugin(plugin, installed),
     [app.credential.key]: activeCredential.credential.apiKey,
   }
   const serverUrl = replaceOptionalPlaceholders(app.runtime.serverUrl, config)
@@ -1171,7 +1810,7 @@ export function listInstalledPluginSkillRoots(pluginIDs?: string[] | null): Arra
       .map((plugin) => [plugin.pluginID, plugin]),
   )
 
-  return listManifestSources().flatMap((source) => {
+  return listPackageManifestSources().flatMap((source) => {
     const pluginID = normalizeManifestID(source.manifest.name)
     if (!installedByID.has(pluginID) || !source.packageRoot) return []
 

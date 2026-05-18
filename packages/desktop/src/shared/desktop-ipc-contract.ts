@@ -79,6 +79,10 @@ export const DESKTOP_PTY_EVENT_CHANNEL = "desktop:pty-event"
 export const DESKTOP_WINDOW_STATE_EVENT_CHANNEL = "desktop:window-state-changed"
 export const DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL = "desktop:workbench-state-changed"
 
+export interface DesktopPluginCatalogInput {
+  freshness?: "cached" | "fresh"
+}
+
 export type {
   AgentArchivedSessionDeleteResult,
   AgentArchivedSessionSummary,
@@ -271,6 +275,16 @@ export interface DesktopAppUpdateCheckResult {
   skipped?: boolean
   reason?: string
   error?: string
+}
+
+export interface DesktopStoragePaths {
+  appData: string
+  agentRoot: string
+  agentData: string
+  agentCache: string
+  installedPlugins: string
+  pluginRegistryCache: string
+  pluginInstallTemp: string
 }
 
 export interface DesktopWindowState {
@@ -630,6 +644,10 @@ export interface DesktopIpcContract {
     input: void
     output: DesktopAppUpdateCheckResult
   }
+  "desktop:get-storage-paths": {
+    input: void
+    output: DesktopStoragePaths
+  }
   "desktop:get-window-state": {
     input: void
     output: DesktopWindowState
@@ -982,7 +1000,7 @@ export interface DesktopIpcContract {
     output: { serverID: string; removed: boolean }
   }
   "desktop:get-plugin-catalog": {
-    input: void
+    input: DesktopPluginCatalogInput | void
     output: AgentPluginCatalogItem[]
   }
   "desktop:get-installed-plugins": {
@@ -1308,6 +1326,7 @@ export interface DesktopApiMethods {
     input: DesktopIpcInput<"desktop:set-automatic-updates-enabled">,
   ): Promise<DesktopIpcOutput<"desktop:set-automatic-updates-enabled">>
   checkForAppUpdates(): Promise<DesktopIpcOutput<"desktop:check-for-app-updates">>
+  getStoragePaths(): Promise<DesktopIpcOutput<"desktop:get-storage-paths">>
   getWindowState(): Promise<DesktopIpcOutput<"desktop:get-window-state">>
   getWorkbenchWindowContext(): Promise<DesktopIpcOutput<"desktop:get-workbench-window-context">>
   publishWorkbenchSnapshot(input: DesktopIpcInput<"desktop:workbench-publish-state-snapshot">): Promise<DesktopIpcOutput<"desktop:workbench-publish-state-snapshot">>
@@ -1396,7 +1415,7 @@ export interface DesktopApiMethods {
   getGlobalMcpServerDiagnostic(input: DesktopIpcInput<"desktop:get-global-mcp-server-diagnostic">): Promise<DesktopIpcOutput<"desktop:get-global-mcp-server-diagnostic">>
   updateGlobalMcpServer(input: DesktopIpcInput<"desktop:update-global-mcp-server">): Promise<DesktopIpcOutput<"desktop:update-global-mcp-server">>
   deleteGlobalMcpServer(input: DesktopIpcInput<"desktop:delete-global-mcp-server">): Promise<DesktopIpcOutput<"desktop:delete-global-mcp-server">>
-  getPluginCatalog(): Promise<DesktopIpcOutput<"desktop:get-plugin-catalog">>
+  getPluginCatalog(input?: DesktopIpcInput<"desktop:get-plugin-catalog">): Promise<DesktopIpcOutput<"desktop:get-plugin-catalog">>
   getInstalledPlugins(): Promise<DesktopIpcOutput<"desktop:get-installed-plugins">>
   installPlugin(input: DesktopIpcInput<"desktop:install-plugin">): Promise<DesktopIpcOutput<"desktop:install-plugin">>
   updateInstalledPlugin(input: DesktopIpcInput<"desktop:update-installed-plugin">): Promise<DesktopIpcOutput<"desktop:update-installed-plugin">>

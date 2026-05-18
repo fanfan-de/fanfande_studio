@@ -130,6 +130,8 @@ try {
       invokeDesktop("desktop:set-automatic-updates-enabled", input) as Promise<DesktopAppUpdateSettings>,
     checkForAppUpdates: () =>
       invokeDesktop("desktop:check-for-app-updates") as Promise<DesktopAppUpdateCheckResult>,
+    getStoragePaths: () =>
+      invokeDesktop("desktop:get-storage-paths") as Promise<DesktopIpcOutput<"desktop:get-storage-paths">>,
     getWindowState: () =>
       invokeDesktop("desktop:get-window-state") as Promise<{
         isMaximized: boolean
@@ -492,8 +494,8 @@ try {
         serverID: string
         removed: boolean
       }>,
-    getPluginCatalog: () =>
-      invokeDesktop("desktop:get-plugin-catalog") as Promise<PluginCatalogItem[]>,
+    getPluginCatalog: (input?: { freshness?: "cached" | "fresh" }) =>
+      invokeDesktop("desktop:get-plugin-catalog", input) as Promise<PluginCatalogItem[]>,
     getInstalledPlugins: () =>
       invokeDesktop("desktop:get-installed-plugins") as Promise<InstalledPlugin[]>,
     installPlugin: (input: PluginInstallInput) =>

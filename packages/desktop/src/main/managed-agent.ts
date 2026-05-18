@@ -155,6 +155,10 @@ function resolveManagedAgentLaunchSpecs() {
   return specs
 }
 
+export function resolveManagedAgentDataDir() {
+  return path.join(app.getPath("userData"), "agent")
+}
+
 function readWorkspaceDependenciesBundleVersion(dependenciesDir: string | undefined) {
   if (!dependenciesDir) return undefined
 
@@ -438,7 +442,7 @@ export async function ensureManagedAgentRunning() {
 
   const port = await findAvailablePort()
   const baseURL = `http://127.0.0.1:${port}`
-  const dataDir = path.join(app.getPath("userData"), "agent")
+  const dataDir = resolveManagedAgentDataDir()
   const proxyEnv = await resolveManagedAgentProxyEnv()
 
   await fsp.mkdir(dataDir, { recursive: true })
