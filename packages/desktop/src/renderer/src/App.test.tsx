@@ -8142,7 +8142,7 @@ describe("App", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "MCP server name" }), {
       target: { value: "Filesystem Tools" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Save server" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
     await waitFor(() => {
       expect(window.desktop!.updateGlobalMcpServer).toHaveBeenCalledWith({

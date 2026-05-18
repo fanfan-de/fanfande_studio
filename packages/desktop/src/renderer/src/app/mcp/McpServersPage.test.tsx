@@ -113,8 +113,9 @@ describe("McpServersPage tool policies", () => {
     expect(screen.getByText("resolve-library-id")).toBeInTheDocument()
     expect(screen.getByText("get-library-docs")).toBeInTheDocument()
     expect(screen.getByText("read-only")).toBeInTheDocument()
-    expect(screen.queryByText("Resolve a package name to a Context7 library id.")).not.toBeInTheDocument()
-    expect(screen.queryByText("Input schema")).not.toBeInTheDocument()
+    const policyPanel = screen.getByRole("region", { name: "MCP tool permissions" })
+    expect(within(policyPanel).queryByText("Resolve a package name to a Context7 library id.")).not.toBeInTheDocument()
+    expect(within(policyPanel).queryByText("Input schema")).not.toBeInTheDocument()
 
     const docsPolicy = screen.getByLabelText("Policy for get-library-docs") as HTMLSelectElement
     expect(docsPolicy.value).toBe("auto")
@@ -133,9 +134,32 @@ describe("McpServersPage tool policies", () => {
     fireEvent.click(resolveDetailsButton)
 
     expect(resolveDetailsButton).toHaveAttribute("aria-expanded", "true")
-    expect(screen.getByText("Resolve a package name to a Context7 library id.")).toBeInTheDocument()
-    expect(screen.getByText("Input schema")).toBeInTheDocument()
-    expect(screen.getByText(/"libraryName"/)).toBeInTheDocument()
+    expect(within(policyPanel).getByText("Resolve a package name to a Context7 library id.")).toBeInTheDocument()
+    expect(within(policyPanel).getByText("Input schema")).toBeInTheDocument()
+    expect(within(policyPanel).getByText(/"libraryName"/)).toBeInTheDocument()
+  })
+
+  it("summarizes selected MCP capabilities before configuration details", () => {
+    render(<McpServersPage {...createProps()} />)
+
+    expect(screen.getByText("Documentation")).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Context7" })).toBeInTheDocument()
+    expect(screen.getByText("This MCP makes Resolve Library ID, Get Library Docs available to the assistant.")).toBeInTheDocument()
+    expect(screen.queryByLabelText("MCP status")).not.toBeInTheDocument()
+    expect(screen.queryByText("Reachable - 2 tools")).not.toBeInTheDocument()
+  })
+
+  it("switches transport from the segmented control", () => {
+    const onMcpServerDraftChange = vi.fn()
+
+    render(<McpServersPage {...createProps({ onMcpServerDraftChange })} />)
+
+    expect(screen.getByRole("radiogroup", { name: "MCP server transport" })).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: "流式 HTTP" })).toHaveAttribute("aria-checked", "true")
+
+    fireEvent.click(screen.getByRole("radio", { name: "STDIO" }))
+
+    expect(onMcpServerDraftChange).toHaveBeenCalledWith("transport", "stdio")
   })
 
   it("shows the tools policy section for stdio MCP servers", () => {
@@ -180,6 +204,59 @@ describe("McpServersPage tool policies", () => {
     expect(screen.getByText("Tool Permissions")).toBeInTheDocument()
     expect(screen.getAllByText("batch_design")).toHaveLength(2)
     expect((screen.getByLabelText("Policy for batch_design") as HTMLSelectElement).value).toBe("auto")
+  })
+
+  it("edits stdio arguments and environment variables as rows", () => {
+    const onMcpServerDraftChange = vi.fn()
+
+    render(
+      <McpServersPage
+        {...createProps({
+          activeMcpServerDiagnostic: createDiagnostic({
+            serverID: "pencil",
+            toolCount: 0,
+            toolNames: [],
+            tools: [],
+          }),
+          mcpServerDraft: createDraft({
+            id: "pencil",
+            name: "Pencil",
+            transport: "stdio",
+            command: "pencil-mcp.exe",
+            args: "--app\ndesktop",
+            env: "FOO=bar",
+            serverUrl: "",
+          }),
+          mcpServers: [
+            {
+              id: "pencil",
+              name: "Pencil",
+              transport: "stdio",
+              command: "pencil-mcp.exe",
+              enabled: true,
+            },
+          ],
+          onMcpServerDraftChange,
+        })}
+      />,
+    )
+
+    fireEvent.change(screen.getByLabelText("Arguments 2"), {
+      target: {
+        value: "server",
+      },
+    })
+    expect(onMcpServerDraftChange).toHaveBeenCalledWith("args", "--app\nserver")
+
+    fireEvent.change(screen.getByLabelText("Environment key 1"), {
+      target: {
+        value: "TOKEN",
+      },
+    })
+    expect(onMcpServerDraftChange).toHaveBeenCalledWith("env", "TOKEN=bar")
+
+    fireEvent.click(screen.getByRole("button", { name: "Add argument" }))
+    expect(onMcpServerDraftChange).toHaveBeenCalledWith("args", "--app\ndesktop\n")
   })
 
   it("filters the MCP server list from the search field", () => {
@@ -255,7 +332,7 @@ describe("McpServersPage tool policies", () => {
 
     render(<McpServersPage {...createProps({ onImportMcpConfigJson })} />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Import JSON" }))
+    fireEvent.click(screen.getByRole("button", { name: "Import Json" }))
     fireEvent.change(screen.getByLabelText("MCP configuration JSON"), {
       target: {
         value: JSON.stringify({

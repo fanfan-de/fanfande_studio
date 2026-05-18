@@ -1047,7 +1047,6 @@ export function SettingsPage({
     const activeProviderBalance = activeProvider ? formatProviderBalance(activeProvider.authState.account) : null
     const activeProviderRechargeUrl = activeProvider && isAnyboxProvider(activeProvider) ? getAnyboxRechargeUrl(activeProvider) : null
     const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
-    const mcpSaveLabel = activeMcpServer ? "Save server" : "Create server"
     const mcpServerBusyID = activeMcpServerID ?? mcpServerDraft.id.trim() ?? null
     const mcpServerBusy = Boolean(
       (mcpServerBusyID && savingMcpServerID === mcpServerBusyID) ||
@@ -2772,7 +2771,7 @@ export function SettingsPage({
                                   onClick={() => void onSaveMcpServer()}
                                   type="button"
                                 >
-                                  {savingMcpServerID === (activeMcpServerID ?? mcpServerDraft.id.trim()) ? "Saving..." : mcpSaveLabel}
+                                  {savingMcpServerID === (activeMcpServerID ?? mcpServerDraft.id.trim()) ? "Saving..." : "Save"}
                                 </button>
                               </div>
                             </div>

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { I18nProvider, useI18n } from "./I18nProvider"
+import { translateLiteral } from "./translations"
 
 function Fixture() {
   const { error, locale, setLocale, t } = useI18n()
@@ -113,5 +114,10 @@ describe("I18nProvider", () => {
     await waitForLocalizationFrame()
 
     expect(editable.textContent).toBe("abc ")
+  })
+
+  it("localizes MCP import action text", () => {
+    expect(translateLiteral("zh-CN", "Import Json")).toBe("\u5bfc\u5165 JSON")
+    expect(translateLiteral("en-US", "Import Json")).toBe("Import Json")
   })
 })

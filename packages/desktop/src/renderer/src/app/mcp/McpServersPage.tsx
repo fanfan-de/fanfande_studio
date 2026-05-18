@@ -1,10 +1,18 @@
 import { useMemo, useState, type ReactNode } from "react"
-import { CloseIcon, DownloadIcon, FolderIcon, PlusIcon, SearchIcon } from "../icons"
+import {
+  CloseIcon,
+  DeleteIcon,
+  DownloadIcon,
+  FolderIcon,
+  PlusIcon,
+  SearchIcon,
+} from "../icons"
 import { ShellTopMenu } from "../shared-ui"
 import type {
   McpServerDiagnostic,
   McpServerDraftState,
   McpServerSummary,
+  McpToolDiagnostic,
   McpToolPolicyValue,
 } from "../types"
 import { parseMcpConfigJson } from "./mcp-config-import"
@@ -50,6 +58,160 @@ export interface McpServersSidebarViewProps {
 
 function getMcpTransportLabel(transport: McpServerSummary["transport"] | McpServerDraftState["transport"]) {
   return transport === "remote" ? "http" : "stdio"
+}
+
+function getMcpToolLabel(tool: McpToolDiagnostic) {
+  return tool.displayName || tool.title || tool.name
+}
+
+function getMcpServerLookupText(server: McpServerSummary) {
+  return [
+    server.id,
+    server.name ?? "",
+    server.transport,
+    server.transport === "stdio" ? server.command : server.serverUrl ?? "",
+    server.transport === "stdio" ? server.args?.join(" ") ?? "" : server.serverDescription ?? "",
+  ].join(" ").toLowerCase()
+}
+
+interface McpServerVisualProfile {
+  category: string
+  displayName: string
+}
+
+function getMcpServerVisualProfile(server: McpServerSummary): McpServerVisualProfile {
+  const lookupText = getMcpServerLookupText(server)
+  const displayName = server.name ?? server.id
+
+  if (lookupText.includes("github")) {
+    return {
+      category: "Code hosting",
+      displayName,
+    }
+  }
+
+  if (lookupText.includes("context7")) {
+    return {
+      category: "Documentation",
+      displayName,
+    }
+  }
+
+  if (lookupText.includes("filesystem") || lookupText.includes("file-system")) {
+    return {
+      category: "Local files",
+      displayName,
+    }
+  }
+
+  if (lookupText.includes("notion")) {
+    return {
+      category: "Workspace knowledge",
+      displayName,
+    }
+  }
+
+  if (lookupText.includes("browser") || lookupText.includes("playwright") || lookupText.includes("chrome")) {
+    return {
+      category: "Browser automation",
+      displayName,
+    }
+  }
+
+  if (
+    lookupText.includes("postgres") ||
+    lookupText.includes("supabase") ||
+    lookupText.includes("database") ||
+    lookupText.includes("sqlite")
+  ) {
+    return {
+      category: "Database",
+      displayName,
+    }
+  }
+
+  return {
+    category: "MCP server",
+    displayName,
+  }
+}
+
+function getMcpPurposeText(
+  activeMcpServer: McpServerSummary,
+  diagnostic: McpServerDiagnostic | null,
+) {
+  if (activeMcpServer.transport === "remote" && activeMcpServer.serverDescription?.trim()) {
+    return activeMcpServer.serverDescription.trim()
+  }
+
+  if (diagnostic?.ok) {
+    const tools = diagnostic.tools ?? []
+    if (tools.length === 0) {
+      return "This server is connected, but it did not expose usable tools yet."
+    }
+
+    const toolNames = tools.slice(0, 3).map(getMcpToolLabel)
+    const remainingCount = tools.length - toolNames.length
+    const toolSummary = remainingCount > 0
+      ? `${toolNames.join(", ")}, and ${remainingCount} more`
+      : toolNames.join(", ")
+    return `This MCP makes ${toolSummary} available to the assistant.`
+  }
+
+  if (diagnostic && !diagnostic.ok) {
+    return "Tool discovery failed, so the available capabilities are unknown."
+  }
+
+  if (activeMcpServer.transport === "stdio") {
+    return `Runs a local MCP process with ${activeMcpServer.command || "a configured command"} to add tools to the assistant.`
+  }
+
+  return "Connects to a remote MCP endpoint to add external tools to the assistant."
+}
+
+function splitEditorLines(value: string) {
+  if (!value) return []
+  return value.replace(/\r\n/g, "\n").split("\n")
+}
+
+function serializeEditorLines(lines: string[]) {
+  return lines.join("\n")
+}
+
+function getVisibleEditorLines(value: string) {
+  const lines = splitEditorLines(value)
+  return lines.length > 0 ? lines : [""]
+}
+
+interface KeyValueEditorRow {
+  key: string
+  value: string
+}
+
+function splitKeyValueEditorRows(value: string): KeyValueEditorRow[] {
+  return splitEditorLines(value).map((line) => {
+    const separatorIndex = line.indexOf("=")
+    if (separatorIndex < 0) {
+      return {
+        key: line,
+        value: "",
+      }
+    }
+
+    return {
+      key: line.slice(0, separatorIndex),
+      value: line.slice(separatorIndex + 1),
+    }
+  })
+}
+
+function serializeKeyValueEditorRows(rows: KeyValueEditorRow[]) {
+  return rows.map((row) => (row.key || row.value ? `${row.key}=${row.value}` : "")).join("\n")
+}
+
+function getVisibleKeyValueEditorRows(value: string) {
+  const rows = splitKeyValueEditorRows(value)
+  return rows.length > 0 ? rows : [{ key: "", value: "" }]
 }
 
 function doesMcpServerMatchSearch(server: McpServerSummary, rawQuery: string) {
@@ -109,6 +271,176 @@ function getMcpServerValidationError(draft: McpServerDraftState) {
   return null
 }
 
+interface McpServerOverviewCardProps {
+  activeMcpServer: McpServerSummary | null
+  diagnostic: McpServerDiagnostic | null
+}
+
+function McpServerOverviewCard({
+  activeMcpServer,
+  diagnostic,
+}: McpServerOverviewCardProps) {
+  if (!activeMcpServer) return null
+
+  const visualProfile = getMcpServerVisualProfile(activeMcpServer)
+
+  return (
+    <section className="mcp-overview-card" aria-labelledby="mcp-overview-title">
+      <div className="mcp-overview-header">
+        <div className="mcp-overview-identity">
+          <div className="mcp-overview-copy">
+            <span className="label">{visualProfile.category}</span>
+            <h3 id="mcp-overview-title">{visualProfile.displayName}</h3>
+            <p>{getMcpPurposeText(activeMcpServer, diagnostic)}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+interface LineListEditorProps {
+  addLabel: string
+  label: string
+  placeholder: string
+  value: string
+  onChange: (value: string) => void
+}
+
+function LineListEditor({
+  addLabel,
+  label,
+  placeholder,
+  value,
+  onChange,
+}: LineListEditorProps) {
+  const rows = getVisibleEditorLines(value)
+
+  function updateRow(index: number, nextValue: string) {
+    const nextRows = [...rows]
+    nextRows[index] = nextValue
+    onChange(serializeEditorLines(nextRows))
+  }
+
+  function removeRow(index: number) {
+    onChange(serializeEditorLines(rows.filter((_, rowIndex) => rowIndex !== index)))
+  }
+
+  function addRow() {
+    onChange(serializeEditorLines([...rows, ""]))
+  }
+
+  return (
+    <div className="mcp-editor-section">
+      <h3>{label}</h3>
+      <div className="mcp-line-editor">
+        {rows.map((row, index) => (
+          <div className="mcp-line-editor-row" key={`${label}:${index}`}>
+            <input
+              aria-label={`${label} ${index + 1}`}
+              type="text"
+              value={row}
+              placeholder={placeholder}
+              onChange={(event) => updateRow(index, event.target.value)}
+            />
+            <button
+              aria-label={`Remove ${label} ${index + 1}`}
+              className="mcp-editor-remove-button"
+              disabled={!value && rows.length === 1}
+              title="Remove"
+              type="button"
+              onClick={() => removeRow(index)}
+            >
+              <DeleteIcon />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button className="mcp-editor-add-button" type="button" onClick={addRow}>
+        <PlusIcon />
+        {addLabel}
+      </button>
+    </div>
+  )
+}
+
+interface KeyValueEditorProps {
+  addLabel: string
+  keyPlaceholder: string
+  label: string
+  value: string
+  valuePlaceholder: string
+  onChange: (value: string) => void
+}
+
+function KeyValueEditor({
+  addLabel,
+  keyPlaceholder,
+  label,
+  value,
+  valuePlaceholder,
+  onChange,
+}: KeyValueEditorProps) {
+  const rows = getVisibleKeyValueEditorRows(value)
+
+  function updateRow(index: number, field: keyof KeyValueEditorRow, nextValue: string) {
+    const nextRows = [...rows]
+    nextRows[index] = {
+      ...nextRows[index],
+      [field]: nextValue,
+    }
+    onChange(serializeKeyValueEditorRows(nextRows))
+  }
+
+  function removeRow(index: number) {
+    onChange(serializeKeyValueEditorRows(rows.filter((_, rowIndex) => rowIndex !== index)))
+  }
+
+  function addRow() {
+    onChange(serializeKeyValueEditorRows([...rows, { key: "", value: "" }]))
+  }
+
+  return (
+    <div className="mcp-editor-section">
+      <h3>{label}</h3>
+      <div className="mcp-key-value-editor">
+        {rows.map((row, index) => (
+          <div className="mcp-key-value-editor-row" key={`${label}:${index}`}>
+            <input
+              aria-label={`${label} key ${index + 1}`}
+              type="text"
+              value={row.key}
+              placeholder={keyPlaceholder}
+              onChange={(event) => updateRow(index, "key", event.target.value)}
+            />
+            <input
+              aria-label={`${label} value ${index + 1}`}
+              type="text"
+              value={row.value}
+              placeholder={valuePlaceholder}
+              onChange={(event) => updateRow(index, "value", event.target.value)}
+            />
+            <button
+              aria-label={`Remove ${label} ${index + 1}`}
+              className="mcp-editor-remove-button"
+              disabled={!value && rows.length === 1}
+              title="Remove"
+              type="button"
+              onClick={() => removeRow(index)}
+            >
+              <DeleteIcon />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button className="mcp-editor-add-button" type="button" onClick={addRow}>
+        <PlusIcon />
+        {addLabel}
+      </button>
+    </div>
+  )
+}
+
 export function McpServersSidebarView({
   activeMcpServerID,
   deletingMcpServerID,
@@ -162,15 +494,11 @@ export function McpServersSidebarView({
                 type="button"
                 onClick={() => onMcpServerSelect(server.id)}
               >
-                <span className="skill-tree-role-icon is-folder" aria-hidden="true">
-                  <FolderIcon />
+                <span className="mcp-server-sidebar-copy">
+                  <span className="mcp-server-sidebar-name">{server.name ?? server.id}</span>
                 </span>
-                <span className="skill-tree-label">{server.name ?? server.id}</span>
-                <span className="prompt-tree-row-badges" aria-hidden="true">
-                  <span className="settings-badge">{getMcpTransportLabel(server.transport)}</span>
-                  <span className={server.enabled ? "settings-badge is-highlight" : "settings-badge"}>
-                    {server.enabled ? "Enabled" : "Disabled"}
-                  </span>
+                <span className={server.enabled ? "mcp-server-sidebar-status is-enabled" : "mcp-server-sidebar-status"} aria-hidden="true">
+                  {server.enabled ? "Enabled" : "Disabled"}
                 </span>
               </button>
             )
@@ -223,7 +551,6 @@ export function McpServersPage({
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [importConfigJson, setImportConfigJson] = useState("")
   const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
-  const mcpSaveLabel = activeMcpServer ? "Save server" : "Create server"
   const mcpServerBusyID = activeMcpServerID ?? mcpServerDraft.id.trim() ?? null
   const mcpServerBusy = Boolean(
     (mcpServerBusyID && savingMcpServerID === mcpServerBusyID) ||
@@ -321,34 +648,226 @@ export function McpServersPage({
               </div>
             ) : null}
 
-            <div className="settings-service-detail-panel">
-              <div className="settings-detail-hero">
-                <div>
-                  <h3>{activeMcpServer ? activeMcpServer.name ?? activeMcpServer.id : "Create MCP server"}</h3>
-                  <p className="settings-page-copy">
-                    {activeMcpServer
-                      ? "Edit the selected global MCP server definition."
-                      : "Define a reusable local or remote MCP server. Projects can enable it from the session canvas top menu."}
-                  </p>
-                </div>
+            <div className="settings-service-detail-panel mcp-server-detail-panel">
+              <div className="mcp-server-detail-shell">
+                <main className="mcp-server-main-column">
+                  <McpServerOverviewCard
+                    activeMcpServer={activeMcpServer}
+                    diagnostic={activeMcpServerDiagnostic}
+                  />
 
-                <div className="provider-row-statuses">
-                  <span className="settings-badge">{activeMcpServer ? "Editing" : "New"}</span>
-                  <span className={mcpServerDraft.enabled ? "settings-badge is-highlight" : "settings-badge"}>
-                    {mcpServerDraft.enabled ? "Enabled" : "Disabled"}
-                  </span>
-                  <span className="settings-badge">{getMcpTransportLabel(mcpServerDraft.transport)}</span>
-                </div>
-              </div>
+                  <section className="mcp-config-card" aria-labelledby="mcp-basic-settings-title">
+                    <div className="mcp-config-card-header">
+                      <h3 id="mcp-basic-settings-title">Server</h3>
+                    </div>
 
-              <div className="settings-panel">
-                <div className="settings-section-header mcp-server-configuration-header">
-                  <div>
-                    <span className="label">Definition</span>
-                    <h3>Server Configuration</h3>
-                  </div>
-                  <div className="mcp-server-configuration-header-side">
-                    <div className="settings-inline-actions mcp-server-configuration-actions">
+                    <div className="settings-field-grid mcp-config-grid">
+                      <label className="settings-field">
+                        <span className="settings-field-label">Server ID</span>
+                        <input
+                          aria-label="MCP server id"
+                          type="text"
+                          value={mcpServerDraft.id}
+                          placeholder="filesystem"
+                          onChange={(event) => onMcpServerDraftChange("id", event.target.value)}
+                        />
+                      </label>
+
+                      <label className="settings-field">
+                        <span className="settings-field-label">Name</span>
+                        <input
+                          aria-label="MCP server name"
+                          type="text"
+                          value={mcpServerDraft.name}
+                          placeholder="Filesystem"
+                          onChange={(event) => onMcpServerDraftChange("name", event.target.value)}
+                        />
+                      </label>
+
+                      <div className="settings-field mcp-transport-field">
+                        <span className="settings-field-label">Transport</span>
+                        <div
+                          aria-label="MCP server transport"
+                          className="mcp-transport-segmented-control"
+                          role="radiogroup"
+                        >
+                          <button
+                            aria-checked={mcpServerDraft.transport === "stdio"}
+                            className={
+                              mcpServerDraft.transport === "stdio"
+                                ? "mcp-transport-segment is-active"
+                                : "mcp-transport-segment"
+                            }
+                            role="radio"
+                            type="button"
+                            onClick={() => onMcpServerDraftChange("transport", "stdio")}
+                          >
+                            STDIO
+                          </button>
+                          <button
+                            aria-checked={mcpServerDraft.transport === "remote"}
+                            className={
+                              mcpServerDraft.transport === "remote"
+                                ? "mcp-transport-segment is-active"
+                                : "mcp-transport-segment"
+                            }
+                            role="radio"
+                            type="button"
+                            onClick={() => onMcpServerDraftChange("transport", "remote")}
+                          >
+                            流式 HTTP
+                          </button>
+                        </div>
+                      </div>
+
+                      <label className="settings-field">
+                        <span className="settings-field-label">Timeout (ms)</span>
+                        <input
+                          aria-label="MCP server timeout"
+                          type="text"
+                          value={mcpServerDraft.timeoutMs}
+                          placeholder="Optional"
+                          onChange={(event) => onMcpServerDraftChange("timeoutMs", event.target.value)}
+                        />
+                      </label>
+
+                      <label className="settings-field settings-checkbox-field mcp-enabled-field">
+                        <span className="settings-field-label">Enabled</span>
+                        <input
+                          aria-label="Enable MCP server"
+                          checked={mcpServerDraft.enabled}
+                          type="checkbox"
+                          onChange={(event) => onMcpServerDraftChange("enabled", event.target.checked)}
+                        />
+                      </label>
+                    </div>
+                  </section>
+
+                  {mcpServerDraft.transport === "stdio" ? (
+                    <section className="mcp-config-card" aria-labelledby="mcp-local-runtime-title">
+                      <div className="mcp-config-card-header">
+                        <h3 id="mcp-local-runtime-title">Command</h3>
+                      </div>
+
+                      <div className="mcp-editor-stack">
+                        <div className="mcp-editor-section">
+                          <h3>Launch command</h3>
+                          <input
+                            aria-label="MCP server command"
+                            type="text"
+                            value={mcpServerDraft.command}
+                            placeholder="npx"
+                            onChange={(event) => onMcpServerDraftChange("command", event.target.value)}
+                          />
+                        </div>
+
+                        <LineListEditor
+                          addLabel="Add argument"
+                          label="Arguments"
+                          placeholder="--app"
+                          value={mcpServerDraft.args}
+                          onChange={(value) => onMcpServerDraftChange("args", value)}
+                        />
+
+                        <KeyValueEditor
+                          addLabel="Add environment variable"
+                          keyPlaceholder="KEY"
+                          label="Environment"
+                          value={mcpServerDraft.env}
+                          valuePlaceholder="VALUE"
+                          onChange={(value) => onMcpServerDraftChange("env", value)}
+                        />
+
+                        <div className="mcp-editor-section">
+                          <h3>Working directory</h3>
+                          <input
+                            aria-label="MCP server working directory"
+                            type="text"
+                            value={mcpServerDraft.cwd}
+                            placeholder="Optional, e.g. ~/code"
+                            onChange={(event) => onMcpServerDraftChange("cwd", event.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </section>
+                  ) : (
+                    <section className="mcp-config-card" aria-labelledby="mcp-remote-runtime-title">
+                      <div className="mcp-config-card-header">
+                        <h3 id="mcp-remote-runtime-title">HTTP</h3>
+                      </div>
+
+                      <div className="mcp-editor-stack">
+                        <div className="mcp-editor-section">
+                          <h3>Server URL</h3>
+                          <input
+                            aria-label="MCP server URL"
+                            type="text"
+                            value={mcpServerDraft.serverUrl}
+                            placeholder="https://mcp.example.com"
+                            onChange={(event) => onMcpServerDraftChange("serverUrl", event.target.value)}
+                          />
+                        </div>
+
+                        <div className="mcp-editor-section">
+                          <h3>Authorization</h3>
+                          <input
+                            aria-label="MCP authorization"
+                            type="text"
+                            value={mcpServerDraft.authorization}
+                            placeholder="Optional Authorization header value"
+                            onChange={(event) => onMcpServerDraftChange("authorization", event.target.value)}
+                          />
+                        </div>
+
+                        <KeyValueEditor
+                          addLabel="Add header"
+                          keyPlaceholder="Header"
+                          label="Headers"
+                          value={mcpServerDraft.headers}
+                          valuePlaceholder="Value"
+                          onChange={(value) => onMcpServerDraftChange("headers", value)}
+                        />
+
+                        <div className="mcp-editor-section">
+                          <h3>Allowed tools</h3>
+                          <select
+                            aria-label="MCP allowed tools mode"
+                            value={mcpServerDraft.allowedToolsMode}
+                            onChange={(event) => onMcpServerDraftChange("allowedToolsMode", event.target.value)}
+                          >
+                            <option value="all">All tools</option>
+                            <option value="names">Named tools only</option>
+                            <option value="read-only">Read-only tools</option>
+                            <option value="read-only-names">Read-only named tools</option>
+                          </select>
+                        </div>
+
+                        {mcpServerDraft.allowedToolsMode === "names" || mcpServerDraft.allowedToolsMode === "read-only-names" ? (
+                          <LineListEditor
+                            addLabel="Add tool name"
+                            label="Allowed tool names"
+                            placeholder="tool_name"
+                            value={mcpServerDraft.allowedToolNames}
+                            onChange={(value) => onMcpServerDraftChange("allowedToolNames", value)}
+                          />
+                        ) : null}
+                      </div>
+                    </section>
+                  )}
+
+                  {activeMcpServerDiagnostic?.ok ? (
+                    <section className="mcp-config-card mcp-tool-policy-card-shell">
+                      <McpToolsPolicyPanel
+                        diagnostic={activeMcpServerDiagnostic}
+                        draft={mcpServerDraft}
+                        onPolicyChange={onMcpToolPolicyChange}
+                      />
+                    </section>
+                  ) : null}
+
+                  <div className="settings-actions-row mcp-server-form-footer">
+                    {mcpServerValidationError ? <span className="settings-helper-text">{mcpServerValidationError}</span> : null}
+                    <div className="settings-inline-actions mcp-server-form-actions">
                       <button
                         className="secondary-button"
                         disabled={mcpServerBusy || isImportingMcpConfigJson}
@@ -356,7 +875,7 @@ export function McpServersPage({
                         type="button"
                       >
                         <DownloadIcon />
-                        Import JSON
+                        Import Json
                       </button>
                       {activeMcpServer ? (
                         <button
@@ -374,212 +893,11 @@ export function McpServersPage({
                         onClick={() => void onSaveMcpServer()}
                         type="button"
                       >
-                        {savingMcpServerID === (activeMcpServerID ?? mcpServerDraft.id.trim()) ? "Saving..." : mcpSaveLabel}
+                        {savingMcpServerID === (activeMcpServerID ?? mcpServerDraft.id.trim()) ? "Saving..." : "Save"}
                       </button>
                     </div>
                   </div>
-                </div>
-
-                {activeMcpServerDiagnostic ? (
-                  <div className={activeMcpServerDiagnostic.ok ? "settings-banner is-success" : "settings-banner is-error"}>
-                    {activeMcpServerDiagnostic.ok
-                      ? activeMcpServerDiagnostic.toolCount > 0
-                        ? `Reachable. Exposed tools: ${activeMcpServerDiagnostic.toolNames.join(", ")}`
-                        : "Reachable, but the server did not expose any tools."
-                      : activeMcpServerDiagnostic.error ?? "Tool discovery failed."}
-                  </div>
-                ) : null}
-
-                <div className="settings-field-grid">
-                  <label className="settings-field">
-                    <span className="settings-field-label">Server ID</span>
-                    <input
-                      aria-label="MCP server id"
-                      type="text"
-                      value={mcpServerDraft.id}
-                      placeholder="filesystem"
-                      onChange={(event) => onMcpServerDraftChange("id", event.target.value)}
-                    />
-                  </label>
-
-                  <label className="settings-field">
-                    <span className="settings-field-label">Name</span>
-                    <input
-                      aria-label="MCP server name"
-                      type="text"
-                      value={mcpServerDraft.name}
-                      placeholder="Filesystem"
-                      onChange={(event) => onMcpServerDraftChange("name", event.target.value)}
-                    />
-                  </label>
-
-                  <label className="settings-field">
-                    <span className="settings-field-label">Transport</span>
-                    <select
-                      aria-label="MCP server transport"
-                      value={mcpServerDraft.transport}
-                      onChange={(event) => onMcpServerDraftChange("transport", event.target.value)}
-                    >
-                      <option value="stdio">Local stdio</option>
-                      <option value="remote">Remote HTTP</option>
-                    </select>
-                  </label>
-
-                  {mcpServerDraft.transport === "stdio" ? (
-                    <label className="settings-field">
-                      <span className="settings-field-label">Command</span>
-                      <input
-                        aria-label="MCP server command"
-                        type="text"
-                        value={mcpServerDraft.command}
-                        placeholder="npx"
-                        onChange={(event) => onMcpServerDraftChange("command", event.target.value)}
-                      />
-                    </label>
-                  ) : null}
-
-                  {mcpServerDraft.transport === "stdio" ? (
-                    <label className="settings-field">
-                      <span className="settings-field-label">Working directory</span>
-                      <input
-                        aria-label="MCP server working directory"
-                        type="text"
-                        value={mcpServerDraft.cwd}
-                        placeholder="Optional, e.g. ~/code"
-                        onChange={(event) => onMcpServerDraftChange("cwd", event.target.value)}
-                      />
-                    </label>
-                  ) : (
-                    <label className="settings-field">
-                      <span className="settings-field-label">Server URL</span>
-                      <input
-                        aria-label="MCP server URL"
-                        type="text"
-                        value={mcpServerDraft.serverUrl}
-                        placeholder="https://mcp.example.com"
-                        onChange={(event) => onMcpServerDraftChange("serverUrl", event.target.value)}
-                      />
-                    </label>
-                  )}
-
-                  <label className="settings-field">
-                    <span className="settings-field-label">Timeout (ms)</span>
-                    <input
-                      aria-label="MCP server timeout"
-                      type="text"
-                      value={mcpServerDraft.timeoutMs}
-                      placeholder="Optional"
-                      onChange={(event) => onMcpServerDraftChange("timeoutMs", event.target.value)}
-                    />
-                  </label>
-
-                  <label className="settings-field settings-checkbox-field">
-                    <span className="settings-field-label">Enabled</span>
-                    <input
-                      aria-label="Enable MCP server"
-                      checked={mcpServerDraft.enabled}
-                      type="checkbox"
-                      onChange={(event) => onMcpServerDraftChange("enabled", event.target.checked)}
-                    />
-                  </label>
-                </div>
-
-                {mcpServerDraft.transport === "stdio" ? (
-                  <div className="settings-field-grid">
-                    <label className="settings-field">
-                      <span className="settings-field-label">Arguments</span>
-                      <textarea
-                        aria-label="MCP server arguments"
-                        rows={5}
-                        value={mcpServerDraft.args}
-                        placeholder="one argument per line"
-                        onChange={(event) => onMcpServerDraftChange("args", event.target.value)}
-                      />
-                    </label>
-
-                    <label className="settings-field">
-                      <span className="settings-field-label">Environment</span>
-                      <textarea
-                        aria-label="MCP server environment"
-                        rows={5}
-                        value={mcpServerDraft.env}
-                        placeholder="KEY=value"
-                        onChange={(event) => onMcpServerDraftChange("env", event.target.value)}
-                      />
-                    </label>
-                  </div>
-                ) : (
-                  <>
-                    <div className="settings-field-grid">
-                      <label className="settings-field">
-                        <span className="settings-field-label">Authorization</span>
-                        <input
-                          aria-label="MCP authorization"
-                          type="text"
-                          value={mcpServerDraft.authorization}
-                          placeholder="Optional Authorization header value"
-                          onChange={(event) => onMcpServerDraftChange("authorization", event.target.value)}
-                        />
-                      </label>
-
-                      <label className="settings-field">
-                        <span className="settings-field-label">Headers</span>
-                        <textarea
-                          aria-label="MCP server headers"
-                          rows={5}
-                          value={mcpServerDraft.headers}
-                          placeholder="KEY=value"
-                          onChange={(event) => onMcpServerDraftChange("headers", event.target.value)}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="settings-field-grid">
-                      <label className="settings-field">
-                        <span className="settings-field-label">Allowed tools</span>
-                        <select
-                          aria-label="MCP allowed tools mode"
-                          value={mcpServerDraft.allowedToolsMode}
-                          onChange={(event) => onMcpServerDraftChange("allowedToolsMode", event.target.value)}
-                        >
-                          <option value="all">All tools</option>
-                          <option value="names">Named tools only</option>
-                          <option value="read-only">Read-only tools</option>
-                          <option value="read-only-names">Read-only named tools</option>
-                        </select>
-                      </label>
-
-                      {mcpServerDraft.allowedToolsMode === "names" || mcpServerDraft.allowedToolsMode === "read-only-names" ? (
-                        <label className="settings-field">
-                          <span className="settings-field-label">Allowed tool names</span>
-                          <textarea
-                            aria-label="MCP allowed tool names"
-                            rows={5}
-                            value={mcpServerDraft.allowedToolNames}
-                            placeholder="one tool name per line"
-                            onChange={(event) => onMcpServerDraftChange("allowedToolNames", event.target.value)}
-                          />
-                        </label>
-                      ) : null}
-                    </div>
-                  </>
-                )}
-
-                <McpToolsPolicyPanel
-                  diagnostic={activeMcpServerDiagnostic}
-                  draft={mcpServerDraft}
-                  onPolicyChange={onMcpToolPolicyChange}
-                />
-
-                {mcpServerValidationError || mcpServerDraft.transport === "remote" ? (
-                  <div className="settings-actions-row">
-                    <span className="settings-helper-text">
-                      {mcpServerValidationError
-                        ? mcpServerValidationError
-                        : "Remote MCP servers are connected locally over HTTP. Approval still flows through the existing permission system."}
-                    </span>
-                  </div>
-                ) : null}
+                </main>
               </div>
             </div>
           </section>

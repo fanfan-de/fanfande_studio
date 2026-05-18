@@ -472,6 +472,13 @@ export function PluginsPage({
   const heroImageURL = heroPlugin ? pluginImageURL(heroPlugin, "hero") : undefined
   const activeHeroImageURL = activePlugin ? pluginImageURL(activePlugin, "hero") : undefined
   const activeBrandColor = activePlugin ? pluginBrandColor(activePlugin) : undefined
+  const pluginDetailBreadcrumb = activePlugin ? (
+    <nav className="plugins-detail-breadcrumb" aria-label="Plugin detail breadcrumb">
+      <button type="button" onClick={onPluginDeselect}>插件</button>
+      <ChevronRightIcon />
+      <span>{activePlugin.name}</span>
+    </nav>
+  ) : null
   const toggleIncludedItem = (itemID: string) => {
     setExpandedIncludedItemID((currentItemID) => currentItemID === itemID ? null : itemID)
   }
@@ -482,15 +489,6 @@ export function PluginsPage({
         as="header"
         ariaLabel="Plugins top menu"
         className="canvas-region-top-menu plugins-top-menu"
-        layout={isPluginDetailView ? "three-column" : "split"}
-        leading={activePlugin ? (
-          <nav className="plugins-top-menu-breadcrumb" aria-label="Plugin detail breadcrumb">
-            <button type="button" onClick={onPluginDeselect}>插件</button>
-            <ChevronRightIcon />
-            <span>{activePlugin.name}</span>
-          </nav>
-        ) : undefined}
-        leadingClassName="plugins-top-menu-leading"
         contentClassName="plugins-top-menu-actions-shell"
         content={(
           <div className="plugins-top-menu-actions">
@@ -510,6 +508,8 @@ export function PluginsPage({
       />
 
       <div className="plugins-page-main">
+        {pluginDetailBreadcrumb}
+
         {message ? (
           <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>
             <span className="settings-banner-text">{message.text}</span>

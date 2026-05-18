@@ -1043,6 +1043,62 @@ describe("ThreadView assistant response markdown", () => {
     expect(container.querySelector(".assistant-section.is-response .thread-markdown")).not.toBeNull()
   })
 
+  it("renders assistant response HTML when the first-line marker requests HTML", () => {
+    const { container, getByRole, queryByText } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: [
+              "<!-- fanfande-response-format: html -->",
+              "<section>",
+              "<h2>HTML response</h2>",
+              "<p><strong>Ready</strong> to ship.</p>",
+              "<script>bad()</script>",
+              "</section>",
+            ].join("\n"),
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    expect(getByRole("heading", { name: "HTML response" })).toBeInTheDocument()
+    expect(container.querySelector(".assistant-section.is-response .thread-html")).not.toBeNull()
+    expect(container.querySelector(".assistant-section.is-response .thread-markdown")).not.toBeNull()
+    expect(container.querySelector("strong")?.textContent).toBe("Ready")
+    expect(container.textContent).not.toContain("fanfande-response-format")
+    expect(queryByText("bad()")).toBeNull()
+  })
+
+  it("keeps assistant response Markdown when the first-line marker requests Markdown", () => {
+    const { container, getByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "<!-- fanfande-response-format: markdown -->\n## Markdown response\n\n**Ready**",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    expect(getByRole("heading", { name: "Markdown response" })).toBeInTheDocument()
+    expect(container.querySelector(".assistant-section.is-response .thread-html")).toBeNull()
+    expect(container.textContent).not.toContain("fanfande-response-format")
+  })
+
   it("opens local file links from completed assistant response markdown", () => {
     const onLocalFileLinkOpen = vi.fn()
     const { getByRole } = renderThread([
@@ -1426,6 +1482,35 @@ describe("ThreadView assistant response markdown", () => {
     expect(streamingResponse).not.toBeNull()
     expect(streamingResponse).not.toHaveClass("thread-markdown")
     expect(streamingResponse?.textContent).toContain("**Streaming**")
+  })
+
+  it("hides response format markers while keeping streaming responses on the rich text path", () => {
+    const { container } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "<!-- fanfande-response-format: html -->\n<p><strong>Streaming</strong></p>",
+            status: "running",
+            isStreaming: true,
+          },
+        ],
+        true,
+      ),
+    ])
+    const streamingResponse = container.querySelector(
+      ".assistant-section.is-response .trace-item.is-streaming .trace-item-text",
+    )
+
+    expect(streamingResponse).not.toBeNull()
+    expect(streamingResponse).not.toHaveClass("thread-markdown")
+    expect(container.querySelector(".assistant-section.is-response .thread-html")).toBeNull()
+    expect(streamingResponse?.textContent).toContain("<p><strong>Streaming</strong></p>")
+    expect(streamingResponse?.textContent).not.toContain("fanfande-response-format")
   })
 })
 
@@ -2047,6 +2132,34 @@ describe("ThreadView message actions", () => {
 
     fireEvent.click(sideChatButtons[0]!)
     expect(onOpenSideChat).toHaveBeenCalledWith("assistant-1")
+  })
+
+  it("copies assistant responses without the response format marker", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    })
+    const { getByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "<!-- fanfande-response-format: html -->\n<p>Copied response.</p>",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    fireEvent.click(getByRole("button", { name: "Copy assistant response" }))
+
+    expect(writeText).toHaveBeenCalledWith("<p>Copied response.</p>")
   })
 
   it("only exposes branch controls on the final assistant message in a user turn", () => {

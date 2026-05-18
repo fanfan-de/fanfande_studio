@@ -34,6 +34,8 @@ import {
   type MarkdownArtifactLinkTarget,
   type MarkdownLocalFileLinkTarget,
 } from "../thread-markdown"
+import { ThreadHtml } from "../thread-html"
+import { parseAssistantResponseFormat, stripStreamingResponseFormatMarker } from "../thread-response-format"
 import { ThreadRichText } from "../thread-rich-text"
 import { logRendererPerf } from "../perf-profiler"
 import type {
@@ -918,7 +920,10 @@ function buildAssistantResponseCopyText(items: AssistantTraceItem[]) {
     .filter((item) => item.kind === "text")
     .map((item) => {
       const segments = [item.title, item.text, item.detail]
-        .map((value) => value?.trim())
+        .map((value, index) => {
+          if (!value) return ""
+          return index === 0 ? value.trim() : parseAssistantResponseFormat(value).text.trim()
+        })
         .filter((value): value is string => Boolean(value))
 
       return segments.join("\n\n")
@@ -2153,6 +2158,45 @@ function TraceItemHeader({
   )
 }
 
+function CompletedResponseText({
+  className,
+  onArtifactLinkOpen,
+  onLocalFileLinkOpen,
+  text,
+}: {
+  className: string
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
+  onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
+  text: string
+}) {
+  const response = parseAssistantResponseFormat(text)
+  const renderedClassName = joinClassNames(
+    className,
+    "thread-markdown",
+    response.format === "html" && "thread-html",
+  )
+
+  if (response.format === "html") {
+    return (
+      <ThreadHtml
+        className={renderedClassName}
+        text={response.text}
+        onArtifactLinkOpen={onArtifactLinkOpen}
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+      />
+    )
+  }
+
+  return (
+    <ThreadMarkdown
+      className={renderedClassName}
+      text={response.text}
+      onArtifactLinkOpen={onArtifactLinkOpen}
+      onLocalFileLinkOpen={onLocalFileLinkOpen}
+    />
+  )
+}
+
 function TraceItemTextBody({
   isResponseItem,
   item,
@@ -2164,37 +2208,40 @@ function TraceItemTextBody({
   onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
 }) {
+  const itemText = isResponseItem && item.isStreaming ? stripStreamingResponseFormatMarker(item.text ?? "") : item.text
+  const itemDetail = isResponseItem && item.isStreaming ? stripStreamingResponseFormatMarker(item.detail ?? "") : item.detail
+
   return (
     <>
-      {item.text ? (
+      {itemText ? (
         isResponseItem && !item.isStreaming ? (
-          <ThreadMarkdown
-            className="trace-item-text thread-markdown"
-            text={item.text}
+          <CompletedResponseText
+            className="trace-item-text"
+            text={itemText}
             onArtifactLinkOpen={onArtifactLinkOpen}
             onLocalFileLinkOpen={onLocalFileLinkOpen}
           />
         ) : (
           <ThreadRichText
             className="trace-item-text"
-            text={item.text}
+            text={itemText}
             onArtifactLinkOpen={isResponseItem ? onArtifactLinkOpen : undefined}
             onLocalFileLinkOpen={isResponseItem ? onLocalFileLinkOpen : undefined}
           />
         )
       ) : null}
-      {item.detail ? (
+      {itemDetail ? (
         isResponseItem && !item.isStreaming ? (
-          <ThreadMarkdown
-            className="trace-item-detail thread-markdown"
-            text={item.detail}
+          <CompletedResponseText
+            className="trace-item-detail"
+            text={itemDetail}
             onArtifactLinkOpen={onArtifactLinkOpen}
             onLocalFileLinkOpen={onLocalFileLinkOpen}
           />
         ) : (
           <ThreadRichText
             className="trace-item-detail"
-            text={item.detail}
+            text={itemDetail}
             onArtifactLinkOpen={isResponseItem ? onArtifactLinkOpen : undefined}
             onLocalFileLinkOpen={isResponseItem ? onLocalFileLinkOpen : undefined}
           />

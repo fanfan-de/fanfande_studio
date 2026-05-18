@@ -240,7 +240,10 @@ describe("PluginsPage", () => {
 
     expect(screen.queryByRole("region", { name: "Plugin marketplace layout" })).not.toBeInTheDocument()
     expect(screen.getByRole("region", { name: "Selected plugin details" })).toBeInTheDocument()
-    expect(screen.getByRole("navigation", { name: "Plugin detail breadcrumb" })).toHaveTextContent("插件")
+    const breadcrumb = screen.getByRole("navigation", { name: "Plugin detail breadcrumb" })
+    expect(breadcrumb).toHaveTextContent("插件")
+    expect(screen.getByLabelText("Plugins top menu")).not.toContainElement(breadcrumb)
+    expect(breadcrumb.closest(".plugins-page-main")).not.toBeNull()
     expect(screen.getByRole("heading", { name: "Filesystem", level: 1 })).toBeInTheDocument()
     const installButton = screen.getByRole("button", { name: "Install Filesystem" })
     expect(installButton.closest(".plugins-detail-actions")).not.toBeNull()
