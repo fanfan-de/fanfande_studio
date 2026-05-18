@@ -25,6 +25,7 @@ import type {
   AgentProjectMcpSelection,
   AgentProjectModelSelection,
   AgentProjectModelsResult,
+  AgentProjectPluginSelection,
   AgentProjectSkillSelection,
   AgentProjectWorkspace,
   AgentPromptPresetDocument,
@@ -105,6 +106,7 @@ export type {
   AgentProjectMcpSelection,
   AgentProjectModelSelection,
   AgentProjectModelsResult,
+  AgentProjectPluginSelection,
   AgentProjectSkillSelection,
   AgentProjectWorkspace,
   AgentPromptPresetDocument,
@@ -218,6 +220,7 @@ export type McpServerInput = AgentMcpServerSummary extends infer Server
   : never
 export type ProjectMcpSelection = AgentProjectMcpSelection
 export type ProjectSkillSelection = AgentProjectSkillSelection
+export type ProjectPluginSelection = AgentProjectPluginSelection
 export type PluginCatalogItem = AgentPluginCatalogItem
 export type InstalledPlugin = AgentInstalledPlugin
 export type PluginConnectorStatus = AgentPluginConnectorStatus
@@ -1182,6 +1185,18 @@ export interface DesktopIpcContract {
     input: { projectID: string; skillIDs: string[] }
     output: AgentProjectSkillSelection
   }
+  "desktop:get-project-plugins": {
+    input: { projectID: string }
+    output: AgentInstalledPlugin[]
+  }
+  "desktop:get-project-plugin-selection": {
+    input: { projectID: string }
+    output: AgentProjectPluginSelection
+  }
+  "desktop:update-project-plugin-selection": {
+    input: { projectID: string; pluginIDs: string[] }
+    output: AgentProjectPluginSelection
+  }
   "desktop:get-project-mcp-selection": {
     input: { projectID: string }
     output: AgentProjectMcpSelection
@@ -1428,6 +1443,9 @@ export interface DesktopApiMethods {
   getProjectSkills(input: DesktopIpcInput<"desktop:get-project-skills">): Promise<DesktopIpcOutput<"desktop:get-project-skills">>
   getProjectSkillSelection(input: DesktopIpcInput<"desktop:get-project-skill-selection">): Promise<DesktopIpcOutput<"desktop:get-project-skill-selection">>
   updateProjectSkillSelection(input: DesktopIpcInput<"desktop:update-project-skill-selection">): Promise<DesktopIpcOutput<"desktop:update-project-skill-selection">>
+  getProjectPlugins(input: DesktopIpcInput<"desktop:get-project-plugins">): Promise<DesktopIpcOutput<"desktop:get-project-plugins">>
+  getProjectPluginSelection(input: DesktopIpcInput<"desktop:get-project-plugin-selection">): Promise<DesktopIpcOutput<"desktop:get-project-plugin-selection">>
+  updateProjectPluginSelection(input: DesktopIpcInput<"desktop:update-project-plugin-selection">): Promise<DesktopIpcOutput<"desktop:update-project-plugin-selection">>
   getProjectMcpSelection(input: DesktopIpcInput<"desktop:get-project-mcp-selection">): Promise<DesktopIpcOutput<"desktop:get-project-mcp-selection">>
   updateProjectMcpSelection(input: DesktopIpcInput<"desktop:update-project-mcp-selection">): Promise<DesktopIpcOutput<"desktop:update-project-mcp-selection">>
   getProjectMcpServers(input: DesktopIpcInput<"desktop:get-project-mcp-servers">): Promise<DesktopIpcOutput<"desktop:get-project-mcp-servers">>

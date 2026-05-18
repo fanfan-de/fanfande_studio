@@ -869,6 +869,10 @@ describe("App", () => {
       getProjectSkillSelection: vi.fn().mockResolvedValue({
         skillIDs: [],
       }),
+      getProjectPlugins: vi.fn().mockResolvedValue([]),
+      getProjectPluginSelection: vi.fn().mockResolvedValue({
+        pluginIDs: [],
+      }),
       getGlobalSkillsTree: vi.fn().mockResolvedValue({
         root: "C:\\Users\\19128\\.anybox\\skills",
         items: [],
@@ -911,6 +915,7 @@ describe("App", () => {
         selection: { tools: {} },
       }),
       updateBuiltinToolSelection: vi.fn().mockImplementation((selection) => Promise.resolve(selection)),
+      getPluginCatalog: vi.fn().mockResolvedValue([]),
       getGlobalMcpServers: vi.fn().mockResolvedValue([]),
       getGlobalMcpServerDiagnostic: vi.fn().mockResolvedValue({
         serverID: "mock",
@@ -988,6 +993,9 @@ describe("App", () => {
       updateProjectModelSelection: vi.fn().mockResolvedValue({}),
       updateProjectSkillSelection: vi.fn().mockResolvedValue({
         skillIDs: [],
+      }),
+      updateProjectPluginSelection: vi.fn().mockResolvedValue({
+        pluginIDs: [],
       }),
       updateProjectMcpSelection: vi.fn().mockResolvedValue({
         serverIDs: [],
@@ -6732,6 +6740,8 @@ describe("App", () => {
     expect(window.desktop!.getProjectModels).not.toHaveBeenCalled()
     expect(window.desktop!.getProjectSkills).not.toHaveBeenCalled()
     expect(window.desktop!.getProjectSkillSelection).not.toHaveBeenCalled()
+    expect(window.desktop!.getProjectPlugins).not.toHaveBeenCalled()
+    expect(window.desktop!.getProjectPluginSelection).not.toHaveBeenCalled()
     expect(window.desktop!.getGlobalMcpServers).not.toHaveBeenCalled()
     expect(window.desktop!.getProjectMcpSelection).not.toHaveBeenCalled()
 
@@ -6762,6 +6772,12 @@ describe("App", () => {
         projectID: "project-atlas",
       })
       expect(window.desktop!.getProjectSkillSelection).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+      })
+      expect(window.desktop!.getProjectPlugins).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+      })
+      expect(window.desktop!.getProjectPluginSelection).toHaveBeenCalledWith({
         projectID: "project-atlas",
       })
       expect(window.desktop!.getProjectMcpSelection).toHaveBeenCalledWith({
@@ -9846,6 +9862,77 @@ describe("App", () => {
     })
 
     expect(await screen.findByRole("button", { name: "Select project skills: layout-review" })).toBeInTheDocument()
+  })
+
+  it("renders the project plugin selector in the session canvas top menu and persists selected plugins", async () => {
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.getProjectPlugins = vi.fn().mockResolvedValue([
+      {
+        pluginID: "build-web-apps",
+        version: "0.1.0",
+        enabled: true,
+        mcpServerIDs: ["plugin.build-web-apps"],
+        skillIDs: ["plugin:build-web-apps:frontend-app-builder"],
+        connectorIDs: [],
+        config: {},
+        installedAt: 1,
+        updatedAt: 1,
+      },
+    ])
+    window.desktop!.getPluginCatalog = vi.fn().mockResolvedValue([
+      {
+        id: "build-web-apps",
+        name: "Build Web Apps",
+        description: "Frontend app tools.",
+        version: "0.1.0",
+        publisher: "Fanfande",
+        category: "Code",
+        risk: "medium",
+        permissions: [],
+        tools: [],
+        configFields: [],
+        mcpServers: [],
+        skills: [],
+        apps: [],
+      },
+    ])
+    window.desktop!.getProjectPluginSelection = vi.fn().mockResolvedValue({
+      pluginIDs: [],
+    })
+    window.desktop!.updateProjectPluginSelection = vi.fn().mockResolvedValue({
+      pluginIDs: ["build-web-apps"],
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.getProjectPlugins).toHaveBeenCalledWith({
+        projectID: "project-2",
+      })
+      expect(window.desktop!.getProjectPluginSelection).toHaveBeenCalledWith({
+        projectID: "project-2",
+      })
+    })
+
+    const pluginButton = await screen.findByRole("button", { name: "Select project plugins: Plugins" })
+    expect(pluginButton.closest(".session-canvas-top-menu")).not.toBeNull()
+
+    fireEvent.click(pluginButton)
+
+    const pluginMenu = screen.getByRole("menu", { name: "Project plugin selection" })
+    fireEvent.click(await within(pluginMenu).findByRole("menuitemcheckbox", { name: /Build Web Apps/i }))
+
+    await waitFor(() => {
+      expect(window.desktop!.updateProjectPluginSelection).toHaveBeenCalledWith({
+        projectID: "project-2",
+        pluginIDs: ["build-web-apps"],
+      })
+    })
+
+    expect(await screen.findByRole("button", { name: "Select project plugins: Build Web Apps" })).toBeInTheDocument()
   })
 
   it("renders the project MCP selector in the session canvas top menu and persists selected servers", async () => {

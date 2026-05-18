@@ -3,6 +3,7 @@
 //import { Ripgrep } from "../file/ripgrep"
 
 import { Instance } from "#project/instance.ts"
+import * as Config from "#config/config.ts"
 import * as Provider from "#provider/provider.ts"
 import * as Skill from "#skill/skill.ts"
 import type * as Session from "#session/core/session.ts"
@@ -127,8 +128,9 @@ export async function environment(model: Provider.Model) {
 }
 
 export async function skills(sessionID: string, skillIDs: string[]) {
+    const pluginIDs = await Config.getSelectedPluginIDs(Instance.project.id)
     Skill.configureSessionSkills(sessionID, skillIDs)
-    return await Skill.loadPromptCatalogSections(Instance.worktree, skillIDs)
+    return await Skill.loadPromptCatalogSections(Instance.worktree, skillIDs, { pluginIDs })
 }
 
 //   export async function skills(agent: Agent.Info) {

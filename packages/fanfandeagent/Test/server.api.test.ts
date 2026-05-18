@@ -276,13 +276,26 @@ type SkillListEnvelope = JsonEnvelope<
     name: string
     description: string
     path: string
-    scope: "project" | "user"
+    scope: "project" | "user" | "plugin"
   }>
 >
 
 type ProjectSkillSelectionEnvelope = JsonEnvelope<{
   skillIDs: string[]
 }>
+
+type ProjectPluginSelectionEnvelope = JsonEnvelope<{
+  pluginIDs: string[]
+}>
+
+type ProjectPluginListEnvelope = JsonEnvelope<
+  Array<{
+    pluginID: string
+    enabled: boolean
+    skillIDs: string[]
+    mcpServerIDs: string[]
+  }>
+>
 
 type McpAllowedTools =
   | string[]
@@ -1980,6 +1993,76 @@ describe("server api", () => {
         skillIDs: ["project:reviewer"],
       })
     } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("project plugin selection routes should persist project-scoped installed plugin ids", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await createTempDirectory("fanfande-plugin-selection-project-")
+
+    try {
+      await createGitRepo(repositoryRoot, "plugin-selection-project")
+
+      const installResponse = await app.request("http://localhost/api/plugins/installed/build-web-apps", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      })
+      expect(installResponse.status).toBe(200)
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const listResponse = await app.request(`http://localhost/api/projects/${projectID}/plugins`)
+      const listBody = (await listResponse.json()) as ProjectPluginListEnvelope
+
+      expect(listResponse.status).toBe(200)
+      expect(listBody.data?.map((plugin) => plugin.pluginID)).toContain("build-web-apps")
+
+      const beforeSkillsResponse = await app.request(`http://localhost/api/projects/${projectID}/skills`)
+      const beforeSkillsBody = (await beforeSkillsResponse.json()) as SkillListEnvelope
+      expect(beforeSkillsBody.data?.some((skill) => skill.scope === "plugin")).toBe(false)
+
+      const updateResponse = await app.request(`http://localhost/api/projects/${projectID}/plugins/selection`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          pluginIDs: ["build-web-apps", "missing-plugin", "build-web-apps"],
+        }),
+      })
+      const updateBody = (await updateResponse.json()) as ProjectPluginSelectionEnvelope
+
+      expect(updateResponse.status).toBe(200)
+      expect(updateBody.data).toEqual({
+        pluginIDs: ["build-web-apps"],
+      })
+
+      const readResponse = await app.request(`http://localhost/api/projects/${projectID}/plugins/selection`)
+      const readBody = (await readResponse.json()) as ProjectPluginSelectionEnvelope
+
+      expect(readResponse.status).toBe(200)
+      expect(readBody.data).toEqual({
+        pluginIDs: ["build-web-apps"],
+      })
+
+      const afterSkillsResponse = await app.request(`http://localhost/api/projects/${projectID}/skills`)
+      const afterSkillsBody = (await afterSkillsResponse.json()) as SkillListEnvelope
+
+      expect(afterSkillsResponse.status).toBe(200)
+      expect(afterSkillsBody.data?.some((skill) => skill.scope === "plugin")).toBe(true)
+    } finally {
+      await app.request("http://localhost/api/plugins/installed/build-web-apps", {
+        method: "DELETE",
+      })
       await rm(repositoryRoot, { recursive: true, force: true })
     }
   })

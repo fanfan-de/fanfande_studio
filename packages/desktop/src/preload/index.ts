@@ -57,6 +57,7 @@ import type {
   PermissionResolveInput,
   PermissionResolveResult,
   ProjectMcpSelection,
+  ProjectPluginSelection,
   ProjectSkillSelection,
   PromptPresetDocument,
   PromptPresetSelection,
@@ -682,6 +683,12 @@ try {
       invokeDesktop("desktop:get-project-skill-selection", input) as Promise<ProjectSkillSelection>,
     updateProjectSkillSelection: (input: { projectID: string; skillIDs: string[] }) =>
       invokeDesktop("desktop:update-project-skill-selection", input) as Promise<ProjectSkillSelection>,
+    getProjectPlugins: (input: { projectID: string }) =>
+      invokeDesktop("desktop:get-project-plugins", input) as Promise<InstalledPlugin[]>,
+    getProjectPluginSelection: (input: { projectID: string }) =>
+      invokeDesktop("desktop:get-project-plugin-selection", input) as Promise<ProjectPluginSelection>,
+    updateProjectPluginSelection: (input: { projectID: string; pluginIDs: string[] }) =>
+      invokeDesktop("desktop:update-project-plugin-selection", input) as Promise<ProjectPluginSelection>,
     getProjectMcpSelection: (input: { projectID: string }) =>
       invokeDesktop("desktop:get-project-mcp-selection", input) as Promise<ProjectMcpSelection>,
     updateProjectMcpSelection: (input: { projectID: string; serverIDs: string[] }) =>

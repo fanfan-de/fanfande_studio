@@ -151,6 +151,21 @@ export function ProjectRoutes(options: { ptyRegistry: PtyRegistry }) {
     return ok(c, await ProjectUseCase.updateProjectSkillSelection(c.req.param("id"), payload))
   })
 
+  app.get("/:id/plugins", async (c) => ok(c, await ProjectUseCase.listProjectPlugins(c.req.param("id"))))
+
+  app.get("/:id/plugins/selection", async (c) =>
+    ok(c, await ProjectUseCase.getProjectPluginSelection(c.req.param("id"))),
+  )
+
+  app.put("/:id/plugins/selection", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      ProjectUseCase.UpdateProjectPluginSelectionBody,
+      "Body must contain a 'pluginIDs' string array",
+    )
+    return ok(c, await ProjectUseCase.updateProjectPluginSelection(c.req.param("id"), payload))
+  })
+
   app.get("/:id/mcp/selection", async (c) =>
     ok(c, await ProjectUseCase.getProjectMcpSelection(c.req.param("id"))),
   )

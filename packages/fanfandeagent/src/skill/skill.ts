@@ -38,6 +38,10 @@ export interface SkillDocument extends SkillInfo {
   body: string
 }
 
+export interface SkillDiscoveryOptions {
+  pluginIDs?: string[] | null
+}
+
 const SkillFrontmatter = z
   .object({
     name: z.string().optional(),
@@ -201,8 +205,8 @@ async function discoverInRoot(scope: SkillScope, root: string): Promise<SkillDoc
   return discoverInDirectory(scope, root, root)
 }
 
-async function discoverPluginDocuments(): Promise<SkillDocument[]> {
-  const roots = Plugin.listInstalledPluginSkillRoots()
+async function discoverPluginDocuments(options?: SkillDiscoveryOptions): Promise<SkillDocument[]> {
+  const roots = Plugin.listInstalledPluginSkillRoots(options?.pluginIDs)
   const items = await Promise.all(
     roots.map(async (root) => {
       if (!(await Filesystem.isDir(root.root))) return []
@@ -223,11 +227,11 @@ async function discoverPluginDocuments(): Promise<SkillDocument[]> {
   return items.flat()
 }
 
-async function discoverDocuments(projectRoot: string): Promise<SkillDocument[]> {
+async function discoverDocuments(projectRoot: string, options?: SkillDiscoveryOptions): Promise<SkillDocument[]> {
   const roots = skillRoots(projectRoot)
   const items = await Promise.all([
     ...roots.map((item) => discoverInRoot(item.scope, item.root)),
-    discoverPluginDocuments(),
+    discoverPluginDocuments(options),
   ])
 
   return items
@@ -235,18 +239,22 @@ async function discoverDocuments(projectRoot: string): Promise<SkillDocument[]> 
     .toSorted((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
 }
 
-export async function list(projectRoot: string): Promise<SkillInfo[]> {
-  return (await discoverDocuments(projectRoot)).map(toSkillInfo)
+export async function list(projectRoot: string, options?: SkillDiscoveryOptions): Promise<SkillInfo[]> {
+  return (await discoverDocuments(projectRoot, options)).map(toSkillInfo)
 }
 
 export async function listGlobal(): Promise<SkillInfo[]> {
   return (await discoverInRoot("user", userSkillRoot())).map(toSkillInfo)
 }
 
-export async function getSelected(projectRoot: string, skillIDs: string[]): Promise<SkillDocument[]> {
+export async function getSelected(
+  projectRoot: string,
+  skillIDs: string[],
+  options?: SkillDiscoveryOptions,
+): Promise<SkillDocument[]> {
   if (skillIDs.length === 0) return []
 
-  const all = await discoverDocuments(projectRoot)
+  const all = await discoverDocuments(projectRoot, options)
   const byID = new Map(all.map((item) => [item.id, item] as const))
   const result: SkillDocument[] = []
   const seen = new Set<string>()
@@ -270,8 +278,12 @@ export async function getSelected(projectRoot: string, skillIDs: string[]): Prom
   return result
 }
 
-export async function resolveSelectedSkillIDs(projectRoot: string, skillIDs: string[]): Promise<string[]> {
-  return (await getSelected(projectRoot, skillIDs)).map((skill) => skill.id)
+export async function resolveSelectedSkillIDs(
+  projectRoot: string,
+  skillIDs: string[],
+  options?: SkillDiscoveryOptions,
+): Promise<string[]> {
+  return (await getSelected(projectRoot, skillIDs, options)).map((skill) => skill.id)
 }
 
 export async function resolveTurnSkillIDs(input: {
@@ -279,8 +291,9 @@ export async function resolveTurnSkillIDs(input: {
   projectRoot: string
   requestedSkillIDs?: string[]
 }): Promise<string[]> {
+  const pluginIDs = await Config.getSelectedPluginIDs(input.projectID)
   const requestedSkillIDs = input.requestedSkillIDs ?? await Config.getSelectedSkillIDs(input.projectID)
-  return await resolveSelectedSkillIDs(input.projectRoot, requestedSkillIDs)
+  return await resolveSelectedSkillIDs(input.projectRoot, requestedSkillIDs, { pluginIDs })
 }
 
 export function configureSessionSkills(sessionID: string, skillIDs: string[]) {
@@ -303,16 +316,24 @@ export function isSkillLoaded(sessionID: string, skillID: string) {
   return getSessionSkillState(sessionID).loadedSkillIDs.has(skillID)
 }
 
-export async function listForPrompt(projectRoot: string, skillIDs: string[]): Promise<SkillInfo[]> {
+export async function listForPrompt(
+  projectRoot: string,
+  skillIDs: string[],
+  options?: SkillDiscoveryOptions,
+): Promise<SkillInfo[]> {
   const selected = skillIDs.length === 0
-    ? await discoverDocuments(projectRoot)
-    : await getSelected(projectRoot, skillIDs)
+    ? await discoverDocuments(projectRoot, options)
+    : await getSelected(projectRoot, skillIDs, options)
 
   return selected.map(toSkillInfo)
 }
 
-export async function loadPromptCatalogSections(projectRoot: string, skillIDs: string[]): Promise<string[]> {
-  const selected = await listForPrompt(projectRoot, skillIDs)
+export async function loadPromptCatalogSections(
+  projectRoot: string,
+  skillIDs: string[],
+  options?: SkillDiscoveryOptions,
+): Promise<string[]> {
+  const selected = await listForPrompt(projectRoot, skillIDs, options)
   if (selected.length === 0) return []
 
   const selectedOnly = skillIDs.length > 0
@@ -335,13 +356,14 @@ export async function loadByID(
   skillID: string,
   options?: {
     allowedSkillIDs?: string[] | null
+    pluginIDs?: string[] | null
   },
 ): Promise<SkillDocument | undefined> {
   const normalizedID = skillID.trim()
   if (!normalizedID) return undefined
   if (!isSkillAllowed(normalizedID, options?.allowedSkillIDs)) return undefined
 
-  return (await getSelected(projectRoot, [normalizedID]))[0]
+  return (await getSelected(projectRoot, [normalizedID], { pluginIDs: options?.pluginIDs }))[0]
 }
 
 export async function resolveResourcePath(
@@ -350,6 +372,7 @@ export async function resolveResourcePath(
   resourcePath: string,
   options?: {
     allowedSkillIDs?: string[] | null
+    pluginIDs?: string[] | null
   },
 ): Promise<{
   skill: SkillDocument

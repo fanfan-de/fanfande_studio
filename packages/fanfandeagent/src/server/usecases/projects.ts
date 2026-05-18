@@ -9,6 +9,7 @@ import type { PtyRegistry } from "#pty/registry.ts"
 import { Instance } from "#project/instance.ts"
 import * as Project from "#project/project.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
+import * as Plugin from "#plugin/plugin.ts"
 import * as Provider from "#provider/provider.ts"
 import { ApiError } from "#server/error.ts"
 import {
@@ -34,6 +35,7 @@ export const UpdateProjectProviderBody = Config.Provider
 export const UpdateProjectModelSelectionBody = Config.ModelSelection
 export const UpdateProjectSkillSelectionBody = Config.ProjectSkillSelection
 export const UpdateProjectMcpSelectionBody = Config.ProjectMcpSelection
+export const UpdateProjectPluginSelectionBody = Config.ProjectPluginSelection
 
 export const GitDirectoryQuery = z.object({
   directory: z.string().min(1),
@@ -414,13 +416,18 @@ export async function createProjectGitPullRequest(
 
 export async function listProjectSkills(projectID: string) {
   const project = safeReadProject(projectID)
-  return Skill.list(project.worktree)
+  return Skill.list(project.worktree, {
+    pluginIDs: await Config.getSelectedPluginIDs(projectID),
+  })
 }
 
 export async function getProjectSkillSelection(projectID: string) {
   const project = safeReadProject(projectID)
+  const pluginIDs = await Config.getSelectedPluginIDs(projectID)
   return {
-    skillIDs: await Skill.resolveSelectedSkillIDs(project.worktree, await Config.getSelectedSkillIDs(projectID)),
+    skillIDs: await Skill.resolveSelectedSkillIDs(project.worktree, await Config.getSelectedSkillIDs(projectID), {
+      pluginIDs,
+    }),
   }
 }
 
@@ -429,11 +436,39 @@ export async function updateProjectSkillSelection(
   input: z.infer<typeof UpdateProjectSkillSelectionBody>,
 ) {
   const project = safeReadProject(projectID)
-  const skillIDs = await Skill.resolveSelectedSkillIDs(project.worktree, input.skillIDs)
+  const pluginIDs = await Config.getSelectedPluginIDs(projectID)
+  const skillIDs = await Skill.resolveSelectedSkillIDs(project.worktree, input.skillIDs, {
+    pluginIDs,
+  })
   const config = await Config.setSelectedSkillIDs(projectID, skillIDs)
 
   return {
     skillIDs: config.selected_skills ?? [],
+  }
+}
+
+export async function listProjectPlugins(projectID: string) {
+  safeReadProject(projectID)
+  return Plugin.listEnabledInstalled()
+}
+
+export async function getProjectPluginSelection(projectID: string) {
+  safeReadProject(projectID)
+  return {
+    pluginIDs: Plugin.resolveEnabledInstalledPluginIDs(await Config.getSelectedPluginIDs(projectID)),
+  }
+}
+
+export async function updateProjectPluginSelection(
+  projectID: string,
+  input: z.infer<typeof UpdateProjectPluginSelectionBody>,
+) {
+  safeReadProject(projectID)
+  const pluginIDs = Plugin.resolveEnabledInstalledPluginIDs(input.pluginIDs)
+  const config = await Config.setSelectedPluginIDs(projectID, pluginIDs)
+
+  return {
+    pluginIDs: config.selected_plugins ?? [],
   }
 }
 

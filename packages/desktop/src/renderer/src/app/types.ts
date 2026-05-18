@@ -1059,6 +1059,10 @@ export interface ProjectMcpSelection {
   serverIDs: string[]
 }
 
+export interface ProjectPluginSelection {
+  pluginIDs: string[]
+}
+
 export type PromptPresetSource = "bundled" | "custom"
 
 export interface PromptPresetSelection {
@@ -1263,6 +1267,12 @@ export interface ComposerSkillOption {
 }
 
 export interface ComposerMcpOption {
+  value: string
+  label: string
+  description: string
+}
+
+export interface ComposerPluginOption {
   value: string
   label: string
   description: string

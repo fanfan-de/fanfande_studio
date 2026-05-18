@@ -137,6 +137,11 @@ const SelectedSkillsField = z
   .optional()
   .describe("Project-scoped selected skill ids")
 
+const SelectedPluginsField = z
+  .array(z.string())
+  .optional()
+  .describe("Project-scoped selected installed plugin ids")
+
 const PromptOverridesField = z
   .record(z.string(), z.string())
   .optional()
@@ -432,6 +437,7 @@ export const Info = z
     mcp: McpConfigField,
     selected_mcp_servers: SelectedMcpServersField,
     selected_skills: SelectedSkillsField,
+    selected_plugins: SelectedPluginsField,
     prompt_overrides: PromptOverridesField,
     custom_prompt_presets: CustomPromptPresetsField,
     selected_system_prompt_preset: SelectedSystemPromptPresetField,
@@ -541,6 +547,16 @@ export const ProjectSkillSelection = z
   })
 export type ProjectSkillSelection = z.infer<typeof ProjectSkillSelection>
 
+export const ProjectPluginSelection = z
+  .object({
+    pluginIDs: z.array(z.string()),
+  })
+  .strict()
+  .meta({
+    ref: "ProjectPluginSelection",
+  })
+export type ProjectPluginSelection = z.infer<typeof ProjectPluginSelection>
+
 function projectProviderConfigFromInfo(config: Info): ProjectProviderConfig {
   return {
     provider: config.provider,
@@ -621,6 +637,20 @@ function normalizeSkillIDs(skillIDs: string[]) {
 
   for (const skillID of skillIDs) {
     const trimmed = skillID.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    result.push(trimmed)
+  }
+
+  return result
+}
+
+function normalizePluginIDs(pluginIDs: string[]) {
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const pluginID of pluginIDs) {
+    const trimmed = pluginID.trim().toLowerCase()
     if (!trimmed || seen.has(trimmed)) continue
     seen.add(trimmed)
     result.push(trimmed)
@@ -847,6 +877,26 @@ export async function setSelectedSkillIDs(configID: string, skillIDs: string[]) 
   return writeConfig(normalizedConfigID, Info.parse(next))
 }
 
+function readSelectedPluginIDs(configID: string) {
+  const selected = readConfig(configID).selected_plugins
+  return selected ? normalizePluginIDs(selected) : null
+}
+
+export async function getSelectedPluginIDs(configID: string): Promise<string[]> {
+  return readSelectedPluginIDs(normalizeConfigID(configID)) ?? []
+}
+
+export async function setSelectedPluginIDs(configID: string, pluginIDs: string[]) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const current = readConfig(normalizedConfigID)
+  const next: Info = {
+    ...current,
+    selected_plugins: normalizePluginIDs(pluginIDs),
+  }
+
+  return writeConfig(normalizedConfigID, Info.parse(next))
+}
+
 export async function getToolSelection(configID = GLOBAL_CONFIG_ID): Promise<{ tools: Record<string, boolean> }> {
   const config = readConfig(normalizeConfigID(configID))
   return {
@@ -1035,16 +1085,30 @@ export async function setSelectedPromptPresetIDs(
 export async function resolveProjectMcpServers(projectID: string): Promise<McpServerSummary[]> {
   const normalizedProjectID = normalizeConfigID(projectID)
   const selectedServerIDs = readSelectedMcpServerIDs(normalizedProjectID)
+  const selectedPluginIDs = readSelectedPluginIDs(normalizedProjectID) ?? []
+  const selectedPluginServerPrefixes = selectedPluginIDs.map((pluginID) => `plugin.${pluginID}`)
   const globalServers = await listMcpServers(GLOBAL_CONFIG_ID)
+  const selectedPluginServerIDs = new Set(
+    globalServers
+      .filter((server) =>
+        selectedPluginServerPrefixes.some((prefix) => server.id === prefix || server.id.startsWith(`${prefix}.`)),
+      )
+      .map((server) => server.id),
+  )
 
   if (selectedServerIDs !== null) {
-    if (selectedServerIDs.length === 0) return []
-
     const selectedServerIDSet = new Set(selectedServerIDs)
-    return globalServers.filter((server) => selectedServerIDSet.has(server.id))
+    return globalServers.filter((server) => selectedServerIDSet.has(server.id) || selectedPluginServerIDs.has(server.id))
   }
 
-  return await listMcpServers(normalizedProjectID)
+  const projectServers = await listMcpServers(normalizedProjectID)
+  if (selectedPluginServerIDs.size === 0) return projectServers
+
+  const projectServerIDs = new Set(projectServers.map((server) => server.id))
+  return [
+    ...projectServers,
+    ...globalServers.filter((server) => selectedPluginServerIDs.has(server.id) && !projectServerIDs.has(server.id)),
+  ]
 }
 
 export async function getProjectMcpServer(projectID: string, serverID: string): Promise<McpServerSummary | undefined> {

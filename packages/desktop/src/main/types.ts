@@ -834,6 +834,10 @@ export interface AgentProjectMcpSelection {
   serverIDs: string[]
 }
 
+export interface AgentProjectPluginSelection {
+  pluginIDs: string[]
+}
+
 export interface AgentSkillInfo {
   id: string
   name: string

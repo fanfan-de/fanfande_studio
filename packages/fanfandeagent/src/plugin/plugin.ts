@@ -15,6 +15,11 @@ const DEFAULT_SKILLS_DIRECTORY = "skills"
 const API_KEY_METHOD = "api-key"
 const PLUGIN_APP_CONNECTOR_PREFIX = "plugin-app:"
 
+type PluginManifestSource = {
+  manifest: PluginManifest
+  packageRoot?: string
+}
+
 export type PluginErrorCode =
   | "PLUGIN_NOT_FOUND"
   | "INSTALLED_PLUGIN_NOT_FOUND"
@@ -386,6 +391,50 @@ function authorName(author: PluginManifest["author"]) {
   return typeof author === "string" ? author : author.name
 }
 
+function compareVersionIdentifier(left: string, right: string) {
+  const leftNumber = /^\d+$/.test(left) ? Number(left) : undefined
+  const rightNumber = /^\d+$/.test(right) ? Number(right) : undefined
+
+  if (leftNumber !== undefined && rightNumber !== undefined) {
+    return leftNumber - rightNumber
+  }
+
+  if (leftNumber !== undefined) return -1
+  if (rightNumber !== undefined) return 1
+  return left.localeCompare(right)
+}
+
+function compareManifestVersions(left: string, right: string) {
+  const [leftCore = "", leftPrerelease] = left.split("-", 2)
+  const [rightCore = "", rightPrerelease] = right.split("-", 2)
+  const leftParts = leftCore.split(".").map((part) => Number(part) || 0)
+  const rightParts = rightCore.split(".").map((part) => Number(part) || 0)
+  const partCount = Math.max(leftParts.length, rightParts.length)
+
+  for (let index = 0; index < partCount; index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0)
+    if (difference !== 0) return difference
+  }
+
+  if (!leftPrerelease && rightPrerelease) return 1
+  if (leftPrerelease && !rightPrerelease) return -1
+  if (!leftPrerelease && !rightPrerelease) return 0
+
+  const leftIdentifiers = leftPrerelease!.split(".")
+  const rightIdentifiers = rightPrerelease!.split(".")
+  const identifierCount = Math.max(leftIdentifiers.length, rightIdentifiers.length)
+  for (let index = 0; index < identifierCount; index += 1) {
+    const leftIdentifier = leftIdentifiers[index]
+    const rightIdentifier = rightIdentifiers[index]
+    if (leftIdentifier === undefined) return -1
+    if (rightIdentifier === undefined) return 1
+    const difference = compareVersionIdentifier(leftIdentifier, rightIdentifier)
+    if (difference !== 0) return difference
+  }
+
+  return 0
+}
+
 function safeReadPluginManifest(packageRoot: string) {
   const manifestPath = join(packageRoot, PLUGIN_MANIFEST_PATH)
   if (!existsSync(manifestPath)) return undefined
@@ -422,20 +471,40 @@ function readPackageManifestsFromRoot(root: string) {
     .filter((entry) => entry.isDirectory())
     .flatMap((entry) => {
       const packageRoot = join(root, entry.name)
+      const sources: PluginManifestSource[] = []
       const manifest = safeReadPluginManifest(packageRoot)
-      return manifest ? [{ manifest, packageRoot }] : []
+      if (manifest) {
+        sources.push({ manifest, packageRoot })
+      }
+
+      const versionedSources = readdirSync(packageRoot, { withFileTypes: true })
+        .filter((child) => child.isDirectory() && !child.name.startsWith("."))
+        .flatMap((child) => {
+          const versionRoot = join(packageRoot, child.name)
+          const versionManifest = safeReadPluginManifest(versionRoot)
+          return versionManifest ? [{ manifest: versionManifest, packageRoot: versionRoot }] : []
+        })
+
+      sources.push(...versionedSources)
+      return sources
     })
 }
 
 function listManifestSources() {
-  const sources: Array<{ manifest: PluginManifest; packageRoot?: string }> = []
+  const byID = new Map<string, PluginManifestSource>()
   for (const root of packageSearchRoots()) {
-    sources.push(...readPackageManifestsFromRoot(root))
-  }
+    const byRootID = new Map<string, PluginManifestSource>()
+    for (const source of readPackageManifestsFromRoot(root)) {
+      const pluginID = normalizeManifestID(source.manifest.name)
+      const existing = byRootID.get(pluginID)
+      if (!existing || compareManifestVersions(source.manifest.version, existing.manifest.version) > 0) {
+        byRootID.set(pluginID, source)
+      }
+    }
 
-  const byID = new Map<string, { manifest: PluginManifest; packageRoot?: string }>()
-  for (const source of sources) {
-    byID.set(normalizeManifestID(source.manifest.name), source)
+    for (const [pluginID, source] of byRootID) {
+      byID.set(pluginID, source)
+    }
   }
 
   return [...byID.values()]
@@ -830,6 +899,25 @@ export function listInstalled() {
     .toSorted((left, right) => left.pluginID.localeCompare(right.pluginID))
 }
 
+export function listEnabledInstalled() {
+  return listInstalled().filter((plugin) => plugin.enabled)
+}
+
+export function resolveEnabledInstalledPluginIDs(pluginIDs: string[]) {
+  const enabledInstalledIDs = new Set(listEnabledInstalled().map((plugin) => plugin.pluginID))
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const pluginID of pluginIDs) {
+    const normalizedPluginID = normalizePluginID(pluginID)
+    if (!normalizedPluginID || seen.has(normalizedPluginID) || !enabledInstalledIDs.has(normalizedPluginID)) continue
+    seen.add(normalizedPluginID)
+    result.push(normalizedPluginID)
+  }
+
+  return result
+}
+
 export function getInstalled(pluginID: string) {
   return readInstalled(pluginID)
 }
@@ -1072,11 +1160,16 @@ export async function resolveConnectorRemoteServer(connectorID: string): Promise
   }
 }
 
-export function listInstalledPluginSkillRoots(): Array<{
+export function listInstalledPluginSkillRoots(pluginIDs?: string[] | null): Array<{
   pluginID: string
   root: string
 }> {
-  const installedByID = new Map(listInstalled().filter((plugin) => plugin.enabled).map((plugin) => [plugin.pluginID, plugin]))
+  const selectedPluginIDs = pluginIDs ? new Set(pluginIDs.map((pluginID) => normalizePluginID(pluginID))) : null
+  const installedByID = new Map(
+    listEnabledInstalled()
+      .filter((plugin) => !selectedPluginIDs || selectedPluginIDs.has(plugin.pluginID))
+      .map((plugin) => [plugin.pluginID, plugin]),
+  )
 
   return listManifestSources().flatMap((source) => {
     const pluginID = normalizeManifestID(source.manifest.name)

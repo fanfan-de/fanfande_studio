@@ -4,11 +4,34 @@
 
 ## 插件包结构
 
-插件包入口固定为：
+插件包采用类似 Codex 插件缓存的版本化目录。推荐入口为：
 
 ```text
-<plugin-package>/.fanfande-plugin/plugin.json
+<plugin-id>/<version>/.fanfande-plugin/plugin.json
 ```
+
+兼容旧入口：
+
+```text
+<plugin-id>/.fanfande-plugin/plugin.json
+```
+
+一个完整插件包可以包含这些目录：
+
+```text
+<plugin-id>/
+  <version>/
+    .fanfande-plugin/
+      plugin.json
+    assets/
+    docs/
+    scripts/
+    skills/
+      <skill-name>/
+        SKILL.md
+```
+
+.fanfande-plugin 是 Fanfande 平台元数据目录。v1 固定读取其中的 `plugin.json`，未来可继续放签名、锁文件、权限声明等平台文件。`assets`、`docs`、`scripts`、`skills` 放在版本目录下，与 `.fanfande-plugin` 同级。
 
 manifest v1 支持以下顶层字段：
 
@@ -21,8 +44,10 @@ manifest v1 支持以下顶层字段：
 
 插件来源 v1 只有两类：
 
-- 内置 curated catalog：仓库内置插件包放在 `packages/fanfandeagent/plugins/builtin/<plugin-package>`，打包后复制到 Agent runtime 的 `plugins/builtin`。
+- 内置 curated catalog：仓库内置插件包放在 `packages/fanfandeagent/plugins/builtin/<plugin-id>/<version>`，打包后复制到 Agent runtime 的 `plugins/builtin`。
 - `FanFande_PLUGIN_PACKAGE_DIRS` 指向的本地插件包目录。
+
+同一个插件来源下如果存在多个版本目录，catalog 选择 manifest `version` 最高的版本；后面的插件来源仍会覆盖前面的同名插件来源。
 
 插件包本身不放在 `src` 代码目录；`src/plugin` 只负责扫描、校验、安装和生成运行时绑定。
 

@@ -1,5 +1,6 @@
 import { dirname, relative } from "node:path"
 import z from "zod"
+import * as Config from "#config/config.ts"
 import { Instance } from "#project/instance.ts"
 import * as Skill from "#skill/skill.ts"
 import * as Tool from "#tool/tool.ts"
@@ -32,12 +33,14 @@ export const ReadSkillResourceTool = Tool.define(
       },
       execute: async (parameters, ctx) => {
         const allowedSkillIDs = Skill.getAllowedSkillIDs(ctx.sessionID)
+        const pluginIDs = await Config.getSelectedPluginIDs(Instance.project.id)
         const { skill, resourcePath } = await Skill.resolveResourcePath(
           Instance.worktree,
           parameters.id,
           parameters.relativePath,
           {
             allowedSkillIDs,
+            pluginIDs,
           },
         )
 

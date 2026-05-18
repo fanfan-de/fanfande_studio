@@ -68,6 +68,7 @@ import type {
   AgentProjectMcpSelection,
   AgentProjectModelSelection,
   AgentProjectModelsResult,
+  AgentProjectPluginSelection,
   AgentProjectSkillSelection,
   AgentProjectWorkspace,
   AgentPromptPresetDocument,
@@ -2351,6 +2352,45 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
           },
           body: JSON.stringify({
             skillIDs: input.skillIDs,
+          }),
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc("desktop:get-project-plugins", async (_event, input: { projectID: string }) => {
+    const projectID = input.projectID.trim()
+    const result = await requestAgentJSON<AgentInstalledPlugin[]>(
+      `/api/projects/${encodeURIComponent(projectID)}/plugins`,
+    )
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:get-project-plugin-selection", async (_event, input: { projectID: string }) => {
+    const projectID = input.projectID.trim()
+    const result = await requestAgentJSON<AgentProjectPluginSelection>(
+      `/api/projects/${encodeURIComponent(projectID)}/plugins/selection`,
+    )
+
+    return result.data
+  })
+
+  handleDesktopIpc(
+    "desktop:update-project-plugin-selection",
+    async (_event, input: { projectID: string; pluginIDs: string[] }) => {
+      const projectID = input.projectID.trim()
+      const result = await requestAgentJSON<AgentProjectPluginSelection>(
+        `/api/projects/${encodeURIComponent(projectID)}/plugins/selection`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            pluginIDs: input.pluginIDs,
           }),
         },
       )

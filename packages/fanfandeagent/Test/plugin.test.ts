@@ -23,6 +23,7 @@ type PluginCatalogEnvelope = JsonEnvelope<
   Array<{
     id: string
     name: string
+    version: string
     risk: string
     runtime?: {
       transport: string
@@ -141,8 +142,9 @@ async function writeManifestPluginPackage() {
 
   const packageSourceRoot = join(activeRoot, "plugin-packages")
   const packageRoot = join(packageSourceRoot, "manifest-lab")
-  const manifestRoot = join(packageRoot, ".fanfande-plugin")
-  const skillRoot = join(packageRoot, "skills", "review")
+  const versionRoot = join(packageRoot, "0.1.0")
+  const manifestRoot = join(versionRoot, ".fanfande-plugin")
+  const skillRoot = join(versionRoot, "skills", "review")
   await mkdir(manifestRoot, { recursive: true })
   await mkdir(skillRoot, { recursive: true })
 
@@ -281,6 +283,56 @@ async function writeCriticalPluginPackage() {
   return packageSourceRoot
 }
 
+async function writeVersionedPluginPackage() {
+  if (!activeRoot) throw new Error("Temp root has not been initialized.")
+
+  const packageSourceRoot = join(activeRoot, "versioned-plugin-packages")
+  const packageRoot = join(packageSourceRoot, "version-lab")
+  const versions = [
+    ["0.1.0", "Version Lab Old"],
+    ["0.2.0", "Version Lab New"],
+  ] as const
+
+  for (const [version, displayName] of versions) {
+    const manifestRoot = join(packageRoot, version, ".fanfande-plugin")
+    await mkdir(manifestRoot, { recursive: true })
+    await writeFile(join(manifestRoot, "plugin.json"), JSON.stringify({
+      name: "version-lab",
+      version,
+      description: `${displayName} fixture plugin.`,
+      author: "Fanfande Tests",
+      interface: {
+        displayName,
+        shortDescription: `${displayName} fixture.`,
+        developerName: "Fanfande Tests",
+        category: "Docs",
+      },
+      mcpServers: [
+        {
+          id: "notes",
+          name: displayName,
+          risk: "low",
+          tools: [
+            {
+              name: "list_notes",
+              description: "List fixture notes.",
+              readOnly: true,
+            },
+          ],
+          runtime: {
+            transport: "stdio",
+            command: "node",
+            args: [`server-${version}.js`],
+          },
+        },
+      ],
+    }, null, 2))
+  }
+
+  process.env.FanFande_PLUGIN_PACKAGE_DIRS = packageSourceRoot
+  return packageSourceRoot
+}
+
 afterEach(async () => {
   await Auth.clearProvider("plugin-app:manifest-lab:docs")
   if (previousPluginPackageDirs === undefined) {
@@ -309,10 +361,20 @@ describe("plugin marketplace API", () => {
     expect(response.status).toBe(200)
     expect(body.success).toBe(true)
     expect(body.data?.length).toBeGreaterThan(0)
+    expect(body.data?.some((plugin) => plugin.id === "build-web-apps")).toBe(true)
     expect(body.data?.some((plugin) => plugin.id === "github")).toBe(true)
     expect(body.data?.every((plugin) => plugin.risk !== "critical")).toBe(true)
-    expect(body.data?.every((plugin) => plugin.tools.length > 0)).toBe(true)
     expect(body.data?.every((plugin) => plugin.mcpServers.length + plugin.skills.length + plugin.apps.length > 0)).toBe(true)
+
+    const buildWebAppsPlugin = body.data?.find((plugin) => plugin.id === "build-web-apps")
+    expect(buildWebAppsPlugin?.skills.map((skill) => skill.directory).toSorted()).toEqual([
+      "frontend-app-builder",
+      "frontend-testing-debugging",
+      "react-best-practices",
+      "shadcn-best-practices",
+      "stripe-best-practices",
+      "supabase-best-practices",
+    ])
   })
 
   test("installs, disables, diagnoses, and removes a plugin-backed MCP server", async () => {
@@ -478,6 +540,21 @@ describe("plugin marketplace API", () => {
     const projectRoot = activeRoot ?? "."
     const skills = await Skill.list(projectRoot)
     expect(skills.some((skill) => skill.id === "plugin:manifest-lab:review" && skill.scope === "plugin")).toBe(true)
+  })
+
+  test("loads the newest manifest from a versioned plugin package", async () => {
+    await useTempDatabase()
+    await writeVersionedPluginPackage()
+    const app = createServerApp()
+
+    const catalogResponse = await app.request("/api/plugins/catalog")
+    const catalogBody = (await catalogResponse.json()) as PluginCatalogEnvelope
+    const versionedPlugin = catalogBody.data?.find((plugin) => plugin.id === "version-lab")
+
+    expect(catalogResponse.status).toBe(200)
+    expect(versionedPlugin?.version).toBe("0.2.0")
+    expect(versionedPlugin?.name).toBe("Version Lab New")
+    expect(versionedPlugin?.mcpServers[0]?.runtime.transport).toBe("stdio")
   })
 
   test("stores app connector API keys outside MCP config and resolves headers at runtime", async () => {
