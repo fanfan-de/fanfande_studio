@@ -4754,6 +4754,73 @@ body.is-dragging-settings-page {
   stroke-width: 2;
 }
 
+.plugins-detail-actions {
+  min-width: 0;
+  min-height: 54px;
+  padding: 10px 12px;
+  border: 1px solid #eceae7;
+  border-radius: 8px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.plugins-detail-install-button,
+.plugins-detail-action-status {
+  min-height: 34px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 620;
+  line-height: 1;
+}
+
+.plugins-detail-install-button {
+  padding: 0 14px;
+  border: 1px solid #202020;
+  background: #202020;
+  color: #ffffff;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    opacity 160ms ease;
+}
+
+.plugins-detail-install-button:hover,
+.plugins-detail-install-button:focus-visible {
+  border-color: #101010;
+  background: #101010;
+  outline: none;
+}
+
+.plugins-detail-install-button:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.plugins-detail-action-status {
+  padding: 0 12px;
+  border: 1px solid rgba(59, 156, 255, 0.2);
+  background: rgba(59, 156, 255, 0.08);
+  color: #1f6fb8;
+}
+
+.plugins-detail-install-button svg,
+.plugins-detail-action-status svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
 .plugins-detail-hero {
   width: 100%;
   box-sizing: border-box;

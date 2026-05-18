@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import type { ComponentProps } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { PluginsPage } from "./PluginsPage"
@@ -207,11 +207,13 @@ describe("PluginsPage", () => {
   })
 
   it("opens selected plugin details as a second-level view and returns to the marketplace", () => {
+    const onInstallPlugin = vi.fn()
     const onPluginDeselect = vi.fn()
     const onPluginSelect = vi.fn()
     const { rerender } = render(
       <PluginsPage
         {...createProps({
+          onInstallPlugin,
           onPluginDeselect,
           onPluginSelect,
         })}
@@ -225,6 +227,7 @@ describe("PluginsPage", () => {
       <PluginsPage
         {...createProps({
           activePluginID: "filesystem",
+          onInstallPlugin,
           onPluginDeselect,
           onPluginSelect,
         })}
@@ -235,6 +238,10 @@ describe("PluginsPage", () => {
     expect(screen.getByRole("region", { name: "Selected plugin details" })).toBeInTheDocument()
     expect(screen.getByRole("navigation", { name: "Plugin detail breadcrumb" })).toHaveTextContent("插件")
     expect(screen.getByRole("heading", { name: "Filesystem", level: 1 })).toBeInTheDocument()
+    const installButton = screen.getByRole("button", { name: "Install Filesystem" })
+    expect(installButton.closest(".plugins-detail-actions")).not.toBeNull()
+    fireEvent.click(installButton)
+    expect(onInstallPlugin).toHaveBeenCalledWith("filesystem")
 
     fireEvent.click(screen.getByRole("button", { name: "插件" }))
     expect(onPluginDeselect).toHaveBeenCalledTimes(1)
@@ -301,58 +308,7 @@ describe("PluginsPage", () => {
     expect(screen.getByText("#112233")).toBeInTheDocument()
   })
 
-  it("saves installed plugin configuration and exposes lifecycle actions", () => {
-    const plugin = createPlugin()
-    const installed = createInstalledPlugin()
-    const onPluginDraftConfigChange = vi.fn()
-    const onSaveInstalledPluginConfig = vi.fn()
-    const onSetInstalledPluginEnabled = vi.fn()
-    const onDiagnoseInstalledPlugin = vi.fn()
-    const onDeleteInstalledPlugin = vi.fn()
-
-    render(
-      <PluginsPage
-        {...createProps({
-          activePluginID: "filesystem",
-          pluginCatalog: [plugin],
-          installedPlugins: [installed],
-          pluginDraft: {
-            pluginID: "filesystem",
-            config: {
-              ROOT_PATH: "D:\\Workspace",
-            },
-            appApiKeys: {},
-          },
-          onPluginDraftConfigChange,
-          onSaveInstalledPluginConfig,
-          onSetInstalledPluginEnabled,
-          onDiagnoseInstalledPlugin,
-          onDeleteInstalledPlugin,
-        })}
-      />,
-    )
-
-    fireEvent.change(screen.getByLabelText(/Root path/), {
-      target: {
-        value: "E:\\Workspace",
-      },
-    })
-    expect(onPluginDraftConfigChange).toHaveBeenCalledWith("ROOT_PATH", "E:\\Workspace")
-
-    fireEvent.click(screen.getByRole("button", { name: "Save config" }))
-    expect(onSaveInstalledPluginConfig).toHaveBeenCalledWith("filesystem")
-
-    fireEvent.click(screen.getByRole("button", { name: "Disable" }))
-    expect(onSetInstalledPluginEnabled).toHaveBeenCalledWith("filesystem", false)
-
-    fireEvent.click(screen.getByRole("button", { name: "Diagnose" }))
-    expect(onDiagnoseInstalledPlugin).toHaveBeenCalledWith("filesystem")
-
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }))
-    expect(onDeleteInstalledPlugin).toHaveBeenCalledWith("filesystem")
-  })
-
-  it("renders connector credentials and dispatches connector actions", () => {
+  it("hides legacy management panels from selected plugin details", () => {
     const plugin = createDocsPlugin()
     const installed = createInstalledPlugin({
       pluginID: "docs",
@@ -362,11 +318,6 @@ describe("PluginsPage", () => {
       connectorIDs: ["plugin-app:docs:docs-api"],
       config: {},
     })
-    const onPluginDraftAppApiKeyChange = vi.fn()
-    const onSaveInstalledPluginConnectorApiKey = vi.fn()
-    const onDiagnoseInstalledPluginConnector = vi.fn()
-    const onDeleteInstalledPluginConnectorApiKey = vi.fn()
-
     render(
       <PluginsPage
         {...createProps({
@@ -389,66 +340,33 @@ describe("PluginsPage", () => {
               },
             ],
           },
-          pluginDraft: {
-            pluginID: "docs",
-            config: {},
-            appApiKeys: {
-              "docs-api": "next-key",
-            },
-          },
-          onPluginDraftAppApiKeyChange,
-          onSaveInstalledPluginConnectorApiKey,
-          onDiagnoseInstalledPluginConnector,
-          onDeleteInstalledPluginConnectorApiKey,
-        })}
-      />,
-    )
-
-    expect(screen.getByText("Connector reachable. Tools: search_docs")).toBeInTheDocument()
-
-    fireEvent.change(screen.getByLabelText(/Docs API key/), {
-      target: {
-        value: "new-key",
-      },
-    })
-    expect(onPluginDraftAppApiKeyChange).toHaveBeenCalledWith("docs-api", "new-key")
-
-    fireEvent.click(screen.getByRole("button", { name: "Update key" }))
-    expect(onSaveInstalledPluginConnectorApiKey).toHaveBeenCalledWith("docs", "docs-api")
-
-    const connectorsPanel = screen.getByRole("heading", { name: "Connectors" }).closest("section")
-    expect(connectorsPanel).not.toBeNull()
-
-    fireEvent.click(within(connectorsPanel as HTMLElement).getByRole("button", { name: "Diagnose" }))
-    expect(onDiagnoseInstalledPluginConnector).toHaveBeenCalledWith("docs", "docs-api")
-
-    fireEvent.click(screen.getByRole("button", { name: "Disconnect" }))
-    expect(onDeleteInstalledPluginConnectorApiKey).toHaveBeenCalledWith("docs", "docs-api")
-  })
-
-  it("shows installed plugin diagnostics", () => {
-    render(
-      <PluginsPage
-        {...createProps({
-          activePluginID: "filesystem",
-          installedPlugins: [createInstalledPlugin()],
           pluginDiagnostics: {
-            filesystem: createDiagnostic({
-              toolNames: ["read_file", "write_file"],
-              toolCount: 2,
+            docs: createDiagnostic({
+              serverID: "plugin.docs.app.docs-api",
+              toolNames: ["search_docs"],
             }),
           },
-          pluginDraft: {
-            pluginID: "filesystem",
-            config: {
-              ROOT_PATH: "C:\\Projects",
-            },
-            appApiKeys: {},
-          },
         })}
       />,
     )
 
-    expect(screen.getByText("Diagnostics passed. Tools: read_file, write_file")).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "Selected plugin details" })).toBeInTheDocument()
+    const installedStatus = screen.getByLabelText("Docs installed")
+    expect(installedStatus).toHaveTextContent("Installed")
+    expect(installedStatus.closest(".plugins-detail-actions")).not.toBeNull()
+    expect(screen.getByText("Docs API")).toBeInTheDocument()
+    expect(screen.getByText("Review Docs")).toBeInTheDocument()
+
+    expect(screen.queryByText("Manage Plugin")).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Tools Preview" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Included Capabilities" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "MCP Bindings" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Install Review" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Connectors" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Plugin Values" })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Docs API key/)).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Update key" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Diagnose" })).not.toBeInTheDocument()
+    expect(screen.queryByText("Connector reachable. Tools: search_docs")).not.toBeInTheDocument()
   })
 })

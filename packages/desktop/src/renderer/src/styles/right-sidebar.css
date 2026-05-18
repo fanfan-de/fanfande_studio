@@ -102,7 +102,7 @@
   gap: 8px;
 }
 
-.left-sidebar-top-menu-tabs,
+.left-sidebar-top-menu-content,
 .right-sidebar-top-menu-tabs {
   gap: 10px;
 }
@@ -126,27 +126,6 @@
   padding-left: 8px;
   position: relative;
   z-index: 2;
-}
-
-.workspace-mode-right-placeholder {
-  min-height: 0;
-  background: transparent;
-}
-
-.workspace-mode-right-top-menu-content {
-  min-width: 0;
-}
-
-.workspace-mode-right-body {
-  min-height: 0;
-  flex: 1 1 auto;
-  padding: 16px 14px 18px;
-  display: grid;
-  align-content: center;
-}
-
-.workspace-mode-right-placeholder .workspace-mode-placeholder-copy {
-  gap: 6px;
 }
 
 .left-sidebar-top-menu .top-menu-view-button,

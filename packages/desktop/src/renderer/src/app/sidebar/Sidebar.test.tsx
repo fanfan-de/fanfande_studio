@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import type { ComponentProps } from "react"
 import { describe, expect, it, vi } from "vitest"
 import type { SessionSummary, WorkspaceGroup } from "../types"
@@ -116,7 +116,6 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) 
     },
     visibleCanvasSessionIDs: [],
     workspaces: [createWorkspace()],
-    workspaceMode: "code",
     pinnedWorkspaceIDs: [],
     onHoveredFolderChange: vi.fn(),
     onOpenSettings: vi.fn(),
@@ -130,8 +129,6 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) 
     onSessionSelect: vi.fn(),
     onSidebarAction: vi.fn(),
     onToggleSidebar: vi.fn(),
-    onViewChange: vi.fn(),
-    onWorkspaceModeChange: vi.fn(),
     ...overrides,
   }
 
@@ -139,39 +136,37 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) 
 }
 
 describe("Sidebar", () => {
-  it("renders the workspace mode selector with Code active by default", () => {
+  it("uses the workspace actions as the left sidebar top menu", () => {
     renderSidebar()
 
-    expect(screen.getByRole("group", { name: "Workspace mode" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-pressed", "false")
-    expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByRole("group", { name: "Workspace mode" }).querySelectorAll("button")).toHaveLength(2)
+    const leftSidebarTopMenu = screen.getByLabelText("Left sidebar top menu")
+
+    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Open folder" })).toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Sort sessions" })).toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Create session" })).toBeInTheDocument()
+    expect(screen.queryByRole("group", { name: "Workspace mode" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Chat" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Code" })).not.toBeInTheDocument()
   })
 
-  it("requests workspace mode changes from the segmented selector", () => {
-    const onWorkspaceModeChange = vi.fn()
-    renderSidebar({ onWorkspaceModeChange })
+  it("requests workspace actions from the top menu", () => {
+    const onSidebarAction = vi.fn()
+    renderSidebar({ onSidebarAction })
 
-    fireEvent.click(screen.getByRole("button", { name: "Chat" }))
-    fireEvent.click(screen.getByRole("button", { name: "Code" }))
+    fireEvent.click(screen.getByRole("button", { name: "Open folder" }))
+    fireEvent.click(screen.getByRole("button", { name: "Sort sessions" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
 
-    expect(onWorkspaceModeChange).toHaveBeenNthCalledWith(1, "chat")
-    expect(onWorkspaceModeChange).toHaveBeenNthCalledWith(2, "code")
+    expect(onSidebarAction).toHaveBeenNthCalledWith(1, "project")
+    expect(onSidebarAction).toHaveBeenNthCalledWith(2, "sort")
+    expect(onSidebarAction).toHaveBeenNthCalledWith(3, "new")
   })
 
-  it("keeps the code workspace tree in Code mode", () => {
-    renderSidebar({ workspaceMode: "code" })
+  it("renders the workspace tree", () => {
+    renderSidebar()
 
     expect(screen.getByRole("button", { name: "Workspace" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Unread" })).toBeInTheDocument()
-  })
-
-  it("replaces the code workspace tree with the Chat placeholder", () => {
-    renderSidebar({ workspaceMode: "chat" })
-
-    expect(screen.getByText("Chat projects")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Unread" })).not.toBeInTheDocument()
   })
 
   it("shows the green dot only for unread session canvases that are not visible", () => {

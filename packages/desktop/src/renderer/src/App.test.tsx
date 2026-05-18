@@ -1208,8 +1208,12 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Split pane" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Switch to session Chat 1" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
     expect(await screen.findByRole("button", { name: "Git" })).toBeInTheDocument()
-    expect(within(leftSidebarTopMenu).getByRole("group", { name: "Workspace mode" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true")
+    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Open folder" })).toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Sort sessions" })).toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Create session" })).toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).queryByRole("group", { name: "Workspace mode" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Code" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Chat" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Overview" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Artifacts" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Changes" })).toBeInTheDocument()
@@ -1342,32 +1346,21 @@ describe("App", () => {
     })
   })
 
-  it("switches the Chat placeholder without rendering code workspace surfaces", async () => {
+  it("renders the workspace shell without Chat and Code mode switching", async () => {
     render(<App />)
 
-    expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true")
+    const leftSidebarTopMenu = screen.getByLabelText("Left sidebar top menu")
+
+    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Open folder" })).toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Sort sessions" })).toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Create session" })).toBeInTheDocument()
+    expect(screen.queryByRole("group", { name: "Workspace mode" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Chat" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Code" })).not.toBeInTheDocument()
     expect(screen.getByLabelText("Session canvas top menu")).toBeInTheDocument()
     expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Changes" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Toggle terminal panel" })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: "Chat" }))
-
-    expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByRole("heading", { name: "Chat workspace" })).toBeInTheDocument()
-    expect(screen.getByRole("complementary", { name: "Chat mode sidebar" })).toBeInTheDocument()
-    expect(screen.getByRole("group", { name: "Workspace mode" }).querySelectorAll("button")).toHaveLength(2)
-    expect(screen.queryByLabelText("Session canvas top menu")).not.toBeInTheDocument()
-    expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Changes" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Toggle terminal panel" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: "Code" }))
-
-    expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByLabelText("Session canvas top menu")).toBeInTheDocument()
-    expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "app" })).toBeInTheDocument()
   })
 

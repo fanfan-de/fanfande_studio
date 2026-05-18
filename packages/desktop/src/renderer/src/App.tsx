@@ -14,7 +14,7 @@ import {
 import { WorkspaceStoreProvider } from "./app/agent-workspace/workspace-store-context"
 import { resolveWorkspaceRelativePath } from "./app/agent-workspace/workspace-loading-hooks"
 import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "./app/thread-markdown"
-import type { RightSidebarView, SessionDiffFile, ToolPermissionMode, WorkspaceMode } from "./app/types"
+import type { RightSidebarView, SessionDiffFile, ToolPermissionMode } from "./app/types"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
@@ -32,7 +32,6 @@ import {
   buildWorkbenchPublishSnapshot,
   workbenchPublishSnapshotsAreEqual,
 } from "./app/agent-workspace/workspace-derived-state"
-import { WorkspaceModeCanvasPlaceholder, WorkspaceModeRightPlaceholder } from "./app/workspace-mode/WorkspaceModePlaceholder"
 import type { WorkbenchSharedState, WorkbenchWindowContext } from "../../shared/desktop-ipc-contract"
 
 const GlobalSkillsPage = lazy(() => import("./app/skills/GlobalSkillsPage").then((module) => ({ default: module.GlobalSkillsPage })))
@@ -1007,7 +1006,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     workspaceStore,
     (state) => Object.values(state.composer.isCreatingSessionByTabKey).some(Boolean),
   )
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("code")
   const [activeBuiltinToolKind, setActiveBuiltinToolKind] = useState<BuiltinToolKindKey | null>(null)
   const [toolPermissionMode, setToolPermissionMode] = useState<ToolPermissionMode>("default")
   const [toolPermissionModeError, setToolPermissionModeError] = useState<string | null>(null)
@@ -1283,8 +1281,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
   const isBuiltinToolsView = leftSidebarView === "tools"
   const isShellSidebarManagedView = isPromptEditorView || isGlobalSkillsView || isMcpServersView || isBuiltinToolsView
   const isFullSurfaceView = isPluginsView
-  const placeholderWorkspaceMode: Exclude<WorkspaceMode, "code"> | null =
-    leftSidebarView === "workspace" && workspaceMode !== "code" ? workspaceMode : null
   const windowControls = useMemo(
     () => <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />,
     [handleWindowAction, isWindowMaximized, windowControlsRef],
@@ -1396,7 +1392,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               sessionCanvasUnreadBySession={sessionCanvasUnreadBySession}
               visibleCanvasSessionIDs={visibleCanvasSessionIDs}
               workspaces={workspaces}
-              workspaceMode={workspaceMode}
               pinnedWorkspaceIDs={pinnedWorkspaceIDs}
               onHoveredFolderChange={setHoveredFolderID}
               onOpenSettings={openSettings}
@@ -1410,8 +1405,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onSessionSelect={handleSessionSelect}
               onSidebarAction={handleSidebarAction}
               onToggleSidebar={handleSidebarToggle}
-              onViewChange={handleLeftSidebarViewChange}
-              onWorkspaceModeChange={setWorkspaceMode}
             />
 
             <SidebarResizer
@@ -1430,9 +1423,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
           className={
             isFullSurfaceView
               ? "canvas is-workbench is-full-surface"
-              : placeholderWorkspaceMode
-                ? "canvas is-workbench is-workspace-mode-placeholder"
-                : "canvas is-workbench"
+              : "canvas is-workbench"
           }
         >
           {isPromptEditorView ? (
@@ -1629,11 +1620,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onResetBuiltinTools={resetBuiltinTools}
               onSaveBuiltinTools={saveBuiltinTools}
             />
-          ) : placeholderWorkspaceMode ? (
-            <WorkspaceModeCanvasPlaceholder
-              mode={placeholderWorkspaceMode}
-              windowControls={isRightSidebarCollapsed ? windowControls : null}
-            />
           ) : (
             <>
               <WorkbenchShell
@@ -1712,57 +1698,53 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onPointerDown={handleRightSidebarResizerPointerDown}
             />
 
-            {placeholderWorkspaceMode ? (
-              <WorkspaceModeRightPlaceholder mode={placeholderWorkspaceMode} windowControls={windowControls} />
-            ) : (
-              <Profiler id="MainApp.RightSidebar" onRender={rightSidebarProfiler}>
-                <RightSidebar
-                  activeWorkspaceFileScopeDirectory={activeWorkspaceFileScopeDirectory}
-                  activeWorkspaceFileScopeName={activeWorkspaceFileScopeName}
-                  activeWorkspaceFileState={activeWorkspaceFileState}
-                  activeSessionDirectory={activeSessionDirectory}
-                  activePreviewState={activePreviewState}
-                  activeSession={activeSession}
-                  activeSessionDiff={activeSessionDiff}
-                  activeSessionDiffState={activeSessionDiffState}
-                  activeSessionRuntimeDebug={activeSessionRuntimeDebug}
-                  activeSessionRuntimeDebugState={activeSessionRuntimeDebugState}
-                  canInsertWorkspaceFileCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
-                  selectedDiffFile={activeSessionSelectedDiffFile}
-                  activeView={activeRightSidebarView}
-                  isRuntimeViewVisible={isAgentDebugTraceEnabled}
-                  onDiffFileSelect={handleActiveSessionDiffFileSelect}
-                  onDiffFileRestore={handleActiveSessionDiffFileRestore}
-                  onPreviewActiveInteractionChange={handlePreviewActiveInteractionChange}
-                  onPreviewCommitInteraction={handlePreviewCommitInteraction}
-                  onPreviewBack={handlePreviewBack}
-                  onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
-                  onPreviewForward={handlePreviewForward}
-                  onPreviewOpen={handlePreviewOpen}
-                  onPreviewOpenExternal={handlePreviewOpenExternal}
-                  onPreviewOpenUrl={handlePreviewOpenUrl}
-                  onPreviewReload={handlePreviewReload}
-                  onWorkspaceFileCommentCancel={handleWorkspaceFileCommentCancel}
-                  onWorkspaceFileCommentChange={handleWorkspaceFileCommentChange}
-                  onWorkspaceFileCommentConfirm={handleWorkspaceFileCommentConfirm}
-                  onWorkspaceFileCommentStart={handleWorkspaceFileCommentStart}
-                  onWorkspaceFileQueryChange={handleWorkspaceFileQueryChange}
-                  onWorkspaceFileSelect={handleWorkspaceFileSelect}
-                  onRuntimeRefresh={handleActiveSessionRuntimeDebugRefresh}
-                  onViewChange={handleInspectorViewChange}
-                  renderTerminalArea={(togglePortalTarget) => (
-                    <TerminalAreaHost
-                      brandTheme={brandTheme}
-                      colorMode={colorMode}
-                      currentSessionID={terminalSessionID}
-                      storageKey={WORKBENCH_TERMINAL_STORAGE_KEY}
-                      togglePortalTarget={togglePortalTarget}
-                    />
-                  )}
-                  windowControls={windowControls}
-                />
-              </Profiler>
-            )}
+            <Profiler id="MainApp.RightSidebar" onRender={rightSidebarProfiler}>
+              <RightSidebar
+                activeWorkspaceFileScopeDirectory={activeWorkspaceFileScopeDirectory}
+                activeWorkspaceFileScopeName={activeWorkspaceFileScopeName}
+                activeWorkspaceFileState={activeWorkspaceFileState}
+                activeSessionDirectory={activeSessionDirectory}
+                activePreviewState={activePreviewState}
+                activeSession={activeSession}
+                activeSessionDiff={activeSessionDiff}
+                activeSessionDiffState={activeSessionDiffState}
+                activeSessionRuntimeDebug={activeSessionRuntimeDebug}
+                activeSessionRuntimeDebugState={activeSessionRuntimeDebugState}
+                canInsertWorkspaceFileCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
+                selectedDiffFile={activeSessionSelectedDiffFile}
+                activeView={activeRightSidebarView}
+                isRuntimeViewVisible={isAgentDebugTraceEnabled}
+                onDiffFileSelect={handleActiveSessionDiffFileSelect}
+                onDiffFileRestore={handleActiveSessionDiffFileRestore}
+                onPreviewActiveInteractionChange={handlePreviewActiveInteractionChange}
+                onPreviewCommitInteraction={handlePreviewCommitInteraction}
+                onPreviewBack={handlePreviewBack}
+                onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
+                onPreviewForward={handlePreviewForward}
+                onPreviewOpen={handlePreviewOpen}
+                onPreviewOpenExternal={handlePreviewOpenExternal}
+                onPreviewOpenUrl={handlePreviewOpenUrl}
+                onPreviewReload={handlePreviewReload}
+                onWorkspaceFileCommentCancel={handleWorkspaceFileCommentCancel}
+                onWorkspaceFileCommentChange={handleWorkspaceFileCommentChange}
+                onWorkspaceFileCommentConfirm={handleWorkspaceFileCommentConfirm}
+                onWorkspaceFileCommentStart={handleWorkspaceFileCommentStart}
+                onWorkspaceFileQueryChange={handleWorkspaceFileQueryChange}
+                onWorkspaceFileSelect={handleWorkspaceFileSelect}
+                onRuntimeRefresh={handleActiveSessionRuntimeDebugRefresh}
+                onViewChange={handleInspectorViewChange}
+                renderTerminalArea={(togglePortalTarget) => (
+                  <TerminalAreaHost
+                    brandTheme={brandTheme}
+                    colorMode={colorMode}
+                    currentSessionID={terminalSessionID}
+                    storageKey={WORKBENCH_TERMINAL_STORAGE_KEY}
+                    togglePortalTarget={togglePortalTarget}
+                  />
+                )}
+                windowControls={windowControls}
+              />
+            </Profiler>
           </>
         ) : null}
 

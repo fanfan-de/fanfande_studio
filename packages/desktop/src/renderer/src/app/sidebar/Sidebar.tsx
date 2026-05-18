@@ -5,7 +5,6 @@ import {
   ArchiveIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  CodeModeIcon,
   DeleteIcon,
   FileTextIcon,
   FolderIcon,
@@ -14,7 +13,6 @@ import {
   PinIcon,
   SessionRunningIcon,
   SettingsIcon,
-  SideChatIcon,
   SortIcon
 } from "../icons"
 import { McpServersSidebarView, type McpServersSidebarViewProps } from "../mcp/McpServersPage"
@@ -27,16 +25,9 @@ import type {
   LeftSidebarView,
   SessionSummary,
   SidebarActionKey,
-  WorkspaceMode,
   WorkspaceGroup
 } from "../types"
 import { isSideChatSession } from "../workspace"
-import { WorkspaceModeSidebarPlaceholder } from "../workspace-mode/WorkspaceModePlaceholder"
-
-const workspaceModeOptions = [
-  { mode: "chat" as const, label: "Chat", Icon: SideChatIcon },
-  { mode: "code" as const, label: "Code", Icon: CodeModeIcon },
-]
 
 const MINUTE_MS = 60 * 1000
 const HOUR_MS = 60 * MINUTE_MS
@@ -91,7 +82,6 @@ interface SidebarProps {
   sessionCanvasUnreadBySession: Record<string, boolean>
   visibleCanvasSessionIDs: string[]
   workspaces: WorkspaceGroup[]
-  workspaceMode: WorkspaceMode
   pinnedWorkspaceIDs: string[]
   onHoveredFolderChange: Dispatch<SetStateAction<string | null>>
   onOpenSettings: () => void
@@ -105,17 +95,14 @@ interface SidebarProps {
   onSessionSelect: (workspaceID: string, sessionID: string) => void
   onSidebarAction: (action: SidebarActionKey) => void | Promise<void>
   onToggleSidebar: () => void
-  onViewChange: (view: LeftSidebarView) => void
-  onWorkspaceModeChange: (mode: WorkspaceMode) => void
 }
 
 interface LeftSidebarTopMenuProps {
   activeView: LeftSidebarView
+  isCreatingProject: boolean
   showSidebarToggleButton: boolean
-  workspaceMode: WorkspaceMode
+  onSidebarAction: (action: SidebarActionKey) => void | Promise<void>
   onToggleSidebar: () => void
-  onViewChange: (view: LeftSidebarView) => void
-  onWorkspaceModeChange: (mode: WorkspaceMode) => void
 }
 
 function containsSkillTreePath(node: GlobalSkillTreeNode, targetPath: string | null): boolean {
@@ -128,43 +115,43 @@ function containsSkillTreePath(node: GlobalSkillTreeNode, targetPath: string | n
 
 function LeftSidebarTopMenu({
   activeView,
+  isCreatingProject,
   showSidebarToggleButton,
-  workspaceMode,
+  onSidebarAction,
   onToggleSidebar,
-  onViewChange,
-  onWorkspaceModeChange,
 }: LeftSidebarTopMenuProps) {
   return (
     <ShellTopMenu
       as="header"
       ariaLabel="Left sidebar top menu"
       className="left-sidebar-top-menu"
-      contentClassName="left-sidebar-top-menu-tabs"
+      contentClassName="left-sidebar-top-menu-content"
       content={(
-        <div className="workspace-mode-selector" role="group" aria-label="Workspace mode">
-          {workspaceModeOptions.map(({ mode, label, Icon }) => (
-            <button
-              key={mode}
-              className={workspaceMode === mode && activeView === "workspace" ? "workspace-mode-selector-button is-active" : "workspace-mode-selector-button"}
-              aria-label={label}
-              aria-pressed={workspaceMode === mode && activeView === "workspace"}
-              title={label}
-              type="button"
-              onClick={() => {
-                onWorkspaceModeChange(mode)
-                onViewChange("workspace")
-              }}
-            >
-              <Icon />
-            </button>
-          ))}
-        </div>
+        activeView === "workspace" ? (
+          <div className="panel-toolbar-actions left-sidebar-top-menu-buttons" aria-label="Workspace view actions">
+            {sidebarActions.map((action) => (
+              <button
+                key={action.key}
+                className="sidebar-action"
+                aria-label={action.label}
+                title={action.label}
+                disabled={action.key === "project" ? isCreatingProject : false}
+                type="button"
+                onClick={() => void onSidebarAction(action.key)}
+              >
+                {action.key === "project" ? <FolderIcon /> : null}
+                {action.key === "sort" ? <SortIcon /> : null}
+                {action.key === "new" ? <NewItemIcon /> : null}
+              </button>
+            ))}
+          </div>
+        ) : null
       )}
       dragRegion
       trailing={showSidebarToggleButton ? (
         <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="left" variant="top-menu" />
       ) : null}
-      trailingClassName="left-sidebar-top-menu-actions"
+      trailingClassName="left-sidebar-top-menu-trailing"
     />
   )
 }
@@ -174,7 +161,6 @@ interface FolderWorkspaceViewProps {
   deletingSessionID: string | null
   expandedFolderIDs: string[]
   hoveredFolderID: string | null
-  isCreatingProject: boolean
   isCreatingSession: boolean
   projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
   runningSessionIDs: string[]
@@ -192,7 +178,6 @@ interface FolderWorkspaceViewProps {
   onProjectRemove: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void
   onSessionDelete: (workspace: WorkspaceGroup, session: SessionSummary, event: MouseEvent<HTMLButtonElement>) => void
   onSessionSelect: (workspaceID: string, sessionID: string) => void
-  onSidebarAction: (action: SidebarActionKey) => void | Promise<void>
 }
 
 type ProjectContextMenuState = {
@@ -351,7 +336,6 @@ function FolderWorkspaceView({
   deletingSessionID,
   expandedFolderIDs,
   hoveredFolderID,
-  isCreatingProject,
   isCreatingSession,
   projectRowRefs,
   runningSessionIDs,
@@ -369,7 +353,6 @@ function FolderWorkspaceView({
   onProjectRemove,
   onSessionDelete,
   onSessionSelect,
-  onSidebarAction,
 }: FolderWorkspaceViewProps) {
   const runningSessionIDSet = new Set(runningSessionIDs)
   const visibleSessionIDSet = new Set(visibleCanvasSessionIDs)
@@ -382,25 +365,6 @@ function FolderWorkspaceView({
 
   return (
     <section className="sidebar-view sidebar-view-workspace" aria-label="Workspace sidebar view">
-      <div className="sidebar-actions view-toolbar" aria-label="Workspace view actions">
-        <div className="panel-toolbar-actions sidebar-actions-buttons">
-          {sidebarActions.map((action) => (
-            <button
-              key={action.key}
-              className="sidebar-action"
-              aria-label={action.label}
-              title={action.label}
-              disabled={action.key === "project" ? isCreatingProject : false}
-              onClick={() => void onSidebarAction(action.key)}
-            >
-              {action.key === "project" ? <FolderIcon /> : null}
-              {action.key === "sort" ? <SortIcon /> : null}
-              {action.key === "new" ? <NewItemIcon /> : null}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div className="sidebar-projects">
         {workspaces.map((workspace) => {
           const isActiveWorkspace = workspace.id === selectedFolderID
@@ -880,7 +844,6 @@ export function Sidebar({
   sessionCanvasUnreadBySession,
   visibleCanvasSessionIDs,
   workspaces,
-  workspaceMode,
   pinnedWorkspaceIDs,
   onHoveredFolderChange,
   onOpenSettings,
@@ -894,51 +857,42 @@ export function Sidebar({
   onSessionSelect,
   onSidebarAction,
   onToggleSidebar,
-  onViewChange,
-  onWorkspaceModeChange,
 }: SidebarProps) {
   return (
     <aside id="app-sidebar" className="sidebar" aria-label="Primary sidebar">
       <LeftSidebarTopMenu
         activeView={activeView}
+        isCreatingProject={isCreatingProject}
         showSidebarToggleButton={showSidebarToggleButton}
-        workspaceMode={workspaceMode}
+        onSidebarAction={onSidebarAction}
         onToggleSidebar={onToggleSidebar}
-        onViewChange={onViewChange}
-        onWorkspaceModeChange={onWorkspaceModeChange}
       />
 
       <div className="sidebar-view-host">
         {activeView === "workspace" ? (
-          workspaceMode === "code" ? (
-            <FolderWorkspaceView
-              activeSessionID={activeSessionID}
-              deletingSessionID={deletingSessionID}
-              expandedFolderIDs={expandedFolderIDs}
-              hoveredFolderID={hoveredFolderID}
-              isCreatingProject={isCreatingProject}
-              isCreatingSession={isCreatingSession}
-              projectRowRefs={projectRowRefs}
-              runningSessionIDs={runningSessionIDs}
-              selectedFolderID={selectedFolderID}
-              sessionCanvasUnreadBySession={sessionCanvasUnreadBySession}
-              visibleCanvasSessionIDs={visibleCanvasSessionIDs}
-              workspaces={workspaces}
-              pinnedWorkspaceIDs={pinnedWorkspaceIDs}
-              onHoveredFolderChange={onHoveredFolderChange}
-              onProjectArchiveSessions={onProjectArchiveSessions}
-              onProjectClick={onProjectClick}
-              onProjectCreateSession={onProjectCreateSession}
-              onProjectOpenInExplorer={onProjectOpenInExplorer}
-              onProjectPin={onProjectPin}
-              onProjectRemove={onProjectRemove}
-              onSessionDelete={onSessionDelete}
-              onSessionSelect={onSessionSelect}
-              onSidebarAction={onSidebarAction}
-            />
-          ) : (
-            <WorkspaceModeSidebarPlaceholder mode={workspaceMode} />
-          )
+          <FolderWorkspaceView
+            activeSessionID={activeSessionID}
+            deletingSessionID={deletingSessionID}
+            expandedFolderIDs={expandedFolderIDs}
+            hoveredFolderID={hoveredFolderID}
+            isCreatingSession={isCreatingSession}
+            projectRowRefs={projectRowRefs}
+            runningSessionIDs={runningSessionIDs}
+            selectedFolderID={selectedFolderID}
+            sessionCanvasUnreadBySession={sessionCanvasUnreadBySession}
+            visibleCanvasSessionIDs={visibleCanvasSessionIDs}
+            workspaces={workspaces}
+            pinnedWorkspaceIDs={pinnedWorkspaceIDs}
+            onHoveredFolderChange={onHoveredFolderChange}
+            onProjectArchiveSessions={onProjectArchiveSessions}
+            onProjectClick={onProjectClick}
+            onProjectCreateSession={onProjectCreateSession}
+            onProjectOpenInExplorer={onProjectOpenInExplorer}
+            onProjectPin={onProjectPin}
+            onProjectRemove={onProjectRemove}
+            onSessionDelete={onSessionDelete}
+            onSessionSelect={onSessionSelect}
+          />
         ) : null}
         {activeView === "skills" ? (
           <GlobalSkillsNavigator {...globalSkillsNavigatorProps} />
