@@ -1,9 +1,10 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useMemo, useState, type MouseEvent, type ReactNode } from "react"
 import {
   ChevronDownIcon,
   ChevronRightIcon,
   CloseIcon,
   ConnectedStatusIcon,
+  DeleteIcon,
   OpenExternalIcon,
   PluginIcon,
   PlusIcon,
@@ -89,6 +90,59 @@ function runtimeTitle(runtime: PluginRuntimeTemplate) {
   }
 
   return "remote endpoint"
+}
+
+function runtimePrimary(runtime: PluginRuntimeTemplate) {
+  if (runtime.transport === "stdio") {
+    return [runtime.command, ...(runtime.args ?? [])].join(" ")
+  }
+
+  return runtime.serverUrl ?? runtime.connectorId ?? "Remote MCP"
+}
+
+function runtimeSecondary(runtime: PluginRuntimeTemplate) {
+  if (runtime.transport === "stdio") {
+    const envKeys = Object.keys(runtime.env ?? {})
+    return envKeys.length > 0 ? `env: ${envKeys.join(", ")}` : "no required env keys"
+  }
+
+  const headerKeys = Object.keys(runtime.headers ?? {})
+  return headerKeys.length > 0 ? `headers: ${headerKeys.join(", ")}` : "no required headers"
+}
+
+function generatedServerID(plugin: PluginCatalogItem, server: PluginCatalogItem["mcpServers"][number]) {
+  return server.id === "default" ? `plugin.${plugin.id}` : `plugin.${plugin.id}.${server.id}`
+}
+
+function toolSummary(tools?: Array<{ name: string; title?: string }>) {
+  if (!tools?.length) return "No static tools declared"
+  return tools.map((tool) => tool.title ?? tool.name).join(", ")
+}
+
+function permissionSummary(permissions?: string[]) {
+  return permissions?.length ? permissions.join(", ") : "No extra permissions declared"
+}
+
+function openPluginExternalUrl(url: string) {
+  const normalizedUrl = url.trim()
+  if (!normalizedUrl) return
+
+  const openExternalUrl = window.desktop?.openExternalUrl
+  if (openExternalUrl) {
+    void openExternalUrl({ url: normalizedUrl }).catch((error) => {
+      console.error("[plugins] Failed to open external URL.", error)
+      window.open(normalizedUrl, "_blank", "noopener,noreferrer")
+    })
+    return
+  }
+
+  window.open(normalizedUrl, "_blank", "noopener,noreferrer")
+}
+
+function handlePluginInfoLinkClick(event: MouseEvent<HTMLAnchorElement>, url: string) {
+  if (event.defaultPrevented) return
+  event.preventDefault()
+  openPluginExternalUrl(url)
 }
 
 function categoryClassName(category: PluginCategory) {
@@ -308,6 +362,7 @@ export function PluginsPage({
   pluginConnectorStatuses,
   updatingPluginID,
   windowControls,
+  onDeleteInstalledPlugin,
   onDismissMessage,
   onInstallPlugin,
   onPluginDeselect,
@@ -316,6 +371,7 @@ export function PluginsPage({
   const [searchQuery, setSearchQuery] = useState("")
   const [categoryFilter, setCategoryFilter] = useState<PluginCategory | "All">("All")
   const [publisherFilter, setPublisherFilter] = useState(PUBLISHER_FILTER_ALL)
+  const [expandedIncludedItemID, setExpandedIncludedItemID] = useState<string | null>(null)
 
   const installedByPluginID = useMemo(
     () => new Map(installedPlugins.map((plugin) => [plugin.pluginID, plugin])),
@@ -368,9 +424,18 @@ export function PluginsPage({
       !pluginBusyIDs.has(plugin.id)
   }
   const canInstallActivePlugin = Boolean(activePlugin && canInstallPlugin(activePlugin))
+  const canDeleteActivePlugin = Boolean(
+    activePlugin &&
+      activeInstalledPlugin &&
+      !activeInstalledPlugin.missingPackage &&
+      !pluginBusyIDs.has(activePlugin.id),
+  )
   const activePluginInstallLabel = activePlugin && installingPluginID === activePlugin.id
     ? "Installing..."
     : activeInstalledPlugin?.missingPackage ? "Download again" : "Install"
+  const activePluginUninstallLabel = activePlugin && deletingPluginID === activePlugin.id
+    ? "Uninstalling..."
+    : "Uninstall"
   const hasDirectoryFilters =
     searchQuery.trim().length > 0 ||
     categoryFilter !== "All" ||
@@ -407,6 +472,9 @@ export function PluginsPage({
   const heroImageURL = heroPlugin ? pluginImageURL(heroPlugin, "hero") : undefined
   const activeHeroImageURL = activePlugin ? pluginImageURL(activePlugin, "hero") : undefined
   const activeBrandColor = activePlugin ? pluginBrandColor(activePlugin) : undefined
+  const toggleIncludedItem = (itemID: string) => {
+    setExpandedIncludedItemID((currentItemID) => currentItemID === itemID ? null : itemID)
+  }
 
   return (
     <section className="plugins-page" aria-label="Plugins">
@@ -625,42 +693,184 @@ export function PluginsPage({
                   <section className="plugins-detail-section">
                     <h2>包含内容</h2>
                     <div className="plugins-included-card">
-                      {activePlugin.mcpServers.map((server) => (
-                        <div key={`mcp:${server.id}`} className="plugins-included-row">
-                          <span className="plugins-included-icon"><PluginIcon /></span>
-                          <span className="plugins-included-copy">
-                            <strong>{server.name}</strong>
-                            <span>{runtimeTitle(server.runtime)}</span>
-                          </span>
-                          <span className={activeInstalledPlugin?.enabled ? "plugins-toggle is-on" : "plugins-toggle"} aria-hidden="true">
-                            <span />
-                          </span>
-                        </div>
-                      ))}
-                      {activePlugin.skills.map((skill) => (
-                        <div key={`skill:${skill.id}`} className="plugins-included-row">
-                          <span className="plugins-included-icon"><SettingsIcon /></span>
-                          <span className="plugins-included-copy">
-                            <strong>{skill.name}</strong>
-                            <span>{skill.description}</span>
-                          </span>
-                          <span className={activeInstalledPlugin?.enabled ? "plugins-toggle is-on" : "plugins-toggle"} aria-hidden="true">
-                            <span />
-                          </span>
-                        </div>
-                      ))}
-                      {activePlugin.apps.map((app) => (
-                        <div key={`app:${app.appID}`} className="plugins-included-row">
-                          <span className="plugins-included-icon"><ConnectedStatusIcon /></span>
-                          <span className="plugins-included-copy">
-                            <strong>{app.name}</strong>
-                            <span>{app.description ?? "Connector-backed remote MCP"}</span>
-                          </span>
-                          <span className={activeConnectorStatusByAppID.get(app.appID)?.connected ? "plugins-toggle is-on" : "plugins-toggle"} aria-hidden="true">
-                            <span />
-                          </span>
-                        </div>
-                      ))}
+                      {activePlugin.mcpServers.map((server) => {
+                        const itemID = `${activePlugin.id}:mcp:${server.id}`
+                        const isExpanded = expandedIncludedItemID === itemID
+
+                        return (
+                          <div key={`mcp:${server.id}`} className="plugins-included-item">
+                            <button
+                              className={isExpanded ? "plugins-included-row is-expanded" : "plugins-included-row"}
+                              type="button"
+                              aria-expanded={isExpanded}
+                              aria-controls={`${itemID}:detail`}
+                              aria-label={`Show details for ${server.name}`}
+                              onClick={() => toggleIncludedItem(itemID)}
+                            >
+                              <span className="plugins-included-icon"><PluginIcon /></span>
+                              <span className="plugins-included-copy">
+                                <strong>{server.name}</strong>
+                                <span>{runtimeTitle(server.runtime)}</span>
+                              </span>
+                              <span className={activeInstalledPlugin?.enabled ? "plugins-toggle is-on" : "plugins-toggle"} aria-hidden="true">
+                                <span />
+                              </span>
+                              <span className="plugins-included-chevron" aria-hidden="true"><ChevronDownIcon /></span>
+                            </button>
+                            {isExpanded ? (
+                              <div className="plugins-included-detail" id={`${itemID}:detail`}>
+                                <dl className="plugins-included-detail-grid">
+                                  <div>
+                                    <dt>Type</dt>
+                                    <dd>MCP server</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Server ID</dt>
+                                    <dd>{generatedServerID(activePlugin, server)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Runtime</dt>
+                                    <dd>{runtimePrimary(server.runtime)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Runtime details</dt>
+                                    <dd>{runtimeSecondary(server.runtime)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Tools</dt>
+                                    <dd>{toolSummary(server.tools)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Permissions</dt>
+                                    <dd>{permissionSummary(server.permissions)}</dd>
+                                  </div>
+                                  {server.description ? (
+                                    <div className="is-wide">
+                                      <dt>Description</dt>
+                                      <dd>{server.description}</dd>
+                                    </div>
+                                  ) : null}
+                                </dl>
+                              </div>
+                            ) : null}
+                          </div>
+                        )
+                      })}
+                      {activePlugin.skills.map((skill) => {
+                        const itemID = `${activePlugin.id}:skill:${skill.id}`
+                        const isExpanded = expandedIncludedItemID === itemID
+
+                        return (
+                          <div key={`skill:${skill.id}`} className="plugins-included-item">
+                            <button
+                              className={isExpanded ? "plugins-included-row is-expanded" : "plugins-included-row"}
+                              type="button"
+                              aria-expanded={isExpanded}
+                              aria-controls={`${itemID}:detail`}
+                              aria-label={`Show details for ${skill.name}`}
+                              onClick={() => toggleIncludedItem(itemID)}
+                            >
+                              <span className="plugins-included-icon"><SettingsIcon /></span>
+                              <span className="plugins-included-copy">
+                                <strong>{skill.name}</strong>
+                                <span>{skill.description}</span>
+                              </span>
+                              <span className={activeInstalledPlugin?.enabled ? "plugins-toggle is-on" : "plugins-toggle"} aria-hidden="true">
+                                <span />
+                              </span>
+                              <span className="plugins-included-chevron" aria-hidden="true"><ChevronDownIcon /></span>
+                            </button>
+                            {isExpanded ? (
+                              <div className="plugins-included-detail" id={`${itemID}:detail`}>
+                                <dl className="plugins-included-detail-grid">
+                                  <div>
+                                    <dt>Type</dt>
+                                    <dd>Helper skill</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Skill ID</dt>
+                                    <dd>{skill.id}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Directory</dt>
+                                    <dd>{skill.directory}</dd>
+                                  </div>
+                                  <div className="is-wide">
+                                    <dt>Description</dt>
+                                    <dd>{skill.description}</dd>
+                                  </div>
+                                </dl>
+                              </div>
+                            ) : null}
+                          </div>
+                        )
+                      })}
+                      {activePlugin.apps.map((app) => {
+                        const itemID = `${activePlugin.id}:app:${app.appID}`
+                        const isExpanded = expandedIncludedItemID === itemID
+                        const status = activeConnectorStatusByAppID.get(app.appID)
+
+                        return (
+                          <div key={`app:${app.appID}`} className="plugins-included-item">
+                            <button
+                              className={isExpanded ? "plugins-included-row is-expanded" : "plugins-included-row"}
+                              type="button"
+                              aria-expanded={isExpanded}
+                              aria-controls={`${itemID}:detail`}
+                              aria-label={`Show details for ${app.name}`}
+                              onClick={() => toggleIncludedItem(itemID)}
+                            >
+                              <span className="plugins-included-icon"><ConnectedStatusIcon /></span>
+                              <span className="plugins-included-copy">
+                                <strong>{app.name}</strong>
+                                <span>{app.description ?? "Connector-backed remote MCP"}</span>
+                              </span>
+                              <span className={status?.connected ? "plugins-toggle is-on" : "plugins-toggle"} aria-hidden="true">
+                                <span />
+                              </span>
+                              <span className="plugins-included-chevron" aria-hidden="true"><ChevronDownIcon /></span>
+                            </button>
+                            {isExpanded ? (
+                              <div className="plugins-included-detail" id={`${itemID}:detail`}>
+                                <dl className="plugins-included-detail-grid">
+                                  <div>
+                                    <dt>Type</dt>
+                                    <dd>App connector</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Status</dt>
+                                    <dd>{status?.connected ? "Connected" : "Not connected"}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Connector ID</dt>
+                                    <dd>plugin-app:{activePlugin.id}:{app.appID}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Credential</dt>
+                                    <dd>{app.credential.label}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Endpoint</dt>
+                                    <dd>{runtimePrimary(app.runtime)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Tools</dt>
+                                    <dd>{toolSummary(app.tools)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Permissions</dt>
+                                    <dd>{permissionSummary(app.permissions)}</dd>
+                                  </div>
+                                  <div className="is-wide">
+                                    <dt>Description</dt>
+                                    <dd>{app.description ?? app.credential.description ?? "Connector-backed remote MCP"}</dd>
+                                  </div>
+                                </dl>
+                              </div>
+                            ) : null}
+                          </div>
+                        )
+                      })}
                     </div>
                   </section>
 
@@ -686,7 +896,15 @@ export function PluginsPage({
                       <div>
                         <span>网站</span>
                         {activePlugin.homepage ? (
-                          <a href={activePlugin.homepage} target="_blank" rel="noreferrer" aria-label={`${activePlugin.name} website`}>
+                          <a
+                            className="plugins-info-link"
+                            href={activePlugin.homepage}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={`Open ${activePlugin.name} website`}
+                            onClick={(event) => handlePluginInfoLinkClick(event, activePlugin.homepage!)}
+                          >
+                            <span className="plugins-info-link-text">{activePlugin.homepage}</span>
                             <OpenExternalIcon />
                           </a>
                         ) : (
@@ -696,7 +914,15 @@ export function PluginsPage({
                       <div>
                         <span>文档</span>
                         {activePlugin.documentationUrl ? (
-                          <a href={activePlugin.documentationUrl} target="_blank" rel="noreferrer" aria-label={`${activePlugin.name} documentation`}>
+                          <a
+                            className="plugins-info-link"
+                            href={activePlugin.documentationUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={`Open ${activePlugin.name} documentation`}
+                            onClick={(event) => handlePluginInfoLinkClick(event, activePlugin.documentationUrl!)}
+                          >
+                            <span className="plugins-info-link-text">{activePlugin.documentationUrl}</span>
                             <OpenExternalIcon />
                           </a>
                         ) : (
@@ -719,10 +945,22 @@ export function PluginsPage({
                     </div>
                     <div className="plugins-detail-actions" aria-label={`${activePlugin.name} plugin actions`}>
                       {activeInstalledPlugin && !activeInstalledPlugin.missingPackage ? (
-                        <span className="plugins-detail-action-status" aria-label={`${activePlugin.name} installed`}>
-                          <ConnectedStatusIcon />
-                          <span>{activeInstalledPlugin.enabled ? "Installed" : "Disabled"}</span>
-                        </span>
+                        <>
+                          <span className="plugins-detail-action-status" aria-label={`${activePlugin.name} installed`}>
+                            <ConnectedStatusIcon />
+                            <span>{activeInstalledPlugin.enabled ? "Installed" : "Disabled"}</span>
+                          </span>
+                          <button
+                            className="plugins-detail-uninstall-button"
+                            type="button"
+                            aria-label={`Uninstall ${activePlugin.name}`}
+                            disabled={!canDeleteActivePlugin}
+                            onClick={() => void onDeleteInstalledPlugin(activePlugin.id)}
+                          >
+                            <DeleteIcon />
+                            <span>{activePluginUninstallLabel}</span>
+                          </button>
+                        </>
                       ) : (
                         <button
                           className="plugins-detail-install-button"

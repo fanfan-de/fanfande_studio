@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import type { ComponentProps } from "react"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { PluginsPage } from "./PluginsPage"
 
 type PluginsPageProps = ComponentProps<typeof PluginsPage>
@@ -195,6 +195,10 @@ function createProps(overrides: Partial<PluginsPageProps> = {}): PluginsPageProp
 }
 
 describe("PluginsPage", () => {
+  beforeEach(() => {
+    window.desktop = undefined
+  })
+
   it("renders the plugin marketplace without the development blocker", () => {
     const onInstallPlugin = vi.fn()
     render(<PluginsPage {...createProps({ onInstallPlugin })} />)
@@ -308,6 +312,46 @@ describe("PluginsPage", () => {
     expect(screen.getByText("#112233")).toBeInTheDocument()
   })
 
+  it("renders plugin info URLs as clickable desktop links", () => {
+    const homepage = "https://example.test/filesystem"
+    const documentationUrl = "https://docs.example.test/filesystem"
+    const openExternalUrl = vi.fn().mockResolvedValue({
+      ok: true,
+      url: homepage,
+    })
+    window.desktop = {
+      openExternalUrl,
+    } as unknown as Window["desktop"]
+
+    render(
+      <PluginsPage
+        {...createProps({
+          activePluginID: "filesystem",
+          pluginCatalog: [
+            createPlugin({
+              homepage,
+              documentationUrl,
+            }),
+          ],
+        })}
+      />,
+    )
+
+    const homepageLink = screen.getByRole("link", { name: homepage })
+    expect(homepageLink).toHaveAttribute("href", homepage)
+    fireEvent.click(homepageLink)
+    expect(openExternalUrl).toHaveBeenCalledWith({
+      url: homepage,
+    })
+
+    const documentationLink = screen.getByRole("link", { name: documentationUrl })
+    expect(documentationLink).toHaveAttribute("href", documentationUrl)
+    fireEvent.click(documentationLink)
+    expect(openExternalUrl).toHaveBeenCalledWith({
+      url: documentationUrl,
+    })
+  })
+
   it("hides legacy management panels from selected plugin details", () => {
     const plugin = createDocsPlugin()
     const installed = createInstalledPlugin({
@@ -354,6 +398,7 @@ describe("PluginsPage", () => {
     const installedStatus = screen.getByLabelText("Docs installed")
     expect(installedStatus).toHaveTextContent("Installed")
     expect(installedStatus.closest(".plugins-detail-actions")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Uninstall Docs" })).toBeInTheDocument()
     expect(screen.getByText("Docs API")).toBeInTheDocument()
     expect(screen.getByText("Review Docs")).toBeInTheDocument()
 
@@ -368,5 +413,89 @@ describe("PluginsPage", () => {
     expect(screen.queryByRole("button", { name: "Update key" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Diagnose" })).not.toBeInTheDocument()
     expect(screen.queryByText("Connector reachable. Tools: search_docs")).not.toBeInTheDocument()
+  })
+
+  it("uninstalls an installed plugin from the selected plugin details", () => {
+    const onDeleteInstalledPlugin = vi.fn()
+    render(
+      <PluginsPage
+        {...createProps({
+          activePluginID: "filesystem",
+          installedPlugins: [createInstalledPlugin()],
+          onDeleteInstalledPlugin,
+        })}
+      />,
+    )
+
+    const uninstallButton = screen.getByRole("button", { name: "Uninstall Filesystem" })
+    expect(uninstallButton.closest(".plugins-detail-actions")).not.toBeNull()
+
+    fireEvent.click(uninstallButton)
+    expect(onDeleteInstalledPlugin).toHaveBeenCalledWith("filesystem")
+  })
+
+  it("shows progress while uninstalling an installed plugin", () => {
+    render(
+      <PluginsPage
+        {...createProps({
+          activePluginID: "filesystem",
+          deletingPluginID: "filesystem",
+          installedPlugins: [createInstalledPlugin()],
+        })}
+      />,
+    )
+
+    const uninstallButton = screen.getByRole("button", { name: "Uninstall Filesystem" })
+    expect(uninstallButton).toBeDisabled()
+    expect(uninstallButton).toHaveTextContent("Uninstalling...")
+  })
+
+  it("expands included content rows and switches the visible detail", () => {
+    const plugin = createDocsPlugin()
+
+    render(
+      <PluginsPage
+        {...createProps({
+          activePluginID: "docs",
+          pluginCatalog: [plugin],
+          installedPlugins: [
+            createInstalledPlugin({
+              pluginID: "docs",
+              mcpServerID: "plugin.docs.app.docs-api",
+              mcpServerIDs: ["plugin.docs.app.docs-api"],
+              skillIDs: ["plugin:docs:review"],
+              connectorIDs: ["plugin-app:docs:docs-api"],
+              config: {},
+            }),
+          ],
+          pluginConnectorStatuses: {
+            docs: [
+              {
+                pluginID: "docs",
+                appID: "docs-api",
+                connectorID: "plugin-app:docs:docs-api",
+                connected: true,
+                credentialLabel: "Docs API key",
+                generatedMcpServerID: "plugin.docs.app.docs-api",
+              },
+            ],
+          },
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Show details for Review Docs" }))
+    expect(screen.getByText("Skill ID")).toBeInTheDocument()
+    expect(screen.getByText("plugin:docs:review")).toBeInTheDocument()
+    expect(screen.getByText("Directory")).toBeInTheDocument()
+    expect(screen.getByText("review")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Show details for Docs API" }))
+    expect(screen.queryByText("plugin:docs:review")).not.toBeInTheDocument()
+    expect(screen.getByText("Connector ID")).toBeInTheDocument()
+    expect(screen.getByText("plugin-app:docs:docs-api")).toBeInTheDocument()
+    expect(screen.getByText("Credential")).toBeInTheDocument()
+    expect(screen.getByText("Docs API key")).toBeInTheDocument()
+    expect(screen.getByText("https://docs.example.test/mcp")).toBeInTheDocument()
   })
 })
