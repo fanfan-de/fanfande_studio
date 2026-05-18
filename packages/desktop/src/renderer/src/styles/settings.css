@@ -3605,65 +3605,6 @@ body.is-dragging-settings-page {
   position: relative;
 }
 
-.plugins-development-disabled {
-  display: contents;
-}
-
-.plugins-development-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 8;
-  padding: 28px;
-  display: grid;
-  place-items: center;
-  pointer-events: auto;
-  background:
-    linear-gradient(rgba(246, 248, 250, 0.72), rgba(246, 248, 250, 0.72)),
-    repeating-linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.9) 0,
-      rgba(255, 255, 255, 0.9) 14px,
-      rgba(222, 227, 232, 0.9) 14px,
-      rgba(222, 227, 232, 0.9) 28px
-    );
-}
-
-.plugins-development-card {
-  width: min(100%, 420px);
-  padding: 22px 24px;
-  border: 1px solid rgba(145, 158, 171, 0.42);
-  border-radius: var(--seg-radius-md);
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 18px 46px rgba(39, 52, 66, 0.14);
-  color: var(--seg-text-1);
-  text-align: center;
-  display: grid;
-  gap: 10px;
-}
-
-.plugins-development-kicker {
-  justify-self: center;
-  padding: 5px 10px;
-  border: 1px solid var(--seg-border);
-  border-radius: var(--seg-radius-xs);
-  background: var(--seg-panel-muted);
-  color: var(--seg-text-2);
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1;
-}
-
-.plugins-development-card strong {
-  font-size: 22px;
-  line-height: 1.25;
-}
-
-.plugins-development-card p {
-  margin: 0;
-  color: var(--seg-text-3);
-  line-height: 1.5;
-}
-
 .plugins-page-layout {
   grid-template-columns: minmax(340px, 0.36fr) minmax(0, 1fr);
 }

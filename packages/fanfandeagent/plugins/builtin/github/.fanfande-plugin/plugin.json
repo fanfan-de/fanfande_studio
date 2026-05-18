@@ -1,0 +1,73 @@
+{
+  "name": "github",
+  "version": "1.0.0",
+  "description": "Inspect repositories, issues, pull requests, and GitHub metadata through a GitHub MCP server.",
+  "author": {
+    "name": "Model Context Protocol",
+    "url": "https://github.com/modelcontextprotocol/servers"
+  },
+  "homepage": "https://github.com/modelcontextprotocol/servers",
+  "interface": {
+    "displayName": "GitHub",
+    "shortDescription": "Inspect repositories, issues, and pull requests.",
+    "developerName": "Model Context Protocol",
+    "category": "Git",
+    "capabilities": ["Read", "Write"],
+    "logo": "git"
+  },
+  "mcpServers": [
+    {
+      "name": "GitHub",
+      "risk": "medium",
+      "permissions": [
+        "Network access to GitHub APIs",
+        "Uses GITHUB_PERSONAL_ACCESS_TOKEN as a process environment variable",
+        "Can expose repository, issue, and pull request tools"
+      ],
+      "tools": [
+        {
+          "name": "search_repositories",
+          "title": "Search Repositories",
+          "description": "Search GitHub repositories.",
+          "readOnly": true
+        },
+        {
+          "name": "get_file_contents",
+          "title": "Read File",
+          "description": "Read file contents from a repository.",
+          "readOnly": true
+        },
+        {
+          "name": "create_issue",
+          "title": "Create Issue",
+          "description": "Create an issue in a repository.",
+          "readOnly": false
+        }
+      ],
+      "configFields": [
+        {
+          "key": "GITHUB_PERSONAL_ACCESS_TOKEN",
+          "label": "GitHub token",
+          "type": "password",
+          "required": true,
+          "secret": true,
+          "placeholder": "ghp_...",
+          "description": "A personal access token with the repository scopes needed for the tools you enable."
+        }
+      ],
+      "runtime": {
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-github"],
+        "env": {
+          "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+        },
+        "timeoutMs": 30000
+      },
+      "installReview": [
+        "The token is passed only to the external MCP process as GITHUB_PERSONAL_ACCESS_TOKEN.",
+        "Write actions still require runtime tool permission approval."
+      ]
+    }
+  ]
+}

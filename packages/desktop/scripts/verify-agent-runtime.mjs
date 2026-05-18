@@ -15,6 +15,11 @@ const requiredFiles = [
   path.join(runtimeDir, "agent-server.js"),
   path.join(runtimeDir, bunExecutableName),
   path.join(runtimeDir, "node_modules", "node-pty", "package.json"),
+  path.join(runtimeDir, "plugins", "builtin", "context7", ".fanfande-plugin", "plugin.json"),
+  path.join(runtimeDir, "plugins", "builtin", "filesystem", ".fanfande-plugin", "plugin.json"),
+  path.join(runtimeDir, "plugins", "builtin", "github", ".fanfande-plugin", "plugin.json"),
+  path.join(runtimeDir, "plugins", "builtin", "playwright", ".fanfande-plugin", "plugin.json"),
+  path.join(runtimeDir, "plugins", "builtin", "postgres", ".fanfande-plugin", "plugin.json"),
   path.join(dependenciesDir, "manifest.json"),
   pythonExecutable,
 ]

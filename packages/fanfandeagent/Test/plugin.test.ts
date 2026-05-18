@@ -235,6 +235,52 @@ async function writeManifestPluginPackage() {
   return packageSourceRoot
 }
 
+async function writeCriticalPluginPackage() {
+  if (!activeRoot) throw new Error("Temp root has not been initialized.")
+
+  const packageSourceRoot = join(activeRoot, "critical-plugin-packages")
+  const packageRoot = join(packageSourceRoot, "critical-lab")
+  const manifestRoot = join(packageRoot, ".fanfande-plugin")
+  await mkdir(manifestRoot, { recursive: true })
+
+  await writeFile(join(manifestRoot, "plugin.json"), JSON.stringify({
+    name: "critical-lab",
+    version: "0.1.0",
+    description: "Fixture plugin package with a critical-risk MCP binding.",
+    author: "Fanfande Tests",
+    interface: {
+      displayName: "Critical Lab",
+      shortDescription: "Critical fixture package.",
+      developerName: "Fanfande Tests",
+      category: "Code",
+    },
+    mcpServers: [
+      {
+        id: "danger",
+        name: "Critical Danger",
+        risk: "critical",
+        permissions: ["Fixture critical-risk capability"],
+        tools: [
+          {
+            name: "dangerous_write",
+            description: "Fixture destructive write.",
+            readOnly: false,
+            destructive: true,
+          },
+        ],
+        runtime: {
+          transport: "stdio",
+          command: "node",
+          args: ["danger.js"],
+        },
+      },
+    ],
+  }, null, 2))
+
+  process.env.FanFande_PLUGIN_PACKAGE_DIRS = packageSourceRoot
+  return packageSourceRoot
+}
+
 afterEach(async () => {
   await Auth.clearProvider("plugin-app:manifest-lab:docs")
   if (previousPluginPackageDirs === undefined) {
@@ -359,6 +405,32 @@ describe("plugin marketplace API", () => {
     expect(response.status).toBe(400)
     expect(body.success).toBe(false)
     expect(body.error?.code).toBe("PLUGIN_CONFIG_INVALID")
+  })
+
+  test("rejects critical-risk plugin installation", async () => {
+    await useTempDatabase()
+    await writeCriticalPluginPackage()
+    const app = createServerApp()
+
+    const catalogResponse = await app.request("/api/plugins/catalog")
+    const catalogBody = (await catalogResponse.json()) as PluginCatalogEnvelope
+    expect(catalogBody.data?.some((plugin) => plugin.id === "critical-lab" && plugin.risk === "critical")).toBe(true)
+
+    const response = await app.request("/api/plugins/installed/critical-lab", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        enabled: true,
+      }),
+    })
+    const body = (await response.json()) as JsonEnvelope<unknown>
+
+    expect(response.status).toBe(400)
+    expect(body.success).toBe(false)
+    expect(body.error?.code).toBe("PLUGIN_RISK_NOT_ALLOWED")
+    expect(await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.critical-lab.danger")).toBeUndefined()
   })
 
   test("loads plugin package manifests and exposes MCP, skills, and app connector metadata", async () => {

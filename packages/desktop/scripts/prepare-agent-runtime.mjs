@@ -86,6 +86,13 @@ async function copyNodePtyRuntime(runtimeNodeModulesDir) {
   }
 }
 
+async function copyBuiltinPluginPackages() {
+  const sourceRoot = path.join(agentDir, "plugins", "builtin")
+  if (!(await pathExists(sourceRoot))) return
+
+  await fsp.cp(sourceRoot, path.join(runtimeDir, "plugins", "builtin"), { recursive: true })
+}
+
 async function fixNodePtySpawnHelperPermissions(runtimeNodeModulesDir) {
   if (process.platform !== "darwin") return
 
@@ -122,6 +129,7 @@ async function main() {
   await fsp.copyFile(bunBinary, path.join(runtimeDir, bunExecutableName))
   await fsp.chmod(path.join(runtimeDir, bunExecutableName), 0o755).catch(() => {})
   await fsp.copyFile(path.join(agentDir, "src", "pty", "node-pty-worker.mjs"), path.join(runtimeDir, "node-pty-worker.mjs"))
+  await copyBuiltinPluginPackages()
   await copyNodePtyRuntime(runtimeNodeModulesDir)
   await fixNodePtySpawnHelperPermissions(runtimeNodeModulesDir)
   await prepareWorkspaceDependencies({ bunBinary })
