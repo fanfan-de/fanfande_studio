@@ -516,7 +516,8 @@
 }
 
 .prompt-presets-page-main,
-.mcp-servers-page-main {
+.mcp-servers-page-main,
+.connectors-page-main {
   min-height: 0;
 }
 

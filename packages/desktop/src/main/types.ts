@@ -1012,7 +1012,21 @@ export interface AgentRemoteMcpServerSummary {
   timeoutMs?: number
 }
 
-export type AgentMcpServerSummary = AgentStdioMcpServerSummary | AgentRemoteMcpServerSummary
+export interface AgentConnectorMcpServerSummary {
+  id: string
+  name?: string
+  transport: "connector"
+  provider?: "openai"
+  connectorId: string
+  serverDescription?: string
+  allowedTools?: AgentMcpAllowedTools
+  toolPolicies?: AgentMcpToolPolicies
+  requireApproval?: AgentMcpRequireApproval
+  enabled: boolean
+  timeoutMs?: number
+}
+
+export type AgentMcpServerSummary = AgentStdioMcpServerSummary | AgentRemoteMcpServerSummary | AgentConnectorMcpServerSummary
 
 export interface AgentMcpToolDiagnostic {
   name: string
@@ -1051,6 +1065,99 @@ export interface AgentPluginToolPreview {
   description: string
   readOnly?: boolean
   destructive?: boolean
+}
+
+export type AgentConnectorRisk = "low" | "medium" | "high" | "critical"
+
+export interface AgentConnectorApiKeyCredential {
+  kind: "api_key"
+  key: string
+  label: string
+  type?: "text" | "password"
+  required?: boolean
+  secret?: boolean
+  placeholder?: string
+  description?: string
+}
+
+export type AgentConnectorOAuthTokenPlacement =
+  | {
+      type: "authorization_bearer"
+    }
+  | {
+      type: "header"
+      name: string
+      value?: string
+    }
+
+export interface AgentConnectorOAuthCredential {
+  kind: "oauth"
+  label: string
+  clientID: string
+  authorizationURL: string
+  tokenURL: string
+  scopes: string[]
+  revocationURL?: string
+  tokenPlacement?: AgentConnectorOAuthTokenPlacement
+  authorizationParams?: Record<string, string>
+  tokenParams?: Record<string, string>
+  description?: string
+}
+
+export type AgentConnectorCredential = AgentConnectorApiKeyCredential | AgentConnectorOAuthCredential
+
+export interface AgentConnectorRemoteRuntime {
+  transport: "remote"
+  provider?: "openai"
+  serverUrl?: string
+  authorization?: string
+  headers?: Record<string, string>
+  serverDescription?: string
+  allowedTools?: AgentMcpAllowedTools
+  toolPolicies?: AgentMcpToolPolicies
+  requireApproval?: AgentMcpRequireApproval
+  timeoutMs?: number
+}
+
+export interface AgentConnectorDefinition {
+  id: string
+  name: string
+  description: string
+  publisher: string
+  icon?: string
+  risk: AgentConnectorRisk
+  permissions: string[]
+  tools: AgentPluginToolPreview[]
+  credential?: AgentConnectorCredential
+  runtime?: AgentConnectorRemoteRuntime
+  installReview: string[]
+  source: "platform" | "registry"
+  available: boolean
+}
+
+export interface AgentConnectorRequirement {
+  connector: string
+  tools?: string[]
+  permissions?: string[]
+  required?: boolean
+  reason?: string
+}
+
+export interface AgentConnectorStatus {
+  connectorID: string
+  definitionID: string
+  name: string
+  connected: boolean
+  available: boolean
+  authStatus: "connected" | "not_connected" | "pending" | "expired" | "error" | "unavailable"
+  credentialKind?: "api_key" | "oauth"
+  credentialLabel?: string
+  account?: AgentProviderAuthAccountSummary
+  email?: string
+  expiresAt?: number
+  activeFlow?: AgentProviderAuthFlow
+  generatedMcpServerID?: string
+  lastDiagnostic?: AgentMcpServerDiagnostic
 }
 
 export interface AgentPluginConfigField {
@@ -1147,6 +1254,7 @@ export interface AgentPluginSkillPreview {
 }
 
 export interface AgentPluginAppConnector {
+  id?: string
   appID: string
   name: string
   description?: string
@@ -1155,7 +1263,7 @@ export interface AgentPluginAppConnector {
   permissions?: string[]
   tools?: AgentPluginToolPreview[]
   credential: AgentPluginAppCredential
-  runtime: AgentPluginRemoteRuntime
+  runtime: AgentPluginRuntimeTemplate
   installReview?: string[]
 }
 
@@ -1183,6 +1291,8 @@ export interface AgentPluginCatalogItem {
   runtime?: AgentPluginRuntimeTemplate
   mcpServers: AgentPluginMcpServerCatalogEntry[]
   skills: AgentPluginSkillPreview[]
+  connectorRequirements: AgentConnectorRequirement[]
+  connectors: AgentPluginAppConnector[]
   apps: AgentPluginAppConnector[]
   installReview?: string[]
   source?: "package" | "registry"
@@ -1198,6 +1308,7 @@ export interface AgentInstalledPlugin {
   mcpServerIDs: string[]
   skillIDs: string[]
   connectorIDs: string[]
+  connectorRequirementIDs: string[]
   config: Record<string, string>
   installedAt: number
   updatedAt: number

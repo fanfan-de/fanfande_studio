@@ -9,6 +9,7 @@ import z from "zod"
 import * as Auth from "#auth/auth.ts"
 import * as ProviderAuth from "#auth/provider-auth.ts"
 import * as Config from "#config/config.ts"
+import * as Connector from "#connector/connector.ts"
 import * as db from "#database/Sqlite.ts"
 import * as Global from "#global/global.ts"
 import { toCreateTableSQL, withPrimaryKey, zodObjectToColumnDefs } from "#database/parser.ts"
@@ -21,6 +22,7 @@ const PLUGIN_REGISTRY_PATH = join("plugins", "registry", "plugin-registry.json")
 const PLUGIN_REGISTRY_CACHE_PATH = join("plugins", "registry-cache", "plugin-registry-cache.json")
 const DEFAULT_SKILLS_DIRECTORY = "skills"
 const API_KEY_METHOD = "api-key"
+const PLUGIN_CONNECTOR_PREFIX = "plugin-connector:"
 const PLUGIN_APP_CONNECTOR_PREFIX = "plugin-app:"
 const PLUGIN_INSTALL_DIR_ENV = "FANFANDE_PLUGIN_INSTALL_DIR"
 const PLUGIN_REGISTRY_FILES_ENV = "FANFANDE_PLUGIN_REGISTRY_FILES"
@@ -193,6 +195,24 @@ export type PluginRemoteRuntime = z.infer<typeof PluginRemoteRuntime>
 export const PluginRuntimeTemplate = z.union([PluginStdioRuntime, PluginRemoteRuntime])
 export type PluginRuntimeTemplate = z.infer<typeof PluginRuntimeTemplate>
 
+export const PluginConnectorRuntimeTemplate = z.union([PluginStdioRuntime, PluginRemoteRuntime])
+export type PluginConnectorRuntimeTemplate = z.infer<typeof PluginConnectorRuntimeTemplate>
+
+export type ResolvedPluginConnectorRuntime =
+  | {
+      transport: "stdio"
+      command: string
+      args?: string[]
+      cwd?: string
+      env?: Record<string, string>
+    }
+  | {
+      transport: "remote"
+      serverUrl: string
+      authorization?: string
+      headers?: Record<string, string>
+    }
+
 const PluginDiagnosticTool = z
   .object({
     name: z.string().min(1),
@@ -246,7 +266,9 @@ export type PluginSkillPreview = z.infer<typeof PluginSkillPreview>
 
 export const PluginAppConnector = z
   .object({
-    appID: z.string().min(1),
+    appID: z.string().min(1).optional(),
+    id: z.string().min(1).optional(),
+    connectorID: z.string().min(1).optional(),
     name: z.string().min(1),
     description: z.string().optional(),
     icon: z.string().optional(),
@@ -254,10 +276,27 @@ export const PluginAppConnector = z
     permissions: z.array(z.string()).optional(),
     tools: z.array(PluginToolPreview).optional(),
     credential: PluginAppCredential,
-    runtime: PluginRemoteRuntime,
+    runtime: PluginConnectorRuntimeTemplate,
     installReview: z.array(z.string()).optional(),
   })
   .strict()
+  .transform((connector, ctx) => {
+    const appID = connector.id ?? connector.connectorID ?? connector.appID
+    if (!appID) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Plugin connector requires 'id' or legacy 'appID'.",
+        path: ["id"],
+      })
+      return z.NEVER
+    }
+
+    return {
+      ...connector,
+      id: appID,
+      appID,
+    }
+  })
 export type PluginAppConnector = z.infer<typeof PluginAppConnector>
 
 export const PluginConnectorStatus = z
@@ -341,6 +380,8 @@ export const PluginManifest = z
     interface: PluginInterface.optional(),
     mcpServers: z.array(PluginManifestMcpServer).optional(),
     skills: z.union([z.string(), z.array(z.string())]).optional(),
+    connectorRequirements: z.array(Connector.ConnectorRequirement).optional(),
+    connectors: z.array(PluginAppConnector).optional(),
     apps: z.array(PluginAppConnector).optional(),
     commands: z.union([z.string(), z.array(z.string())]).optional(),
     agents: z.union([z.string(), z.array(z.string())]).optional(),
@@ -417,6 +458,8 @@ export const PluginCatalogItem = z
     runtime: PluginRuntimeTemplate.optional(),
     mcpServers: z.array(PluginMcpServerCatalogEntry),
     skills: z.array(PluginSkillPreview),
+    connectorRequirements: z.array(Connector.ConnectorRequirement),
+    connectors: z.array(PluginAppConnector),
     apps: z.array(PluginAppConnector),
     installReview: z.array(z.string()).optional(),
     source: z.enum(["package", "registry"]).optional(),
@@ -435,6 +478,7 @@ export const InstalledPlugin = z
     mcpServerIDs: z.array(z.string()).optional(),
     skillIDs: z.array(z.string()).optional(),
     connectorIDs: z.array(z.string()).optional(),
+    connectorRequirementIDs: z.array(z.string()).optional(),
     config: z.record(z.string(), z.string()),
     installedAt: z.number().int().positive(),
     updatedAt: z.number().int().positive(),
@@ -445,11 +489,12 @@ export const InstalledPlugin = z
   .strict()
 export type InstalledPlugin = Omit<
   z.infer<typeof InstalledPlugin>,
-  "mcpServerIDs" | "skillIDs" | "connectorIDs" | "lastConnectorDiagnostics"
+  "mcpServerIDs" | "skillIDs" | "connectorIDs" | "connectorRequirementIDs" | "lastConnectorDiagnostics"
 > & {
   mcpServerIDs: string[]
   skillIDs: string[]
   connectorIDs: string[]
+  connectorRequirementIDs: string[]
   lastConnectorDiagnostics?: Record<string, PluginDiagnostic>
 }
 
@@ -663,6 +708,18 @@ function safeReadPluginAppCompat(packageRoot: string): PluginAppConnector[] {
   }
 }
 
+function normalizePluginConnectors(manifest: PluginManifest): PluginAppConnector[] {
+  const connectors = manifest.connectors ?? []
+  const legacyApps = manifest.apps ?? []
+  if (connectors.length === 0) return legacyApps
+
+  const connectorIDs = new Set(connectors.map((connector) => connector.appID))
+  return [
+    ...connectors,
+    ...legacyApps.filter((app) => !connectorIDs.has(app.appID)),
+  ]
+}
+
 function safeReadPluginManifest(packageRoot: string) {
   const manifestPath = join(packageRoot, PLUGIN_MANIFEST_PATH)
   if (!existsSync(manifestPath)) return undefined
@@ -670,16 +727,25 @@ function safeReadPluginManifest(packageRoot: string) {
   try {
     const raw = readFileSync(manifestPath, "utf8")
     const manifest = PluginManifest.parse(JSON.parse(raw))
+    const manifestConnectors = normalizePluginConnectors(manifest)
     const compatApps = safeReadPluginAppCompat(packageRoot)
-    if (compatApps.length === 0) return manifest
+    if (compatApps.length === 0) {
+      return {
+        ...manifest,
+        connectors: manifestConnectors,
+        apps: manifestConnectors,
+      }
+    }
 
-    const appIDs = new Set((manifest.apps ?? []).map((app) => app.appID))
+    const appIDs = new Set(manifestConnectors.map((app) => app.appID))
+    const connectors = [
+      ...manifestConnectors,
+      ...compatApps.filter((app) => !appIDs.has(app.appID)),
+    ]
     return {
       ...manifest,
-      apps: [
-        ...(manifest.apps ?? []),
-        ...compatApps.filter((app) => !appIDs.has(app.appID)),
-      ],
+      connectors,
+      apps: connectors,
     }
   } catch {
     return undefined
@@ -1085,7 +1151,8 @@ function normalizeCatalogItem(source: PluginManifestSource): PluginCatalogItem {
   const { manifest, packageRoot } = source
   const pluginID = normalizeManifestID(manifest.name)
   const mcpServers = normalizeMcpServers(manifest)
-  const apps = manifest.apps ?? []
+  const connectors = normalizePluginConnectors(manifest)
+  const connectorRequirements = manifest.connectorRequirements ?? []
   const skills = packageRoot
     ? discoverSkillPreviews(pluginID, manifest, packageRoot)
     : source.skillPreviews ?? []
@@ -1100,7 +1167,8 @@ function normalizeCatalogItem(source: PluginManifestSource): PluginCatalogItem {
   const screenshots = uniqueStrings((manifest.interface?.screenshots ?? []).map(displayAssetURL))
   const risk = highestRisk([
     ...mcpServers.map((server) => server.risk),
-    ...apps.map((app) => app.risk ?? "medium"),
+    ...connectors.map((app) => app.risk ?? "medium"),
+    connectorRequirements.length > 0 ? "medium" : undefined,
     skills.length > 0 ? "low" : undefined,
   ])
 
@@ -1124,20 +1192,23 @@ function normalizeCatalogItem(source: PluginManifestSource): PluginCatalogItem {
     risk,
     permissions: uniqueStrings([
       ...mcpServers.flatMap((server) => server.permissions ?? []),
-      ...apps.flatMap((app) => app.permissions ?? []),
+      ...connectorRequirements.flatMap((requirement) => requirement.permissions ?? []),
+      ...connectors.flatMap((app) => app.permissions ?? []),
     ]),
     tools: [
       ...mcpServers.flatMap((server) => server.tools),
-      ...apps.flatMap((app) => app.tools ?? []),
+      ...connectors.flatMap((app) => app.tools ?? []),
     ],
     configFields: dedupeConfigFields(mcpServers.flatMap((server) => server.configFields ?? [])),
     runtime: mcpServers[0]?.runtime,
     mcpServers,
     skills,
-    apps,
+    connectorRequirements,
+    connectors,
+    apps: connectors,
     installReview: uniqueStrings([
       ...mcpServers.flatMap((server) => server.installReview ?? []),
-      ...apps.flatMap((app) => app.installReview ?? []),
+      ...connectors.flatMap((app) => app.installReview ?? []),
     ]),
     source: source.source,
     download: source.download,
@@ -1166,22 +1237,48 @@ export function mcpServerIDForPlugin(pluginID: string, serverID?: string) {
 }
 
 export function connectorIDForPluginApp(pluginID: string, appID: string) {
+  return connectorIDForPluginConnector(pluginID, appID)
+}
+
+export function connectorIDForPluginConnector(pluginID: string, connectorID: string) {
+  return `${PLUGIN_CONNECTOR_PREFIX}${normalizePluginID(pluginID)}:${connectorID.trim()}`
+}
+
+function legacyConnectorIDForPluginApp(pluginID: string, appID: string) {
   return `${PLUGIN_APP_CONNECTOR_PREFIX}${normalizePluginID(pluginID)}:${appID.trim()}`
 }
 
 export function mcpServerIDForPluginApp(pluginID: string, appID: string) {
+  return mcpServerIDForPluginConnector(pluginID, appID)
+}
+
+export function mcpServerIDForPluginConnector(pluginID: string, connectorID: string) {
+  return `plugin.${normalizePluginID(pluginID)}.connector.${connectorID.trim()}`
+}
+
+function legacyMcpServerIDForPluginApp(pluginID: string, appID: string) {
   return `plugin.${normalizePluginID(pluginID)}.app.${appID.trim()}`
 }
 
-function parsePluginAppConnectorID(connectorID: string) {
-  if (!connectorID.startsWith(PLUGIN_APP_CONNECTOR_PREFIX)) return undefined
-  const rest = connectorID.slice(PLUGIN_APP_CONNECTOR_PREFIX.length)
+function parsePluginConnectorID(connectorID: string) {
+  const legacy = connectorID.startsWith(PLUGIN_APP_CONNECTOR_PREFIX)
+  const current = connectorID.startsWith(PLUGIN_CONNECTOR_PREFIX)
+  if (!legacy && !current) return undefined
+  const rest = connectorID.slice((legacy ? PLUGIN_APP_CONNECTOR_PREFIX : PLUGIN_CONNECTOR_PREFIX).length)
   const separator = rest.indexOf(":")
   if (separator <= 0 || separator === rest.length - 1) return undefined
 
   return {
+    legacy,
     pluginID: rest.slice(0, separator),
     appID: rest.slice(separator + 1),
+  }
+}
+
+function pluginConnectorCredentialIDs(pluginID: string, appID: string) {
+  return {
+    primary: connectorIDForPluginConnector(pluginID, appID),
+    legacy: legacyConnectorIDForPluginApp(pluginID, appID),
   }
 }
 
@@ -1257,11 +1354,26 @@ function oauthMethodForApp(_app: PluginAppConnector) {
   return "oauth"
 }
 
+async function getActivePluginConnectorCredential(pluginID: string, appID: string) {
+  const ids = pluginConnectorCredentialIDs(pluginID, appID)
+  const primary = await Auth.getActiveProviderCredential(ids.primary)
+  if (primary) return { connectorID: ids.primary, ...primary }
+
+  const legacy = await Auth.getActiveProviderCredential(ids.legacy)
+  return legacy ? { connectorID: ids.legacy, ...legacy } : undefined
+}
+
+async function getPluginConnectorRecord(pluginID: string, appID: string) {
+  const ids = pluginConnectorCredentialIDs(pluginID, appID)
+  return await Auth.getProviderRecord(ids.primary) ?? await Auth.getProviderRecord(ids.legacy)
+}
+
 function normalizeInstalledRecord(record: z.infer<typeof InstalledPlugin> | null | undefined): InstalledPlugin | null {
   if (!record) return null
   const mcpServerIDs = uniqueStrings([...(record.mcpServerIDs ?? []), record.mcpServerID])
   const skillIDs = uniqueStrings(record.skillIDs ?? [])
   const connectorIDs = uniqueStrings(record.connectorIDs ?? [])
+  const connectorRequirementIDs = uniqueStrings(record.connectorRequirementIDs ?? [])
 
   return {
     ...record,
@@ -1269,6 +1381,7 @@ function normalizeInstalledRecord(record: z.infer<typeof InstalledPlugin> | null
     mcpServerIDs,
     skillIDs,
     connectorIDs,
+    connectorRequirementIDs,
     lastConnectorDiagnostics: record.lastConnectorDiagnostics ?? {},
     missingPackage: !getPackageManifestSource(record.pluginID),
   }
@@ -1387,15 +1500,16 @@ function runtimeBindingForAppConnector(
   app: PluginAppConnector,
   installed: InstalledPlugin,
 ): Config.McpServerInput {
+  const remoteRuntime = app.runtime.transport === "remote" ? app.runtime : undefined
   return {
     name: `${plugin.name}: ${app.name}`,
-    transport: "remote",
-    provider: app.runtime.provider,
+    transport: "connector",
+    provider: remoteRuntime?.provider,
     connectorId: connectorIDForPluginApp(plugin.id, app.appID),
-    serverDescription: app.runtime.serverDescription,
-    allowedTools: app.runtime.allowedTools,
+    serverDescription: remoteRuntime?.serverDescription,
+    allowedTools: remoteRuntime?.allowedTools,
     toolPolicies: app.runtime.toolPolicies,
-    requireApproval: app.runtime.requireApproval,
+    requireApproval: remoteRuntime?.requireApproval,
     enabled: installed.enabled,
     timeoutMs: app.runtime.timeoutMs,
   }
@@ -1414,6 +1528,10 @@ function generatedSkillIDs(plugin: PluginCatalogItem) {
 
 function generatedConnectorIDs(plugin: PluginCatalogItem) {
   return plugin.apps.map((app) => connectorIDForPluginApp(plugin.id, app.appID))
+}
+
+function generatedConnectorRequirementIDs(plugin: PluginCatalogItem) {
+  return plugin.connectorRequirements.map((requirement) => Connector.connectorIDForDefinition(requirement.connector))
 }
 
 async function syncPluginRuntimeBindings(plugin: PluginCatalogItem, installed: InstalledPlugin) {
@@ -1436,12 +1554,15 @@ async function syncPluginRuntimeBindings(plugin: PluginCatalogItem, installed: I
 
 async function writeInstalled(record: InstalledPlugin) {
   ensureInstalledPluginsTable()
+  const previous = readInstalled(record.pluginID)
   const plugin = assertPackagePlugin(record.pluginID)
   const parsed = normalizeInstalledRecord(InstalledPlugin.parse(record))
   if (!parsed) throw new PluginError("INSTALLED_PLUGIN_NOT_FOUND", `Plugin '${record.pluginID}' is not installed.`)
 
   db.upsert(INSTALLED_PLUGINS_TABLE, parsed, ["pluginID"])
   await syncPluginRuntimeBindings(plugin, parsed)
+  const staleServerIDs = (previous?.mcpServerIDs ?? []).filter((serverID) => !parsed.mcpServerIDs.includes(serverID))
+  await Promise.all(staleServerIDs.map((serverID) => Config.removeMcpServer(Config.GLOBAL_CONFIG_ID, serverID)))
   return parsed
 }
 
@@ -1489,6 +1610,21 @@ export function resolveEnabledInstalledPluginIDs(pluginIDs: string[]) {
   }
 
   return result
+}
+
+export function resolveEnabledInstalledPluginConnectorRequirementServerIDs(pluginIDs: string[]) {
+  const selectedPluginIDs = new Set(resolveEnabledInstalledPluginIDs(pluginIDs))
+  if (selectedPluginIDs.size === 0) return []
+
+  return uniqueStrings(
+    listEnabledInstalled()
+      .filter((plugin) => selectedPluginIDs.has(plugin.pluginID))
+      .flatMap((plugin) => plugin.connectorRequirementIDs)
+      .flatMap((connectorID) => {
+        const serverID = Connector.mcpServerIDForConnectorID(connectorID)
+        return serverID ? [serverID] : []
+      }),
+  )
 }
 
 export function getInstalled(pluginID: string) {
@@ -1723,6 +1859,7 @@ export async function install(pluginID: string, input: InstallPluginInput) {
     mcpServerIDs: generatedMcpServerIDs(plugin),
     skillIDs: generatedSkillIDs(plugin),
     connectorIDs: generatedConnectorIDs(plugin),
+    connectorRequirementIDs: generatedConnectorRequirementIDs(plugin),
     config: normalizeConfig(plugin, input.config ?? existing?.config),
     installedAt: existing?.installedAt ?? timestamp,
     updatedAt: timestamp,
@@ -1748,6 +1885,7 @@ export async function update(pluginID: string, input: UpdateInstalledPluginInput
     mcpServerIDs: generatedMcpServerIDs(plugin),
     skillIDs: generatedSkillIDs(plugin),
     connectorIDs: generatedConnectorIDs(plugin),
+    connectorRequirementIDs: generatedConnectorRequirementIDs(plugin),
     config: normalizeConfig(plugin, input.config ?? existing.config),
     updatedAt: now(),
   }
@@ -1762,11 +1900,13 @@ export async function remove(pluginID: string) {
   const plugin = source ? normalizeCatalogItem(source) : getCatalogItem(normalizedPluginID)
   const mcpServerIDs = existing?.mcpServerIDs ?? (plugin ? generatedMcpServerIDs(plugin) : [mcpServerIDForPlugin(normalizedPluginID)])
   const connectorIDs = existing?.connectorIDs ?? (plugin ? generatedConnectorIDs(plugin) : [])
+  const legacyMcpServerIDs = plugin ? plugin.apps.map((app) => legacyMcpServerIDForPluginApp(plugin.id, app.appID)) : []
+  const legacyConnectorIDs = plugin ? plugin.apps.map((app) => legacyConnectorIDForPluginApp(plugin.id, app.appID)) : []
 
   ensureInstalledPluginsTable()
   const removedCount = existing ? db.deleteById(INSTALLED_PLUGINS_TABLE, normalizedPluginID, "pluginID") : 0
-  await Promise.all(mcpServerIDs.map((serverID) => Config.removeMcpServer(Config.GLOBAL_CONFIG_ID, serverID)))
-  await Promise.all(connectorIDs.map((connectorID) => Auth.clearProvider(connectorID)))
+  await Promise.all(uniqueStrings([...mcpServerIDs, ...legacyMcpServerIDs]).map((serverID) => Config.removeMcpServer(Config.GLOBAL_CONFIG_ID, serverID)))
+  await Promise.all(uniqueStrings([...connectorIDs, ...legacyConnectorIDs]).map((connectorID) => Auth.clearProvider(connectorID)))
   if (source?.managedInstall && source.packageRoot) {
     await rm(source.packageRoot, { recursive: true, force: true }).catch(() => {})
   }
@@ -1831,10 +1971,13 @@ async function connectorStatusFor(
   app: PluginAppConnector,
 ): Promise<PluginConnectorStatus> {
   const connectorID = connectorIDForPluginApp(plugin.id, app.appID)
-  const activeCredential = await Auth.getActiveProviderCredential(connectorID)
+  const legacyConnectorID = legacyConnectorIDForPluginApp(plugin.id, app.appID)
+  const activeCredential = await getActivePluginConnectorCredential(plugin.id, app.appID)
   const credential = activeCredential?.credential
-  const record = await Auth.getProviderRecord(connectorID)
-  const activeFlow = ProviderAuth.getLatestProviderAuthFlow(connectorID)
+  const record = await getPluginConnectorRecord(plugin.id, app.appID)
+  const activeFlow =
+    ProviderAuth.getLatestProviderAuthFlow(connectorID) ??
+    ProviderAuth.getLatestProviderAuthFlow(legacyConnectorID)
   const isPendingFlow = activeFlow && ["pending", "waiting_user", "authorizing"].includes(activeFlow.status)
   const connected =
     app.credential.kind === "api_key"
@@ -1896,10 +2039,14 @@ export async function saveConnectorApiKey(pluginID: string, appID: string, input
   const app = assertPluginApp(plugin, appID)
   const credential = assertApiKeyAppCredential(app)
   const connectorID = connectorIDForPluginApp(plugin.id, app.appID)
+  const legacyConnectorID = legacyConnectorIDForPluginApp(plugin.id, app.appID)
   const apiKey = input.apiKey?.trim()
 
   if (!apiKey) {
-    await Auth.clearProvider(connectorID)
+    await Promise.all([
+      Auth.clearProvider(connectorID),
+      Auth.clearProvider(legacyConnectorID),
+    ])
   } else {
     await Auth.setProviderCredential(
       connectorID,
@@ -1911,6 +2058,7 @@ export async function saveConnectorApiKey(pluginID: string, appID: string, input
       },
       { activate: true, lastError: null },
     )
+    await Auth.clearProvider(legacyConnectorID)
   }
 
   const record: InstalledPlugin = {
@@ -1951,14 +2099,16 @@ export async function getConnectorOAuthFlow(pluginID: string, appID: string, flo
   const plugin = assertPackagePlugin(pluginID)
   const app = assertPluginApp(plugin, appID)
   assertOAuthAppCredential(app)
-  return ProviderAuth.getProviderFlow(connectorIDForPluginApp(plugin.id, app.appID), flowID)
+  return await ProviderAuth.getProviderFlow(connectorIDForPluginApp(plugin.id, app.appID), flowID) ??
+    await ProviderAuth.getProviderFlow(legacyConnectorIDForPluginApp(plugin.id, app.appID), flowID)
 }
 
 export async function cancelConnectorOAuthFlow(pluginID: string, appID: string, flowID: string) {
   const plugin = assertPackagePlugin(pluginID)
   const app = assertPluginApp(plugin, appID)
   assertOAuthAppCredential(app)
-  return ProviderAuth.cancelProviderAuthFlow(connectorIDForPluginApp(plugin.id, app.appID), flowID)
+  return await ProviderAuth.cancelProviderAuthFlow(connectorIDForPluginApp(plugin.id, app.appID), flowID) ??
+    await ProviderAuth.cancelProviderAuthFlow(legacyConnectorIDForPluginApp(plugin.id, app.appID), flowID)
 }
 
 export async function deleteConnectorOAuthSession(pluginID: string, appID: string) {
@@ -1975,6 +2125,11 @@ export async function deleteConnectorOAuthSession(pluginID: string, appID: strin
     oauthMethodForApp(app),
     oauthConfigForCredential(credential),
   )
+  await ProviderAuth.deleteGenericOAuthSession(
+    legacyConnectorIDForPluginApp(plugin.id, app.appID),
+    oauthMethodForApp(app),
+    oauthConfigForCredential(credential),
+  ).catch(() => undefined)
 
   const record: InstalledPlugin = {
     ...installed,
@@ -2016,14 +2171,71 @@ export async function diagnoseConnector(pluginID: string, appID: string) {
   return diagnostic
 }
 
-export async function resolveConnectorRemoteServer(connectorID: string): Promise<{
-  serverUrl: string
-  authorization?: string
-  headers?: Record<string, string>
-}> {
-  const parsed = parsePluginAppConnectorID(connectorID)
+function commandLooksLikePath(command: string) {
+  return isAbsolute(command) || command.startsWith(".") || command.includes("/") || command.includes("\\")
+}
+
+function resolvePluginRuntimePath(packageRoot: string, value: string, field: string) {
+  const resolvedPath = isAbsolute(value) ? resolve(value) : resolve(packageRoot, value)
+  const normalizedRoot = resolve(packageRoot)
+  const relativePathFromRoot = relative(normalizedRoot, resolvedPath)
+  if (relativePathFromRoot.startsWith("..") || isAbsolute(relativePathFromRoot)) {
+    throw new PluginError("PLUGIN_PACKAGE_INVALID", `${field} must stay inside the plugin package.`)
+  }
+
+  return resolvedPath
+}
+
+function assertAbsoluteRuntimeArgInsidePackage(packageRoot: string, value: string) {
+  if (!isAbsolute(value)) return
+  resolvePluginRuntimePath(packageRoot, value, "Connector runtime argument")
+}
+
+async function resolvePluginConnectorAuthConfig(
+  connectorID: string,
+  app: PluginAppConnector,
+): Promise<Record<string, string>> {
+  const config: Record<string, string> = {}
+
+  if (app.credential.kind === "api_key") {
+    const credential = assertApiKeyAppCredential(app)
+    const parsed = parsePluginConnectorID(connectorID)
+    const activeCredential = parsed
+      ? await getActivePluginConnectorCredential(parsed.pluginID, parsed.appID)
+      : await Auth.getActiveProviderCredential(connectorID)
+    if (activeCredential?.credential.kind !== "api_key") {
+      throw new PluginError("PLUGIN_CONNECTOR_NOT_CONNECTED", `${app.name} is not connected.`)
+    }
+    config[credential.key] = activeCredential.credential.apiKey
+  } else {
+    const credential = assertOAuthAppCredential(app)
+    const parsed = parsePluginConnectorID(connectorID)
+    const ids = parsed ? pluginConnectorCredentialIDs(parsed.pluginID, parsed.appID) : { primary: connectorID, legacy: connectorID }
+    const session =
+      await ProviderAuth.resolveGenericOAuthCredential(
+        ids.primary,
+        oauthMethodForApp(app),
+        oauthConfigForCredential(credential),
+      ) ??
+      await ProviderAuth.resolveGenericOAuthCredential(
+        ids.legacy,
+        oauthMethodForApp(app),
+        oauthConfigForCredential(credential),
+      )
+    if (!session) {
+      throw new PluginError("PLUGIN_CONNECTOR_NOT_CONNECTED", `${app.name} is not connected.`)
+    }
+    config.OAUTH_ACCESS_TOKEN = session.accessToken
+    config.OAUTH_TOKEN_TYPE = session.tokenType ?? "Bearer"
+  }
+
+  return config
+}
+
+export async function resolveConnectorRuntime(connectorID: string): Promise<ResolvedPluginConnectorRuntime> {
+  const parsed = parsePluginConnectorID(connectorID)
   if (!parsed) {
-    throw new PluginError("PLUGIN_CONNECTOR_NOT_FOUND", `Connector '${connectorID}' is not a plugin app connector.`)
+    throw new PluginError("PLUGIN_CONNECTOR_NOT_FOUND", `Connector '${connectorID}' is not a plugin connector.`)
   }
 
   const plugin = assertPackagePlugin(parsed.pluginID)
@@ -2034,27 +2246,33 @@ export async function resolveConnectorRemoteServer(connectorID: string): Promise
 
   const app = assertPluginApp(plugin, parsed.appID)
   const runtimeConfig = runtimeConfigForPlugin(plugin, installed)
-  const config: Record<string, string> = { ...runtimeConfig }
+  const config: Record<string, string> = {
+    ...runtimeConfig,
+    ...(await resolvePluginConnectorAuthConfig(connectorID, app)),
+  }
 
-  if (app.credential.kind === "api_key") {
-    const credential = assertApiKeyAppCredential(app)
-    const activeCredential = await Auth.getActiveProviderCredential(connectorID)
-    if (activeCredential?.credential.kind !== "api_key") {
-      throw new PluginError("PLUGIN_CONNECTOR_NOT_CONNECTED", `${app.name} is not connected.`)
+  if (app.runtime.transport === "stdio") {
+    const packageRoot = getPackageManifestSource(plugin.id)?.packageRoot
+    if (!packageRoot) {
+      throw new PluginError("PLUGIN_PACKAGE_UNAVAILABLE", `Plugin '${plugin.id}' package is unavailable.`)
     }
-    config[credential.key] = activeCredential.credential.apiKey
-  } else {
-    const credential = assertOAuthAppCredential(app)
-    const session = await ProviderAuth.resolveGenericOAuthCredential(
-      connectorID,
-      oauthMethodForApp(app),
-      oauthConfigForCredential(credential),
-    )
-    if (!session) {
-      throw new PluginError("PLUGIN_CONNECTOR_NOT_CONNECTED", `${app.name} is not connected.`)
+
+    const command = replacePlaceholders(app.runtime.command, config)
+    const cwd = replaceOptionalPlaceholders(app.runtime.cwd, config)
+    const resolvedCwd = cwd ? resolvePluginRuntimePath(packageRoot, cwd, "Connector runtime cwd") : packageRoot
+    const resolvedCommand = commandLooksLikePath(command)
+      ? resolvePluginRuntimePath(packageRoot, command, "Connector runtime command")
+      : command
+    const args = app.runtime.args?.map((arg) => replacePlaceholders(arg, config))
+    args?.forEach((arg) => assertAbsoluteRuntimeArgInsidePackage(packageRoot, arg))
+
+    return {
+      transport: "stdio",
+      command: resolvedCommand,
+      args,
+      cwd: resolvedCwd,
+      env: replaceRecordPlaceholders(app.runtime.env, config),
     }
-    config.OAUTH_ACCESS_TOKEN = session.accessToken
-    config.OAUTH_TOKEN_TYPE = session.tokenType ?? "Bearer"
   }
 
   const serverUrl = replaceOptionalPlaceholders(app.runtime.serverUrl, config)
@@ -2063,10 +2281,12 @@ export async function resolveConnectorRemoteServer(connectorID: string): Promise
   }
 
   const result: {
+    transport: "remote"
     serverUrl: string
     authorization?: string
     headers?: Record<string, string>
   } = {
+    transport: "remote",
     serverUrl,
     authorization: replaceOptionalPlaceholders(app.runtime.authorization, config),
     headers: replaceRecordPlaceholders(app.runtime.headers, config),
@@ -2085,6 +2305,23 @@ export async function resolveConnectorRemoteServer(connectorID: string): Promise
   }
 
   return result
+}
+
+export async function resolveConnectorRemoteServer(connectorID: string): Promise<{
+  serverUrl: string
+  authorization?: string
+  headers?: Record<string, string>
+}> {
+  const runtime = await resolveConnectorRuntime(connectorID)
+  if (runtime.transport !== "remote") {
+    throw new PluginError("PLUGIN_CONNECTOR_NOT_FOUND", `Connector '${connectorID}' does not resolve to a remote MCP server.`)
+  }
+
+  return {
+    serverUrl: runtime.serverUrl,
+    authorization: runtime.authorization,
+    headers: runtime.headers,
+  }
 }
 
 export function listInstalledPluginSkillRoots(pluginIDs?: string[] | null): Array<{

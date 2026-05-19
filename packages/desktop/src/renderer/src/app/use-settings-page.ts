@@ -3,6 +3,8 @@ import type {
   ArchivedSessionSummary,
   BuiltinToolSelection,
   BuiltinToolSummary,
+  ConnectorDefinition,
+  ConnectorStatus,
   InstalledPlugin,
   LoadedSessionSnapshot,
   McpAllowedTools,
@@ -41,6 +43,7 @@ interface LoadSettingsOptions {
 
 interface UseSettingsPageOptions {
   isBuiltinToolsPageOpen?: boolean
+  isConnectorsPageOpen?: boolean
   isMcpServersPageOpen?: boolean
   isPluginsPageOpen?: boolean
   isPromptPresetEditorOpen?: boolean
@@ -309,7 +312,7 @@ function toMcpDraft(server?: McpServerSummary): McpServerDraftState {
   return {
     id: server?.id ?? "",
     name: server?.name ?? "",
-    transport: server?.transport ?? "stdio",
+    transport: server?.transport === "connector" ? "remote" : server?.transport ?? "stdio",
     command: server?.transport === "stdio" ? server.command : "",
     args: server?.transport === "stdio" ? stringifyLineList(server.args) : "",
     env: server?.transport === "stdio" ? stringifyKeyValueEntries(server.env) : "",
@@ -344,6 +347,27 @@ function buildPluginDraft(plugin: PluginCatalogItem | undefined, installed?: Ins
     ),
     appApiKeys: Object.fromEntries((plugin.apps ?? []).map((app) => [app.appID, ""])),
   }
+}
+
+function fallbackConnectorID(definitionID: string) {
+  return `connector:${definitionID}:default`
+}
+
+function connectorIDForDefinition(definition: ConnectorDefinition, statuses: ConnectorStatus[]) {
+  return statuses.find((status) => status.definitionID === definition.id)?.connectorID ?? fallbackConnectorID(definition.id)
+}
+
+function buildConnectorApiKeyDrafts(
+  catalog: ConnectorDefinition[],
+  statuses: ConnectorStatus[],
+  current: Record<string, string>,
+) {
+  const connectorIDs = new Set([
+    ...catalog.map((definition) => connectorIDForDefinition(definition, statuses)),
+    ...statuses.map((status) => status.connectorID),
+  ])
+
+  return Object.fromEntries([...connectorIDs].map((connectorID) => [connectorID, current[connectorID] ?? ""]))
 }
 
 function getErrorMessage(error: unknown) {
@@ -441,6 +465,7 @@ function getMcpServerValidationError(draft: McpServerDraftState) {
 
 export function useSettingsPage(options: UseSettingsPageOptions) {
   const isBuiltinToolsPageOpen = options.isBuiltinToolsPageOpen ?? false
+  const isConnectorsPageOpen = options.isConnectorsPageOpen ?? false
   const isMcpServersPageOpen = options.isMcpServersPageOpen ?? false
   const isPluginsPageOpen = options.isPluginsPageOpen ?? false
   const isPromptPresetEditorOpen = options.isPromptPresetEditorOpen ?? false
@@ -458,6 +483,11 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [installedPlugins, setInstalledPlugins] = useState<InstalledPlugin[]>([])
   const [pluginDiagnostics, setPluginDiagnostics] = useState<Record<string, McpServerDiagnostic>>({})
   const [pluginConnectorStatuses, setPluginConnectorStatuses] = useState<Record<string, PluginConnectorStatus[]>>({})
+  const [connectorCatalog, setConnectorCatalog] = useState<ConnectorDefinition[]>([])
+  const [connectorStatuses, setConnectorStatuses] = useState<ConnectorStatus[]>([])
+  const [connectorApiKeyDrafts, setConnectorApiKeyDrafts] = useState<Record<string, string>>({})
+  const [activeConnectorID, setActiveConnectorID] = useState<string | null>(null)
+  const activeConnectorIDRef = useRef<string | null>(null)
   const [activePluginID, setActivePluginID] = useState<string | null>(null)
   const activePluginIDRef = useRef<string | null>(null)
   const [pluginDraft, setPluginDraft] = useState<PluginDraftState>(() => buildPluginDraft(undefined))
@@ -499,12 +529,16 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [savingMcpServerID, setSavingMcpServerID] = useState<string | null>(null)
   const [deletingMcpServerID, setDeletingMcpServerID] = useState<string | null>(null)
   const [isImportingMcpConfigJson, setIsImportingMcpConfigJson] = useState(false)
+  const [isLoadingConnectors, setIsLoadingConnectors] = useState(false)
+  const [connectorsError, setConnectorsError] = useState<string | null>(null)
   const [isLoadingPlugins, setIsLoadingPlugins] = useState(false)
   const [pluginsError, setPluginsError] = useState<string | null>(null)
   const [installingPluginID, setInstallingPluginID] = useState<string | null>(null)
   const [updatingPluginID, setUpdatingPluginID] = useState<string | null>(null)
   const [deletingPluginID, setDeletingPluginID] = useState<string | null>(null)
   const [diagnosingPluginID, setDiagnosingPluginID] = useState<string | null>(null)
+  const [savingConnectorID, setSavingConnectorID] = useState<string | null>(null)
+  const [diagnosingConnectorID, setDiagnosingConnectorID] = useState<string | null>(null)
   const [savingPluginConnectorID, setSavingPluginConnectorID] = useState<string | null>(null)
   const [diagnosingPluginConnectorID, setDiagnosingPluginConnectorID] = useState<string | null>(null)
   const [isSavingBuiltinTools, setIsSavingBuiltinTools] = useState(false)
@@ -528,6 +562,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const archivedSessionsRequestIDRef = useRef(0)
   const mcpServersRequestIDRef = useRef(0)
   const mcpDiagnosticRequestIDRef = useRef<Record<string, number>>({})
+  const connectorsRequestIDRef = useRef(0)
+  const connectorStatusRequestIDRef = useRef<Record<string, number>>({})
   const pluginsRequestIDRef = useRef(0)
   const pluginDiagnosticRequestIDRef = useRef<Record<string, number>>({})
   const pluginConnectorsRequestIDRef = useRef<Record<string, number>>({})
@@ -557,6 +593,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     void loadPlugins()
   }, [isPluginsPageOpen])
+
+  useEffect(() => {
+    if (!isConnectorsPageOpen && !isPluginsPageOpen) return
+
+    void loadConnectors({ silent: !isConnectorsPageOpen })
+  }, [isConnectorsPageOpen, isPluginsPageOpen])
 
   useEffect(() => {
     if (!isPromptPresetEditorOpen) return
@@ -872,6 +914,333 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       if (mcpServersRequestIDRef.current === requestID) {
         setIsLoading(false)
       }
+    }
+  }
+
+  function setActiveConnectorSelection(connectorID: string | null) {
+    activeConnectorIDRef.current = connectorID
+    setActiveConnectorID(connectorID)
+  }
+
+  function upsertConnectorStatus(status: ConnectorStatus) {
+    setConnectorStatuses((current) => {
+      const existingIndex = current.findIndex((item) => item.connectorID === status.connectorID)
+      if (existingIndex < 0) return [...current, status]
+
+      const next = [...current]
+      next[existingIndex] = status
+      return next
+    })
+    setConnectorApiKeyDrafts((current) => ({
+      ...current,
+      [status.connectorID]: current[status.connectorID] ?? "",
+    }))
+  }
+
+  function applyConnectorSnapshot(
+    nextCatalog: ConnectorDefinition[],
+    nextStatuses: ConnectorStatus[],
+  ) {
+    setConnectorCatalog(nextCatalog)
+    setConnectorStatuses(nextStatuses)
+    setConnectorApiKeyDrafts((current) => buildConnectorApiKeyDrafts(nextCatalog, nextStatuses, current))
+
+    const connectorIDs = new Set([
+      ...nextCatalog.map((definition) => connectorIDForDefinition(definition, nextStatuses)),
+      ...nextStatuses.map((status) => status.connectorID),
+    ])
+    const currentConnectorID = activeConnectorIDRef.current
+    const preferredConnectorID =
+      currentConnectorID && connectorIDs.has(currentConnectorID)
+        ? currentConnectorID
+        : nextCatalog[0]
+          ? connectorIDForDefinition(nextCatalog[0], nextStatuses)
+          : nextStatuses[0]?.connectorID ?? null
+
+    setActiveConnectorSelection(preferredConnectorID)
+  }
+
+  async function loadConnectors(optionsArg?: LoadSettingsOptions) {
+    const getConnectorCatalog = window.desktop?.getConnectorCatalog
+    const getConnectors = window.desktop?.getConnectors
+    if (!getConnectorCatalog || !getConnectors) {
+      setConnectorCatalog([])
+      setConnectorStatuses([])
+      setConnectorApiKeyDrafts({})
+      setActiveConnectorSelection(null)
+      setConnectorsError("Desktop connector APIs are unavailable.")
+      return
+    }
+
+    const requestID = ++connectorsRequestIDRef.current
+    if (!optionsArg?.silent) {
+      setIsLoadingConnectors(true)
+    }
+    setConnectorsError(null)
+
+    try {
+      const [nextCatalog, nextStatuses] = await Promise.all([
+        getConnectorCatalog(),
+        getConnectors(),
+      ])
+      if (connectorsRequestIDRef.current !== requestID) return
+
+      applyConnectorSnapshot(nextCatalog, nextStatuses)
+    } catch (error) {
+      if (connectorsRequestIDRef.current !== requestID) return
+      setConnectorCatalog([])
+      setConnectorStatuses([])
+      setConnectorApiKeyDrafts({})
+      setActiveConnectorSelection(null)
+      setConnectorsError(getErrorMessage(error))
+    } finally {
+      if (connectorsRequestIDRef.current === requestID) {
+        setIsLoadingConnectors(false)
+      }
+    }
+  }
+
+  async function loadConnectorStatus(connectorID: string) {
+    const getConnector = window.desktop?.getConnector
+    if (!getConnector) return null
+
+    const requestID = (connectorStatusRequestIDRef.current[connectorID] ?? 0) + 1
+    connectorStatusRequestIDRef.current[connectorID] = requestID
+
+    try {
+      const status = await getConnector({ connectorID })
+      if (connectorStatusRequestIDRef.current[connectorID] !== requestID) return null
+
+      upsertConnectorStatus(status)
+      return status
+    } catch {
+      if (connectorStatusRequestIDRef.current[connectorID] !== requestID) return null
+      return null
+    }
+  }
+
+  function selectConnector(connectorID: string) {
+    setActiveConnectorSelection(connectorID)
+  }
+
+  function setConnectorApiKeyDraft(connectorID: string, value: string) {
+    setConnectorApiKeyDrafts((current) => ({
+      ...current,
+      [connectorID]: value,
+    }))
+  }
+
+  async function saveConnectorApiKey(connectorID: string) {
+    const saveConnectorApiKeyApi = window.desktop?.saveConnectorApiKey
+    if (!saveConnectorApiKeyApi) return false
+
+    const apiKey = connectorApiKeyDrafts[connectorID]?.trim() ?? ""
+    setSavingConnectorID(connectorID)
+    setMessage(null)
+
+    try {
+      const status = await saveConnectorApiKeyApi({
+        connectorID,
+        apiKey: apiKey || null,
+      })
+      upsertConnectorStatus(status)
+      await notifyMcpUpdated()
+      setConnectorApiKeyDraft(connectorID, "")
+      setMessage({
+        tone: "success",
+        text: apiKey ? "Connector API key saved." : "Connector API key cleared.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingConnectorID(null)
+    }
+  }
+
+  async function deleteConnectorApiKey(connectorID: string) {
+    const deleteConnectorApiKeyApi = window.desktop?.deleteConnectorApiKey
+    if (!deleteConnectorApiKeyApi) return false
+
+    setSavingConnectorID(connectorID)
+    setMessage(null)
+
+    try {
+      const status = await deleteConnectorApiKeyApi({ connectorID })
+      upsertConnectorStatus(status)
+      await notifyMcpUpdated()
+      setMessage({
+        tone: "success",
+        text: "Connector disconnected.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingConnectorID(null)
+    }
+  }
+
+  async function pollConnectorAuthFlow(connectorID: string, flowID: string) {
+    const getConnectorAuthFlow = window.desktop?.getConnectorAuthFlow
+    if (!getConnectorAuthFlow) return
+
+    while (true) {
+      try {
+        const flow = await getConnectorAuthFlow({
+          connectorID,
+          flowID,
+        })
+        if (!flow) return
+
+        await loadConnectorStatus(connectorID)
+
+        if (["connected", "error", "expired", "cancelled"].includes(flow.status)) {
+          await notifyMcpUpdated()
+          if (flow.status === "connected") {
+            setMessage({
+              tone: "success",
+              text: "Connector signed in.",
+            })
+          } else if (flow.status === "cancelled") {
+            setMessage({
+              tone: "error",
+              text: flow.errorMessage ?? "Connector sign-in was cancelled.",
+            })
+          } else {
+            setMessage({
+              tone: "error",
+              text: flow.errorMessage ?? "Connector sign-in failed.",
+            })
+          }
+          return
+        }
+      } catch (error) {
+        setMessage({
+          tone: "error",
+          text: getErrorMessage(error),
+        })
+        return
+      }
+
+      await sleep(1500)
+    }
+  }
+
+  async function startConnectorAuthFlow(connectorID: string) {
+    const startConnectorAuthFlowApi = window.desktop?.startConnectorAuthFlow
+    if (!startConnectorAuthFlowApi) return false
+
+    setSavingConnectorID(connectorID)
+    setMessage(null)
+
+    try {
+      const flow = await startConnectorAuthFlowApi({ connectorID })
+      await loadConnectorStatus(connectorID)
+
+      if (flow.authorizationURL && window.desktop?.openExternalUrl) {
+        await window.desktop.openExternalUrl({ url: flow.authorizationURL })
+      }
+
+      setMessage({
+        tone: "success",
+        text: "Continue the connector sign-in flow in your browser.",
+      })
+      void pollConnectorAuthFlow(connectorID, flow.id)
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingConnectorID(null)
+    }
+  }
+
+  async function cancelConnectorAuthFlow(connectorID: string) {
+    const flowID = connectorStatuses.find((status) => status.connectorID === connectorID)?.activeFlow?.id
+    const cancelConnectorAuthFlowApi = window.desktop?.cancelConnectorAuthFlow
+    if (!flowID || !cancelConnectorAuthFlowApi) return false
+
+    setSavingConnectorID(connectorID)
+    setMessage(null)
+
+    try {
+      await cancelConnectorAuthFlowApi({ connectorID, flowID })
+      await loadConnectorStatus(connectorID)
+      setMessage({
+        tone: "success",
+        text: "Connector sign-in cancelled.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingConnectorID(null)
+    }
+  }
+
+  async function deleteConnectorAuthSession(connectorID: string) {
+    const deleteConnectorAuthSessionApi = window.desktop?.deleteConnectorAuthSession
+    if (!deleteConnectorAuthSessionApi) return false
+
+    setSavingConnectorID(connectorID)
+    setMessage(null)
+
+    try {
+      const status = await deleteConnectorAuthSessionApi({ connectorID })
+      upsertConnectorStatus(status)
+      await notifyMcpUpdated()
+      setMessage({
+        tone: "success",
+        text: "Connector disconnected.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingConnectorID(null)
+    }
+  }
+
+  async function diagnoseConnector(connectorID: string) {
+    const getConnectorDiagnostic = window.desktop?.getConnectorDiagnostic
+    if (!getConnectorDiagnostic) return false
+
+    setDiagnosingConnectorID(connectorID)
+    setMessage(null)
+
+    try {
+      const diagnostic = await getConnectorDiagnostic({ connectorID })
+      await loadConnectorStatus(connectorID)
+      setMessage(formatMcpDiagnosticMessage(diagnostic))
+      return diagnostic.ok
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setDiagnosingConnectorID(null)
     }
   }
 
@@ -2759,16 +3128,24 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   return {
     activeMcpServerID,
     activeMcpServerDiagnostic: activeMcpServerID ? mcpDiagnostics[activeMcpServerID] ?? null : null,
+    activeConnectorID,
     activePluginID,
     archivedSessions,
     archivedSessionsError,
     builtinTools,
     builtinToolsError,
+    cancelConnectorAuthFlow,
     cancelInstalledPluginConnectorAuthFlow,
     cancelProviderAuthFlow,
     catalog,
     closeSettings,
+    connectorApiKeyDrafts,
+    connectorCatalog,
+    connectorsError,
+    connectorStatuses,
     dismissMessage,
+    deleteConnectorApiKey,
+    deleteConnectorAuthSession,
     deleteArchivedSession,
     deleteInstalledPlugin,
     deleteProviderAuthSession,
@@ -2781,10 +3158,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     deletingPromptPresetID,
     deletingProviderID,
     deleteInstalledPluginConnectorApiKey,
+    diagnoseConnector,
     diagnoseInstalledPlugin,
     diagnoseInstalledPluginConnector,
     diagnosingPluginID,
     diagnosingPluginConnectorID,
+    diagnosingConnectorID,
     installPlugin,
     installPromptsFromUrl,
     importMcpConfigJson,
@@ -2795,6 +3174,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     isImportingMcpConfigJson,
     isLoading,
     isLoadingBuiltinTools,
+    isLoadingConnectors,
     isLoadingPlugins,
     isLoadingPromptPreset,
     isLoadingPrompts,
@@ -2846,6 +3226,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     restoringArchivedSessionID,
     savedSelection,
     saveMcpServer,
+    saveConnectorApiKey,
     saveBuiltinTools,
     saveInstalledPluginConfig,
     saveInstalledPluginConnectorApiKey,
@@ -2856,6 +3237,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     saveProvider,
     saveSelection,
     savingMcpServerID,
+    savingConnectorID,
     savingPluginConnectorID,
     savingPromptPresetID,
     savingProviderID,
@@ -2868,6 +3250,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setPromptPresetSelectionValue,
     setPromptUrlInstallSourceValue,
     selectPromptPreset,
+    selectConnector,
     selectMcpServer,
     selectPlugin,
     clearPluginSelection,
@@ -2875,6 +3258,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setMcpServerDraftValue,
     setMcpToolPolicy,
     setInstalledPluginEnabled,
+    setConnectorApiKeyDraft,
     setPluginDraftAppApiKey,
     setPluginDraftConfigValue,
     setPromptDraftValue,
@@ -2883,6 +3267,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     togglePromptUrlInstallPrompt,
     setBuiltinToolEnabled,
     startInstalledPluginConnectorAuthFlow,
+    startConnectorAuthFlow,
     startProviderAuthFlow,
     startNewMcpServer,
     restoreArchivedSession,

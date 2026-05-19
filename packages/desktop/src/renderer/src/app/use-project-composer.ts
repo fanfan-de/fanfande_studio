@@ -190,6 +190,10 @@ function describeComposerMcpServer(server: McpServerSummary) {
     return server.command
   }
 
+  if (server.transport === "connector") {
+    return server.connectorId
+  }
+
   return server.serverUrl ?? server.connectorId ?? "Remote HTTP MCP"
 }
 
@@ -206,6 +210,7 @@ function describeComposerPlugin(plugin: InstalledPlugin, catalogItem: PluginCata
   const capabilityCounts = [
     plugin.mcpServerIDs.length > 0 ? `${plugin.mcpServerIDs.length} MCP` : null,
     plugin.skillIDs.length > 0 ? `${plugin.skillIDs.length} skills` : null,
+    plugin.connectorRequirementIDs.length > 0 ? `${plugin.connectorRequirementIDs.length} platform connectors` : null,
     plugin.connectorIDs.length > 0 ? `${plugin.connectorIDs.length} connectors` : null,
   ].filter(Boolean)
 

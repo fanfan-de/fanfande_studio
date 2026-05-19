@@ -1,6 +1,7 @@
 import z from "zod"
 import * as ProviderAuth from "#auth/provider-auth.ts"
 import * as Config from "#config/config.ts"
+import * as Connector from "#connector/connector.ts"
 import * as Mcp from "#mcp/manager.ts"
 import * as Plugin from "#plugin/plugin.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
@@ -84,7 +85,9 @@ export const PluginCatalogQuery = z.object({
 export const InstallPluginBody = Plugin.InstallPluginInput
 export const UpdateInstalledPluginBody = Plugin.UpdateInstalledPluginInput
 export const SavePluginConnectorApiKeyBody = Plugin.SavePluginConnectorApiKeyInput
+export const SaveConnectorApiKeyBody = Connector.SaveConnectorApiKeyInput
 export const PluginConnectorAuthFlowBody = z.object({}).optional()
+export const ConnectorAuthFlowBody = z.object({}).optional()
 
 export const ProviderAuthFlowBody = z.object({
   method: z.string().min(1),
@@ -443,6 +446,23 @@ function classifyProviderConnectionError(error: unknown) {
   }
 }
 
+function toConnectorApiError(error: unknown) {
+  if (error instanceof Connector.ConnectorError) {
+    switch (error.code) {
+      case "CONNECTOR_NOT_FOUND":
+        return new ApiError(404, error.code, error.message)
+      case "CONNECTOR_RUNTIME_MISSING":
+      case "CONNECTOR_UNAVAILABLE":
+      case "CONNECTOR_CREDENTIAL_UNSUPPORTED":
+      case "CONNECTOR_NOT_CONNECTED":
+      case "CONNECTOR_REGISTRY_INVALID":
+        return new ApiError(400, error.code, error.message)
+    }
+  }
+
+  return error
+}
+
 function getProviderConnectionCapability(
   provider: Provider.ProviderCatalogItem,
   method: string | undefined,
@@ -726,6 +746,89 @@ export async function getInstalledPluginDiagnostic(pluginID: string) {
     return await Plugin.diagnose(pluginID)
   } catch (error) {
     throw toPluginApiError(error)
+  }
+}
+
+export function listConnectorCatalog() {
+  try {
+    return Connector.listDefinitions()
+  } catch (error) {
+    throw toConnectorApiError(error)
+  }
+}
+
+export async function listConnectors() {
+  try {
+    return await Connector.listStatuses()
+  } catch (error) {
+    throw toConnectorApiError(error)
+  }
+}
+
+export async function getConnector(connectorID: string) {
+  try {
+    return await Connector.getStatus(connectorID)
+  } catch (error) {
+    throw toConnectorApiError(error)
+  }
+}
+
+export async function saveConnectorApiKey(
+  connectorID: string,
+  input: z.infer<typeof SaveConnectorApiKeyBody>,
+) {
+  try {
+    return await Connector.saveConnectorApiKey(connectorID, input)
+  } catch (error) {
+    throw toConnectorApiError(error)
+  }
+}
+
+export async function deleteConnectorApiKey(connectorID: string) {
+  try {
+    return await Connector.removeConnectorApiKey(connectorID)
+  } catch (error) {
+    throw toConnectorApiError(error)
+  }
+}
+
+export async function startConnectorAuthFlow(connectorID: string, input: { serverBaseURL: string }) {
+  try {
+    return await Connector.startConnectorOAuthFlow(connectorID, input)
+  } catch (error) {
+    throw toConnectorApiError(error)
+  }
+}
+
+export async function getConnectorAuthFlow(connectorID: string, flowID: string) {
+  try {
+    return await Connector.getConnectorOAuthFlow(connectorID, flowID)
+  } catch (error) {
+    throw toConnectorApiError(error)
+  }
+}
+
+export async function cancelConnectorAuthFlow(connectorID: string, flowID: string) {
+  try {
+    return await Connector.cancelConnectorOAuthFlow(connectorID, flowID)
+  } catch (error) {
+    throw toConnectorApiError(error)
+  }
+}
+
+export async function deleteConnectorAuthSession(connectorID: string) {
+  try {
+    return await Connector.deleteConnectorOAuthSession(connectorID)
+  } catch (error) {
+    throw toConnectorApiError(error)
+  }
+}
+
+export async function getConnectorDiagnostic(connectorID: string) {
+  try {
+    return await Connector.diagnoseConnector(connectorID)
+  } catch (error) {
+    throw toConnectorApiError(error)
   }
 }
 

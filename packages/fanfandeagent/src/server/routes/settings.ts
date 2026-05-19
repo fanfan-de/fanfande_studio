@@ -162,6 +162,71 @@ export function SettingsRoutes() {
     ok(c, await SettingsUseCase.getInstalledPluginDiagnostic(c.req.param("pluginID"))),
   )
 
+  app.get("/connectors/catalog", async (c) => ok(c, SettingsUseCase.listConnectorCatalog()))
+
+  app.get("/connectors", async (c) => ok(c, await SettingsUseCase.listConnectors()))
+
+  app.get("/connectors/:connectorID", async (c) =>
+    ok(c, await SettingsUseCase.getConnector(c.req.param("connectorID"))),
+  )
+
+  app.put("/connectors/:connectorID/api-key", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.SaveConnectorApiKeyBody,
+      "Body must contain an optional nullable 'apiKey' field.",
+    )
+    return ok(c, await SettingsUseCase.saveConnectorApiKey(c.req.param("connectorID"), payload))
+  })
+
+  app.delete("/connectors/:connectorID/api-key", async (c) =>
+    ok(c, await SettingsUseCase.deleteConnectorApiKey(c.req.param("connectorID"))),
+  )
+
+  app.post("/connectors/:connectorID/auth/flows", async (c) => {
+    await parseJsonBody(
+      c,
+      SettingsUseCase.ConnectorAuthFlowBody,
+      "Body must be empty or a valid connector auth flow payload.",
+      {},
+    )
+    return ok(
+      c,
+      await SettingsUseCase.startConnectorAuthFlow(
+        c.req.param("connectorID"),
+        { serverBaseURL: resolveServerBaseURL(c.req.url) },
+      ),
+    )
+  })
+
+  app.get("/connectors/:connectorID/auth/flows/:flowID", async (c) =>
+    ok(
+      c,
+      await SettingsUseCase.getConnectorAuthFlow(
+        c.req.param("connectorID"),
+        c.req.param("flowID"),
+      ),
+    ),
+  )
+
+  app.delete("/connectors/:connectorID/auth/flows/:flowID", async (c) =>
+    ok(
+      c,
+      await SettingsUseCase.cancelConnectorAuthFlow(
+        c.req.param("connectorID"),
+        c.req.param("flowID"),
+      ),
+    ),
+  )
+
+  app.delete("/connectors/:connectorID/auth/session", async (c) =>
+    ok(c, await SettingsUseCase.deleteConnectorAuthSession(c.req.param("connectorID"))),
+  )
+
+  app.get("/connectors/:connectorID/diagnostic", async (c) =>
+    ok(c, await SettingsUseCase.getConnectorDiagnostic(c.req.param("connectorID"))),
+  )
+
   app.get("/plugins/installed/:pluginID/connectors", async (c) =>
     ok(c, await SettingsUseCase.listInstalledPluginConnectors(c.req.param("pluginID"))),
   )

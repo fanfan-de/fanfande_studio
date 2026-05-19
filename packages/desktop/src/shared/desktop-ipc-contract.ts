@@ -5,6 +5,8 @@ import type {
   AgentBuiltinToolSummary,
   AgentBuiltinToolsPayload,
   AgentConfig,
+  AgentConnectorDefinition,
+  AgentConnectorStatus,
   AgentFolderWorkspace,
   AgentGlobalSkillFileDocument,
   AgentGlobalSkillFolderRenameResult,
@@ -90,6 +92,8 @@ export type {
   AgentBuiltinToolSummary,
   AgentBuiltinToolsPayload,
   AgentConfig,
+  AgentConnectorDefinition,
+  AgentConnectorStatus,
   AgentFolderWorkspace,
   AgentGlobalSkillFileDocument,
   AgentGlobalSkillFolderRenameResult,
@@ -225,6 +229,8 @@ export type McpServerInput = AgentMcpServerSummary extends infer Server
 export type ProjectMcpSelection = AgentProjectMcpSelection
 export type ProjectSkillSelection = AgentProjectSkillSelection
 export type ProjectPluginSelection = AgentProjectPluginSelection
+export type ConnectorDefinition = AgentConnectorDefinition
+export type ConnectorStatus = AgentConnectorStatus
 export type PluginCatalogItem = AgentPluginCatalogItem
 export type InstalledPlugin = AgentInstalledPlugin
 export type PluginConnectorStatus = AgentPluginConnectorStatus
@@ -1023,6 +1029,46 @@ export interface DesktopIpcContract {
     input: { pluginID: string }
     output: AgentMcpServerDiagnostic
   }
+  "desktop:get-connector-catalog": {
+    input: void
+    output: AgentConnectorDefinition[]
+  }
+  "desktop:get-connectors": {
+    input: void
+    output: AgentConnectorStatus[]
+  }
+  "desktop:get-connector": {
+    input: { connectorID: string }
+    output: AgentConnectorStatus
+  }
+  "desktop:save-connector-api-key": {
+    input: { connectorID: string; apiKey?: string | null }
+    output: AgentConnectorStatus
+  }
+  "desktop:delete-connector-api-key": {
+    input: { connectorID: string }
+    output: AgentConnectorStatus
+  }
+  "desktop:start-connector-auth-flow": {
+    input: { connectorID: string }
+    output: AgentProviderAuthFlow
+  }
+  "desktop:get-connector-auth-flow": {
+    input: { connectorID: string; flowID: string }
+    output: AgentProviderAuthFlow | undefined
+  }
+  "desktop:cancel-connector-auth-flow": {
+    input: { connectorID: string; flowID: string }
+    output: AgentProviderAuthFlow | undefined
+  }
+  "desktop:delete-connector-auth-session": {
+    input: { connectorID: string }
+    output: AgentConnectorStatus
+  }
+  "desktop:get-connector-diagnostic": {
+    input: { connectorID: string }
+    output: AgentMcpServerDiagnostic
+  }
   "desktop:get-installed-plugin-connectors": {
     input: { pluginID: string }
     output: AgentPluginConnectorStatus[]
@@ -1437,6 +1483,16 @@ export interface DesktopApiMethods {
   updateInstalledPlugin(input: DesktopIpcInput<"desktop:update-installed-plugin">): Promise<DesktopIpcOutput<"desktop:update-installed-plugin">>
   deleteInstalledPlugin(input: DesktopIpcInput<"desktop:delete-installed-plugin">): Promise<DesktopIpcOutput<"desktop:delete-installed-plugin">>
   getInstalledPluginDiagnostic(input: DesktopIpcInput<"desktop:get-installed-plugin-diagnostic">): Promise<DesktopIpcOutput<"desktop:get-installed-plugin-diagnostic">>
+  getConnectorCatalog(): Promise<DesktopIpcOutput<"desktop:get-connector-catalog">>
+  getConnectors(): Promise<DesktopIpcOutput<"desktop:get-connectors">>
+  getConnector(input: DesktopIpcInput<"desktop:get-connector">): Promise<DesktopIpcOutput<"desktop:get-connector">>
+  saveConnectorApiKey(input: DesktopIpcInput<"desktop:save-connector-api-key">): Promise<DesktopIpcOutput<"desktop:save-connector-api-key">>
+  deleteConnectorApiKey(input: DesktopIpcInput<"desktop:delete-connector-api-key">): Promise<DesktopIpcOutput<"desktop:delete-connector-api-key">>
+  startConnectorAuthFlow(input: DesktopIpcInput<"desktop:start-connector-auth-flow">): Promise<DesktopIpcOutput<"desktop:start-connector-auth-flow">>
+  getConnectorAuthFlow(input: DesktopIpcInput<"desktop:get-connector-auth-flow">): Promise<DesktopIpcOutput<"desktop:get-connector-auth-flow">>
+  cancelConnectorAuthFlow(input: DesktopIpcInput<"desktop:cancel-connector-auth-flow">): Promise<DesktopIpcOutput<"desktop:cancel-connector-auth-flow">>
+  deleteConnectorAuthSession(input: DesktopIpcInput<"desktop:delete-connector-auth-session">): Promise<DesktopIpcOutput<"desktop:delete-connector-auth-session">>
+  getConnectorDiagnostic(input: DesktopIpcInput<"desktop:get-connector-diagnostic">): Promise<DesktopIpcOutput<"desktop:get-connector-diagnostic">>
   getInstalledPluginConnectors(input: DesktopIpcInput<"desktop:get-installed-plugin-connectors">): Promise<DesktopIpcOutput<"desktop:get-installed-plugin-connectors">>
   saveInstalledPluginConnectorApiKey(input: DesktopIpcInput<"desktop:save-installed-plugin-connector-api-key">): Promise<DesktopIpcOutput<"desktop:save-installed-plugin-connector-api-key">>
   deleteInstalledPluginConnectorApiKey(input: DesktopIpcInput<"desktop:delete-installed-plugin-connector-api-key">): Promise<DesktopIpcOutput<"desktop:delete-installed-plugin-connector-api-key">>

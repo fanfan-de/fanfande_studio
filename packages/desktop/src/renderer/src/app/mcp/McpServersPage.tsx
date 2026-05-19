@@ -57,7 +57,9 @@ export interface McpServersSidebarViewProps {
 }
 
 function getMcpTransportLabel(transport: McpServerSummary["transport"] | McpServerDraftState["transport"]) {
-  return transport === "remote" ? "http" : "stdio"
+  if (transport === "remote") return "http"
+  if (transport === "connector") return "connector"
+  return "stdio"
 }
 
 function getMcpToolLabel(tool: McpToolDiagnostic) {
@@ -69,7 +71,7 @@ function getMcpServerLookupText(server: McpServerSummary) {
     server.id,
     server.name ?? "",
     server.transport,
-    server.transport === "stdio" ? server.command : server.serverUrl ?? "",
+    server.transport === "stdio" ? server.command : server.transport === "remote" ? server.serverUrl ?? "" : server.connectorId,
     server.transport === "stdio" ? server.args?.join(" ") ?? "" : server.serverDescription ?? "",
   ].join(" ").toLowerCase()
 }
@@ -223,7 +225,7 @@ function doesMcpServerMatchSearch(server: McpServerSummary, rawQuery: string) {
     server.name ?? "",
     getMcpTransportLabel(server.transport),
     server.enabled ? "enabled" : "disabled",
-    server.transport === "stdio" ? server.command ?? "" : server.serverUrl ?? "",
+    server.transport === "stdio" ? server.command ?? "" : server.transport === "remote" ? server.serverUrl ?? "" : server.connectorId,
   ]
     .join(" ")
     .toLowerCase()

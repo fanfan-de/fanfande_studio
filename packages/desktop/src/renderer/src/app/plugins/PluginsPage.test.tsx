@@ -58,6 +58,8 @@ function createPlugin(overrides: Partial<CatalogPlugin> = {}): CatalogPlugin {
       },
     ],
     skills: overrides.skills ?? [],
+    connectorRequirements: overrides.connectorRequirements ?? [],
+    connectors: overrides.connectors ?? overrides.apps ?? [],
     apps: overrides.apps ?? [],
     configFields: overrides.configFields ?? [
       {
@@ -173,6 +175,7 @@ function createInstalledPlugin(overrides: Partial<InstalledPlugin> = {}): Instal
     mcpServerIDs: overrides.mcpServerIDs ?? ["plugin.filesystem"],
     skillIDs: overrides.skillIDs ?? [],
     connectorIDs: overrides.connectorIDs ?? [],
+    connectorRequirementIDs: overrides.connectorRequirementIDs ?? [],
     config: overrides.config ?? {
       ROOT_PATH: "C:\\Projects",
     },
@@ -206,6 +209,7 @@ function createProps(overrides: Partial<PluginsPageProps> = {}): PluginsPageProp
     isLoading: false,
     loadError: null,
     message: null,
+    connectorStatuses: [],
     pluginCatalog: [createPlugin()],
     pluginConnectorStatuses: {},
     pluginDiagnostics: {},
@@ -546,6 +550,64 @@ describe("PluginsPage", () => {
     expect(screen.getByText("Credential")).toBeInTheDocument()
     expect(screen.getAllByText("Docs API key").length).toBeGreaterThan(0)
     expect(screen.getByText("https://docs.example.test/mcp")).toBeInTheDocument()
+  })
+
+  it("shows platform connector requirement connection state from global connectors", () => {
+    const plugin = createPlugin({
+      id: "mail-helper",
+      name: "Mail Helper",
+      mcpServers: [],
+      skills: [],
+      apps: [],
+      configFields: [],
+      connectorRequirements: [
+        {
+          connector: "gmail",
+          reason: "Search and summarize mailbox context.",
+          tools: ["search_email_ids"],
+          permissions: ["Read Gmail metadata"],
+        },
+      ],
+    })
+
+    render(
+      <PluginsPage
+        {...createProps({
+          activePluginID: "mail-helper",
+          pluginCatalog: [plugin],
+          installedPlugins: [
+            createInstalledPlugin({
+              pluginID: "mail-helper",
+              mcpServerID: "plugin.mail-helper",
+              mcpServerIDs: [],
+              connectorRequirementIDs: ["connector:gmail:default"],
+              config: {},
+            }),
+          ],
+          connectorStatuses: [
+            {
+              connectorID: "connector:gmail:default",
+              definitionID: "gmail",
+              name: "Gmail",
+              connected: true,
+              available: true,
+              authStatus: "connected",
+              credentialKind: "oauth",
+              credentialLabel: "Google account",
+              email: "person@example.test",
+              generatedMcpServerID: "connector.gmail.default",
+            },
+          ],
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Show details for gmail" }))
+    expect(screen.getByText("Platform connector")).toBeInTheDocument()
+    expect(screen.getByText("Connected")).toBeInTheDocument()
+    expect(screen.getByText("connector:gmail:default")).toBeInTheDocument()
+    expect(screen.getByText("person@example.test")).toBeInTheDocument()
+    expect(screen.getByText("connector.gmail.default")).toBeInTheDocument()
   })
 
   it("shows OAuth connector sign-in controls in included app details", () => {

@@ -4512,6 +4512,323 @@ body.is-dragging-settings-page {
   padding: 0 2px;
 }
 
+/* Platform connectors */
+
+.connectors-page,
+.connectors-page-main {
+  min-height: 0;
+  height: 100%;
+}
+
+.connectors-page {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.connectors-page-main {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.settings-services-layout.connectors-page-layout {
+  min-height: 0;
+  height: 100%;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 24px;
+}
+
+.settings-service-list-panel.connectors-list-panel {
+  min-height: 0;
+  padding-top: 18px;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.connectors-sidebar {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+}
+
+.connectors-list-stack {
+  gap: 4px;
+}
+
+.connectors-list-row {
+  width: 100%;
+  min-height: 52px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #202020;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.connectors-list-row:hover,
+.connectors-list-row:focus-visible,
+.connectors-list-row.is-active {
+  border-color: transparent;
+  background: #f7f6f4;
+  outline: none;
+}
+
+.connectors-list-row:hover .connectors-list-copy strong,
+.connectors-list-row:focus-visible .connectors-list-copy strong,
+.connectors-list-row.is-active .connectors-list-copy strong {
+  color: #0f766e;
+}
+
+.connectors-list-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.connectors-list-copy strong,
+.connectors-list-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connectors-list-copy strong {
+  color: #202020;
+  font-size: 15px;
+  font-weight: 690;
+}
+
+.connectors-list-copy span {
+  color: #77736d;
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.connectors-icon-mark {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #eceae7;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f766e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 740;
+  letter-spacing: 0;
+}
+
+.connectors-icon-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.connectors-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #c7c2bc;
+}
+
+.connectors-status-dot.is-connected,
+.connectors-status-badge.is-connected svg {
+  color: #0f766e;
+}
+
+.connectors-status-dot.is-connected {
+  background: #0f766e;
+}
+
+.connectors-status-dot.is-pending {
+  background: #d97706;
+}
+
+.connectors-status-dot.is-error {
+  background: #dc2626;
+}
+
+.connectors-status-dot.is-unavailable {
+  background: #78716c;
+}
+
+.connectors-detail-panel {
+  min-height: 0;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.connectors-detail-shell {
+  width: min(760px, calc(100% - 32px));
+  min-height: 0;
+  height: 100%;
+  margin: 0 auto;
+  padding: 30px 0 72px;
+  overflow: auto;
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+  display: grid;
+  align-content: start;
+  gap: 28px;
+}
+
+.connectors-detail-shell::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.connectors-detail-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.connectors-detail-header .connectors-icon-mark {
+  width: 46px;
+  height: 46px;
+  font-size: 14px;
+}
+
+.connectors-detail-header h1 {
+  margin: 8px 0 8px;
+  color: #202020;
+  font-size: 27px;
+  line-height: 1.14;
+  font-weight: 690;
+  letter-spacing: 0;
+}
+
+.connectors-detail-header p {
+  max-width: 650px;
+  margin: 0;
+  color: #77736d;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.connectors-status-badge {
+  width: fit-content;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid #eceae7;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #77736d;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 690;
+}
+
+.connectors-status-badge svg {
+  width: 14px;
+  height: 14px;
+}
+
+.connectors-status-badge.is-pending {
+  color: #b45309;
+}
+
+.connectors-status-badge.is-error {
+  color: #dc2626;
+}
+
+.connectors-detail-section {
+  display: grid;
+  gap: 10px;
+}
+
+.connectors-detail-section h2 {
+  margin: 0;
+  color: #202020;
+  font-size: 17px;
+  line-height: 1.25;
+  font-weight: 680;
+}
+
+.connectors-detail-table {
+  overflow: hidden;
+  border: 1px solid #eceae7;
+  border-radius: 8px;
+  background: #ffffff;
+  display: grid;
+}
+
+.connectors-detail-table div {
+  min-height: 52px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #eceae7;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.32fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+}
+
+.connectors-detail-table div:last-child {
+  border-bottom: 0;
+}
+
+.connectors-detail-table span {
+  color: #77736d;
+  font-size: 15px;
+  font-weight: 520;
+}
+
+.connectors-detail-table strong {
+  min-width: 0;
+  color: #242321;
+  font-size: 14px;
+  line-height: 1.35;
+  font-weight: 560;
+  word-break: break-word;
+}
+
+.connectors-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.connectors-key-field {
+  width: min(420px, 100%);
+}
+
+.connectors-action-note {
+  color: #77736d;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.connectors-review-list {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+
+.connectors-review-list li {
+  padding: 10px 12px;
+  border: 1px solid #eceae7;
+  border-radius: 8px;
+  background: #faf9f7;
+  color: #504c47;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
 /* Plugins marketplace */
 
 .plugins-page,
@@ -5891,6 +6208,7 @@ body.is-dragging-settings-page {
 }
 
 @media (max-width: 1100px) {
+  .settings-services-layout.connectors-page-layout,
   .plugins-page-layout,
   .plugins-detail-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -5898,6 +6216,32 @@ body.is-dragging-settings-page {
 }
 
 @media (max-width: 760px) {
+  .settings-service-list-panel.connectors-list-panel {
+    padding-top: 10px;
+  }
+
+  .connectors-page-main {
+    padding: 0 12px 48px;
+  }
+
+  .connectors-detail-shell {
+    width: 100%;
+    padding-top: 22px;
+  }
+
+  .connectors-detail-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .connectors-detail-header h1 {
+    font-size: 24px;
+  }
+
+  .connectors-detail-table div {
+    grid-template-columns: minmax(84px, 0.34fr) minmax(0, 1fr);
+    gap: 12px;
+  }
+
   .plugins-page-main {
     padding: 0 12px 48px;
   }

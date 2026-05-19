@@ -179,7 +179,7 @@ const SelectedSideChatPromptPresetField = z
   .optional()
   .describe("Selected preset id for the runtime side-chat prompt")
 
-export const McpServerTransport = z.enum(["stdio", "remote"]).meta({
+export const McpServerTransport = z.enum(["stdio", "remote", "connector"]).meta({
   ref: "McpServerTransport",
 })
 export type McpServerTransport = z.infer<typeof McpServerTransport>
@@ -290,7 +290,23 @@ export const McpRemoteServerConfig = z
   })
 export type McpRemoteServerConfig = z.infer<typeof McpRemoteServerConfig>
 
-export const McpServerConfig = z.union([McpStdioServerConfig, McpRemoteServerConfig]).meta({
+export const McpConnectorServerConfig = z
+  .object({
+    ...McpServerBaseFields,
+    transport: z.literal("connector"),
+    connectorId: z.string().min(1),
+    provider: McpRemoteProvider.optional(),
+    serverDescription: z.string().min(1).optional(),
+    allowedTools: McpAllowedTools,
+    requireApproval: McpRequireApproval,
+  })
+  .strict()
+  .meta({
+    ref: "McpConnectorServerConfig",
+  })
+export type McpConnectorServerConfig = z.infer<typeof McpConnectorServerConfig>
+
+export const McpServerConfig = z.union([McpStdioServerConfig, McpRemoteServerConfig, McpConnectorServerConfig]).meta({
   ref: "McpServerConfig",
 })
 export type McpServerConfig = z.infer<typeof McpServerConfig>
@@ -328,7 +344,14 @@ export const McpRemoteServerInput = z
   })
 export type McpRemoteServerInput = z.infer<typeof McpRemoteServerInput>
 
-export const McpServerInput = z.union([McpStdioServerInput, McpRemoteServerInput]).meta({
+export const McpConnectorServerInput = McpConnectorServerConfig.omit({
+  id: true,
+}).meta({
+  ref: "McpConnectorServerInput",
+})
+export type McpConnectorServerInput = z.infer<typeof McpConnectorServerInput>
+
+export const McpServerInput = z.union([McpStdioServerInput, McpRemoteServerInput, McpConnectorServerInput]).meta({
   ref: "McpServerInput",
 })
 export type McpServerInput = z.infer<typeof McpServerInput>
@@ -368,7 +391,14 @@ export const McpRemoteServerSummary = z
   })
 export type McpRemoteServerSummary = z.infer<typeof McpRemoteServerSummary>
 
-export const McpServerSummary = z.union([McpStdioServerSummary, McpRemoteServerSummary]).meta({
+export const McpConnectorServerSummary = McpConnectorServerConfig.extend({
+  enabled: z.boolean(),
+}).meta({
+  ref: "McpConnectorServerSummary",
+})
+export type McpConnectorServerSummary = z.infer<typeof McpConnectorServerSummary>
+
+export const McpServerSummary = z.union([McpStdioServerSummary, McpRemoteServerSummary, McpConnectorServerSummary]).meta({
   ref: "McpServerSummary",
 })
 export type McpServerSummary = z.infer<typeof McpServerSummary>
@@ -584,6 +614,23 @@ function ensureProjectConfigTable() {
 }
 
 function normalizeMcpServer(config: McpServerConfig): McpServerSummary {
+  if (config.transport === "connector") {
+    const connector = config as McpConnectorServerConfig
+    return {
+      id: connector.id,
+      name: connector.name,
+      transport: "connector",
+      connectorId: connector.connectorId,
+      allowedTools: connector.allowedTools,
+      toolPolicies: connector.toolPolicies,
+      requireApproval: connector.requireApproval,
+      provider: connector.provider,
+      serverDescription: connector.serverDescription,
+      enabled: connector.enabled ?? true,
+      timeoutMs: connector.timeoutMs,
+    }
+  }
+
   if ((config.transport ?? "stdio") === "remote") {
     const remote = config as McpRemoteServerConfig
     return {
@@ -1087,11 +1134,16 @@ export async function resolveProjectMcpServers(projectID: string): Promise<McpSe
   const selectedServerIDs = readSelectedMcpServerIDs(normalizedProjectID)
   const selectedPluginIDs = readSelectedPluginIDs(normalizedProjectID) ?? []
   const selectedPluginServerPrefixes = selectedPluginIDs.map((pluginID) => `plugin.${pluginID}`)
+  const pluginModule = await import("#plugin/plugin.ts")
+  const selectedPluginConnectorRequirementServerIDs = new Set(
+    pluginModule.resolveEnabledInstalledPluginConnectorRequirementServerIDs(selectedPluginIDs),
+  )
   const globalServers = await listMcpServers(GLOBAL_CONFIG_ID)
   const selectedPluginServerIDs = new Set(
     globalServers
       .filter((server) =>
-        selectedPluginServerPrefixes.some((prefix) => server.id === prefix || server.id.startsWith(`${prefix}.`)),
+        selectedPluginServerPrefixes.some((prefix) => server.id === prefix || server.id.startsWith(`${prefix}.`)) ||
+        selectedPluginConnectorRequirementServerIDs.has(server.id),
       )
       .map((server) => server.id),
   )

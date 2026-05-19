@@ -778,7 +778,7 @@ function filterMcpTools(server: Config.McpServerSummary, tools: McpToolDefinitio
     return tools.filter((tool) => policies[tool.name]?.policy !== "disabled")
   }
 
-  if (server.transport !== "remote" || !server.allowedTools) {
+  if ((server.transport !== "remote" && server.transport !== "connector") || !server.allowedTools) {
     return tools
   }
 

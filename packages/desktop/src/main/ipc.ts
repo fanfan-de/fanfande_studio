@@ -47,6 +47,8 @@ import type {
   AgentArchivedSessionSummary,
   AgentBuiltinToolSelection,
   AgentBuiltinToolsPayload,
+  AgentConnectorDefinition,
+  AgentConnectorStatus,
   AgentEnvelope,
   AgentGlobalSkillFileDocument,
   AgentGlobalSkillFolderRenameResult,
@@ -1773,6 +1775,126 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     const pluginID = input.pluginID.trim()
     const result = await requestAgentJSON<AgentMcpServerDiagnostic>(
       `/api/plugins/installed/${encodeURIComponent(pluginID)}/diagnostic`,
+    )
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:get-connector-catalog", async () => {
+    const result = await requestAgentJSON<AgentConnectorDefinition[]>("/api/connectors/catalog")
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:get-connectors", async () => {
+    const result = await requestAgentJSON<AgentConnectorStatus[]>("/api/connectors")
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:get-connector", async (_event, input: { connectorID: string }) => {
+    const connectorID = input.connectorID.trim()
+    const result = await requestAgentJSON<AgentConnectorStatus>(
+      `/api/connectors/${encodeURIComponent(connectorID)}`,
+    )
+
+    return result.data
+  })
+
+  handleDesktopIpc(
+    "desktop:save-connector-api-key",
+    async (_event, input: { connectorID: string; apiKey?: string | null }) => {
+      const connectorID = input.connectorID.trim()
+      const result = await requestAgentJSON<AgentConnectorStatus>(
+        `/api/connectors/${encodeURIComponent(connectorID)}/api-key`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            apiKey: input.apiKey ?? null,
+          }),
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc("desktop:delete-connector-api-key", async (_event, input: { connectorID: string }) => {
+    const connectorID = input.connectorID.trim()
+    const result = await requestAgentJSON<AgentConnectorStatus>(
+      `/api/connectors/${encodeURIComponent(connectorID)}/api-key`,
+      {
+        method: "DELETE",
+      },
+    )
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:start-connector-auth-flow", async (_event, input: { connectorID: string }) => {
+    const connectorID = input.connectorID.trim()
+    const result = await requestAgentJSON<AgentProviderAuthFlow>(
+      `/api/connectors/${encodeURIComponent(connectorID)}/auth/flows`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      },
+    )
+
+    return result.data
+  })
+
+  handleDesktopIpc(
+    "desktop:get-connector-auth-flow",
+    async (_event, input: { connectorID: string; flowID: string }) => {
+      const connectorID = input.connectorID.trim()
+      const flowID = input.flowID.trim()
+      const result = await requestAgentJSON<AgentProviderAuthFlow | undefined>(
+        `/api/connectors/${encodeURIComponent(connectorID)}/auth/flows/${encodeURIComponent(flowID)}`,
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:cancel-connector-auth-flow",
+    async (_event, input: { connectorID: string; flowID: string }) => {
+      const connectorID = input.connectorID.trim()
+      const flowID = input.flowID.trim()
+      const result = await requestAgentJSON<AgentProviderAuthFlow | undefined>(
+        `/api/connectors/${encodeURIComponent(connectorID)}/auth/flows/${encodeURIComponent(flowID)}`,
+        {
+          method: "DELETE",
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc("desktop:delete-connector-auth-session", async (_event, input: { connectorID: string }) => {
+    const connectorID = input.connectorID.trim()
+    const result = await requestAgentJSON<AgentConnectorStatus>(
+      `/api/connectors/${encodeURIComponent(connectorID)}/auth/session`,
+      {
+        method: "DELETE",
+      },
+    )
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:get-connector-diagnostic", async (_event, input: { connectorID: string }) => {
+    const connectorID = input.connectorID.trim()
+    const result = await requestAgentJSON<AgentMcpServerDiagnostic>(
+      `/api/connectors/${encodeURIComponent(connectorID)}/diagnostic`,
     )
 
     return result.data

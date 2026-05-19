@@ -6,6 +6,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import type { ReadResourceResult, Resource, ResourceTemplate } from "@modelcontextprotocol/sdk/types.js"
 import type { McpServerSummary } from "#config/config.ts"
+import type { ResolvedConnectorRuntime } from "#connector/connector.ts"
 import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "mcp.client" })
@@ -341,10 +342,18 @@ export class McpClient {
   }
 
   private async createTransport() {
+    if (this.options.server.transport === "connector") {
+      return this.createResolvedConnectorTransport(await this.resolveConnectorRuntime(this.options.server.connectorId))
+    }
+
     if (this.options.server.transport === "remote") {
       const connectorRuntime = this.options.server.connectorId
         ? await this.resolveConnectorRuntime(this.options.server.connectorId)
         : undefined
+      if (connectorRuntime?.transport === "stdio") {
+        return this.createResolvedConnectorTransport(connectorRuntime)
+      }
+
       const serverUrl = this.options.server.serverUrl ?? connectorRuntime?.serverUrl
       if (!serverUrl) {
         throw new Error(
@@ -379,9 +388,30 @@ export class McpClient {
     return transport
   }
 
+  private createResolvedConnectorTransport(runtime: ResolvedConnectorRuntime) {
+    if (runtime.transport === "remote") {
+      return new StreamableHTTPClientTransport(new URL(runtime.serverUrl), {
+        requestInit: (() => {
+          const headers = buildRemoteHeaders(runtime)
+          return headers ? { headers } : undefined
+        })(),
+      })
+    }
+
+    const transport = new StdioClientTransport({
+      command: runtime.command,
+      args: runtime.args ?? [],
+      cwd: runtime.cwd ?? this.options.cwd,
+      env: mergeProcessEnv(runtime.env),
+      stderr: "pipe",
+    })
+    this.captureStderr(transport.stderr)
+    return transport
+  }
+
   private async resolveConnectorRuntime(connectorId: string) {
-    const pluginModule = await import("#plugin/plugin.ts")
-    return pluginModule.resolveConnectorRemoteServer(connectorId)
+    const connectorModule = await import("#connector/connector.ts")
+    return connectorModule.resolveRuntime(connectorId)
   }
 
   private captureStderr(stream: Stream | null) {

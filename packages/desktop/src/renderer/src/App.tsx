@@ -35,6 +35,7 @@ import {
 import type { WorkbenchSharedState, WorkbenchWindowContext } from "../../shared/desktop-ipc-contract"
 
 const GlobalSkillsPage = lazy(() => import("./app/skills/GlobalSkillsPage").then((module) => ({ default: module.GlobalSkillsPage })))
+const ConnectorsPage = lazy(() => import("./app/connectors/ConnectorsPage").then((module) => ({ default: module.ConnectorsPage })))
 const PluginsPage = lazy(() => import("./app/plugins/PluginsPage").then((module) => ({ default: module.PluginsPage })))
 const PromptPresetsPage = lazy(() => import("./app/prompts/PromptPresetsPage").then((module) => ({ default: module.PromptPresetsPage })))
 const SettingsPage = lazy(() => import("./app/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })))
@@ -870,6 +871,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
   })
 
   const {
+    activeConnectorID,
     activeMcpServerID,
     activeMcpServerDiagnostic,
     activePluginID,
@@ -877,11 +879,18 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     archivedSessionsError,
     builtinTools,
     builtinToolsError,
+    cancelConnectorAuthFlow,
     cancelInstalledPluginConnectorAuthFlow,
     catalog,
     closeSettings,
     clearPluginSelection,
+    connectorApiKeyDrafts,
+    connectorCatalog,
+    connectorsError,
+    connectorStatuses,
     deleteArchivedSession,
+    deleteConnectorApiKey,
+    deleteConnectorAuthSession,
     deleteInstalledPlugin,
     deleteInstalledPluginConnectorApiKey,
     deleteInstalledPluginConnectorAuthSession,
@@ -893,10 +902,12 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     deletingPluginID,
     deletingPromptPresetID,
     deletingProviderID,
+    diagnoseConnector,
     diagnoseInstalledPlugin,
     diagnoseInstalledPluginConnector,
     diagnosingPluginID,
     diagnosingPluginConnectorID,
+    diagnosingConnectorID,
     dismissMessage,
     installPlugin,
     installPromptsFromUrl,
@@ -907,6 +918,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     isImportingMcpConfigJson,
     isLoading,
     isLoadingBuiltinTools,
+    isLoadingConnectors,
     isLoadingPlugins,
     isLoadingPromptPreset,
     isLoadingPrompts,
@@ -955,6 +967,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     restoringArchivedSessionID,
     restoreArchivedSession,
     saveBuiltinTools,
+    saveConnectorApiKey,
     saveInstalledPluginConfig,
     saveInstalledPluginConnectorApiKey,
     saveMcpServer,
@@ -962,6 +975,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     saveProviderApiKey,
     saveProvider,
     savingMcpServerID,
+    savingConnectorID,
     savingPromptPresetID,
     savingProviderID,
     savingPluginConnectorID,
@@ -973,11 +987,13 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     setPromptDraftLabelValue,
     setPromptPresetSelectionValue,
     setPromptUrlInstallSourceValue,
+    selectConnector,
     selectPromptPreset,
     selectMcpServer,
     selectPlugin,
     selectionDraft,
     setInstalledPluginEnabled,
+    setConnectorApiKeyDraft,
     setMcpServerDraftValue,
     setMcpToolPolicy,
     setPluginDraftAppApiKey,
@@ -988,12 +1004,14 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     setSelectionDraftValue,
     togglePromptUrlInstallPrompt,
     startInstalledPluginConnectorAuthFlow,
+    startConnectorAuthFlow,
     startProviderAuthFlow,
     startNewMcpServer,
     cancelProviderAuthFlow,
     updatingPluginID,
   } = useSettingsPage({
     isBuiltinToolsPageOpen: leftSidebarView === "tools",
+    isConnectorsPageOpen: leftSidebarView === "connectors",
     isMcpServersPageOpen: leftSidebarView === "mcp",
     isPluginsPageOpen: leftSidebarView === "plugins",
     isPromptPresetEditorOpen: leftSidebarView === "prompts",
@@ -1281,9 +1299,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
   const isGlobalSkillsView = leftSidebarView === "skills"
   const isMcpServersView = leftSidebarView === "mcp"
   const isPluginsView = leftSidebarView === "plugins"
+  const isConnectorsView = leftSidebarView === "connectors"
   const isBuiltinToolsView = leftSidebarView === "tools"
   const isShellSidebarManagedView = isPromptEditorView || isGlobalSkillsView || isMcpServersView || isBuiltinToolsView
-  const isFullSurfaceView = isPluginsView
+  const isFullSurfaceView = isPluginsView || isConnectorsView
   const windowControls = useMemo(
     () => <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />,
     [handleWindowAction, isWindowMaximized, windowControlsRef],
@@ -1572,10 +1591,35 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onSaveMcpServer={saveMcpServer}
               onStartNewMcpServer={startNewMcpServer}
             />
+          ) : isConnectorsView ? (
+            <Suspense fallback={null}>
+              <ConnectorsPage
+                activeConnectorID={activeConnectorID}
+                connectorApiKeyDrafts={connectorApiKeyDrafts}
+                connectorCatalog={connectorCatalog}
+                connectorStatuses={connectorStatuses}
+                connectorsError={connectorsError}
+                diagnosingConnectorID={diagnosingConnectorID}
+                isLoading={isLoadingConnectors}
+                message={message}
+                savingConnectorID={savingConnectorID}
+                windowControls={windowControls}
+                onCancelConnectorAuthFlow={cancelConnectorAuthFlow}
+                onConnectorApiKeyDraftChange={setConnectorApiKeyDraft}
+                onConnectorSelect={selectConnector}
+                onDeleteConnectorApiKey={deleteConnectorApiKey}
+                onDeleteConnectorAuthSession={deleteConnectorAuthSession}
+                onDiagnoseConnector={diagnoseConnector}
+                onDismissMessage={dismissMessage}
+                onSaveConnectorApiKey={saveConnectorApiKey}
+                onStartConnectorAuthFlow={startConnectorAuthFlow}
+              />
+            </Suspense>
           ) : isPluginsView ? (
             <Suspense fallback={null}>
               <PluginsPage
                 activePluginID={activePluginID}
+                connectorStatuses={connectorStatuses}
                 deletingPluginID={deletingPluginID}
                 diagnosingPluginConnectorID={diagnosingPluginConnectorID}
                 diagnosingPluginID={diagnosingPluginID}

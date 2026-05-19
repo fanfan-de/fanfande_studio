@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Auth from "#auth/auth.ts"
 import * as Config from "#config/config.ts"
+import * as Connector from "#connector/connector.ts"
 import * as Sqlite from "#database/Sqlite.ts"
 import * as Plugin from "#plugin/plugin.ts"
 import { createServerApp } from "#server/server.ts"
@@ -71,6 +72,30 @@ type PluginCatalogEnvelope = JsonEnvelope<
         headers?: Record<string, string>
       }
     }>
+    connectors: Array<{
+      id?: string
+      appID: string
+      credential: {
+        kind?: string
+        key?: string
+        label: string
+      }
+      runtime: {
+        transport: string
+        command?: string
+        args?: string[]
+        env?: Record<string, string>
+        serverUrl?: string
+        headers?: Record<string, string>
+      }
+    }>
+    connectorRequirements: Array<{
+      connector: string
+      tools?: string[]
+      permissions?: string[]
+      required?: boolean
+      reason?: string
+    }>
   }>
 >
 
@@ -81,7 +106,44 @@ type InstalledPluginEnvelope = JsonEnvelope<{
   mcpServerIDs: string[]
   skillIDs: string[]
   connectorIDs: string[]
+  connectorRequirementIDs: string[]
   config: Record<string, string>
+}>
+
+type ConnectorCatalogEnvelope = JsonEnvelope<
+  Array<{
+    id: string
+    name: string
+    credential?: {
+      kind: "api_key" | "oauth"
+      label: string
+      key?: string
+    }
+    runtime?: {
+      transport: "remote"
+      serverUrl?: string
+    }
+  }>
+>
+
+type PlatformConnectorStatusEnvelope = JsonEnvelope<
+  Array<{
+    connectorID: string
+    definitionID: string
+    connected: boolean
+    authStatus: "connected" | "not_connected" | "pending" | "expired" | "error" | "unavailable"
+    credentialKind?: "api_key" | "oauth"
+    generatedMcpServerID?: string
+  }>
+>
+
+type SinglePlatformConnectorStatusEnvelope = JsonEnvelope<{
+  connectorID: string
+  definitionID: string
+  connected: boolean
+  authStatus: "connected" | "not_connected" | "pending" | "expired" | "error" | "unavailable"
+  credentialKind?: "api_key" | "oauth"
+  generatedMcpServerID?: string
 }>
 
 type InstalledPluginsEnvelope = JsonEnvelope<
@@ -141,6 +203,7 @@ let activeRoot: string | null = null
 let previousPluginInstallDir: string | undefined
 let previousPluginRegistryIndexURL: string | undefined
 let previousPluginRegistryCacheDir: string | undefined
+let previousConnectorRegistryFiles: string | undefined
 let previousFetch: typeof fetch | undefined
 
 async function removeTreeWithRetry(path: string) {
@@ -162,11 +225,16 @@ async function useTempDatabase() {
   previousPluginInstallDir = process.env.FANFANDE_PLUGIN_INSTALL_DIR
   previousPluginRegistryIndexURL = process.env.FANFANDE_PLUGIN_REGISTRY_INDEX_URL
   previousPluginRegistryCacheDir = process.env.FANFANDE_PLUGIN_REGISTRY_CACHE_DIR
+  previousConnectorRegistryFiles = process.env.FANFANDE_CONNECTOR_REGISTRY_FILES
   previousFetch = globalThis.fetch
   process.env.FANFANDE_PLUGIN_INSTALL_DIR = join(activeRoot, "installed-plugins")
   process.env.FANFANDE_PLUGIN_REGISTRY_INDEX_URL = "off"
   process.env.FANFANDE_PLUGIN_REGISTRY_CACHE_DIR = join(activeRoot, "registry-cache")
+  delete process.env.FANFANDE_CONNECTOR_REGISTRY_FILES
   await Auth.clearProvider("plugin-app:manifest-lab:docs")
+  await Auth.clearProvider("plugin-connector:manifest-lab:docs")
+  await Auth.clearProvider("plugin-connector:local-connector-lab:docs-local")
+  await Auth.clearProvider("connector:docs:default")
 }
 
 function pluginInstallRoot() {
@@ -321,6 +389,146 @@ async function writeOAuthPluginPackage() {
           },
           requireApproval: "never",
         },
+      },
+    ],
+  }, null, 2))
+
+  return packageSourceRoot
+}
+
+async function writeLocalConnectorPluginPackage() {
+  if (!activeRoot) throw new Error("Temp root has not been initialized.")
+
+  const packageSourceRoot = pluginInstallRoot()
+  const packageRoot = join(packageSourceRoot, "local-connector-lab", "0.1.0")
+  const manifestRoot = join(packageRoot, ".fanfande-plugin")
+  const connectorRoot = join(packageRoot, "connectors", "docs-local")
+  await mkdir(manifestRoot, { recursive: true })
+  await mkdir(connectorRoot, { recursive: true })
+  await writeFile(join(connectorRoot, "server.js"), "console.error('fixture local connector server')\n")
+
+  await writeFile(join(manifestRoot, "plugin.json"), JSON.stringify({
+    name: "local-connector-lab",
+    version: "0.1.0",
+    description: "Fixture plugin package with a local stdio connector.",
+    author: "Fanfande Tests",
+    interface: {
+      displayName: "Local Connector Lab",
+      shortDescription: "Local connector fixture.",
+      developerName: "Fanfande Tests",
+      category: "Docs",
+    },
+    connectors: [
+      {
+        id: "docs-local",
+        name: "Docs Local",
+        description: "Fixture local MCP connector.",
+        permissions: ["Starts a local fixture MCP wrapper"],
+        tools: [
+          {
+            name: "search_local_docs",
+            description: "Search local docs.",
+            readOnly: true,
+          },
+        ],
+        credential: {
+          kind: "api_key",
+          key: "DOCS_API_KEY",
+          label: "Docs local key",
+          type: "password",
+          required: true,
+          secret: true,
+        },
+        runtime: {
+          transport: "stdio",
+          command: "node",
+          args: ["${PLUGIN_ROOT}/connectors/docs-local/server.js"],
+          cwd: "${PLUGIN_ROOT}",
+          env: {
+            DOCS_API_KEY: "${DOCS_API_KEY}",
+          },
+          timeoutMs: 1000,
+        },
+      },
+    ],
+  }, null, 2))
+
+  return packageSourceRoot
+}
+
+async function writeConnectorRegistryFile() {
+  if (!activeRoot) throw new Error("Temp root has not been initialized.")
+
+  const registryPath = join(activeRoot, "connectors.json")
+  await writeFile(registryPath, JSON.stringify({
+    schemaVersion: 1,
+    connectors: [
+      {
+        id: "docs",
+        name: "Docs",
+        description: "Platform-owned docs connector.",
+        publisher: "Fanfande",
+        risk: "medium",
+        permissions: ["Sends requests to docs.example.test"],
+        tools: [
+          {
+            name: "search_docs",
+            description: "Search fixture docs.",
+            readOnly: true,
+          },
+        ],
+        credential: {
+          kind: "api_key",
+          key: "DOCS_API_KEY",
+          label: "Docs API key",
+          type: "password",
+          required: true,
+          secret: true,
+        },
+        runtime: {
+          transport: "remote",
+          serverUrl: "https://docs.example.test/mcp",
+          headers: {
+            "x-api-key": "${DOCS_API_KEY}",
+          },
+          allowedTools: {
+            readOnly: true,
+          },
+          requireApproval: "always",
+        },
+      },
+    ],
+  }, null, 2))
+  process.env.FANFANDE_CONNECTOR_REGISTRY_FILES = registryPath
+  return registryPath
+}
+
+async function writePlatformConnectorRequirementPluginPackage() {
+  if (!activeRoot) throw new Error("Temp root has not been initialized.")
+
+  const packageSourceRoot = pluginInstallRoot()
+  const packageRoot = join(packageSourceRoot, "connector-requirement-lab", "0.1.0")
+  const manifestRoot = join(packageRoot, ".fanfande-plugin")
+  await mkdir(manifestRoot, { recursive: true })
+
+  await writeFile(join(manifestRoot, "plugin.json"), JSON.stringify({
+    name: "connector-requirement-lab",
+    version: "0.1.0",
+    description: "Fixture plugin package that depends on a platform connector.",
+    author: "Fanfande Tests",
+    interface: {
+      displayName: "Connector Requirement Lab",
+      shortDescription: "Platform connector requirement fixture.",
+      developerName: "Fanfande Tests",
+      category: "Docs",
+    },
+    connectorRequirements: [
+      {
+        connector: "docs",
+        tools: ["search_docs"],
+        permissions: ["Sends requests to docs.example.test"],
+        required: true,
+        reason: "Search official docs through the platform connector.",
       },
     ],
   }, null, 2))
@@ -483,6 +691,10 @@ async function writeVersionedPluginPackage() {
 afterEach(async () => {
   await Auth.clearProvider("plugin-app:manifest-lab:docs")
   await Auth.clearProvider("plugin-app:oauth-lab:mail")
+  await Auth.clearProvider("plugin-connector:manifest-lab:docs")
+  await Auth.clearProvider("plugin-connector:oauth-lab:mail")
+  await Auth.clearProvider("plugin-connector:local-connector-lab:docs-local")
+  await Auth.clearProvider("connector:docs:default")
   if (previousPluginInstallDir === undefined) {
     delete process.env.FANFANDE_PLUGIN_INSTALL_DIR
   } else {
@@ -498,12 +710,18 @@ afterEach(async () => {
   } else {
     process.env.FANFANDE_PLUGIN_REGISTRY_CACHE_DIR = previousPluginRegistryCacheDir
   }
+  if (previousConnectorRegistryFiles === undefined) {
+    delete process.env.FANFANDE_CONNECTOR_REGISTRY_FILES
+  } else {
+    process.env.FANFANDE_CONNECTOR_REGISTRY_FILES = previousConnectorRegistryFiles
+  }
   if (previousFetch) {
     globalThis.fetch = previousFetch
   }
   previousPluginInstallDir = undefined
   previousPluginRegistryIndexURL = undefined
   previousPluginRegistryCacheDir = undefined
+  previousConnectorRegistryFiles = undefined
   previousFetch = undefined
   Sqlite.closeDatabase()
   Sqlite.setDatabaseFile()
@@ -528,7 +746,9 @@ describe("plugin marketplace API", () => {
     expect(body.data?.length).toBeGreaterThan(0)
     expect(body.data?.some((plugin) => plugin.id === "manifest-lab")).toBe(true)
     expect(body.data?.every((plugin) => plugin.risk !== "critical")).toBe(true)
-    expect(body.data?.every((plugin) => plugin.mcpServers.length + plugin.skills.length + plugin.apps.length > 0)).toBe(true)
+    expect(body.data?.every((plugin) =>
+      plugin.mcpServers.length + plugin.skills.length + plugin.connectorRequirements.length + plugin.apps.length > 0
+    )).toBe(true)
 
     const manifestPlugin = body.data?.find((plugin) => plugin.id === "manifest-lab")
     expect(manifestPlugin?.source).toBe("package")
@@ -706,7 +926,7 @@ describe("plugin marketplace API", () => {
     expect(installBody.data?.mcpServerID).toBe("plugin.manifest-lab.notes")
     expect(installBody.data?.mcpServerIDs).toEqual([
       "plugin.manifest-lab.notes",
-      "plugin.manifest-lab.app.docs",
+      "plugin.manifest-lab.connector.docs",
     ])
 
     const server = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.manifest-lab.notes")
@@ -754,7 +974,7 @@ describe("plugin marketplace API", () => {
     expect(deleteBody.data?.removed).toBe(true)
     expect(deleteBody.data?.mcpServerIDs).toEqual([
       "plugin.manifest-lab.notes",
-      "plugin.manifest-lab.app.docs",
+      "plugin.manifest-lab.connector.docs",
     ])
     expect(await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.manifest-lab.notes")).toBeUndefined()
   })
@@ -806,6 +1026,83 @@ describe("plugin marketplace API", () => {
     expect(await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.critical-lab.danger")).toBeUndefined()
   })
 
+  test("manages platform connectors outside plugin manifests", async () => {
+    await useTempDatabase()
+    await writeConnectorRegistryFile()
+    const app = createServerApp()
+
+    const catalogResponse = await app.request("/api/connectors/catalog")
+    const catalogBody = (await catalogResponse.json()) as ConnectorCatalogEnvelope
+    expect(catalogResponse.status).toBe(200)
+    expect(catalogBody.data?.[0]?.id).toBe("docs")
+    expect(catalogBody.data?.[0]?.credential?.kind).toBe("api_key")
+
+    const disconnectedResponse = await app.request("/api/connectors")
+    const disconnectedBody = (await disconnectedResponse.json()) as PlatformConnectorStatusEnvelope
+    expect(disconnectedResponse.status).toBe(200)
+    expect(disconnectedBody.data?.[0]?.connectorID).toBe("connector:docs:default")
+    expect(disconnectedBody.data?.[0]?.connected).toBe(false)
+
+    const connectResponse = await app.request("/api/connectors/connector%3Adocs%3Adefault/api-key", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        apiKey: "platform-secret",
+      }),
+    })
+    const connectBody = (await connectResponse.json()) as SinglePlatformConnectorStatusEnvelope
+    expect(connectResponse.status).toBe(200)
+    expect(connectBody.data?.connected).toBe(true)
+
+    const server = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "connector.docs.default")
+    expect(server?.transport).toBe("connector")
+    expect(server?.transport === "connector" ? server.connectorId : undefined).toBe("connector:docs:default")
+    expect(JSON.stringify(server)).not.toContain("platform-secret")
+
+    const runtime = await Connector.resolveRemoteServer("connector:docs:default")
+    expect(runtime.serverUrl).toBe("https://docs.example.test/mcp")
+    expect(runtime.headers?.["x-api-key"]).toBe("platform-secret")
+  })
+
+  test("parses platform connector requirements without creating plugin-owned connectors", async () => {
+    await useTempDatabase()
+    await writeConnectorRegistryFile()
+    await writePlatformConnectorRequirementPluginPackage()
+    const app = createServerApp()
+
+    const catalogResponse = await app.request("/api/plugins/catalog")
+    const catalogBody = (await catalogResponse.json()) as PluginCatalogEnvelope
+    const plugin = catalogBody.data?.find((item) => item.id === "connector-requirement-lab")
+
+    expect(catalogResponse.status).toBe(200)
+    expect(plugin?.apps).toEqual([])
+    expect(plugin?.connectorRequirements).toEqual([
+      {
+        connector: "docs",
+        tools: ["search_docs"],
+        permissions: ["Sends requests to docs.example.test"],
+        required: true,
+        reason: "Search official docs through the platform connector.",
+      },
+    ])
+
+    const installResponse = await app.request("/api/plugins/installed/connector-requirement-lab", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        enabled: true,
+      }),
+    })
+    const installBody = (await installResponse.json()) as InstalledPluginEnvelope
+    expect(installResponse.status).toBe(200)
+    expect(installBody.data?.connectorIDs).toEqual([])
+    expect(installBody.data?.connectorRequirementIDs).toEqual(["connector:docs:default"])
+  })
+
   test("loads plugin package manifests and exposes MCP, skills, and app connector metadata", async () => {
     await useTempDatabase()
     await writeManifestPluginPackage()
@@ -837,16 +1134,14 @@ describe("plugin marketplace API", () => {
     expect(installResponse.status).toBe(200)
     expect(installBody.data?.mcpServerIDs).toEqual([
       "plugin.manifest-lab.notes",
-      "plugin.manifest-lab.app.docs",
+      "plugin.manifest-lab.connector.docs",
     ])
     expect(installBody.data?.skillIDs).toEqual(["plugin:manifest-lab:review"])
-    expect(installBody.data?.connectorIDs).toEqual(["plugin-app:manifest-lab:docs"])
+    expect(installBody.data?.connectorIDs).toEqual(["plugin-connector:manifest-lab:docs"])
 
-    const appServer = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.manifest-lab.app.docs")
-    expect(appServer?.transport).toBe("remote")
-    expect(appServer?.transport === "remote" ? appServer.connectorId : undefined).toBe("plugin-app:manifest-lab:docs")
-    expect(appServer?.transport === "remote" ? appServer.serverUrl : undefined).toBeUndefined()
-    expect(appServer?.transport === "remote" ? appServer.headers : undefined).toBeUndefined()
+    const appServer = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.manifest-lab.connector.docs")
+    expect(appServer?.transport).toBe("connector")
+    expect(appServer?.transport === "connector" ? appServer.connectorId : undefined).toBe("plugin-connector:manifest-lab:docs")
 
     const projectRoot = activeRoot ?? "."
     const skills = await Skill.list(projectRoot)
@@ -911,14 +1206,12 @@ describe("plugin marketplace API", () => {
     expect(connectBody.data?.connected).toBe(true)
     expect(connectBody.data?.credentialLabel).toBe("Docs API key")
 
-    const appServer = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.manifest-lab.app.docs")
-    expect(appServer?.transport).toBe("remote")
-    expect(appServer?.transport === "remote" ? appServer.connectorId : undefined).toBe("plugin-app:manifest-lab:docs")
-    expect(appServer?.transport === "remote" ? appServer.headers : undefined).toBeUndefined()
-    expect(appServer?.transport === "remote" ? appServer.authorization : undefined).toBeUndefined()
+    const appServer = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.manifest-lab.connector.docs")
+    expect(appServer?.transport).toBe("connector")
+    expect(appServer?.transport === "connector" ? appServer.connectorId : undefined).toBe("plugin-connector:manifest-lab:docs")
     expect(JSON.stringify(appServer)).not.toContain("secret-test-key")
 
-    const runtime = await Plugin.resolveConnectorRemoteServer("plugin-app:manifest-lab:docs")
+    const runtime = await Plugin.resolveConnectorRemoteServer("plugin-connector:manifest-lab:docs")
     expect(runtime.serverUrl).toBe("https://docs.example.test/mcp")
     expect(runtime.headers?.["x-api-key"]).toBe("secret-test-key")
 
@@ -930,7 +1223,75 @@ describe("plugin marketplace API", () => {
     expect(disconnectResponse.status).toBe(200)
     expect(disconnectBody.data?.connected).toBe(false)
 
-    await expect(Plugin.resolveConnectorRemoteServer("plugin-app:manifest-lab:docs")).rejects.toThrow("not connected")
+    await expect(Plugin.resolveConnectorRemoteServer("plugin-connector:manifest-lab:docs")).rejects.toThrow("not connected")
+  })
+
+  test("loads connector manifests and resolves local stdio connector runtimes with secrets in memory", async () => {
+    await useTempDatabase()
+    await writeLocalConnectorPluginPackage()
+    const app = createServerApp()
+
+    const catalogResponse = await app.request("/api/plugins/catalog")
+    const catalogBody = (await catalogResponse.json()) as PluginCatalogEnvelope
+    const plugin = catalogBody.data?.find((item) => item.id === "local-connector-lab")
+
+    expect(catalogResponse.status).toBe(200)
+    expect(plugin?.connectors.map((connector) => connector.appID)).toEqual(["docs-local"])
+    expect(plugin?.apps.map((connector) => connector.appID)).toEqual(["docs-local"])
+    expect(plugin?.connectors[0]?.runtime.transport).toBe("stdio")
+
+    const installResponse = await app.request("/api/plugins/installed/local-connector-lab", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        enabled: true,
+      }),
+    })
+    const installBody = (await installResponse.json()) as InstalledPluginEnvelope
+
+    expect(installResponse.status).toBe(200)
+    expect(installBody.data?.mcpServerIDs).toEqual(["plugin.local-connector-lab.connector.docs-local"])
+    expect(installBody.data?.connectorIDs).toEqual(["plugin-connector:local-connector-lab:docs-local"])
+
+    const server = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.local-connector-lab.connector.docs-local")
+    expect(server?.transport).toBe("connector")
+    expect(server?.transport === "connector" ? server.connectorId : undefined)
+      .toBe("plugin-connector:local-connector-lab:docs-local")
+    expect(JSON.stringify(server)).not.toContain("local-secret")
+
+    const disconnectedResponse = await app.request(
+      "/api/plugins/installed/local-connector-lab/connectors/docs-local/diagnostic",
+    )
+    const disconnectedBody = (await disconnectedResponse.json()) as DiagnosticEnvelope
+    expect(disconnectedResponse.status).toBe(200)
+    expect(disconnectedBody.data?.ok).toBe(false)
+    expect(disconnectedBody.data?.error).toContain("not connected")
+
+    const connectResponse = await app.request(
+      "/api/plugins/installed/local-connector-lab/connectors/docs-local/api-key",
+      {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          apiKey: "local-secret",
+        }),
+      },
+    )
+    const connectBody = (await connectResponse.json()) as SingleConnectorStatusEnvelope
+    expect(connectResponse.status).toBe(200)
+    expect(connectBody.data?.connected).toBe(true)
+
+    const runtime = await Plugin.resolveConnectorRuntime("plugin-connector:local-connector-lab:docs-local")
+    expect(runtime.transport).toBe("stdio")
+    expect(runtime.transport === "stdio" ? runtime.command : undefined).toBe("node")
+    expect(runtime.transport === "stdio" ? runtime.args?.[0] : undefined).toContain("connectors")
+    expect(runtime.transport === "stdio" ? runtime.env?.DOCS_API_KEY : undefined).toBe("local-secret")
+    await expect(Plugin.resolveConnectorRemoteServer("plugin-connector:local-connector-lab:docs-local"))
+      .rejects.toThrow("does not resolve to a remote")
   })
 
   test("parses OAuth app connectors and starts cancellable PKCE auth flows", async () => {
@@ -958,8 +1319,8 @@ describe("plugin marketplace API", () => {
     })
     const installBody = (await installResponse.json()) as InstalledPluginEnvelope
     expect(installResponse.status).toBe(200)
-    expect(installBody.data?.mcpServerIDs).toEqual(["plugin.oauth-lab.app.mail"])
-    expect(installBody.data?.connectorIDs).toEqual(["plugin-app:oauth-lab:mail"])
+    expect(installBody.data?.mcpServerIDs).toEqual(["plugin.oauth-lab.connector.mail"])
+    expect(installBody.data?.connectorIDs).toEqual(["plugin-connector:oauth-lab:mail"])
 
     const disconnectedResponse = await app.request("/api/plugins/installed/oauth-lab/connectors")
     const disconnectedBody = (await disconnectedResponse.json()) as ConnectorStatusEnvelope
@@ -1017,7 +1378,7 @@ describe("plugin marketplace API", () => {
     })
 
     await Auth.setProviderCredential(
-      "plugin-app:oauth-lab:mail",
+      "plugin-connector:oauth-lab:mail",
       "oauth",
       {
         kind: "oauth_session",
@@ -1036,12 +1397,12 @@ describe("plugin marketplace API", () => {
     expect(connectedBody.data?.[0]?.credentialKind).toBe("oauth")
     expect(connectedBody.data?.[0]?.email).toBe("user@example.test")
 
-    const runtime = await Plugin.resolveConnectorRemoteServer("plugin-app:oauth-lab:mail")
+    const runtime = await Plugin.resolveConnectorRemoteServer("plugin-connector:oauth-lab:mail")
     expect(runtime.serverUrl).toBe("https://mail.example.test/mcp")
     expect(runtime.authorization).toBe("Bearer access-one")
 
     await Auth.setProviderCredential(
-      "plugin-app:oauth-lab:mail",
+      "plugin-connector:oauth-lab:mail",
       "oauth",
       {
         kind: "oauth_session",
@@ -1073,9 +1434,9 @@ describe("plugin marketplace API", () => {
       })
     }) as typeof fetch
 
-    const refreshedRuntime = await Plugin.resolveConnectorRemoteServer("plugin-app:oauth-lab:mail")
+    const refreshedRuntime = await Plugin.resolveConnectorRemoteServer("plugin-connector:oauth-lab:mail")
     expect(refreshedRuntime.authorization).toBe("Bearer access-two")
-    const refreshedCredential = await Auth.getProviderCredential("plugin-app:oauth-lab:mail", "oauth")
+    const refreshedCredential = await Auth.getProviderCredential("plugin-connector:oauth-lab:mail", "oauth")
     expect(refreshedCredential?.kind === "oauth_session" ? refreshedCredential.accessToken : undefined).toBe("access-two")
     expect(refreshedCredential?.kind === "oauth_session" ? refreshedCredential.refreshToken : undefined).toBe("refresh-two")
   })

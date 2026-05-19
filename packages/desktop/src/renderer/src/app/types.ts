@@ -29,7 +29,7 @@ export type {
 
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type SidebarActionKey = "project" | "sort" | "new"
-export type LeftSidebarView = "workspace" | "skills" | "prompts" | "mcp" | "plugins" | "tools"
+export type LeftSidebarView = "workspace" | "skills" | "prompts" | "mcp" | "plugins" | "connectors" | "tools"
 export type RightSidebarView = "changes" | "runtime" | "preview" | "files"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
@@ -1394,7 +1394,21 @@ export interface RemoteMcpServerSummary {
   timeoutMs?: number
 }
 
-export type McpServerSummary = StdioMcpServerSummary | RemoteMcpServerSummary
+export interface ConnectorMcpServerSummary {
+  id: string
+  name?: string
+  transport: "connector"
+  provider?: "openai"
+  connectorId: string
+  serverDescription?: string
+  allowedTools?: McpAllowedTools
+  toolPolicies?: McpToolPolicies
+  requireApproval?: McpRequireApproval
+  enabled: boolean
+  timeoutMs?: number
+}
+
+export type McpServerSummary = StdioMcpServerSummary | RemoteMcpServerSummary | ConnectorMcpServerSummary
 
 export interface McpToolDiagnostic {
   name: string
@@ -1433,6 +1447,99 @@ export interface PluginToolPreview {
   description: string
   readOnly?: boolean
   destructive?: boolean
+}
+
+export type ConnectorRisk = "low" | "medium" | "high" | "critical"
+
+export interface ConnectorApiKeyCredential {
+  kind: "api_key"
+  key: string
+  label: string
+  type?: "text" | "password"
+  required?: boolean
+  secret?: boolean
+  placeholder?: string
+  description?: string
+}
+
+export type ConnectorOAuthTokenPlacement =
+  | {
+      type: "authorization_bearer"
+    }
+  | {
+      type: "header"
+      name: string
+      value?: string
+    }
+
+export interface ConnectorOAuthCredential {
+  kind: "oauth"
+  label: string
+  clientID: string
+  authorizationURL: string
+  tokenURL: string
+  scopes: string[]
+  revocationURL?: string
+  tokenPlacement?: ConnectorOAuthTokenPlacement
+  authorizationParams?: Record<string, string>
+  tokenParams?: Record<string, string>
+  description?: string
+}
+
+export type ConnectorCredential = ConnectorApiKeyCredential | ConnectorOAuthCredential
+
+export interface ConnectorRemoteRuntime {
+  transport: "remote"
+  provider?: "openai"
+  serverUrl?: string
+  authorization?: string
+  headers?: Record<string, string>
+  serverDescription?: string
+  allowedTools?: McpAllowedTools
+  toolPolicies?: McpToolPolicies
+  requireApproval?: McpRequireApproval
+  timeoutMs?: number
+}
+
+export interface ConnectorDefinition {
+  id: string
+  name: string
+  description: string
+  publisher: string
+  icon?: string
+  risk: ConnectorRisk
+  permissions: string[]
+  tools: PluginToolPreview[]
+  credential?: ConnectorCredential
+  runtime?: ConnectorRemoteRuntime
+  installReview: string[]
+  source: "platform" | "registry"
+  available: boolean
+}
+
+export interface ConnectorRequirement {
+  connector: string
+  tools?: string[]
+  permissions?: string[]
+  required?: boolean
+  reason?: string
+}
+
+export interface ConnectorStatus {
+  connectorID: string
+  definitionID: string
+  name: string
+  connected: boolean
+  available: boolean
+  authStatus: "connected" | "not_connected" | "pending" | "expired" | "error" | "unavailable"
+  credentialKind?: "api_key" | "oauth"
+  credentialLabel?: string
+  account?: ProviderAuthAccountSummary
+  email?: string
+  expiresAt?: number
+  activeFlow?: ProviderAuthFlow
+  generatedMcpServerID?: string
+  lastDiagnostic?: McpServerDiagnostic
 }
 
 export interface PluginConfigField {
@@ -1529,6 +1636,7 @@ export interface PluginSkillPreview {
 }
 
 export interface PluginAppConnector {
+  id?: string
   appID: string
   name: string
   description?: string
@@ -1537,7 +1645,7 @@ export interface PluginAppConnector {
   permissions?: string[]
   tools?: PluginToolPreview[]
   credential: PluginAppCredential
-  runtime: PluginRemoteRuntime
+  runtime: PluginRuntimeTemplate
   installReview?: string[]
 }
 
@@ -1565,6 +1673,8 @@ export interface PluginCatalogItem {
   runtime?: PluginRuntimeTemplate
   mcpServers: PluginMcpServerCatalogEntry[]
   skills: PluginSkillPreview[]
+  connectorRequirements: ConnectorRequirement[]
+  connectors: PluginAppConnector[]
   apps: PluginAppConnector[]
   installReview?: string[]
   source?: "package" | "registry"
@@ -1580,6 +1690,7 @@ export interface InstalledPlugin {
   mcpServerIDs: string[]
   skillIDs: string[]
   connectorIDs: string[]
+  connectorRequirementIDs: string[]
   config: Record<string, string>
   installedAt: number
   updatedAt: number

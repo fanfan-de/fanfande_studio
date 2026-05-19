@@ -916,6 +916,22 @@ describe("App", () => {
       }),
       updateBuiltinToolSelection: vi.fn().mockImplementation((selection) => Promise.resolve(selection)),
       getPluginCatalog: vi.fn().mockResolvedValue([]),
+      getConnectorCatalog: vi.fn().mockResolvedValue([]),
+      getConnectors: vi.fn().mockResolvedValue([]),
+      getConnector: vi.fn(),
+      saveConnectorApiKey: vi.fn(),
+      deleteConnectorApiKey: vi.fn(),
+      startConnectorAuthFlow: vi.fn(),
+      getConnectorAuthFlow: vi.fn(),
+      cancelConnectorAuthFlow: vi.fn(),
+      deleteConnectorAuthSession: vi.fn(),
+      getConnectorDiagnostic: vi.fn().mockResolvedValue({
+        serverID: "connector.mock.default",
+        enabled: true,
+        ok: true,
+        toolCount: 0,
+        toolNames: [],
+      }),
       getGlobalMcpServers: vi.fn().mockResolvedValue([]),
       getGlobalMcpServerDiagnostic: vi.fn().mockResolvedValue({
         serverID: "mock",
@@ -8090,6 +8106,77 @@ describe("App", () => {
     })
   })
 
+  it("opens platform connectors from the activity rail and runs diagnostics", async () => {
+    const gmailDefinition = {
+      id: "gmail",
+      name: "Gmail",
+      description: "Read and draft Gmail messages through a platform-managed connector.",
+      publisher: "Fanfande",
+      risk: "medium",
+      permissions: ["Read Gmail metadata"],
+      tools: [
+        {
+          name: "search_email_ids",
+          title: "Search email",
+          description: "Search Gmail messages.",
+          readOnly: true,
+        },
+      ],
+      credential: {
+        kind: "oauth",
+        label: "Google account",
+        clientID: "client",
+        authorizationURL: "https://accounts.example.test/authorize",
+        tokenURL: "https://accounts.example.test/token",
+        scopes: ["gmail.readonly"],
+      },
+      installReview: ["Review Gmail OAuth scopes before connecting."],
+      source: "platform",
+      available: true,
+    }
+    const gmailStatus = {
+      connectorID: "connector:gmail:default",
+      definitionID: "gmail",
+      name: "Gmail",
+      connected: true,
+      available: true,
+      authStatus: "connected",
+      credentialKind: "oauth",
+      credentialLabel: "Google account",
+      email: "person@example.test",
+      generatedMcpServerID: "connector.gmail.default",
+    }
+    window.desktop!.getConnectorCatalog = vi.fn().mockResolvedValue([gmailDefinition])
+    window.desktop!.getConnectors = vi.fn().mockResolvedValue([gmailStatus])
+    window.desktop!.getConnector = vi.fn().mockResolvedValue(gmailStatus)
+    window.desktop!.getConnectorDiagnostic = vi.fn().mockResolvedValue({
+      serverID: "connector.gmail.default",
+      enabled: true,
+      ok: true,
+      toolCount: 1,
+      toolNames: ["search_email_ids"],
+    })
+
+    render(<App />)
+
+    openActivityRailConfigurationView("Open connectors")
+
+    expect(await screen.findByLabelText("Connectors top menu")).toBeInTheDocument()
+    expect(document.querySelector("#app-sidebar")).not.toBeInTheDocument()
+    expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: "Gmail Connected" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Gmail", level: 1 })).toBeInTheDocument()
+    expect(screen.getByText("person@example.test")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Diagnose" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.getConnectorDiagnostic).toHaveBeenCalledWith({
+        connectorID: "connector:gmail:default",
+      })
+    })
+  })
+
   it("edits global MCP servers from the activity rail and runs global diagnostics", async () => {
     window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([])
     window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
@@ -8255,6 +8342,7 @@ describe("App", () => {
     expect(within(configurationGroup).getByRole("button", { name: "Open prompts" })).toBeInTheDocument()
     expect(within(configurationGroup).getByRole("button", { name: "Open MCP" })).toBeInTheDocument()
     expect(within(configurationGroup).getByRole("button", { name: "Open plugins" })).toBeInTheDocument()
+    expect(within(configurationGroup).getByRole("button", { name: "Open connectors" })).toBeInTheDocument()
     expect(within(configurationGroup).getByRole("button", { name: "Open tools" })).toBeInTheDocument()
     expect(
       within(leftActivityRail!).getByRole("button", { name: "Hide configuration shortcuts" }),
@@ -9870,6 +9958,7 @@ describe("App", () => {
         mcpServerIDs: ["plugin.build-web-apps"],
         skillIDs: ["plugin:build-web-apps:frontend-app-builder"],
         connectorIDs: [],
+        connectorRequirementIDs: [],
         config: {},
         installedAt: 1,
         updatedAt: 1,
@@ -9889,6 +9978,7 @@ describe("App", () => {
         configFields: [],
         mcpServers: [],
         skills: [],
+        connectorRequirements: [],
         apps: [],
       },
     ])

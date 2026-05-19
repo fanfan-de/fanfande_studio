@@ -24,6 +24,8 @@ import type {
   LocaleConfigSnapshot,
   BuiltinToolSelection,
   BuiltinToolsPayload,
+  ConnectorDefinition,
+  ConnectorStatus,
   DesktopAppUpdateCheckResult,
   DesktopAppUpdateSettings,
   DesktopIpcChannel,
@@ -506,6 +508,26 @@ try {
       invokeDesktop("desktop:delete-installed-plugin", input) as Promise<PluginDeleteResult>,
     getInstalledPluginDiagnostic: (input: { pluginID: string }) =>
       invokeDesktop("desktop:get-installed-plugin-diagnostic", input) as Promise<McpServerDiagnostic>,
+    getConnectorCatalog: () =>
+      invokeDesktop("desktop:get-connector-catalog") as Promise<ConnectorDefinition[]>,
+    getConnectors: () =>
+      invokeDesktop("desktop:get-connectors") as Promise<ConnectorStatus[]>,
+    getConnector: (input: { connectorID: string }) =>
+      invokeDesktop("desktop:get-connector", input) as Promise<ConnectorStatus>,
+    saveConnectorApiKey: (input: { connectorID: string; apiKey?: string | null }) =>
+      invokeDesktop("desktop:save-connector-api-key", input) as Promise<ConnectorStatus>,
+    deleteConnectorApiKey: (input: { connectorID: string }) =>
+      invokeDesktop("desktop:delete-connector-api-key", input) as Promise<ConnectorStatus>,
+    startConnectorAuthFlow: (input: { connectorID: string }) =>
+      invokeDesktop("desktop:start-connector-auth-flow", input) as Promise<AgentProviderAuthFlow>,
+    getConnectorAuthFlow: (input: { connectorID: string; flowID: string }) =>
+      invokeDesktop("desktop:get-connector-auth-flow", input) as Promise<AgentProviderAuthFlow | undefined>,
+    cancelConnectorAuthFlow: (input: { connectorID: string; flowID: string }) =>
+      invokeDesktop("desktop:cancel-connector-auth-flow", input) as Promise<AgentProviderAuthFlow | undefined>,
+    deleteConnectorAuthSession: (input: { connectorID: string }) =>
+      invokeDesktop("desktop:delete-connector-auth-session", input) as Promise<ConnectorStatus>,
+    getConnectorDiagnostic: (input: { connectorID: string }) =>
+      invokeDesktop("desktop:get-connector-diagnostic", input) as Promise<McpServerDiagnostic>,
     getInstalledPluginConnectors: (input: { pluginID: string }) =>
       invokeDesktop("desktop:get-installed-plugin-connectors", input) as Promise<PluginConnectorStatus[]>,
     saveInstalledPluginConnectorApiKey: (input: { pluginID: string; appID: string; apiKey?: string | null }) =>

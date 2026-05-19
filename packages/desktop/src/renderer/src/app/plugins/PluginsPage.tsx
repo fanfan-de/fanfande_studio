@@ -13,6 +13,7 @@ import {
 } from "../icons"
 import { ShellTopMenu } from "../shared-ui"
 import type {
+  ConnectorStatus,
   InstalledPlugin,
   McpServerDiagnostic,
   PluginCatalogItem,
@@ -37,6 +38,7 @@ interface PluginsPageProps {
   isLoading: boolean
   loadError: string | null
   message: PluginsMessage | null
+  connectorStatuses: ConnectorStatus[]
   pluginCatalog: PluginCatalogItem[]
   pluginConnectorStatuses: Record<string, PluginConnectorStatus[]>
   pluginDiagnostics: Record<string, McpServerDiagnostic>
@@ -130,7 +132,7 @@ function credentialKindLabel(kind: "api_key" | "oauth" | undefined) {
   return kind === "oauth" ? "OAuth" : "API key"
 }
 
-function connectorStatusLabel(status: PluginConnectorStatus | undefined) {
+function connectorStatusLabel(status: ConnectorStatus | PluginConnectorStatus | undefined) {
   if (!status) return "Not connected"
   if (status.authStatus === "pending") return "Signing in"
   if (status.authStatus === "expired") return "Expired"
@@ -193,7 +195,7 @@ function pluginBrandColor(plugin: PluginCatalogItem) {
 function pluginDetailDescription(plugin: PluginCatalogItem) {
   if (plugin.longDescription?.trim()) return plugin.longDescription.trim()
 
-  const capabilityCount = plugin.mcpServers.length + plugin.skills.length + plugin.apps.length
+  const capabilityCount = plugin.mcpServers.length + plugin.skills.length + plugin.connectorRequirements.length + plugin.apps.length
   const capabilityLabel = capabilityCount === 1 ? "capability" : "capabilities"
 
   return `${plugin.description} This plugin includes ${capabilityCount} ${capabilityLabel} for ${plugin.category.toLowerCase()} workflows and can be enabled per project after installation.`
@@ -201,7 +203,7 @@ function pluginDetailDescription(plugin: PluginCatalogItem) {
 
 function pluginFunctionLabel(plugin: PluginCatalogItem) {
   const toolModes = new Set<string>(plugin.tools.map((tool) => (tool.readOnly ? "Read" : "Write")))
-  if (plugin.apps.length > 0) toolModes.add("Interactive")
+  if (plugin.connectorRequirements.length + plugin.apps.length > 0) toolModes.add("Interactive")
   if (plugin.mcpServers.length > 0) toolModes.add("MCP")
   if (toolModes.size === 0) toolModes.add(plugin.category)
 
@@ -210,7 +212,7 @@ function pluginFunctionLabel(plugin: PluginCatalogItem) {
 
 function pluginPromptExamples(plugin: PluginCatalogItem) {
   const primaryTool = plugin.tools[0]?.title ?? plugin.tools[0]?.name
-  const connector = plugin.apps[0]?.name
+  const connector = plugin.connectorRequirements[0]?.connector ?? plugin.apps[0]?.name
   const target = primaryTool ?? connector ?? plugin.category.toLowerCase()
 
   return [
@@ -366,6 +368,7 @@ function PluginSection({
 
 export function PluginsPage({
   activePluginID,
+  connectorStatuses,
   deletingPluginID,
   diagnosingPluginID,
   installingPluginID,
@@ -422,6 +425,7 @@ export function PluginsPage({
         (plugin.tags ?? []).join(" "),
         plugin.tools.map((tool) => tool.name).join(" "),
         plugin.skills.map((skill) => skill.name).join(" "),
+        plugin.connectorRequirements.map((requirement) => requirement.connector).join(" "),
         plugin.apps.map((app) => app.name).join(" "),
       ]
         .join(" ")
@@ -436,6 +440,10 @@ export function PluginsPage({
   const activeConnectorStatusByAppID = useMemo(
     () => new Map(activeConnectorStatuses.map((status) => [status.appID, status])),
     [activeConnectorStatuses],
+  )
+  const platformConnectorStatusByDefinitionID = useMemo(
+    () => new Map(connectorStatuses.map((status) => [status.definitionID, status])),
+    [connectorStatuses],
   )
   const pluginBusyIDs = useMemo(
     () => new Set([installingPluginID, updatingPluginID, deletingPluginID, diagnosingPluginID].filter(Boolean) as string[]),
@@ -830,6 +838,89 @@ export function PluginsPage({
                           </div>
                         )
                       })}
+                      {activePlugin.connectorRequirements.map((requirement) => {
+                        const itemID = `${activePlugin.id}:connector-requirement:${requirement.connector}`
+                        const isExpanded = expandedIncludedItemID === itemID
+                        const status = platformConnectorStatusByDefinitionID.get(requirement.connector)
+                        const connectorID = status?.connectorID ?? `connector:${requirement.connector}:default`
+                        const requestedTools = requirement.tools?.join(", ") || "Declared by connector"
+                        const requestedPermissions = requirement.permissions?.join(", ") || "Declared by connector"
+
+                        return (
+                          <div key={`connector-requirement:${requirement.connector}`} className="plugins-included-item">
+                            <button
+                              className={isExpanded ? "plugins-included-row is-expanded" : "plugins-included-row"}
+                              type="button"
+                              aria-expanded={isExpanded}
+                              aria-controls={`${itemID}:detail`}
+                              aria-label={`Show details for ${requirement.connector}`}
+                              onClick={() => toggleIncludedItem(itemID)}
+                            >
+                              <span className="plugins-included-icon"><ConnectedStatusIcon /></span>
+                              <span className="plugins-included-copy">
+                                <strong>{requirement.connector}</strong>
+                                <span>{requirement.reason ?? "Platform connector requirement"}</span>
+                              </span>
+                              <span className={status?.connected ? "plugins-toggle is-on" : "plugins-toggle"} aria-hidden="true">
+                                <span />
+                              </span>
+                              <span className="plugins-included-chevron" aria-hidden="true"><ChevronDownIcon /></span>
+                            </button>
+                            {isExpanded ? (
+                              <div className="plugins-included-detail" id={`${itemID}:detail`}>
+                                <dl className="plugins-included-detail-grid">
+                                  <div>
+                                    <dt>Type</dt>
+                                    <dd>Platform connector</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Connector</dt>
+                                    <dd>{requirement.connector}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Status</dt>
+                                    <dd>{connectorStatusLabel(status)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Connector ID</dt>
+                                    <dd>{connectorID}</dd>
+                                  </div>
+                                  {status?.email ? (
+                                    <div>
+                                      <dt>Account</dt>
+                                      <dd>{status.email}</dd>
+                                    </div>
+                                  ) : null}
+                                  {status?.generatedMcpServerID ? (
+                                    <div>
+                                      <dt>MCP server</dt>
+                                      <dd>{status.generatedMcpServerID}</dd>
+                                    </div>
+                                  ) : null}
+                                  <div>
+                                    <dt>Required</dt>
+                                    <dd>{requirement.required === false ? "Optional" : "Required"}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Tools</dt>
+                                    <dd>{requestedTools}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Permissions</dt>
+                                    <dd>{requestedPermissions}</dd>
+                                  </div>
+                                  {requirement.reason ? (
+                                    <div className="is-wide">
+                                      <dt>Reason</dt>
+                                      <dd>{requirement.reason}</dd>
+                                    </div>
+                                  ) : null}
+                                </dl>
+                              </div>
+                            ) : null}
+                          </div>
+                        )
+                      })}
                       {activePlugin.apps.map((app) => {
                         const itemID = `${activePlugin.id}:app:${app.appID}`
                         const isExpanded = expandedIncludedItemID === itemID
@@ -855,7 +946,7 @@ export function PluginsPage({
                               <span className="plugins-included-icon"><ConnectedStatusIcon /></span>
                               <span className="plugins-included-copy">
                                 <strong>{app.name}</strong>
-                                <span>{app.description ?? "Connector-backed remote MCP"}</span>
+                                <span>{app.description ?? "Connector-backed MCP"}</span>
                               </span>
                               <span className={status?.connected ? "plugins-toggle is-on" : "plugins-toggle"} aria-hidden="true">
                                 <span />
@@ -867,7 +958,7 @@ export function PluginsPage({
                                 <dl className="plugins-included-detail-grid">
                                   <div>
                                     <dt>Type</dt>
-                                    <dd>App connector</dd>
+                                    <dd>Plugin connector</dd>
                                   </div>
                                   <div>
                                     <dt>Status</dt>
@@ -875,7 +966,7 @@ export function PluginsPage({
                                   </div>
                                   <div>
                                     <dt>Connector ID</dt>
-                                    <dd>plugin-app:{activePlugin.id}:{app.appID}</dd>
+                                    <dd>{status?.connectorID ?? `plugin-connector:${activePlugin.id}:${app.appID}`}</dd>
                                   </div>
                                   <div>
                                     <dt>Credential</dt>
@@ -905,7 +996,7 @@ export function PluginsPage({
                                   </div>
                                   <div className="is-wide">
                                     <dt>Description</dt>
-                                    <dd>{app.description ?? app.credential.description ?? "Connector-backed remote MCP"}</dd>
+                                    <dd>{app.description ?? app.credential.description ?? "Connector-backed MCP"}</dd>
                                   </div>
                                 </dl>
                                 {activeInstalledPlugin ? (
