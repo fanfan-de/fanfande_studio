@@ -125,6 +125,45 @@ function createDocsPlugin(): CatalogPlugin {
   })
 }
 
+function createOAuthPlugin(): CatalogPlugin {
+  return createPlugin({
+    id: "mail",
+    name: "Mail",
+    description: "Read connected mail.",
+    category: "Docs",
+    risk: "medium",
+    configFields: [],
+    tools: [],
+    mcpServers: [],
+    skills: [],
+    apps: [
+      {
+        appID: "gmail",
+        name: "Gmail",
+        description: "Read Gmail over OAuth.",
+        credential: {
+          kind: "oauth",
+          label: "Google account",
+          clientID: "client",
+          authorizationURL: "https://accounts.example.test/authorize",
+          tokenURL: "https://accounts.example.test/token",
+          scopes: ["gmail.readonly"],
+        },
+        runtime: {
+          transport: "remote",
+          serverUrl: "https://gmail.example.test/mcp",
+          allowedTools: {
+            readOnly: true,
+          },
+          requireApproval: "never",
+        },
+      },
+    ],
+    permissions: ["Reads mail metadata"],
+    installReview: [],
+  })
+}
+
 function createInstalledPlugin(overrides: Partial<InstalledPlugin> = {}): InstalledPlugin {
   return {
     pluginID: overrides.pluginID ?? "filesystem",
@@ -177,8 +216,10 @@ function createProps(overrides: Partial<PluginsPageProps> = {}): PluginsPageProp
     },
     savingPluginConnectorID: null,
     updatingPluginID: null,
+    onCancelInstalledPluginConnectorAuthFlow: vi.fn(),
     onDeleteInstalledPlugin: vi.fn(),
     onDeleteInstalledPluginConnectorApiKey: vi.fn(),
+    onDeleteInstalledPluginConnectorAuthSession: vi.fn(),
     onDiagnoseInstalledPlugin: vi.fn(),
     onDiagnoseInstalledPluginConnector: vi.fn(),
     onDismissMessage: vi.fn(),
@@ -190,6 +231,7 @@ function createProps(overrides: Partial<PluginsPageProps> = {}): PluginsPageProp
     onSaveInstalledPluginConnectorApiKey: vi.fn(),
     onSaveInstalledPluginConfig: vi.fn(),
     onSetInstalledPluginEnabled: vi.fn(),
+    onStartInstalledPluginConnectorAuthFlow: vi.fn(),
     ...overrides,
   }
 }
@@ -378,6 +420,8 @@ describe("PluginsPage", () => {
                 appID: "docs-api",
                 connectorID: "plugin-app:docs:docs-api",
                 connected: true,
+                credentialKind: "api_key",
+                authStatus: "connected",
                 credentialLabel: "Docs API key",
                 generatedMcpServerID: "plugin.docs.app.docs-api",
                 lastDiagnostic: createDiagnostic({
@@ -478,6 +522,8 @@ describe("PluginsPage", () => {
                 appID: "docs-api",
                 connectorID: "plugin-app:docs:docs-api",
                 connected: true,
+                credentialKind: "api_key",
+                authStatus: "connected",
                 credentialLabel: "Docs API key",
                 generatedMcpServerID: "plugin.docs.app.docs-api",
               },
@@ -498,7 +544,54 @@ describe("PluginsPage", () => {
     expect(screen.getByText("Connector ID")).toBeInTheDocument()
     expect(screen.getByText("plugin-app:docs:docs-api")).toBeInTheDocument()
     expect(screen.getByText("Credential")).toBeInTheDocument()
-    expect(screen.getByText("Docs API key")).toBeInTheDocument()
+    expect(screen.getAllByText("Docs API key").length).toBeGreaterThan(0)
     expect(screen.getByText("https://docs.example.test/mcp")).toBeInTheDocument()
+  })
+
+  it("shows OAuth connector sign-in controls in included app details", () => {
+    const plugin = createOAuthPlugin()
+    const onStartInstalledPluginConnectorAuthFlow = vi.fn()
+    const onDeleteInstalledPluginConnectorAuthSession = vi.fn()
+
+    render(
+      <PluginsPage
+        {...createProps({
+          activePluginID: "mail",
+          pluginCatalog: [plugin],
+          installedPlugins: [
+            createInstalledPlugin({
+              pluginID: "mail",
+              mcpServerID: "plugin.mail.app.gmail",
+              mcpServerIDs: ["plugin.mail.app.gmail"],
+              connectorIDs: ["plugin-app:mail:gmail"],
+              config: {},
+            }),
+          ],
+          pluginConnectorStatuses: {
+            mail: [
+              {
+                pluginID: "mail",
+                appID: "gmail",
+                connectorID: "plugin-app:mail:gmail",
+                connected: false,
+                credentialKind: "oauth",
+                authStatus: "not_connected",
+                credentialLabel: "Google account",
+                generatedMcpServerID: "plugin.mail.app.gmail",
+              },
+            ],
+          },
+          onStartInstalledPluginConnectorAuthFlow,
+          onDeleteInstalledPluginConnectorAuthSession,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Show details for Gmail" }))
+    expect(screen.getByText("Credential kind")).toBeInTheDocument()
+    expect(screen.getByText("OAuth")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+    expect(onStartInstalledPluginConnectorAuthFlow).toHaveBeenCalledWith("mail", "gmail")
+    expect(screen.queryByRole("textbox", { name: /Google account/ })).not.toBeInTheDocument()
   })
 })

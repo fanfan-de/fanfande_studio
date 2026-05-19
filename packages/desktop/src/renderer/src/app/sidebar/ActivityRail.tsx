@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react"
 import { FileTextIcon, FolderIcon, LayoutSidebarLeftIcon, PluginIcon, SettingsIcon, SideChatIcon, ToolsIcon } from "../icons"
-import { SidebarToggleButton, type SidebarSide } from "../shared-ui"
+import { joinClassNames, SidebarToggleButton, type SidebarSide } from "../shared-ui"
 import type { LeftSidebarView } from "../types"
 
 interface ActivityRailProps {
@@ -26,6 +26,29 @@ const configurationLeftRailViews = [
 
 function isConfigurationLeftRailView(view: LeftSidebarView) {
   return configurationLeftRailViews.some((item) => item.view === view)
+}
+
+interface ActivityRailViewButtonProps {
+  className?: string
+  Icon: typeof LayoutSidebarLeftIcon
+  isActive: boolean
+  label: string
+  onClick: () => void
+}
+
+function ActivityRailViewButton({ className, Icon, isActive, label, onClick }: ActivityRailViewButtonProps) {
+  return (
+    <button
+      className={joinClassNames("activity-rail-view-button", className, isActive && "is-active")}
+      aria-label={label}
+      aria-pressed={isActive}
+      title={label}
+      type="button"
+      onClick={onClick}
+    >
+      <Icon />
+    </button>
+  )
 }
 
 export function ActivityRail({
@@ -69,17 +92,13 @@ export function ActivityRail({
               const isActive = activeView === view
 
               return (
-                <button
+                <ActivityRailViewButton
                   key={view}
-                  className={isActive ? "activity-rail-view-button is-active" : "activity-rail-view-button"}
-                  aria-label={label}
-                  aria-pressed={isActive}
-                  title={label}
-                  type="button"
+                  Icon={Icon}
+                  isActive={isActive}
+                  label={label}
                   onClick={() => onViewChange(view)}
-                >
-                  <Icon />
-                </button>
+                />
               )
             })}
           </div>
@@ -93,17 +112,14 @@ export function ActivityRail({
                 const isActive = activeView === view
 
                 return (
-                  <button
+                  <ActivityRailViewButton
                     key={view}
-                    className={isActive ? "activity-rail-view-button is-active" : "activity-rail-view-button"}
-                    aria-label={label}
-                    aria-pressed={isActive}
-                    title={label}
-                    type="button"
+                    className="activity-rail-config-button"
+                    Icon={Icon}
+                    isActive={isActive}
+                    label={label}
                     onClick={() => handleConfigurationViewChange(view)}
-                  >
-                    <Icon />
-                  </button>
+                  />
                 )
               })}
             </div>

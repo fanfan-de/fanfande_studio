@@ -1044,7 +1044,7 @@ describe("ThreadView assistant response markdown", () => {
   })
 
   it("renders assistant response HTML when the first-line marker requests HTML", () => {
-    const { container, getByRole, queryByText } = renderThread([
+    const { container } = renderThread([
       assistantTraceTurn(
         "assistant-1",
         [
@@ -1067,13 +1067,16 @@ describe("ThreadView assistant response markdown", () => {
         false,
       ),
     ])
+    const frame = container.querySelector(".assistant-section.is-response .thread-html-frame") as HTMLIFrameElement | null
+    const srcDoc = frame?.getAttribute("srcdoc") ?? frame?.srcdoc ?? ""
 
-    expect(getByRole("heading", { name: "HTML response" })).toBeInTheDocument()
+    expect(frame).not.toBeNull()
     expect(container.querySelector(".assistant-section.is-response .thread-html")).not.toBeNull()
-    expect(container.querySelector(".assistant-section.is-response .thread-markdown")).not.toBeNull()
-    expect(container.querySelector("strong")?.textContent).toBe("Ready")
-    expect(container.textContent).not.toContain("fanfande-response-format")
-    expect(queryByText("bad()")).toBeNull()
+    expect(container.querySelector(".assistant-section.is-response .thread-markdown")).toBeNull()
+    expect(srcDoc).toContain("HTML response")
+    expect(srcDoc).toContain("<strong>Ready</strong>")
+    expect(srcDoc).not.toContain("fanfande-response-format")
+    expect(srcDoc).not.toContain("bad()")
   })
 
   it("keeps assistant response Markdown when the first-line marker requests Markdown", () => {

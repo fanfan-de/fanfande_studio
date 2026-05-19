@@ -147,6 +147,17 @@ export type ProviderRuntimeAuthOptions = {
   forceRefresh?: boolean
 }
 
+export type GenericOAuthProviderConfig = {
+  label?: string
+  clientID: string
+  authorizationURL: string
+  tokenURL: string
+  scopes: string[]
+  revocationURL?: string
+  authorizationParams?: Record<string, string>
+  tokenParams?: Record<string, string>
+}
+
 type ProviderFlowContext = {
   providerID: string
   method: string
@@ -163,6 +174,7 @@ type InternalFlow = ProviderAuthFlow & {
   cancelSignal?: AbortController
   timeoutHandle?: ReturnType<typeof setTimeout>
   providerBaseURL?: string
+  genericOAuth?: GenericOAuthProviderConfig
 }
 
 const flowState = new Map<string, InternalFlow>()
@@ -425,8 +437,12 @@ function isAnyboxBrowserFlow(flow: InternalFlow) {
   return flow.providerID === ANYBOX_PROVIDER_ID && flow.method === ANYBOX_BROWSER_METHOD
 }
 
+function isGenericOAuthBrowserFlow(flow: InternalFlow) {
+  return Boolean(flow.genericOAuth)
+}
+
 function isLocalBrowserCallbackFlow(flow: InternalFlow) {
-  return isOpenAIBrowserFlow(flow) || isAnyboxBrowserFlow(flow)
+  return isOpenAIBrowserFlow(flow) || isAnyboxBrowserFlow(flow) || isGenericOAuthBrowserFlow(flow)
 }
 
 function clearFlowTimeout(flow: InternalFlow) {
@@ -444,6 +460,11 @@ function getLatestProviderFlow(providerID: string) {
   if (flows.length === 0) return undefined
   flows.sort((left, right) => right.updatedAt - left.updatedAt)
   return flows[0]
+}
+
+export function getLatestProviderAuthFlow(providerID: string) {
+  const flow = getLatestProviderFlow(providerID)
+  return flow ? flowPublicView(flow) : undefined
 }
 
 function upsertFlow(flow: InternalFlow) {
@@ -1243,6 +1264,212 @@ async function saveAnyboxTokens(
   return credential
 }
 
+function buildGenericOAuthAuthorizeURL(input: {
+  oauth: GenericOAuthProviderConfig
+  redirectURI: string
+  codeChallenge: string
+  state: string
+}) {
+  const url = new URL(input.oauth.authorizationURL)
+  url.searchParams.set("response_type", "code")
+  url.searchParams.set("client_id", input.oauth.clientID)
+  url.searchParams.set("redirect_uri", input.redirectURI)
+  url.searchParams.set("scope", input.oauth.scopes.join(" "))
+  url.searchParams.set("state", input.state)
+  url.searchParams.set("code_challenge", input.codeChallenge)
+  url.searchParams.set("code_challenge_method", "S256")
+
+  for (const [key, value] of Object.entries(input.oauth.authorizationParams ?? {})) {
+    url.searchParams.set(key, value)
+  }
+
+  return url.toString()
+}
+
+async function exchangeGenericOAuthAuthorizationCode(input: {
+  oauth: GenericOAuthProviderConfig
+  authorizationCode: string
+  codeVerifier: string
+  redirectURI: string
+}) {
+  const body = new URLSearchParams()
+  for (const [key, value] of Object.entries(input.oauth.tokenParams ?? {})) {
+    body.set(key, value)
+  }
+  body.set("grant_type", "authorization_code")
+  body.set("client_id", input.oauth.clientID)
+  body.set("redirect_uri", input.redirectURI)
+  body.set("code", input.authorizationCode)
+  body.set("code_verifier", input.codeVerifier)
+
+  const response = await fetch(input.oauth.tokenURL, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body,
+  })
+
+  await ensureOkResponse(response, "OAuth token exchange failed")
+  return (await response.json()) as Record<string, unknown>
+}
+
+function readGenericOAuthTokenAccount(
+  payload: Record<string, unknown>,
+  idToken?: string,
+  fallback?: Auth.OAuthSessionCredential,
+) {
+  const jwtPayload = idToken ? decodeJwtPayload(idToken) : undefined
+  const subject = normalizeString(jwtPayload?.sub) ?? fallback?.userID ?? fallback?.accountID
+  return {
+    accountID: normalizeString(payload.account_id) ?? subject,
+    userID: normalizeString(payload.user_id) ?? subject,
+    email: normalizeString(jwtPayload?.email) ?? normalizeString(payload.email) ?? fallback?.email,
+  }
+}
+
+function buildGenericOAuthCredential(
+  payload: Record<string, unknown>,
+  fallback?: Auth.OAuthSessionCredential,
+): Auth.OAuthSessionCredential {
+  const accessToken = normalizeString(payload.access_token) ?? fallback?.accessToken ?? ""
+  const refreshToken = normalizeString(payload.refresh_token) ?? fallback?.refreshToken ?? ""
+  const idToken = normalizeString(payload.id_token) ?? fallback?.idToken
+  const account = readGenericOAuthTokenAccount(payload, idToken, fallback)
+
+  if (!accessToken) {
+    throw new Error("OAuth token response did not include an access token.")
+  }
+
+  if (!refreshToken) {
+    throw new Error("OAuth token response did not include a refresh token.")
+  }
+
+  return {
+    kind: "oauth_session",
+    accessToken,
+    refreshToken,
+    expiresAt: computeTokenExpiry({
+      accessToken,
+      idToken,
+      expiresIn: payload.expires_in,
+    }),
+    tokenType: normalizeString(payload.token_type) ?? fallback?.tokenType,
+    idToken,
+    scope: normalizeString(payload.scope) ?? fallback?.scope,
+    accountID: account.accountID,
+    userID: account.userID,
+    email: account.email,
+    createdAt: fallback?.createdAt,
+  }
+}
+
+async function saveGenericOAuthTokens(
+  providerID: string,
+  method: string,
+  payload: Record<string, unknown>,
+) {
+  const credential = buildGenericOAuthCredential(payload)
+  await Auth.setProviderCredential(providerID, method, credential, {
+    activate: true,
+    lastError: null,
+  })
+  return credential
+}
+
+export async function refreshGenericOAuthSession(
+  credential: Auth.OAuthSessionCredential,
+  oauth: GenericOAuthProviderConfig,
+) {
+  const body = new URLSearchParams()
+  for (const [key, value] of Object.entries(oauth.tokenParams ?? {})) {
+    body.set(key, value)
+  }
+  body.set("grant_type", "refresh_token")
+  body.set("client_id", oauth.clientID)
+  body.set("refresh_token", credential.refreshToken)
+
+  const response = await fetch(oauth.tokenURL, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body,
+  })
+
+  await ensureOkResponse(response, "OAuth token refresh failed")
+  const payload = (await response.json()) as Record<string, unknown>
+  return buildGenericOAuthCredential(payload, credential)
+}
+
+export async function resolveGenericOAuthCredential(
+  providerID: string,
+  method: string,
+  oauth: GenericOAuthProviderConfig,
+  options: { forceRefresh?: boolean } = {},
+) {
+  const credential = await Auth.getProviderCredential(providerID, method)
+  if (credential?.kind !== "oauth_session") return undefined
+
+  if (!options.forceRefresh && credential.expiresAt > now() + TOKEN_REFRESH_THRESHOLD_MS) {
+    return credential
+  }
+
+  try {
+    const refreshed = await refreshGenericOAuthSession(credential, oauth)
+    await Auth.setProviderCredential(providerID, method, refreshed, {
+      activate: true,
+      lastError: null,
+    })
+    return refreshed
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    await Auth.setProviderLastError(providerID, message)
+    log.warn("generic-oauth-session-refresh-failed", {
+      providerID,
+      method,
+      message,
+    })
+    if (options.forceRefresh || credential.expiresAt <= now()) return undefined
+    return credential
+  }
+}
+
+async function revokeGenericOAuthSession(
+  credential: Auth.OAuthSessionCredential,
+  oauth: GenericOAuthProviderConfig,
+) {
+  if (!oauth.revocationURL) return
+
+  const body = new URLSearchParams()
+  body.set("token", credential.refreshToken || credential.accessToken)
+  body.set("client_id", oauth.clientID)
+  await fetch(oauth.revocationURL, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body,
+  }).catch(() => undefined)
+}
+
+export async function deleteGenericOAuthSession(
+  providerID: string,
+  method: string,
+  oauth?: GenericOAuthProviderConfig,
+) {
+  const previousRecord = await Auth.getProviderRecord(providerID)
+  if (oauth && previousRecord?.credentials[method]?.kind === "oauth_session") {
+    await revokeGenericOAuthSession(previousRecord.credentials[method], oauth)
+  }
+  const removed = await Auth.removeProviderCredential(providerID, method)
+  await Auth.setProviderLastError(providerID, null)
+  return removed
+}
+
 async function revokeAnyboxSession(credential: Auth.OAuthSessionCredential) {
   await AnyboxHTTP.anyboxFetch(anyboxURL(credential.originator, "/api/agent/oauth/revoke"), {
     method: "POST",
@@ -1328,6 +1555,46 @@ async function startAnyboxBrowserFlow(input: ProviderFlowContext) {
     redirectURI,
     codeVerifier,
     providerBaseURL,
+    timeoutHandle: setTimeout(() => {
+      void expireOpenAIBrowserFlow(id)
+    }, OPENAI_FLOW_TIMEOUT_MS),
+  }
+
+  upsertFlow(flow)
+  return flowPublicView(flow)
+}
+
+export async function startGenericOAuthFlow(input: ProviderFlowContext & {
+  oauth: GenericOAuthProviderConfig
+}) {
+  const callbackServer = await ensureOpenAILocalCallbackServer()
+  const id = createFlowID()
+  const { codeChallenge, codeVerifier } = await createPkcePair()
+  const state = createFlowID()
+  const redirectURI = callbackServer.redirectURI
+  const authorizationURL = buildGenericOAuthAuthorizeURL({
+    oauth: input.oauth,
+    redirectURI,
+    codeChallenge,
+    state,
+  })
+  const label = input.oauth.label ?? input.method
+
+  const flow: InternalFlow = {
+    id,
+    providerID: input.providerID,
+    method: input.method,
+    kind: "browser_oauth",
+    status: "waiting_user",
+    startedAt: now(),
+    updatedAt: now(),
+    expiresAt: now() + OPENAI_FLOW_TIMEOUT_MS,
+    authorizationURL,
+    connectionLabel: `Waiting for ${label}`,
+    state,
+    redirectURI,
+    codeVerifier,
+    genericOAuth: input.oauth,
     timeoutHandle: setTimeout(() => {
       void expireOpenAIBrowserFlow(id)
     }, OPENAI_FLOW_TIMEOUT_MS),
@@ -1578,21 +1845,30 @@ export async function completeProviderBrowserCallback(input: {
   upsertFlow(flow)
 
   try {
-    const tokens = isAnyboxBrowserFlow(flow)
-      ? await exchangeAnyboxAuthorizationCode({
-          baseURL: flow.providerBaseURL,
+    const tokens = flow.genericOAuth
+      ? await exchangeGenericOAuthAuthorizationCode({
+          oauth: flow.genericOAuth,
           authorizationCode: code,
           codeVerifier: flow.codeVerifier,
           redirectURI: flow.redirectURI,
         })
-      : await exchangeOpenAIAuthorizationCode({
-          authorizationCode: code,
-          codeVerifier: flow.codeVerifier,
-          redirectURI: flow.redirectURI,
-        })
-    const credential = isAnyboxBrowserFlow(flow)
-      ? await saveAnyboxTokens(flow.method, tokens, flow.providerBaseURL)
-      : await saveOpenAITokens(flow.method, tokens)
+      : isAnyboxBrowserFlow(flow)
+        ? await exchangeAnyboxAuthorizationCode({
+            baseURL: flow.providerBaseURL,
+            authorizationCode: code,
+            codeVerifier: flow.codeVerifier,
+            redirectURI: flow.redirectURI,
+          })
+        : await exchangeOpenAIAuthorizationCode({
+            authorizationCode: code,
+            codeVerifier: flow.codeVerifier,
+            redirectURI: flow.redirectURI,
+          })
+    const credential = flow.genericOAuth
+      ? await saveGenericOAuthTokens(flow.providerID, flow.method, tokens)
+      : isAnyboxBrowserFlow(flow)
+        ? await saveAnyboxTokens(flow.method, tokens, flow.providerBaseURL)
+        : await saveOpenAITokens(flow.method, tokens)
     flow.status = "connected"
     flow.errorMessage = undefined
     flow.errorCode = undefined

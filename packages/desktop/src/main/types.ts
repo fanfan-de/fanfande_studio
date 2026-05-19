@@ -1064,6 +1064,36 @@ export interface AgentPluginConfigField {
   description?: string
 }
 
+export interface AgentPluginApiKeyAppCredential extends AgentPluginConfigField {
+  kind?: "api_key"
+}
+
+export type AgentPluginOAuthTokenPlacement =
+  | {
+      type: "authorization_bearer"
+    }
+  | {
+      type: "header"
+      name: string
+      value?: string
+    }
+
+export interface AgentPluginOAuthAppCredential {
+  kind: "oauth"
+  label: string
+  clientID: string
+  authorizationURL: string
+  tokenURL: string
+  scopes: string[]
+  revocationURL?: string
+  tokenPlacement?: AgentPluginOAuthTokenPlacement
+  authorizationParams?: Record<string, string>
+  tokenParams?: Record<string, string>
+  description?: string
+}
+
+export type AgentPluginAppCredential = AgentPluginApiKeyAppCredential | AgentPluginOAuthAppCredential
+
 export interface AgentPluginPackageDownload {
   type: "zip"
   url?: string
@@ -1124,7 +1154,7 @@ export interface AgentPluginAppConnector {
   risk?: AgentPluginRisk
   permissions?: string[]
   tools?: AgentPluginToolPreview[]
-  credential: AgentPluginConfigField
+  credential: AgentPluginAppCredential
   runtime: AgentPluginRemoteRuntime
   installReview?: string[]
 }
@@ -1201,7 +1231,13 @@ export interface AgentPluginConnectorStatus {
   appID: string
   connectorID: string
   connected: boolean
+  credentialKind: "api_key" | "oauth"
+  authStatus: "connected" | "not_connected" | "pending" | "expired" | "error"
   credentialLabel?: string
+  account?: AgentProviderAuthAccountSummary
+  email?: string
+  expiresAt?: number
+  activeFlow?: AgentProviderAuthFlow
   generatedMcpServerID: string
   lastDiagnostic?: AgentMcpServerDiagnostic
 }

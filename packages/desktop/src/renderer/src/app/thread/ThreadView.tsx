@@ -2170,16 +2170,11 @@ function CompletedResponseText({
   text: string
 }) {
   const response = parseAssistantResponseFormat(text)
-  const renderedClassName = joinClassNames(
-    className,
-    "thread-markdown",
-    response.format === "html" && "thread-html",
-  )
 
   if (response.format === "html") {
     return (
       <ThreadHtml
-        className={renderedClassName}
+        className={joinClassNames(className, "thread-html")}
         text={response.text}
         onArtifactLinkOpen={onArtifactLinkOpen}
         onLocalFileLinkOpen={onLocalFileLinkOpen}
@@ -2189,7 +2184,7 @@ function CompletedResponseText({
 
   return (
     <ThreadMarkdown
-      className={renderedClassName}
+      className={joinClassNames(className, "thread-markdown")}
       text={response.text}
       onArtifactLinkOpen={onArtifactLinkOpen}
       onLocalFileLinkOpen={onLocalFileLinkOpen}

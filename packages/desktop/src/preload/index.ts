@@ -512,6 +512,14 @@ try {
       invokeDesktop("desktop:save-installed-plugin-connector-api-key", input) as Promise<PluginConnectorStatus>,
     deleteInstalledPluginConnectorApiKey: (input: { pluginID: string; appID: string }) =>
       invokeDesktop("desktop:delete-installed-plugin-connector-api-key", input) as Promise<PluginConnectorStatus>,
+    startInstalledPluginConnectorAuthFlow: (input: { pluginID: string; appID: string }) =>
+      invokeDesktop("desktop:start-installed-plugin-connector-auth-flow", input) as Promise<AgentProviderAuthFlow>,
+    getInstalledPluginConnectorAuthFlow: (input: { pluginID: string; appID: string; flowID: string }) =>
+      invokeDesktop("desktop:get-installed-plugin-connector-auth-flow", input) as Promise<AgentProviderAuthFlow | undefined>,
+    cancelInstalledPluginConnectorAuthFlow: (input: { pluginID: string; appID: string; flowID: string }) =>
+      invokeDesktop("desktop:cancel-installed-plugin-connector-auth-flow", input) as Promise<AgentProviderAuthFlow | undefined>,
+    deleteInstalledPluginConnectorAuthSession: (input: { pluginID: string; appID: string }) =>
+      invokeDesktop("desktop:delete-installed-plugin-connector-auth-session", input) as Promise<PluginConnectorStatus>,
     getInstalledPluginConnectorDiagnostic: (input: { pluginID: string; appID: string }) =>
       invokeDesktop("desktop:get-installed-plugin-connector-diagnostic", input) as Promise<McpServerDiagnostic>,
     getBuiltinTools: () =>

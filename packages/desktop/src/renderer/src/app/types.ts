@@ -1446,6 +1446,36 @@ export interface PluginConfigField {
   description?: string
 }
 
+export interface PluginApiKeyAppCredential extends PluginConfigField {
+  kind?: "api_key"
+}
+
+export type PluginOAuthTokenPlacement =
+  | {
+      type: "authorization_bearer"
+    }
+  | {
+      type: "header"
+      name: string
+      value?: string
+    }
+
+export interface PluginOAuthAppCredential {
+  kind: "oauth"
+  label: string
+  clientID: string
+  authorizationURL: string
+  tokenURL: string
+  scopes: string[]
+  revocationURL?: string
+  tokenPlacement?: PluginOAuthTokenPlacement
+  authorizationParams?: Record<string, string>
+  tokenParams?: Record<string, string>
+  description?: string
+}
+
+export type PluginAppCredential = PluginApiKeyAppCredential | PluginOAuthAppCredential
+
 export interface PluginPackageDownload {
   type: "zip"
   url?: string
@@ -1506,7 +1536,7 @@ export interface PluginAppConnector {
   risk?: PluginRisk
   permissions?: string[]
   tools?: PluginToolPreview[]
-  credential: PluginConfigField
+  credential: PluginAppCredential
   runtime: PluginRemoteRuntime
   installReview?: string[]
 }
@@ -1563,7 +1593,13 @@ export interface PluginConnectorStatus {
   appID: string
   connectorID: string
   connected: boolean
+  credentialKind: "api_key" | "oauth"
+  authStatus: "connected" | "not_connected" | "pending" | "expired" | "error"
   credentialLabel?: string
+  account?: ProviderAuthAccountSummary
+  email?: string
+  expiresAt?: number
+  activeFlow?: ProviderAuthFlow
   generatedMcpServerID: string
   lastDiagnostic?: McpServerDiagnostic
 }

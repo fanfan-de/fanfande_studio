@@ -877,12 +877,14 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     archivedSessionsError,
     builtinTools,
     builtinToolsError,
+    cancelInstalledPluginConnectorAuthFlow,
     catalog,
     closeSettings,
     clearPluginSelection,
     deleteArchivedSession,
     deleteInstalledPlugin,
     deleteInstalledPluginConnectorApiKey,
+    deleteInstalledPluginConnectorAuthSession,
     deleteMcpServer,
     deleteProvider,
     deleteProviderAuthSession,
@@ -985,6 +987,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     setProviderDraftValue,
     setSelectionDraftValue,
     togglePromptUrlInstallPrompt,
+    startInstalledPluginConnectorAuthFlow,
     startProviderAuthFlow,
     startNewMcpServer,
     cancelProviderAuthFlow,
@@ -1587,8 +1590,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 pluginDraft={pluginDraft}
                 updatingPluginID={updatingPluginID}
                 windowControls={windowControls}
+                onCancelInstalledPluginConnectorAuthFlow={cancelInstalledPluginConnectorAuthFlow}
                 onDeleteInstalledPlugin={deleteInstalledPlugin}
                 onDeleteInstalledPluginConnectorApiKey={deleteInstalledPluginConnectorApiKey}
+                onDeleteInstalledPluginConnectorAuthSession={deleteInstalledPluginConnectorAuthSession}
                 onDiagnoseInstalledPlugin={diagnoseInstalledPlugin}
                 onDiagnoseInstalledPluginConnector={diagnoseInstalledPluginConnector}
                 onDismissMessage={dismissMessage}
@@ -1600,6 +1605,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onSaveInstalledPluginConnectorApiKey={saveInstalledPluginConnectorApiKey}
                 onSaveInstalledPluginConfig={saveInstalledPluginConfig}
                 onSetInstalledPluginEnabled={setInstalledPluginEnabled}
+                onStartInstalledPluginConnectorAuthFlow={startInstalledPluginConnectorAuthFlow}
                 savingPluginConnectorID={savingPluginConnectorID}
               />
             </Suspense>

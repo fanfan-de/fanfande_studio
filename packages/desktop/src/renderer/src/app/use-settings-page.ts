@@ -2530,6 +2530,138 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
+  async function pollInstalledPluginConnectorAuthFlow(pluginID: string, appID: string, flowID: string) {
+    if (!window.desktop?.getInstalledPluginConnectorAuthFlow) return
+
+    while (true) {
+      try {
+        const flow = await window.desktop.getInstalledPluginConnectorAuthFlow({
+          pluginID,
+          appID,
+          flowID,
+        })
+        if (!flow) return
+
+        await loadPluginConnectorStatuses(pluginID)
+
+        if (["connected", "error", "expired", "cancelled"].includes(flow.status)) {
+          await notifyMcpUpdated()
+          if (flow.status === "connected") {
+            setMessage({
+              tone: "success",
+              text: "App connector signed in.",
+            })
+          } else if (flow.status === "cancelled") {
+            setMessage({
+              tone: "error",
+              text: flow.errorMessage ?? "App connector sign-in was cancelled.",
+            })
+          } else {
+            setMessage({
+              tone: "error",
+              text: flow.errorMessage ?? "App connector sign-in failed.",
+            })
+          }
+          return
+        }
+      } catch (error) {
+        setMessage({
+          tone: "error",
+          text: getErrorMessage(error),
+        })
+        return
+      }
+
+      await sleep(1500)
+    }
+  }
+
+  async function startInstalledPluginConnectorAuthFlow(pluginID: string, appID: string) {
+    if (!window.desktop?.startInstalledPluginConnectorAuthFlow) return false
+
+    const connectorKey = `${pluginID}:${appID}`
+    setSavingPluginConnectorID(connectorKey)
+    setMessage(null)
+
+    try {
+      const flow = await window.desktop.startInstalledPluginConnectorAuthFlow({ pluginID, appID })
+      await loadPluginConnectorStatuses(pluginID)
+
+      if (flow.authorizationURL && window.desktop?.openExternalUrl) {
+        await window.desktop.openExternalUrl({ url: flow.authorizationURL })
+      }
+
+      setMessage({
+        tone: "success",
+        text: "Continue the app connector sign-in flow in your browser.",
+      })
+      void pollInstalledPluginConnectorAuthFlow(pluginID, appID, flow.id)
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingPluginConnectorID(null)
+    }
+  }
+
+  async function cancelInstalledPluginConnectorAuthFlow(pluginID: string, appID: string) {
+    const flowID = pluginConnectorStatuses[pluginID]?.find((status) => status.appID === appID)?.activeFlow?.id
+    if (!flowID || !window.desktop?.cancelInstalledPluginConnectorAuthFlow) return false
+
+    const connectorKey = `${pluginID}:${appID}`
+    setSavingPluginConnectorID(connectorKey)
+    setMessage(null)
+
+    try {
+      await window.desktop.cancelInstalledPluginConnectorAuthFlow({ pluginID, appID, flowID })
+      await loadPluginConnectorStatuses(pluginID)
+      setMessage({
+        tone: "success",
+        text: "App connector sign-in cancelled.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingPluginConnectorID(null)
+    }
+  }
+
+  async function deleteInstalledPluginConnectorAuthSession(pluginID: string, appID: string) {
+    if (!window.desktop?.deleteInstalledPluginConnectorAuthSession) return false
+
+    const connectorKey = `${pluginID}:${appID}`
+    setSavingPluginConnectorID(connectorKey)
+    setMessage(null)
+
+    try {
+      await window.desktop.deleteInstalledPluginConnectorAuthSession({ pluginID, appID })
+      await loadPluginConnectorStatuses(pluginID)
+      await notifyMcpUpdated()
+      setMessage({
+        tone: "success",
+        text: "App connector disconnected.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingPluginConnectorID(null)
+    }
+  }
+
   async function diagnoseInstalledPluginConnector(pluginID: string, appID: string) {
     if (!window.desktop?.getInstalledPluginConnectorDiagnostic) return false
 
@@ -2632,6 +2764,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     archivedSessionsError,
     builtinTools,
     builtinToolsError,
+    cancelInstalledPluginConnectorAuthFlow,
     cancelProviderAuthFlow,
     catalog,
     closeSettings,
@@ -2641,6 +2774,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     deleteProviderAuthSession,
     deleteMcpServer,
     deleteProvider,
+    deleteInstalledPluginConnectorAuthSession,
     deletingArchivedSessionID,
     deletingMcpServerID,
     deletingPluginID,
@@ -2748,6 +2882,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setSelectionDraftValue,
     togglePromptUrlInstallPrompt,
     setBuiltinToolEnabled,
+    startInstalledPluginConnectorAuthFlow,
     startProviderAuthFlow,
     startNewMcpServer,
     restoreArchivedSession,

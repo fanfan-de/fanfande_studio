@@ -140,6 +140,11 @@
 }
 
 .activity-rail {
+  --activity-rail-button-color: var(--seg-accent-icon);
+  --activity-rail-button-color-hover: var(--seg-accent-icon-hover);
+  --activity-rail-button-color-active: var(--seg-accent-icon-active);
+  --activity-rail-button-surface-hover: var(--mix-seg-accent-soft-72-seg-panel-28);
+  --activity-rail-button-surface-active: var(--mix-seg-accent-soft-68-seg-panel-32);
   grid-column: 1;
   grid-row: 1;
   min-height: 0;
@@ -219,19 +224,21 @@
 }
 
 .activity-rail-view-button {
-  width: var(--section-toolbar-control-size);
-  min-width: var(--section-toolbar-control-size);
-  height: var(--section-toolbar-control-size);
-  min-height: var(--section-toolbar-control-size);
+  width: var(--icon-button-size);
+  min-width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  min-height: var(--icon-button-size);
   padding: 0;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
-  color: #5a6e81;
+  box-shadow: none;
+  color: var(--activity-rail-button-color);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transform: none;
   transition:
     background 160ms ease,
     color 160ms ease,
@@ -250,14 +257,21 @@
 
 .activity-rail-view-button:hover,
 .activity-rail-view-button:focus-visible {
-  background: rgba(84, 96, 109, 0.14);
-  color: #22303d;
+  border-color: transparent;
+  background: var(--activity-rail-button-surface-hover);
+  box-shadow: none;
+  color: var(--activity-rail-button-color-hover);
+  transform: none;
 }
 
-.activity-rail-view-button.is-active {
-  background: var(--seg-accent-soft);
-  border-color: var(--seg-accent);
-  color: var(--seg-accent-strong);
+.activity-rail-view-button.is-active,
+.activity-rail-view-button.is-active:hover,
+.activity-rail-view-button.is-active:focus-visible {
+  border-color: transparent;
+  background: var(--activity-rail-button-surface-active);
+  box-shadow: none;
+  color: var(--activity-rail-button-color-active);
+  transform: none;
 }
 
 .activity-rail-view-button:focus-visible {

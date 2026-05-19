@@ -1,6 +1,26 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { ThreadHtml } from "./thread-html"
+
+function getFrame(container: HTMLElement) {
+  const frame = container.querySelector(".thread-html-frame") as HTMLIFrameElement | null
+  expect(frame).not.toBeNull()
+  return frame!
+}
+
+function getFrameSrcDoc(frame: HTMLIFrameElement) {
+  return frame.getAttribute("srcdoc") ?? frame.srcdoc
+}
+
+function loadFrameDocument(frame: HTMLIFrameElement) {
+  const document = frame.contentDocument
+  expect(document).not.toBeNull()
+  document!.open()
+  document!.write(getFrameSrcDoc(frame))
+  document!.close()
+  fireEvent.load(frame)
+  return document!
+}
 
 describe("ThreadHtml", () => {
   beforeEach(() => {
@@ -12,50 +32,65 @@ describe("ThreadHtml", () => {
     } as unknown as Window["desktop"]
   })
 
-  it("renders allowed semantic HTML fragments", () => {
+  it("renders full HTML documents in a sandboxed iframe", () => {
     const { container } = render(
       <ThreadHtml
         text={[
-          "<section>",
-          "<h2>Release notes</h2>",
-          "<p><strong>Ready</strong> to ship.</p>",
-          "<ul><li>HTML</li></ul>",
-          "<table><thead><tr><th>File</th></tr></thead><tbody><tr><td>ThreadView.tsx</td></tr></tbody></table>",
-          "</section>",
+          "<!doctype html>",
+          "<html>",
+          "<head><style>.hero{display:grid;color:rgb(10, 20, 30);}</style></head>",
+          '<body><main class="hero"><h1>Release notes</h1><p>Ready to ship.</p></main></body>',
+          "</html>",
         ].join("")}
       />,
     )
 
-    expect(screen.getByRole("heading", { name: "Release notes" })).toBeInTheDocument()
-    expect(container.querySelector("strong")).toHaveTextContent("Ready")
-    expect(screen.getByRole("listitem")).toHaveTextContent("HTML")
-    expect(screen.getByRole("table")).toBeInTheDocument()
+    const frame = getFrame(container)
+    const srcDoc = getFrameSrcDoc(frame)
+
+    expect(frame).toHaveAttribute("sandbox", "allow-same-origin")
+    expect(srcDoc).toContain("<style>.hero{display:grid;color:rgb(10, 20, 30);}</style>")
+    expect(srcDoc).toContain('class="hero"')
+    expect(srcDoc).toContain("Release notes")
   })
 
-  it("removes unsafe tags and attributes", () => {
+  it("removes unsafe tags and attributes while preserving page-level CSS", () => {
     const { container } = render(
       <ThreadHtml
         text={[
-          '<p class="custom" style="color:red" onclick="alert(1)">Safe text</p>',
+          '<main class="custom" style="color:red" onclick="alert(1)">Safe text</main>',
+          "<style>.custom{padding:24px}</style>",
           "<script>window.evil = true</script>",
-          "<style>p { color: red; }</style>",
           '<iframe src="https://example.com"></iframe>',
         ].join("")}
       />,
     )
 
-    const paragraph = screen.getByText("Safe text")
-    expect(paragraph).not.toHaveAttribute("class")
-    expect(paragraph).not.toHaveAttribute("style")
-    expect(paragraph).not.toHaveAttribute("onclick")
-    expect(container.querySelector("script")).toBeNull()
-    expect(container.querySelector("style")).toBeNull()
-    expect(container.querySelector("iframe")).toBeNull()
-    expect(container).not.toHaveTextContent("window.evil")
+    const srcDoc = getFrameSrcDoc(getFrame(container))
+
+    expect(srcDoc).toContain('class="custom"')
+    expect(srcDoc).toContain("<style>.custom{padding:24px}</style>")
+    expect(srcDoc).not.toContain('style="color:red"')
+    expect(srcDoc).not.toContain("onclick")
+    expect(srcDoc).not.toContain("<script")
+    expect(srcDoc).not.toContain("window.evil")
+    expect(srcDoc).not.toContain("<iframe")
+  })
+
+  it("removes external CSS fetches from style blocks", () => {
+    const { container } = render(
+      <ThreadHtml text="<style>@import 'https://example.com/a.css'; .hero{background:url(https://example.com/a.png)}</style><p>Safe</p>" />,
+    )
+
+    const srcDoc = getFrameSrcDoc(getFrame(container))
+
+    expect(srcDoc).not.toContain("@import")
+    expect(srcDoc).not.toContain("url(")
+    expect(srcDoc).toContain(".hero{background:none}")
   })
 
   it("blocks unsupported link targets", () => {
-    render(
+    const { container } = render(
       <ThreadHtml
         text={[
           '<a href="javascript:alert(1)">Bad</a>',
@@ -65,18 +100,21 @@ describe("ThreadHtml", () => {
       />,
     )
 
-    expect(screen.queryByRole("link", { name: "Bad" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("link", { name: "Data" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("link", { name: "Relative" })).not.toBeInTheDocument()
-    expect(screen.getByText("Bad")).toBeInTheDocument()
-    expect(screen.getByText("Data")).toBeInTheDocument()
-    expect(screen.getByText("Relative")).toBeInTheDocument()
+    const srcDoc = getFrameSrcDoc(getFrame(container))
+
+    expect(srcDoc).not.toContain("javascript:")
+    expect(srcDoc).not.toContain("data:text")
+    expect(srcDoc).not.toContain('href="src/app.tsx"')
+    expect(srcDoc).toContain(">Bad</a>")
+    expect(srcDoc).toContain(">Data</a>")
+    expect(srcDoc).toContain(">Relative</a>")
   })
 
   it("opens safe external links through the desktop bridge", () => {
-    render(<ThreadHtml text='<a href="https://example.com/docs">Docs</a>' />)
+    const { container } = render(<ThreadHtml text='<a href="https://example.com/docs">Docs</a>' />)
+    const document = loadFrameDocument(getFrame(container))
 
-    fireEvent.click(screen.getByRole("link", { name: "Docs" }))
+    fireEvent.click(document.querySelector("a")!)
 
     expect(window.desktop?.openExternalUrl).toHaveBeenCalledWith({
       url: "https://example.com/docs",
@@ -85,14 +123,15 @@ describe("ThreadHtml", () => {
 
   it("opens artifact links through the artifact callback", () => {
     const onArtifactLinkOpen = vi.fn()
-    render(
+    const { container } = render(
       <ThreadHtml
         text='<a href="agent://artifact/report-1">Artifact</a>'
         onArtifactLinkOpen={onArtifactLinkOpen}
       />,
     )
+    const document = loadFrameDocument(getFrame(container))
 
-    fireEvent.click(screen.getByRole("link", { name: "Artifact" }))
+    fireEvent.click(document.querySelector("a")!)
 
     expect(onArtifactLinkOpen).toHaveBeenCalledWith({
       href: "agent://artifact/report-1",
@@ -103,14 +142,15 @@ describe("ThreadHtml", () => {
 
   it("opens local file links through the local file callback", () => {
     const onLocalFileLinkOpen = vi.fn()
-    render(
+    const { container } = render(
       <ThreadHtml
         text='<a href="C:/Projects/fanfande_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx:42">ThreadView.tsx</a>'
         onLocalFileLinkOpen={onLocalFileLinkOpen}
       />,
     )
+    const document = loadFrameDocument(getFrame(container))
 
-    fireEvent.click(screen.getByRole("link", { name: "ThreadView.tsx" }))
+    fireEvent.click(document.querySelector("a")!)
 
     expect(onLocalFileLinkOpen).toHaveBeenCalledWith({
       lineRange: {

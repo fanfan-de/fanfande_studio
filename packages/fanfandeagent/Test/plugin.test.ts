@@ -57,8 +57,13 @@ type PluginCatalogEnvelope = JsonEnvelope<
     apps: Array<{
       appID: string
       credential: {
-        key: string
+        kind?: string
+        key?: string
         label: string
+        clientID?: string
+        authorizationURL?: string
+        tokenURL?: string
+        scopes?: string[]
       }
       runtime: {
         transport: string
@@ -110,7 +115,11 @@ type ConnectorStatusEnvelope = JsonEnvelope<
     appID: string
     connectorID: string
     connected: boolean
+    credentialKind: "api_key" | "oauth"
+    authStatus: "connected" | "not_connected" | "pending" | "expired" | "error"
     credentialLabel?: string
+    email?: string
+    expiresAt?: number
     generatedMcpServerID: string
   }>
 >
@@ -120,7 +129,11 @@ type SingleConnectorStatusEnvelope = JsonEnvelope<{
   appID: string
   connectorID: string
   connected: boolean
+  credentialKind: "api_key" | "oauth"
+  authStatus: "connected" | "not_connected" | "pending" | "expired" | "error"
   credentialLabel?: string
+  email?: string
+  expiresAt?: number
   generatedMcpServerID: string
 }>
 
@@ -252,6 +265,61 @@ async function writeManifestPluginPackage() {
           },
           requireApproval: "always",
           timeoutMs: 1000,
+        },
+      },
+    ],
+  }, null, 2))
+
+  return packageSourceRoot
+}
+
+async function writeOAuthPluginPackage() {
+  if (!activeRoot) throw new Error("Temp root has not been initialized.")
+
+  const packageSourceRoot = pluginInstallRoot()
+  const packageRoot = join(packageSourceRoot, "oauth-lab", "0.1.0")
+  const manifestRoot = join(packageRoot, ".fanfande-plugin")
+  await mkdir(manifestRoot, { recursive: true })
+
+  await writeFile(join(manifestRoot, "plugin.json"), JSON.stringify({
+    name: "oauth-lab",
+    version: "0.1.0",
+    description: "Fixture plugin package with an OAuth app connector.",
+    author: "Fanfande Tests",
+    interface: {
+      displayName: "OAuth Lab",
+      shortDescription: "OAuth connector fixture.",
+      developerName: "Fanfande Tests",
+      category: "Docs",
+    },
+    apps: [
+      {
+        appID: "mail",
+        name: "Mail OAuth",
+        description: "Fixture OAuth remote MCP app connector.",
+        permissions: ["Reads fixture mail metadata"],
+        tools: [
+          {
+            name: "list_mail",
+            description: "List fixture mail.",
+            readOnly: true,
+          },
+        ],
+        credential: {
+          kind: "oauth",
+          label: "Mail OAuth",
+          clientID: "fixture-client",
+          authorizationURL: "https://auth.example.test/authorize",
+          tokenURL: "https://auth.example.test/token",
+          scopes: ["mail.readonly"],
+        },
+        runtime: {
+          transport: "remote",
+          serverUrl: "https://mail.example.test/mcp",
+          allowedTools: {
+            readOnly: true,
+          },
+          requireApproval: "never",
         },
       },
     ],
@@ -414,6 +482,7 @@ async function writeVersionedPluginPackage() {
 
 afterEach(async () => {
   await Auth.clearProvider("plugin-app:manifest-lab:docs")
+  await Auth.clearProvider("plugin-app:oauth-lab:mail")
   if (previousPluginInstallDir === undefined) {
     delete process.env.FANFANDE_PLUGIN_INSTALL_DIR
   } else {
@@ -862,5 +931,152 @@ describe("plugin marketplace API", () => {
     expect(disconnectBody.data?.connected).toBe(false)
 
     await expect(Plugin.resolveConnectorRemoteServer("plugin-app:manifest-lab:docs")).rejects.toThrow("not connected")
+  })
+
+  test("parses OAuth app connectors and starts cancellable PKCE auth flows", async () => {
+    await useTempDatabase()
+    await writeOAuthPluginPackage()
+    const app = createServerApp()
+
+    const catalogResponse = await app.request("/api/plugins/catalog")
+    const catalogBody = (await catalogResponse.json()) as PluginCatalogEnvelope
+    const plugin = catalogBody.data?.find((item) => item.id === "oauth-lab")
+
+    expect(catalogResponse.status).toBe(200)
+    expect(plugin?.apps.map((connector) => connector.appID)).toEqual(["mail"])
+    expect(plugin?.apps[0]?.credential.kind).toBe("oauth")
+    expect(plugin?.apps[0]?.credential.clientID).toBe("fixture-client")
+
+    const installResponse = await app.request("/api/plugins/installed/oauth-lab", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        enabled: true,
+      }),
+    })
+    const installBody = (await installResponse.json()) as InstalledPluginEnvelope
+    expect(installResponse.status).toBe(200)
+    expect(installBody.data?.mcpServerIDs).toEqual(["plugin.oauth-lab.app.mail"])
+    expect(installBody.data?.connectorIDs).toEqual(["plugin-app:oauth-lab:mail"])
+
+    const disconnectedResponse = await app.request("/api/plugins/installed/oauth-lab/connectors")
+    const disconnectedBody = (await disconnectedResponse.json()) as ConnectorStatusEnvelope
+    expect(disconnectedBody.data?.[0]?.credentialKind).toBe("oauth")
+    expect(disconnectedBody.data?.[0]?.authStatus).toBe("not_connected")
+
+    const flowResponse = await app.request("/api/plugins/installed/oauth-lab/connectors/mail/auth/flows", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    })
+    const flowBody = (await flowResponse.json()) as JsonEnvelope<{
+      id: string
+      authorizationURL: string
+      status: string
+    }>
+    expect(flowResponse.status).toBe(200)
+    expect(flowBody.data?.status).toBe("waiting_user")
+    const authorizationURL = new URL(flowBody.data?.authorizationURL ?? "")
+    expect(authorizationURL.origin + authorizationURL.pathname).toBe("https://auth.example.test/authorize")
+    expect(authorizationURL.searchParams.get("client_id")).toBe("fixture-client")
+    expect(authorizationURL.searchParams.get("scope")).toBe("mail.readonly")
+    expect(authorizationURL.searchParams.get("code_challenge_method")).toBe("S256")
+
+    const pendingResponse = await app.request("/api/plugins/installed/oauth-lab/connectors")
+    const pendingBody = (await pendingResponse.json()) as ConnectorStatusEnvelope
+    expect(pendingBody.data?.[0]?.authStatus).toBe("pending")
+
+    const cancelResponse = await app.request(
+      `/api/plugins/installed/oauth-lab/connectors/mail/auth/flows/${flowBody.data?.id}`,
+      {
+        method: "DELETE",
+      },
+    )
+    const cancelBody = (await cancelResponse.json()) as JsonEnvelope<{ status: string }>
+    expect(cancelResponse.status).toBe(200)
+    expect(cancelBody.data?.status).toBe("cancelled")
+  })
+
+  test("resolves OAuth app connector bearer tokens and refreshes expired sessions", async () => {
+    await useTempDatabase()
+    await writeOAuthPluginPackage()
+    const app = createServerApp()
+
+    await app.request("/api/plugins/installed/oauth-lab", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        enabled: true,
+      }),
+    })
+
+    await Auth.setProviderCredential(
+      "plugin-app:oauth-lab:mail",
+      "oauth",
+      {
+        kind: "oauth_session",
+        accessToken: "access-one",
+        refreshToken: "refresh-one",
+        expiresAt: Date.now() + 60 * 60 * 1000,
+        tokenType: "Bearer",
+        email: "user@example.test",
+      },
+      { activate: true, lastError: null },
+    )
+
+    const connectedResponse = await app.request("/api/plugins/installed/oauth-lab/connectors")
+    const connectedBody = (await connectedResponse.json()) as ConnectorStatusEnvelope
+    expect(connectedBody.data?.[0]?.connected).toBe(true)
+    expect(connectedBody.data?.[0]?.credentialKind).toBe("oauth")
+    expect(connectedBody.data?.[0]?.email).toBe("user@example.test")
+
+    const runtime = await Plugin.resolveConnectorRemoteServer("plugin-app:oauth-lab:mail")
+    expect(runtime.serverUrl).toBe("https://mail.example.test/mcp")
+    expect(runtime.authorization).toBe("Bearer access-one")
+
+    await Auth.setProviderCredential(
+      "plugin-app:oauth-lab:mail",
+      "oauth",
+      {
+        kind: "oauth_session",
+        accessToken: "expired-access",
+        refreshToken: "refresh-one",
+        expiresAt: Date.now() - 1000,
+        tokenType: "Bearer",
+      },
+      { activate: true, lastError: null },
+    )
+
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const body = init?.body instanceof URLSearchParams ? init.body.toString() : String(init?.body)
+      expect(url).toBe("https://auth.example.test/token")
+      expect(body).toContain("grant_type=refresh_token")
+      expect(body).toContain("refresh_token=refresh-one")
+      return new Response(JSON.stringify({
+        access_token: "access-two",
+        refresh_token: "refresh-two",
+        expires_in: 3600,
+        token_type: "Bearer",
+        scope: "mail.readonly",
+      }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      })
+    }) as typeof fetch
+
+    const refreshedRuntime = await Plugin.resolveConnectorRemoteServer("plugin-app:oauth-lab:mail")
+    expect(refreshedRuntime.authorization).toBe("Bearer access-two")
+    const refreshedCredential = await Auth.getProviderCredential("plugin-app:oauth-lab:mail", "oauth")
+    expect(refreshedCredential?.kind === "oauth_session" ? refreshedCredential.accessToken : undefined).toBe("access-two")
+    expect(refreshedCredential?.kind === "oauth_session" ? refreshedCredential.refreshToken : undefined).toBe("refresh-two")
   })
 })

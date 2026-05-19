@@ -84,6 +84,7 @@ export const PluginCatalogQuery = z.object({
 export const InstallPluginBody = Plugin.InstallPluginInput
 export const UpdateInstalledPluginBody = Plugin.UpdateInstalledPluginInput
 export const SavePluginConnectorApiKeyBody = Plugin.SavePluginConnectorApiKeyInput
+export const PluginConnectorAuthFlowBody = z.object({}).optional()
 
 export const ProviderAuthFlowBody = z.object({
   method: z.string().min(1),
@@ -751,6 +752,42 @@ export async function saveInstalledPluginConnectorApiKey(
 export async function deleteInstalledPluginConnectorApiKey(pluginID: string, appID: string) {
   try {
     return await Plugin.removeConnectorApiKey(pluginID, appID)
+  } catch (error) {
+    throw toPluginApiError(error)
+  }
+}
+
+export async function startInstalledPluginConnectorAuthFlow(
+  pluginID: string,
+  appID: string,
+  input: { serverBaseURL: string },
+) {
+  try {
+    return await Plugin.startConnectorOAuthFlow(pluginID, appID, input)
+  } catch (error) {
+    throw toPluginApiError(error)
+  }
+}
+
+export async function getInstalledPluginConnectorAuthFlow(pluginID: string, appID: string, flowID: string) {
+  try {
+    return await Plugin.getConnectorOAuthFlow(pluginID, appID, flowID)
+  } catch (error) {
+    throw toPluginApiError(error)
+  }
+}
+
+export async function cancelInstalledPluginConnectorAuthFlow(pluginID: string, appID: string, flowID: string) {
+  try {
+    return await Plugin.cancelConnectorOAuthFlow(pluginID, appID, flowID)
+  } catch (error) {
+    throw toPluginApiError(error)
+  }
+}
+
+export async function deleteInstalledPluginConnectorAuthSession(pluginID: string, appID: string) {
+  try {
+    return await Plugin.deleteConnectorOAuthSession(pluginID, appID)
   } catch (error) {
     throw toPluginApiError(error)
   }

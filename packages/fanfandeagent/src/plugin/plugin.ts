@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import matter from "gray-matter"
 import z from "zod"
 import * as Auth from "#auth/auth.ts"
+import * as ProviderAuth from "#auth/provider-auth.ts"
 import * as Config from "#config/config.ts"
 import * as db from "#database/Sqlite.ts"
 import * as Global from "#global/global.ts"
@@ -15,6 +16,7 @@ import * as Mcp from "#mcp/manager.ts"
 
 const INSTALLED_PLUGINS_TABLE = "installed_plugins"
 const PLUGIN_MANIFEST_PATH = join(".fanfande-plugin", "plugin.json")
+const PLUGIN_APP_COMPAT_PATH = ".app.json"
 const PLUGIN_REGISTRY_PATH = join("plugins", "registry", "plugin-registry.json")
 const PLUGIN_REGISTRY_CACHE_PATH = join("plugins", "registry-cache", "plugin-registry-cache.json")
 const DEFAULT_SKILLS_DIRECTORY = "skills"
@@ -93,6 +95,57 @@ export const PluginConfigField = z
   })
   .strict()
 export type PluginConfigField = z.infer<typeof PluginConfigField>
+
+export const PluginOAuthTokenPlacement = z.union([
+  z
+    .object({
+      type: z.literal("authorization_bearer"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("header"),
+      name: z.string().min(1),
+      value: z.string().min(1).optional(),
+    })
+    .strict(),
+])
+export type PluginOAuthTokenPlacement = z.infer<typeof PluginOAuthTokenPlacement>
+
+export const PluginApiKeyAppCredential = PluginConfigField.extend({
+  kind: z.literal("api_key").optional(),
+}).transform((credential) => ({
+  ...credential,
+  kind: "api_key" as const,
+}))
+export type PluginApiKeyAppCredential = z.infer<typeof PluginApiKeyAppCredential>
+
+export const PluginOAuthAppCredential = z
+  .object({
+    kind: z.literal("oauth"),
+    label: z.string().min(1).default("OAuth"),
+    clientID: z.string().min(1),
+    authorizationURL: z.string().min(1),
+    tokenURL: z.string().min(1),
+    scopes: z.array(z.string().min(1)).min(1),
+    revocationURL: z.string().min(1).optional(),
+    tokenPlacement: PluginOAuthTokenPlacement.default({ type: "authorization_bearer" }),
+    authorizationParams: z.record(z.string(), z.string()).optional(),
+    tokenParams: z.record(z.string(), z.string()).optional(),
+    description: z.string().optional(),
+  })
+  .strict()
+export type PluginOAuthAppCredential = z.infer<typeof PluginOAuthAppCredential>
+
+const PluginAppCompatOAuthCredential = PluginOAuthAppCredential.or(
+  PluginOAuthAppCredential.omit({ kind: true }).transform((credential) => ({
+    ...credential,
+    kind: "oauth" as const,
+  })),
+)
+
+export const PluginAppCredential = z.union([PluginOAuthAppCredential, PluginApiKeyAppCredential])
+export type PluginAppCredential = z.infer<typeof PluginAppCredential>
 
 export const PluginPackageDownload = z
   .object({
@@ -200,7 +253,7 @@ export const PluginAppConnector = z
     risk: PluginRisk.optional(),
     permissions: z.array(z.string()).optional(),
     tools: z.array(PluginToolPreview).optional(),
-    credential: PluginConfigField,
+    credential: PluginAppCredential,
     runtime: PluginRemoteRuntime,
     installReview: z.array(z.string()).optional(),
   })
@@ -213,7 +266,13 @@ export const PluginConnectorStatus = z
     appID: z.string().min(1),
     connectorID: z.string().min(1),
     connected: z.boolean(),
+    credentialKind: z.enum(["api_key", "oauth"]),
+    authStatus: z.enum(["connected", "not_connected", "pending", "expired", "error"]),
     credentialLabel: z.string().optional(),
+    account: ProviderAuth.ProviderAuthAccountSummary.optional(),
+    email: z.string().optional(),
+    expiresAt: z.number().optional(),
+    activeFlow: ProviderAuth.ProviderAuthFlow.optional(),
     generatedMcpServerID: z.string().min(1),
     lastDiagnostic: PluginDiagnostic.optional(),
   })
@@ -288,6 +347,29 @@ export const PluginManifest = z
   })
   .strict()
 export type PluginManifest = z.infer<typeof PluginManifest>
+
+const PluginAppCompatEntry = z
+  .object({
+    appID: z.string().min(1).optional(),
+    id: z.string().min(1).optional(),
+    name: z.string().min(1).optional(),
+    description: z.string().optional(),
+    icon: z.string().optional(),
+    risk: PluginRisk.optional(),
+    permissions: z.array(z.string()).optional(),
+    tools: z.array(PluginToolPreview).optional(),
+    credential: PluginAppCredential.optional(),
+    oauth: PluginAppCompatOAuthCredential.optional(),
+    runtime: PluginRemoteRuntime.optional(),
+    installReview: z.array(z.string()).optional(),
+  })
+  .passthrough()
+
+const PluginAppCompatFile = z
+  .object({
+    apps: z.record(z.string(), PluginAppCompatEntry),
+  })
+  .passthrough()
 
 const PluginRegistrySkillPreview = PluginSkillPreview.omit({ id: true })
   .extend({
@@ -551,13 +633,54 @@ function compareManifestVersions(left: string, right: string) {
   return 0
 }
 
+function safeReadPluginAppCompat(packageRoot: string): PluginAppConnector[] {
+  const appPath = join(packageRoot, PLUGIN_APP_COMPAT_PATH)
+  if (!existsSync(appPath)) return []
+
+  try {
+    const raw = readFileSync(appPath, "utf8")
+    const parsed = PluginAppCompatFile.parse(JSON.parse(raw))
+    return Object.entries(parsed.apps).flatMap(([appID, entry]) => {
+      const credential = entry.credential ?? entry.oauth
+      if (!credential || !entry.runtime) return []
+
+      const app = PluginAppConnector.safeParse({
+        appID: entry.appID ?? appID,
+        name: entry.name ?? appID,
+        description: entry.description,
+        icon: entry.icon,
+        risk: entry.risk,
+        permissions: entry.permissions,
+        tools: entry.tools,
+        credential,
+        runtime: entry.runtime,
+        installReview: entry.installReview,
+      })
+      return app.success ? [app.data] : []
+    })
+  } catch {
+    return []
+  }
+}
+
 function safeReadPluginManifest(packageRoot: string) {
   const manifestPath = join(packageRoot, PLUGIN_MANIFEST_PATH)
   if (!existsSync(manifestPath)) return undefined
 
   try {
     const raw = readFileSync(manifestPath, "utf8")
-    return PluginManifest.parse(JSON.parse(raw))
+    const manifest = PluginManifest.parse(JSON.parse(raw))
+    const compatApps = safeReadPluginAppCompat(packageRoot)
+    if (compatApps.length === 0) return manifest
+
+    const appIDs = new Set((manifest.apps ?? []).map((app) => app.appID))
+    return {
+      ...manifest,
+      apps: [
+        ...(manifest.apps ?? []),
+        ...compatApps.filter((app) => !appIDs.has(app.appID)),
+      ],
+    }
   } catch {
     return undefined
   }
@@ -1101,6 +1224,37 @@ function assertPluginApp(plugin: PluginCatalogItem, appID: string) {
   }
 
   return app
+}
+
+function assertApiKeyAppCredential(app: PluginAppConnector): PluginApiKeyAppCredential {
+  if (app.credential.kind !== "api_key") {
+    throw new PluginError("PLUGIN_CONNECTOR_NOT_FOUND", `${app.name} does not use API key authentication.`)
+  }
+  return app.credential
+}
+
+function assertOAuthAppCredential(app: PluginAppConnector): PluginOAuthAppCredential {
+  if (app.credential.kind !== "oauth") {
+    throw new PluginError("PLUGIN_CONNECTOR_NOT_FOUND", `${app.name} does not use OAuth authentication.`)
+  }
+  return app.credential
+}
+
+function oauthConfigForCredential(credential: PluginOAuthAppCredential): ProviderAuth.GenericOAuthProviderConfig {
+  return {
+    label: credential.label,
+    clientID: credential.clientID,
+    authorizationURL: credential.authorizationURL,
+    tokenURL: credential.tokenURL,
+    scopes: credential.scopes,
+    revocationURL: credential.revocationURL,
+    authorizationParams: credential.authorizationParams,
+    tokenParams: credential.tokenParams,
+  }
+}
+
+function oauthMethodForApp(_app: PluginAppConnector) {
+  return "oauth"
 }
 
 function normalizeInstalledRecord(record: z.infer<typeof InstalledPlugin> | null | undefined): InstalledPlugin | null {
@@ -1679,13 +1833,54 @@ async function connectorStatusFor(
   const connectorID = connectorIDForPluginApp(plugin.id, app.appID)
   const activeCredential = await Auth.getActiveProviderCredential(connectorID)
   const credential = activeCredential?.credential
+  const record = await Auth.getProviderRecord(connectorID)
+  const activeFlow = ProviderAuth.getLatestProviderAuthFlow(connectorID)
+  const isPendingFlow = activeFlow && ["pending", "waiting_user", "authorizing"].includes(activeFlow.status)
+  const connected =
+    app.credential.kind === "api_key"
+      ? credential?.kind === "api_key"
+      : credential?.kind === "oauth_session" && credential.expiresAt > now()
+  const authStatus: PluginConnectorStatus["authStatus"] =
+    isPendingFlow
+      ? "pending"
+      : connected
+        ? "connected"
+        : credential?.kind === "oauth_session" && credential.expiresAt <= now()
+          ? "expired"
+          : record?.lastError
+            ? "error"
+            : "not_connected"
+  const account = credential?.kind === "oauth_session"
+    ? {
+        accountID: credential.accountID,
+        userID: credential.userID,
+        email: credential.email,
+        planType: credential.planType,
+        workspaceID: credential.workspaceID,
+        workspaceName: credential.workspaceName,
+        balanceMicrocents: credential.balanceMicrocents,
+        currency: credential.currency,
+        rechargeUrl: credential.rechargeUrl,
+        label: credential.email ?? credential.workspaceName ?? credential.planType,
+      }
+    : undefined
 
   return {
     pluginID: plugin.id,
     appID: app.appID,
     connectorID,
-    connected: credential?.kind === "api_key",
-    credentialLabel: credential?.kind === "api_key" ? credential.label ?? "API key" : undefined,
+    connected,
+    credentialKind: app.credential.kind,
+    authStatus,
+    credentialLabel: credential?.kind === "api_key"
+      ? credential.label ?? "API key"
+      : credential?.kind === "oauth_session"
+        ? credential.email ?? app.credential.label
+        : undefined,
+    account,
+    email: credential?.kind === "oauth_session" ? credential.email : undefined,
+    expiresAt: credential?.kind === "oauth_session" ? credential.expiresAt : undefined,
+    activeFlow,
     generatedMcpServerID: mcpServerIDForPluginApp(plugin.id, app.appID),
     lastDiagnostic: installed.lastConnectorDiagnostics?.[app.appID],
   }
@@ -1699,6 +1894,7 @@ export async function saveConnectorApiKey(pluginID: string, appID: string, input
   }
 
   const app = assertPluginApp(plugin, appID)
+  const credential = assertApiKeyAppCredential(app)
   const connectorID = connectorIDForPluginApp(plugin.id, app.appID)
   const apiKey = input.apiKey?.trim()
 
@@ -1711,7 +1907,7 @@ export async function saveConnectorApiKey(pluginID: string, appID: string, input
       {
         kind: "api_key",
         apiKey,
-        label: app.credential.label,
+        label: credential.label,
       },
       { activate: true, lastError: null },
     )
@@ -1728,6 +1924,65 @@ export async function saveConnectorApiKey(pluginID: string, appID: string, input
 
 export async function removeConnectorApiKey(pluginID: string, appID: string) {
   return saveConnectorApiKey(pluginID, appID, { apiKey: null })
+}
+
+export async function startConnectorOAuthFlow(
+  pluginID: string,
+  appID: string,
+  input: { serverBaseURL: string },
+) {
+  const plugin = assertPackagePlugin(pluginID)
+  const installed = readInstalled(plugin.id)
+  if (!installed || !installed.enabled) {
+    throw new PluginError("PLUGIN_CONNECTOR_NOT_CONNECTED", `Plugin '${pluginID}' is not installed or enabled.`)
+  }
+
+  const app = assertPluginApp(plugin, appID)
+  const credential = assertOAuthAppCredential(app)
+  return ProviderAuth.startGenericOAuthFlow({
+    providerID: connectorIDForPluginApp(plugin.id, app.appID),
+    method: oauthMethodForApp(app),
+    serverBaseURL: input.serverBaseURL,
+    oauth: oauthConfigForCredential(credential),
+  })
+}
+
+export async function getConnectorOAuthFlow(pluginID: string, appID: string, flowID: string) {
+  const plugin = assertPackagePlugin(pluginID)
+  const app = assertPluginApp(plugin, appID)
+  assertOAuthAppCredential(app)
+  return ProviderAuth.getProviderFlow(connectorIDForPluginApp(plugin.id, app.appID), flowID)
+}
+
+export async function cancelConnectorOAuthFlow(pluginID: string, appID: string, flowID: string) {
+  const plugin = assertPackagePlugin(pluginID)
+  const app = assertPluginApp(plugin, appID)
+  assertOAuthAppCredential(app)
+  return ProviderAuth.cancelProviderAuthFlow(connectorIDForPluginApp(plugin.id, app.appID), flowID)
+}
+
+export async function deleteConnectorOAuthSession(pluginID: string, appID: string) {
+  const plugin = assertPackagePlugin(pluginID)
+  const installed = readInstalled(plugin.id)
+  if (!installed) {
+    throw new PluginError("INSTALLED_PLUGIN_NOT_FOUND", `Plugin '${pluginID}' is not installed.`)
+  }
+
+  const app = assertPluginApp(plugin, appID)
+  const credential = assertOAuthAppCredential(app)
+  await ProviderAuth.deleteGenericOAuthSession(
+    connectorIDForPluginApp(plugin.id, app.appID),
+    oauthMethodForApp(app),
+    oauthConfigForCredential(credential),
+  )
+
+  const record: InstalledPlugin = {
+    ...installed,
+    updatedAt: now(),
+  }
+  ensureInstalledPluginsTable()
+  db.upsert(INSTALLED_PLUGINS_TABLE, record, ["pluginID"])
+  return connectorStatusFor(plugin, record, app)
 }
 
 export async function diagnoseConnector(pluginID: string, appID: string) {
@@ -1778,25 +2033,58 @@ export async function resolveConnectorRemoteServer(connectorID: string): Promise
   }
 
   const app = assertPluginApp(plugin, parsed.appID)
-  const activeCredential = await Auth.getActiveProviderCredential(connectorID)
-  if (activeCredential?.credential.kind !== "api_key") {
-    throw new PluginError("PLUGIN_CONNECTOR_NOT_CONNECTED", `${app.name} is not connected.`)
+  const runtimeConfig = runtimeConfigForPlugin(plugin, installed)
+  const config: Record<string, string> = { ...runtimeConfig }
+
+  if (app.credential.kind === "api_key") {
+    const credential = assertApiKeyAppCredential(app)
+    const activeCredential = await Auth.getActiveProviderCredential(connectorID)
+    if (activeCredential?.credential.kind !== "api_key") {
+      throw new PluginError("PLUGIN_CONNECTOR_NOT_CONNECTED", `${app.name} is not connected.`)
+    }
+    config[credential.key] = activeCredential.credential.apiKey
+  } else {
+    const credential = assertOAuthAppCredential(app)
+    const session = await ProviderAuth.resolveGenericOAuthCredential(
+      connectorID,
+      oauthMethodForApp(app),
+      oauthConfigForCredential(credential),
+    )
+    if (!session) {
+      throw new PluginError("PLUGIN_CONNECTOR_NOT_CONNECTED", `${app.name} is not connected.`)
+    }
+    config.OAUTH_ACCESS_TOKEN = session.accessToken
+    config.OAUTH_TOKEN_TYPE = session.tokenType ?? "Bearer"
   }
 
-  const config = {
-    ...runtimeConfigForPlugin(plugin, installed),
-    [app.credential.key]: activeCredential.credential.apiKey,
-  }
   const serverUrl = replaceOptionalPlaceholders(app.runtime.serverUrl, config)
   if (!serverUrl) {
     throw new PluginError("PLUGIN_CONNECTOR_NOT_FOUND", `${app.name} does not declare a remote MCP server URL.`)
   }
 
-  return {
+  const result: {
+    serverUrl: string
+    authorization?: string
+    headers?: Record<string, string>
+  } = {
     serverUrl,
     authorization: replaceOptionalPlaceholders(app.runtime.authorization, config),
     headers: replaceRecordPlaceholders(app.runtime.headers, config),
   }
+
+  if (app.credential.kind === "oauth" && !result.authorization) {
+    const placement = app.credential.tokenPlacement
+    if (placement.type === "authorization_bearer") {
+      result.authorization = `Bearer ${config.OAUTH_ACCESS_TOKEN}`
+    } else {
+      result.headers = {
+        ...(result.headers ?? {}),
+        [placement.name]: replacePlaceholders(placement.value ?? "Bearer ${OAUTH_ACCESS_TOKEN}", config),
+      }
+    }
+  }
+
+  return result
 }
 
 export function listInstalledPluginSkillRoots(pluginIDs?: string[] | null): Array<{

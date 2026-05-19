@@ -192,6 +192,55 @@ export function SettingsRoutes() {
     ),
   )
 
+  app.post("/plugins/installed/:pluginID/connectors/:appID/auth/flows", async (c) => {
+    await parseJsonBody(
+      c,
+      SettingsUseCase.PluginConnectorAuthFlowBody,
+      "Body must be empty or a valid connector auth flow payload.",
+      {},
+    )
+    return ok(
+      c,
+      await SettingsUseCase.startInstalledPluginConnectorAuthFlow(
+        c.req.param("pluginID"),
+        c.req.param("appID"),
+        { serverBaseURL: resolveServerBaseURL(c.req.url) },
+      ),
+    )
+  })
+
+  app.get("/plugins/installed/:pluginID/connectors/:appID/auth/flows/:flowID", async (c) =>
+    ok(
+      c,
+      await SettingsUseCase.getInstalledPluginConnectorAuthFlow(
+        c.req.param("pluginID"),
+        c.req.param("appID"),
+        c.req.param("flowID"),
+      ),
+    ),
+  )
+
+  app.delete("/plugins/installed/:pluginID/connectors/:appID/auth/flows/:flowID", async (c) =>
+    ok(
+      c,
+      await SettingsUseCase.cancelInstalledPluginConnectorAuthFlow(
+        c.req.param("pluginID"),
+        c.req.param("appID"),
+        c.req.param("flowID"),
+      ),
+    ),
+  )
+
+  app.delete("/plugins/installed/:pluginID/connectors/:appID/auth/session", async (c) =>
+    ok(
+      c,
+      await SettingsUseCase.deleteInstalledPluginConnectorAuthSession(
+        c.req.param("pluginID"),
+        c.req.param("appID"),
+      ),
+    ),
+  )
+
   app.get("/plugins/installed/:pluginID/connectors/:appID/diagnostic", async (c) =>
     ok(
       c,

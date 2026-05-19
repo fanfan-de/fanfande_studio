@@ -1035,6 +1035,22 @@ export interface DesktopIpcContract {
     input: { pluginID: string; appID: string }
     output: AgentPluginConnectorStatus
   }
+  "desktop:start-installed-plugin-connector-auth-flow": {
+    input: { pluginID: string; appID: string }
+    output: AgentProviderAuthFlow
+  }
+  "desktop:get-installed-plugin-connector-auth-flow": {
+    input: { pluginID: string; appID: string; flowID: string }
+    output: AgentProviderAuthFlow | undefined
+  }
+  "desktop:cancel-installed-plugin-connector-auth-flow": {
+    input: { pluginID: string; appID: string; flowID: string }
+    output: AgentProviderAuthFlow | undefined
+  }
+  "desktop:delete-installed-plugin-connector-auth-session": {
+    input: { pluginID: string; appID: string }
+    output: AgentPluginConnectorStatus
+  }
   "desktop:get-installed-plugin-connector-diagnostic": {
     input: { pluginID: string; appID: string }
     output: AgentMcpServerDiagnostic
@@ -1424,6 +1440,10 @@ export interface DesktopApiMethods {
   getInstalledPluginConnectors(input: DesktopIpcInput<"desktop:get-installed-plugin-connectors">): Promise<DesktopIpcOutput<"desktop:get-installed-plugin-connectors">>
   saveInstalledPluginConnectorApiKey(input: DesktopIpcInput<"desktop:save-installed-plugin-connector-api-key">): Promise<DesktopIpcOutput<"desktop:save-installed-plugin-connector-api-key">>
   deleteInstalledPluginConnectorApiKey(input: DesktopIpcInput<"desktop:delete-installed-plugin-connector-api-key">): Promise<DesktopIpcOutput<"desktop:delete-installed-plugin-connector-api-key">>
+  startInstalledPluginConnectorAuthFlow(input: DesktopIpcInput<"desktop:start-installed-plugin-connector-auth-flow">): Promise<DesktopIpcOutput<"desktop:start-installed-plugin-connector-auth-flow">>
+  getInstalledPluginConnectorAuthFlow(input: DesktopIpcInput<"desktop:get-installed-plugin-connector-auth-flow">): Promise<DesktopIpcOutput<"desktop:get-installed-plugin-connector-auth-flow">>
+  cancelInstalledPluginConnectorAuthFlow(input: DesktopIpcInput<"desktop:cancel-installed-plugin-connector-auth-flow">): Promise<DesktopIpcOutput<"desktop:cancel-installed-plugin-connector-auth-flow">>
+  deleteInstalledPluginConnectorAuthSession(input: DesktopIpcInput<"desktop:delete-installed-plugin-connector-auth-session">): Promise<DesktopIpcOutput<"desktop:delete-installed-plugin-connector-auth-session">>
   getInstalledPluginConnectorDiagnostic(input: DesktopIpcInput<"desktop:get-installed-plugin-connector-diagnostic">): Promise<DesktopIpcOutput<"desktop:get-installed-plugin-connector-diagnostic">>
   getBuiltinTools(): Promise<DesktopIpcOutput<"desktop:get-builtin-tools">>
   updateBuiltinToolSelection(input: DesktopIpcInput<"desktop:update-builtin-tool-selection">): Promise<DesktopIpcOutput<"desktop:update-builtin-tool-selection">>

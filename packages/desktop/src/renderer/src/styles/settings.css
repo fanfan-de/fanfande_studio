@@ -5638,6 +5638,40 @@ body.is-dragging-settings-page {
   line-height: 1.45;
 }
 
+.plugins-connector-actions {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.plugins-connector-key-field {
+  min-width: min(280px, 100%);
+  display: grid;
+  gap: 6px;
+  color: #6f6a64;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.plugins-connector-key-field input {
+  min-height: 34px;
+  width: 100%;
+  border: 1px solid #dad4cd;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2b2926;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.plugins-connector-key-field input:focus {
+  border-color: #202020;
+  outline: none;
+}
+
 .plugins-info-table div {
   min-height: 48px;
   display: grid;

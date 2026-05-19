@@ -72,6 +72,13 @@
 }
 
 .sidebar {
+  --left-sidebar-button-radius: 8px;
+  --left-sidebar-button-surface: transparent;
+  --left-sidebar-button-surface-hover: var(--semantic-sidebar-tree-row-surface-hover);
+  --left-sidebar-button-surface-active: var(--semantic-sidebar-tree-row-surface-active);
+  --left-sidebar-button-text: var(--semantic-sidebar-tree-row-text);
+  --left-sidebar-button-text-hover: var(--semantic-sidebar-tree-row-text-hover);
+  --left-sidebar-button-text-active: var(--semantic-sidebar-tree-row-text-active);
   grid-column: 2;
   min-height: 0;
   min-width: 0;
@@ -1183,4 +1190,106 @@ body.is-resizing-sidebar .sidebar-resizer::before {
 .session-row-meta,
 .skill-tree-row-meta {
   color: var(--seg-text-3);
+}
+
+.sidebar .sidebar-view-host .global-skills-open-folder-button,
+.sidebar .sidebar-view-host .global-skills-install-button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--left-sidebar-button-radius);
+  background: var(--left-sidebar-button-surface);
+  box-shadow: none;
+  color: var(--left-sidebar-button-text);
+  transform: none;
+}
+
+.sidebar .sidebar-view-host .global-skills-new-button,
+.sidebar .sidebar-view-host .mcp-servers-new-button,
+.sidebar .sidebar-view-host .skills-tree-search-row button {
+  min-height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--left-sidebar-button-radius);
+  background: var(--left-sidebar-button-surface);
+  box-shadow: none;
+  color: var(--left-sidebar-button-text);
+  transform: none;
+}
+
+.sidebar .sidebar-view-host .skill-tree-row,
+.sidebar .sidebar-view-host .mcp-server-sidebar-row,
+.sidebar .sidebar-view-host .sidebar-view-tools .tools-category-item {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--left-sidebar-button-radius);
+  background: var(--left-sidebar-button-surface);
+  box-shadow: none;
+  color: var(--left-sidebar-button-text);
+  transform: none;
+}
+
+.sidebar .sidebar-view-host .global-skills-open-folder-button:hover,
+.sidebar .sidebar-view-host .global-skills-open-folder-button:focus-visible,
+.sidebar .sidebar-view-host .global-skills-install-button:hover,
+.sidebar .sidebar-view-host .global-skills-install-button:focus-visible,
+.sidebar .sidebar-view-host .global-skills-install-button.is-open,
+.sidebar .sidebar-view-host .global-skills-new-button:hover,
+.sidebar .sidebar-view-host .global-skills-new-button:focus-visible,
+.sidebar .sidebar-view-host .global-skills-new-button.is-open,
+.sidebar .sidebar-view-host .mcp-servers-new-button:hover,
+.sidebar .sidebar-view-host .mcp-servers-new-button:focus-visible,
+.sidebar .sidebar-view-host .skills-tree-search-row button:hover,
+.sidebar .sidebar-view-host .skills-tree-search-row button:focus-visible,
+.sidebar .sidebar-view-host .skill-tree-row:hover,
+.sidebar .sidebar-view-host .skill-tree-row:focus-visible,
+.sidebar .sidebar-view-host .mcp-server-sidebar-row:hover,
+.sidebar .sidebar-view-host .mcp-server-sidebar-row:focus-visible,
+.sidebar .sidebar-view-host .sidebar-view-tools .tools-category-item:hover,
+.sidebar .sidebar-view-host .sidebar-view-tools .tools-category-item:focus-visible {
+  border-color: transparent;
+  background: var(--left-sidebar-button-surface-hover);
+  box-shadow: none;
+  color: var(--left-sidebar-button-text-hover);
+  transform: none;
+}
+
+.sidebar .sidebar-view-host .global-skills-new-button.is-active,
+.sidebar .sidebar-view-host .mcp-servers-new-button.is-active,
+.sidebar .sidebar-view-host .skill-tree-row.is-active,
+.sidebar .sidebar-view-host .mcp-server-sidebar-row.is-active,
+.sidebar .sidebar-view-host .sidebar-view-tools .tools-category-item.is-active {
+  border-color: transparent;
+  background: var(--left-sidebar-button-surface-active);
+  box-shadow: none;
+  color: var(--left-sidebar-button-text-active);
+  transform: none;
+}
+
+.sidebar .sidebar-view-host .mcp-server-sidebar-name,
+.sidebar .sidebar-view-host .mcp-server-sidebar-row:hover .mcp-server-sidebar-name,
+.sidebar .sidebar-view-host .mcp-server-sidebar-row:focus-visible .mcp-server-sidebar-name,
+.sidebar .sidebar-view-host .mcp-server-sidebar-row.is-active .mcp-server-sidebar-name {
+  color: inherit;
+}
+
+.sidebar .sidebar-view-host .global-skills-open-folder-button:focus-visible,
+.sidebar .sidebar-view-host .global-skills-install-button:focus-visible,
+.sidebar .sidebar-view-host .global-skills-new-button:focus-visible,
+.sidebar .sidebar-view-host .mcp-servers-new-button:focus-visible,
+.sidebar .sidebar-view-host .skills-tree-search-row button:focus-visible,
+.sidebar .sidebar-view-host .skill-tree-row:focus-visible,
+.sidebar .sidebar-view-host .mcp-server-sidebar-row:focus-visible,
+.sidebar .sidebar-view-host .sidebar-view-tools .tools-category-item:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: -1px;
+}
+
+.sidebar .sidebar-view-host .global-skills-open-folder-button:disabled,
+.sidebar .sidebar-view-host .global-skills-install-button:disabled,
+.sidebar .sidebar-view-host .global-skills-new-button:disabled,
+.sidebar .sidebar-view-host .mcp-servers-new-button:disabled,
+.sidebar .sidebar-view-host .skills-tree-search-row button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }

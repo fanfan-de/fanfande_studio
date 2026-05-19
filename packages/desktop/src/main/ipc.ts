@@ -1826,6 +1826,73 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   )
 
   handleDesktopIpc(
+    "desktop:start-installed-plugin-connector-auth-flow",
+    async (_event, input: { pluginID: string; appID: string }) => {
+      const pluginID = input.pluginID.trim()
+      const appID = input.appID.trim()
+      const result = await requestAgentJSON<AgentProviderAuthFlow>(
+        `/api/plugins/installed/${encodeURIComponent(pluginID)}/connectors/${encodeURIComponent(appID)}/auth/flows`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({}),
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:get-installed-plugin-connector-auth-flow",
+    async (_event, input: { pluginID: string; appID: string; flowID: string }) => {
+      const pluginID = input.pluginID.trim()
+      const appID = input.appID.trim()
+      const flowID = input.flowID.trim()
+      const result = await requestAgentJSON<AgentProviderAuthFlow | undefined>(
+        `/api/plugins/installed/${encodeURIComponent(pluginID)}/connectors/${encodeURIComponent(appID)}/auth/flows/${encodeURIComponent(flowID)}`,
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:cancel-installed-plugin-connector-auth-flow",
+    async (_event, input: { pluginID: string; appID: string; flowID: string }) => {
+      const pluginID = input.pluginID.trim()
+      const appID = input.appID.trim()
+      const flowID = input.flowID.trim()
+      const result = await requestAgentJSON<AgentProviderAuthFlow | undefined>(
+        `/api/plugins/installed/${encodeURIComponent(pluginID)}/connectors/${encodeURIComponent(appID)}/auth/flows/${encodeURIComponent(flowID)}`,
+        {
+          method: "DELETE",
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:delete-installed-plugin-connector-auth-session",
+    async (_event, input: { pluginID: string; appID: string }) => {
+      const pluginID = input.pluginID.trim()
+      const appID = input.appID.trim()
+      const result = await requestAgentJSON<AgentPluginConnectorStatus>(
+        `/api/plugins/installed/${encodeURIComponent(pluginID)}/connectors/${encodeURIComponent(appID)}/auth/session`,
+        {
+          method: "DELETE",
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
     "desktop:get-installed-plugin-connector-diagnostic",
     async (_event, input: { pluginID: string; appID: string }) => {
       const pluginID = input.pluginID.trim()

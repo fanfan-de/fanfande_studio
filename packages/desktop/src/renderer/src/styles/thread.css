@@ -849,6 +849,23 @@
   background: var(--seg-panel);
 }
 
+.thread-html {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  white-space: normal;
+}
+
+.thread-html-frame {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  max-height: 720px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: #ffffff;
+}
+
 .trace-kind-text {
   background: #ffffff;
   border-left-color: rgba(81, 136, 188, 0.75);

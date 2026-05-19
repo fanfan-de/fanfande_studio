@@ -45,7 +45,9 @@ interface PluginsPageProps {
   updatingPluginID: string | null
   windowControls?: ReactNode
   onDeleteInstalledPlugin: (pluginID: string) => boolean | Promise<boolean>
+  onCancelInstalledPluginConnectorAuthFlow: (pluginID: string, appID: string) => boolean | Promise<boolean>
   onDeleteInstalledPluginConnectorApiKey: (pluginID: string, appID: string) => boolean | Promise<boolean>
+  onDeleteInstalledPluginConnectorAuthSession: (pluginID: string, appID: string) => boolean | Promise<boolean>
   onDiagnoseInstalledPlugin: (pluginID: string) => boolean | Promise<boolean>
   onDiagnoseInstalledPluginConnector: (pluginID: string, appID: string) => boolean | Promise<boolean>
   onDismissMessage: () => void
@@ -57,6 +59,7 @@ interface PluginsPageProps {
   onSaveInstalledPluginConnectorApiKey: (pluginID: string, appID: string) => boolean | Promise<boolean>
   onSaveInstalledPluginConfig: (pluginID: string) => boolean | Promise<boolean>
   onSetInstalledPluginEnabled: (pluginID: string, enabled: boolean) => boolean | Promise<boolean>
+  onStartInstalledPluginConnectorAuthFlow: (pluginID: string, appID: string) => boolean | Promise<boolean>
 }
 
 const CATEGORY_FILTERS: Array<PluginCategory | "All"> = [
@@ -121,6 +124,18 @@ function toolSummary(tools?: Array<{ name: string; title?: string }>) {
 
 function permissionSummary(permissions?: string[]) {
   return permissions?.length ? permissions.join(", ") : "No extra permissions declared"
+}
+
+function credentialKindLabel(kind: "api_key" | "oauth" | undefined) {
+  return kind === "oauth" ? "OAuth" : "API key"
+}
+
+function connectorStatusLabel(status: PluginConnectorStatus | undefined) {
+  if (!status) return "Not connected"
+  if (status.authStatus === "pending") return "Signing in"
+  if (status.authStatus === "expired") return "Expired"
+  if (status.authStatus === "error") return "Error"
+  return status.connected ? "Connected" : "Not connected"
 }
 
 function openPluginExternalUrl(url: string) {
@@ -362,11 +377,21 @@ export function PluginsPage({
   pluginConnectorStatuses,
   updatingPluginID,
   windowControls,
+  diagnosingPluginConnectorID,
+  pluginDraft,
+  savingPluginConnectorID,
+  onCancelInstalledPluginConnectorAuthFlow,
   onDeleteInstalledPlugin,
+  onDeleteInstalledPluginConnectorApiKey,
+  onDeleteInstalledPluginConnectorAuthSession,
+  onDiagnoseInstalledPluginConnector,
   onDismissMessage,
   onInstallPlugin,
+  onPluginDraftAppApiKeyChange,
   onPluginDeselect,
   onPluginSelect,
+  onSaveInstalledPluginConnectorApiKey,
+  onStartInstalledPluginConnectorAuthFlow,
 }: PluginsPageProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [categoryFilter, setCategoryFilter] = useState<PluginCategory | "All">("All")
@@ -809,6 +834,13 @@ export function PluginsPage({
                         const itemID = `${activePlugin.id}:app:${app.appID}`
                         const isExpanded = expandedIncludedItemID === itemID
                         const status = activeConnectorStatusByAppID.get(app.appID)
+                        const connectorKey = `${activePlugin.id}:${app.appID}`
+                        const credentialKind = app.credential.kind === "oauth" ? "oauth" : "api_key"
+                        const apiKeyCredential = app.credential.kind === "oauth" ? null : app.credential
+                        const isBusy = savingPluginConnectorID === connectorKey
+                        const isDiagnosing = diagnosingPluginConnectorID === connectorKey
+                        const activeFlow = status?.activeFlow
+                        const hasPendingFlow = activeFlow && ["pending", "waiting_user", "authorizing"].includes(activeFlow.status)
 
                         return (
                           <div key={`app:${app.appID}`} className="plugins-included-item">
@@ -839,7 +871,7 @@ export function PluginsPage({
                                   </div>
                                   <div>
                                     <dt>Status</dt>
-                                    <dd>{status?.connected ? "Connected" : "Not connected"}</dd>
+                                    <dd>{connectorStatusLabel(status)}</dd>
                                   </div>
                                   <div>
                                     <dt>Connector ID</dt>
@@ -849,6 +881,16 @@ export function PluginsPage({
                                     <dt>Credential</dt>
                                     <dd>{app.credential.label}</dd>
                                   </div>
+                                  <div>
+                                    <dt>Credential kind</dt>
+                                    <dd>{credentialKindLabel(credentialKind)}</dd>
+                                  </div>
+                                  {status?.email ? (
+                                    <div>
+                                      <dt>Account</dt>
+                                      <dd>{status.email}</dd>
+                                    </div>
+                                  ) : null}
                                   <div>
                                     <dt>Endpoint</dt>
                                     <dd>{runtimePrimary(app.runtime)}</dd>
@@ -866,6 +908,81 @@ export function PluginsPage({
                                     <dd>{app.description ?? app.credential.description ?? "Connector-backed remote MCP"}</dd>
                                   </div>
                                 </dl>
+                                {activeInstalledPlugin ? (
+                                  <div className="plugins-connector-actions">
+                                    {!apiKeyCredential ? (
+                                      <>
+                                        {hasPendingFlow ? (
+                                          <button
+                                            className="plugins-detail-uninstall-button"
+                                            type="button"
+                                            disabled={isBusy}
+                                            onClick={() => void onCancelInstalledPluginConnectorAuthFlow(activePlugin.id, app.appID)}
+                                          >
+                                            {isBusy ? "Cancelling..." : "Cancel sign-in"}
+                                          </button>
+                                        ) : (
+                                          <button
+                                            className="plugins-detail-install-button"
+                                            type="button"
+                                            disabled={isBusy}
+                                            onClick={() => void onStartInstalledPluginConnectorAuthFlow(activePlugin.id, app.appID)}
+                                          >
+                                            {isBusy ? "Opening..." : status?.connected ? "Reconnect" : "Sign in"}
+                                          </button>
+                                        )}
+                                        {status?.connected ? (
+                                          <button
+                                            className="plugins-detail-uninstall-button"
+                                            type="button"
+                                            disabled={isBusy}
+                                            onClick={() => void onDeleteInstalledPluginConnectorAuthSession(activePlugin.id, app.appID)}
+                                          >
+                                            {isBusy ? "Disconnecting..." : "Disconnect"}
+                                          </button>
+                                        ) : null}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <label className="plugins-connector-key-field">
+                                          <span>{app.credential.label}</span>
+                                          <input
+                                            type="password"
+                                            value={pluginDraft.appApiKeys[app.appID] ?? ""}
+                                            placeholder={apiKeyCredential.placeholder ?? "Enter API key"}
+                                            onChange={(event) => onPluginDraftAppApiKeyChange(app.appID, event.target.value)}
+                                          />
+                                        </label>
+                                        <button
+                                          className="plugins-detail-install-button"
+                                          type="button"
+                                          disabled={isBusy}
+                                          onClick={() => void onSaveInstalledPluginConnectorApiKey(activePlugin.id, app.appID)}
+                                        >
+                                          {isBusy ? "Saving..." : "Update key"}
+                                        </button>
+                                        {status?.connected ? (
+                                          <button
+                                            className="plugins-detail-uninstall-button"
+                                            type="button"
+                                            disabled={isBusy}
+                                            onClick={() => void onDeleteInstalledPluginConnectorApiKey(activePlugin.id, app.appID)}
+                                          >
+                                            {isBusy ? "Clearing..." : "Disconnect"}
+                                          </button>
+                                        ) : null}
+                                      </>
+                                    )}
+                                    <button
+                                      className="plugins-detail-uninstall-button"
+                                      type="button"
+                                      disabled={isDiagnosing}
+                                      onClick={() => void onDiagnoseInstalledPluginConnector(activePlugin.id, app.appID)}
+                                    >
+                                      {isDiagnosing ? "Checking..." : "Diagnose"}
+                                    </button>
+                                  </div>
+                                ) : null}
                               </div>
                             ) : null}
                           </div>
