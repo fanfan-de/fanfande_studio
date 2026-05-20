@@ -1327,7 +1327,9 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
         {isActivityRailVisible ? (
           <ActivityRail
             activeView={leftSidebarView}
+            isSettingsOpen={isOpen}
             isSidebarCollapsed={isSidebarCollapsed}
+            onOpenSettings={openSettings}
             onViewChange={handleLeftSidebarViewChange}
             onToggleSidebar={handleSidebarToggle}
             side="left"
@@ -1381,7 +1383,9 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 activeMcpServerID,
                 deletingMcpServerID,
                 isImportingMcpConfigJson,
+                installedPlugins,
                 mcpServers,
+                pluginCatalog,
                 savingMcpServerID,
                 onMcpServerSelect: selectMcpServer,
                 onStartNewMcpServer: startNewMcpServer,
@@ -1402,6 +1406,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onPromptPresetSelect: selectPromptPreset,
                 onPromptUrlInstallDialogOpen: openPromptUrlInstallDialog,
               }}
+              showSettingsButton={!isActivityRailVisible}
               showSidebarToggleButton={!isActivityRailVisible}
               builtinToolsSidebarProps={{
                 activeToolKind: activeBuiltinToolKind,
@@ -1576,9 +1581,11 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               hideNavigator
               isLoading={isLoading}
               loadError={loadError}
+              installedPlugins={installedPlugins}
               mcpServerDraft={mcpServerDraft}
               mcpServers={mcpServers}
               message={message}
+              pluginCatalog={pluginCatalog}
               savingMcpServerID={savingMcpServerID}
               isImportingMcpConfigJson={isImportingMcpConfigJson}
               windowControls={windowControls}
@@ -1825,11 +1832,13 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               isLoadingArchivedSessions={isLoadingArchivedSessions}
               isOpen={isOpen}
               isRefreshingProviderCatalog={isRefreshingProviderCatalog}
+              installedPlugins={installedPlugins}
               loadError={loadError}
               mcpServerDraft={mcpServerDraft}
               mcpServers={mcpServers}
               message={message}
               models={models}
+              pluginCatalog={pluginCatalog}
               providerDrafts={providerDrafts}
               restoringArchivedSessionID={restoringArchivedSessionID}
               savingMcpServerID={savingMcpServerID}

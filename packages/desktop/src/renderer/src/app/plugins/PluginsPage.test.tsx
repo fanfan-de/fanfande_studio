@@ -250,6 +250,7 @@ describe("PluginsPage", () => {
     render(<PluginsPage {...createProps({ onInstallPlugin })} />)
 
     expect(screen.getByRole("region", { name: "Plugin marketplace layout" })).toBeInTheDocument()
+    expect(screen.queryByLabelText("Featured plugin spotlight")).not.toBeInTheDocument()
     expect(screen.queryByText("Plugin module is under development")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Install Filesystem" }))
@@ -291,6 +292,7 @@ describe("PluginsPage", () => {
     expect(screen.getByLabelText("Plugins top menu")).not.toContainElement(breadcrumb)
     expect(breadcrumb.closest(".plugins-page-main")).not.toBeNull()
     expect(screen.getByRole("heading", { name: "Filesystem", level: 1 })).toBeInTheDocument()
+    expect(screen.queryByLabelText("Filesystem example prompts")).not.toBeInTheDocument()
     const installButton = screen.getByRole("button", { name: "Install Filesystem" })
     expect(installButton.closest(".plugins-detail-actions")).not.toBeNull()
     fireEvent.click(installButton)

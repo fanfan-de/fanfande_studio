@@ -9,13 +9,23 @@ import {
 } from "../icons"
 import { ShellTopMenu } from "../shared-ui"
 import type {
+  InstalledPlugin,
   McpServerDiagnostic,
   McpServerDraftState,
   McpServerSummary,
   McpToolDiagnostic,
   McpToolPolicyValue,
+  PluginCatalogItem,
 } from "../types"
 import { parseMcpConfigJson } from "./mcp-config-import"
+import {
+  buildMcpServerPluginSourceMap,
+  getMcpServerPluginSource,
+  getMcpServerPluginSourceAriaLabel,
+  getMcpServerPluginSourceSearchText,
+  getMcpServerPluginSourceTitle,
+  type McpServerPluginSource,
+} from "./mcp-server-source"
 import { McpToolsPolicyPanel } from "./McpToolsPolicyPanel"
 
 interface McpServersMessage {
@@ -32,6 +42,8 @@ interface McpServersPageProps {
   mcpServerDraft: McpServerDraftState
   mcpServers: McpServerSummary[]
   message: McpServersMessage | null
+  installedPlugins?: InstalledPlugin[]
+  pluginCatalog?: PluginCatalogItem[]
   savingMcpServerID: string | null
   hideNavigator?: boolean
   isImportingMcpConfigJson?: boolean
@@ -50,7 +62,9 @@ export interface McpServersSidebarViewProps {
   activeMcpServerID: string | null
   deletingMcpServerID: string | null
   isImportingMcpConfigJson?: boolean
+  installedPlugins?: InstalledPlugin[]
   mcpServers: McpServerSummary[]
+  pluginCatalog?: PluginCatalogItem[]
   savingMcpServerID: string | null
   onMcpServerSelect: (serverID: string) => void
   onStartNewMcpServer: () => void
@@ -66,13 +80,14 @@ function getMcpToolLabel(tool: McpToolDiagnostic) {
   return tool.displayName || tool.title || tool.name
 }
 
-function getMcpServerLookupText(server: McpServerSummary) {
+function getMcpServerLookupText(server: McpServerSummary, pluginSource: McpServerPluginSource | null = null) {
   return [
     server.id,
     server.name ?? "",
     server.transport,
     server.transport === "stdio" ? server.command : server.transport === "remote" ? server.serverUrl ?? "" : server.connectorId,
     server.transport === "stdio" ? server.args?.join(" ") ?? "" : server.serverDescription ?? "",
+    getMcpServerPluginSourceSearchText(pluginSource),
   ].join(" ").toLowerCase()
 }
 
@@ -81,8 +96,11 @@ interface McpServerVisualProfile {
   displayName: string
 }
 
-function getMcpServerVisualProfile(server: McpServerSummary): McpServerVisualProfile {
-  const lookupText = getMcpServerLookupText(server)
+function getMcpServerVisualProfile(
+  server: McpServerSummary,
+  pluginSource: McpServerPluginSource | null = null,
+): McpServerVisualProfile {
+  const lookupText = getMcpServerLookupText(server, pluginSource)
   const displayName = server.name ?? server.id
 
   if (lookupText.includes("github")) {
@@ -216,7 +234,11 @@ function getVisibleKeyValueEditorRows(value: string) {
   return rows.length > 0 ? rows : [{ key: "", value: "" }]
 }
 
-function doesMcpServerMatchSearch(server: McpServerSummary, rawQuery: string) {
+function doesMcpServerMatchSearch(
+  server: McpServerSummary,
+  rawQuery: string,
+  pluginSource: McpServerPluginSource | null = null,
+) {
   const query = rawQuery.trim().toLowerCase()
   if (!query) return true
 
@@ -226,6 +248,7 @@ function doesMcpServerMatchSearch(server: McpServerSummary, rawQuery: string) {
     getMcpTransportLabel(server.transport),
     server.enabled ? "enabled" : "disabled",
     server.transport === "stdio" ? server.command ?? "" : server.transport === "remote" ? server.serverUrl ?? "" : server.connectorId,
+    getMcpServerPluginSourceSearchText(pluginSource),
   ]
     .join(" ")
     .toLowerCase()
@@ -280,22 +303,31 @@ function getMcpServerValidationError(draft: McpServerDraftState) {
 interface McpServerOverviewCardProps {
   activeMcpServer: McpServerSummary | null
   diagnostic: McpServerDiagnostic | null
+  pluginSource: McpServerPluginSource | null
 }
 
 function McpServerOverviewCard({
   activeMcpServer,
   diagnostic,
+  pluginSource,
 }: McpServerOverviewCardProps) {
   if (!activeMcpServer) return null
 
-  const visualProfile = getMcpServerVisualProfile(activeMcpServer)
+  const visualProfile = getMcpServerVisualProfile(activeMcpServer, pluginSource)
 
   return (
     <section className="mcp-overview-card" aria-labelledby="mcp-overview-title">
       <div className="mcp-overview-header">
         <div className="mcp-overview-identity">
           <div className="mcp-overview-copy">
-            <span className="label">{visualProfile.category}</span>
+            <div className="mcp-overview-label-row">
+              <span className="label">{visualProfile.category}</span>
+              {pluginSource ? (
+                <span className="mcp-server-source-chip" title={getMcpServerPluginSourceTitle(pluginSource)}>
+                  {getMcpServerPluginSourceTitle(pluginSource)}
+                </span>
+              ) : null}
+            </div>
             <h3 id="mcp-overview-title">{visualProfile.displayName}</h3>
             <p>{getMcpPurposeText(activeMcpServer, diagnostic)}</p>
           </div>
@@ -451,16 +483,26 @@ export function McpServersSidebarView({
   activeMcpServerID,
   deletingMcpServerID,
   isImportingMcpConfigJson = false,
+  installedPlugins = [],
   mcpServers,
+  pluginCatalog = [],
   savingMcpServerID,
   onMcpServerSelect,
   onStartNewMcpServer,
 }: McpServersSidebarViewProps) {
   const [mcpServerSearchQuery, setMcpServerSearchQuery] = useState("")
   const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
+  const pluginSourceMap = useMemo(
+    () => buildMcpServerPluginSourceMap(installedPlugins, pluginCatalog),
+    [installedPlugins, pluginCatalog],
+  )
   const filteredMcpServers = useMemo(
-    () => mcpServers.filter((server) => doesMcpServerMatchSearch(server, mcpServerSearchQuery)),
-    [mcpServerSearchQuery, mcpServers],
+    () => mcpServers.filter((server) => doesMcpServerMatchSearch(
+      server,
+      mcpServerSearchQuery,
+      getMcpServerPluginSource(server, pluginSourceMap),
+    )),
+    [mcpServerSearchQuery, mcpServers, pluginSourceMap],
   )
 
   return (
@@ -490,18 +532,25 @@ export function McpServersSidebarView({
         {filteredMcpServers.length > 0 ? (
           filteredMcpServers.map((server) => {
             const isActive = server.id === activeMcpServerID
+            const pluginSource = getMcpServerPluginSource(server, pluginSourceMap)
+            const pluginSourceAriaLabel = pluginSource ? getMcpServerPluginSourceAriaLabel(pluginSource) : null
 
             return (
               <button
                 key={server.id}
                 className={isActive ? "skill-tree-row mcp-server-sidebar-row is-active" : "skill-tree-row mcp-server-sidebar-row"}
-                aria-label={`${server.name ?? server.id} ${server.enabled ? "enabled" : "disabled"}`}
+                aria-label={`${server.name ?? server.id}${pluginSourceAriaLabel ? ` ${pluginSourceAriaLabel}` : ""} ${server.enabled ? "enabled" : "disabled"}`}
                 aria-pressed={isActive}
                 type="button"
                 onClick={() => onMcpServerSelect(server.id)}
               >
                 <span className="mcp-server-sidebar-copy">
                   <span className="mcp-server-sidebar-name">{server.name ?? server.id}</span>
+                  {pluginSource ? (
+                    <span className="mcp-server-sidebar-source" title={getMcpServerPluginSourceTitle(pluginSource)}>
+                      Plugin
+                    </span>
+                  ) : null}
                 </span>
                 <span className={server.enabled ? "mcp-server-sidebar-status is-enabled" : "mcp-server-sidebar-status"} aria-hidden="true">
                   {server.enabled ? "Enabled" : "Disabled"}
@@ -541,6 +590,8 @@ export function McpServersPage({
   mcpServerDraft,
   mcpServers,
   message,
+  installedPlugins = [],
+  pluginCatalog = [],
   savingMcpServerID,
   hideNavigator = false,
   isImportingMcpConfigJson = false,
@@ -557,6 +608,11 @@ export function McpServersPage({
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [importConfigJson, setImportConfigJson] = useState("")
   const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
+  const pluginSourceMap = useMemo(
+    () => buildMcpServerPluginSourceMap(installedPlugins, pluginCatalog),
+    [installedPlugins, pluginCatalog],
+  )
+  const activeMcpServerPluginSource = activeMcpServer ? getMcpServerPluginSource(activeMcpServer, pluginSourceMap) : null
   const mcpServerBusyID = activeMcpServerID ?? mcpServerDraft.id.trim() ?? null
   const mcpServerBusy = Boolean(
     (mcpServerBusyID && savingMcpServerID === mcpServerBusyID) ||
@@ -647,7 +703,9 @@ export function McpServersPage({
                   activeMcpServerID={activeMcpServerID}
                   deletingMcpServerID={deletingMcpServerID}
                   isImportingMcpConfigJson={isImportingMcpConfigJson}
+                  installedPlugins={installedPlugins}
                   mcpServers={mcpServers}
+                  pluginCatalog={pluginCatalog}
                   savingMcpServerID={savingMcpServerID}
                   onMcpServerSelect={onMcpServerSelect}
                   onStartNewMcpServer={onStartNewMcpServer}
@@ -661,6 +719,7 @@ export function McpServersPage({
                   <McpServerOverviewCard
                     activeMcpServer={activeMcpServer}
                     diagnostic={activeMcpServerDiagnostic}
+                    pluginSource={activeMcpServerPluginSource}
                   />
 
                   <section className="mcp-config-card" aria-labelledby="mcp-basic-settings-title">

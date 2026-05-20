@@ -185,14 +185,6 @@ function pluginImageURL(plugin: PluginCatalogItem, kind: "icon" | "thumbnail" | 
   return plugin.heroImageUrl ?? plugin.thumbnailUrl ?? plugin.screenshots?.[0]
 }
 
-function cssURL(url: string) {
-  return `url("${url.replace(/["\\\n\r\f]/g, "\\$&")}")`
-}
-
-function pluginHeroBackground(url: string) {
-  return `linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.72)), ${cssURL(url)}`
-}
-
 function pluginBrandColor(plugin: PluginCatalogItem) {
   const color = plugin.brandColor?.trim()
   return color && /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color) ? color : undefined
@@ -214,18 +206,6 @@ function pluginFunctionLabel(plugin: PluginCatalogItem) {
   if (toolModes.size === 0) toolModes.add(plugin.category)
 
   return Array.from(toolModes).join(", ")
-}
-
-function pluginPromptExamples(plugin: PluginCatalogItem) {
-  const primaryTool = plugin.tools[0]?.title ?? plugin.tools[0]?.name
-  const connector = plugin.connectorRequirements[0]?.connector ?? plugin.apps[0]?.name
-  const target = primaryTool ?? connector ?? plugin.category.toLowerCase()
-
-  return [
-    `${plugin.name} help me inspect this ${target} workflow`,
-    `${plugin.name} create a clean project-ready result from the current context`,
-    `${plugin.name} verify the output and summarize what changed`,
-  ]
 }
 
 function isImageIcon(icon: string) {
@@ -505,13 +485,9 @@ export function PluginsPage({
       return items.length > 0 ? [{ category, items }] : []
     })
   }, [featuredPluginIDs, filteredPlugins, shouldShowFeatured])
-  const heroPlugin = featuredPlugins[0] ?? filteredPlugins[0] ?? pluginCatalog[0] ?? null
   const selectedPluginID = activePlugin?.id ?? null
   const hasPluginMatches = filteredPlugins.length > 0
   const isPluginDetailView = Boolean(activePlugin)
-  const detailPromptExamples = activePlugin ? pluginPromptExamples(activePlugin) : []
-  const heroImageURL = heroPlugin ? pluginImageURL(heroPlugin, "hero") : undefined
-  const activeHeroImageURL = activePlugin ? pluginImageURL(activePlugin, "hero") : undefined
   const activeBrandColor = activePlugin ? pluginBrandColor(activePlugin) : undefined
   const defaultOAuthApp = activePlugin?.apps.find((app) => app.credential.kind === "oauth")
   const defaultIncludedItemID = activePlugin && defaultOAuthApp
@@ -627,27 +603,6 @@ export function PluginsPage({
               </div>
                 </header>
 
-                {heroPlugin ? (
-                  <section
-                    className={heroImageURL ? "plugins-featured-hero has-image" : "plugins-featured-hero"}
-                    aria-label="Featured plugin spotlight"
-                    style={heroImageURL ? { backgroundImage: pluginHeroBackground(heroImageURL) } : undefined}
-                  >
-                <div className="plugins-featured-message">
-                  <PluginMark plugin={heroPlugin} />
-                  <strong>{heroPlugin.name}</strong>
-                  <span>{heroPlugin.description}</span>
-                </div>
-                <div className="plugins-hero-dots" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                  </section>
-                ) : null}
-
                 <div className="plugins-directory" role="region" aria-label="Plugin marketplace layout">
               {hasPluginMatches ? (
                 <>
@@ -704,23 +659,6 @@ export function PluginsPage({
                       </div>
                     ) : null}
                   </header>
-
-                  <section
-                    className={activeHeroImageURL ? "plugins-detail-sample-hero has-image" : "plugins-detail-sample-hero"}
-                    aria-label={`${activePlugin.name} example prompts`}
-                    style={activeHeroImageURL ? { backgroundImage: pluginHeroBackground(activeHeroImageURL) } : undefined}
-                  >
-                    <div className="plugins-detail-prompt-stack">
-                      {detailPromptExamples.map((prompt) => (
-                        <div key={prompt} className="plugins-detail-prompt">
-                          <PluginMark plugin={activePlugin} />
-                          <span>
-                            <strong>{activePlugin.name}</strong> {prompt.replace(activePlugin.name, "").trim()}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
 
                   <p className="plugins-detail-description">{pluginDetailDescription(activePlugin)}</p>
 

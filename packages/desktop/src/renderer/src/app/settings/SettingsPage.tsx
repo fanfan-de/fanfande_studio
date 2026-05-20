@@ -31,10 +31,12 @@ import type {
   AssistantTraceVisibilityKey,
   BrandTheme,
   ColorMode,
+  InstalledPlugin,
   McpServerDiagnostic,
   McpServerDraftState,
   McpServerSummary,
   McpToolPolicyValue,
+  PluginCatalogItem,
   ProjectModelSelection,
   ProviderAuthCapability,
   ProviderCatalogItem,
@@ -42,6 +44,14 @@ import type {
   ProviderModel
 } from "../types"
 import { McpToolsPolicyPanel } from "../mcp/McpToolsPolicyPanel"
+import {
+  buildMcpServerPluginSourceMap,
+  getMcpServerPluginSource,
+  getMcpServerPluginSourceAriaLabel,
+  getMcpServerPluginSourceSearchText,
+  getMcpServerPluginSourceTitle,
+  type McpServerPluginSource,
+} from "../mcp/mcp-server-source"
 import { clamp, formatTime } from "../utils"
 import {
   checkForAppUpdates,
@@ -691,7 +701,11 @@ function getMcpTransportLabel(transport: McpServerSummary["transport"] | McpServ
   return "stdio"
 }
 
-function doesMcpServerMatchSearch(server: McpServerSummary, rawQuery: string) {
+function doesMcpServerMatchSearch(
+  server: McpServerSummary,
+  rawQuery: string,
+  pluginSource: McpServerPluginSource | null = null,
+) {
   const query = rawQuery.trim().toLowerCase()
   if (!query) return true
 
@@ -701,6 +715,7 @@ function doesMcpServerMatchSearch(server: McpServerSummary, rawQuery: string) {
     getMcpTransportLabel(server.transport),
     server.enabled ? "enabled" : "disabled",
     server.transport === "stdio" ? server.command ?? "" : server.transport === "remote" ? server.serverUrl ?? "" : server.connectorId,
+    getMcpServerPluginSourceSearchText(pluginSource),
   ]
     .join(" ")
     .toLowerCase()
@@ -836,6 +851,7 @@ interface SettingsPageProps {
   isOpen: boolean
   isRefreshingProviderCatalog: boolean
   loadError: string | null
+  installedPlugins?: InstalledPlugin[]
   mcpServerDraft: McpServerDraftState
   mcpServers: McpServerSummary[]
   message: {
@@ -843,6 +859,7 @@ interface SettingsPageProps {
     text: string
   } | null
   models: ProviderModel[]
+  pluginCatalog?: PluginCatalogItem[]
   providerDrafts: Record<string, ProviderDraftState>
   restoringArchivedSessionID: string | null
   savingMcpServerID: string | null
@@ -921,10 +938,12 @@ export function SettingsPage({
   isOpen,
   isRefreshingProviderCatalog,
   loadError,
+  installedPlugins = [],
   mcpServerDraft,
   mcpServers,
   message,
   models,
+  pluginCatalog = [],
   providerDrafts,
   restoringArchivedSessionID,
   savingMcpServerID,
@@ -997,7 +1016,15 @@ export function SettingsPage({
     const visibleModels = models.filter((model) => model.available && connectedProviderIDs.has(model.providerID))
     const visibleImageModels = visibleModels.filter((model) => model.capabilities.output.image)
     const filteredCatalog = getVisibleProvidersForSettings(catalog, providerSearch)
-    const filteredMcpServers = mcpServers.filter((server) => doesMcpServerMatchSearch(server, mcpServerSearchQuery))
+    const mcpServerPluginSourceMap = useMemo(
+      () => buildMcpServerPluginSourceMap(installedPlugins, pluginCatalog),
+      [installedPlugins, pluginCatalog],
+    )
+    const filteredMcpServers = mcpServers.filter((server) => doesMcpServerMatchSearch(
+      server,
+      mcpServerSearchQuery,
+      getMcpServerPluginSource(server, mcpServerPluginSourceMap),
+    ))
     const activeProvider = selectedProviderID ? catalog.find((item) => item.id === selectedProviderID) ?? null : null
     const activeProviderDraft = activeProvider
       ? (providerDrafts[activeProvider.id] ?? {
@@ -1049,6 +1076,9 @@ export function SettingsPage({
     const activeProviderBalance = activeProvider ? formatProviderBalance(activeProvider.authState.account) : null
     const activeProviderRechargeUrl = activeProvider && isAnyboxProvider(activeProvider) ? getAnyboxRechargeUrl(activeProvider) : null
     const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
+    const activeMcpServerPluginSource = activeMcpServer
+      ? getMcpServerPluginSource(activeMcpServer, mcpServerPluginSourceMap)
+      : null
     const mcpServerBusyID = activeMcpServerID ?? mcpServerDraft.id.trim() ?? null
     const mcpServerBusy = Boolean(
       (mcpServerBusyID && savingMcpServerID === mcpServerBusyID) ||
@@ -2680,12 +2710,14 @@ export function SettingsPage({
                           {filteredMcpServers.length > 0 ? (
                             filteredMcpServers.map((server) => {
                               const isActive = server.id === activeMcpServerID
+                              const pluginSource = getMcpServerPluginSource(server, mcpServerPluginSourceMap)
+                              const pluginSourceAriaLabel = pluginSource ? getMcpServerPluginSourceAriaLabel(pluginSource) : null
 
                               return (
                                 <button
                                   key={server.id}
                                   className={isActive ? "settings-service-item is-active" : "settings-service-item"}
-                                  aria-label={`${server.name ?? server.id} ${server.enabled ? "enabled" : "disabled"}`}
+                                  aria-label={`${server.name ?? server.id}${pluginSourceAriaLabel ? ` ${pluginSourceAriaLabel}` : ""} ${server.enabled ? "enabled" : "disabled"}`}
                                   aria-pressed={isActive}
                                   onClick={() => onMcpServerSelect(server.id)}
                                 >
@@ -2693,6 +2725,11 @@ export function SettingsPage({
                                     <strong>{server.name ?? server.id}</strong>
                                     <div className="provider-row-statuses">
                                       <span className="settings-badge">{getMcpTransportLabel(server.transport)}</span>
+                                      {pluginSource ? (
+                                        <span className="settings-badge is-plugin" title={getMcpServerPluginSourceTitle(pluginSource)}>
+                                          Plugin
+                                        </span>
+                                      ) : null}
                                       <span className={server.enabled ? "settings-badge is-highlight" : "settings-badge"}>
                                         {server.enabled ? "Enabled" : "Disabled"}
                                       </span>
@@ -2746,6 +2783,11 @@ export function SettingsPage({
 
                           <div className="provider-row-statuses">
                             <span className="settings-badge">{activeMcpServer ? "Editing" : "New"}</span>
+                            {activeMcpServerPluginSource ? (
+                              <span className="settings-badge is-plugin" title={getMcpServerPluginSourceTitle(activeMcpServerPluginSource)}>
+                                Plugin
+                              </span>
+                            ) : null}
                             <span className={mcpServerDraft.enabled ? "settings-badge is-highlight" : "settings-badge"}>
                               {mcpServerDraft.enabled ? "Enabled" : "Disabled"}
                             </span>

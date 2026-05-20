@@ -74,6 +74,7 @@ interface SidebarProps {
   isSettingsOpen: boolean
   mcpServersSidebarProps: McpServersSidebarViewProps
   promptPresetsSidebarProps: PromptPresetsSidebarViewProps
+  showSettingsButton?: boolean
   showSidebarToggleButton: boolean
   builtinToolsSidebarProps: BuiltinToolsSidebarViewProps
   projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
@@ -836,6 +837,7 @@ export function Sidebar({
   isSettingsOpen,
   mcpServersSidebarProps,
   promptPresetsSidebarProps,
+  showSettingsButton = true,
   showSidebarToggleButton,
   builtinToolsSidebarProps,
   projectRowRefs,
@@ -908,15 +910,17 @@ export function Sidebar({
         ) : null}
       </div>
 
-      <button
-        className={isSettingsOpen ? "sidebar-settings is-active" : "sidebar-settings"}
-        aria-label="Open settings"
-        aria-pressed={isSettingsOpen}
-        title="Open settings"
-        onClick={onOpenSettings}
-      >
-        <SettingsIcon />
-      </button>
+      {showSettingsButton ? (
+        <button
+          className={isSettingsOpen ? "sidebar-settings is-active" : "sidebar-settings"}
+          aria-label="Open settings"
+          aria-pressed={isSettingsOpen}
+          title="Open settings"
+          onClick={onOpenSettings}
+        >
+          <SettingsIcon />
+        </button>
+      ) : null}
     </aside>
   )
 }

@@ -474,7 +474,7 @@ const PROMPT_PRESET_FIXTURES: PromptPresetFixture[] = [
     source: "bundled" as const,
     hasOverride: false,
     editable: true,
-    sourcePath: "src/session/prompt/default.txt",
+    sourcePath: "src/session/prompt/default.md",
   },
   {
     id: "plan-mode",
@@ -483,7 +483,7 @@ const PROMPT_PRESET_FIXTURES: PromptPresetFixture[] = [
     source: "bundled" as const,
     hasOverride: false,
     editable: true,
-    sourcePath: "src/session/prompt/plan.txt",
+    sourcePath: "src/session/prompt/plan.md",
   },
   {
     id: "side-chat",
@@ -492,7 +492,7 @@ const PROMPT_PRESET_FIXTURES: PromptPresetFixture[] = [
     source: "bundled" as const,
     hasOverride: false,
     editable: true,
-    sourcePath: "src/session/prompt/side-chat.txt",
+    sourcePath: "src/session/prompt/side-chat.md",
   },
   {
     id: "provider-gpt",
@@ -501,7 +501,7 @@ const PROMPT_PRESET_FIXTURES: PromptPresetFixture[] = [
     source: "bundled" as const,
     hasOverride: false,
     editable: true,
-    sourcePath: "src/session/prompt/gpt.txt",
+    sourcePath: "src/session/prompt/gpt.md",
   },
 ]
 

@@ -5,17 +5,17 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import matter from "gray-matter"
 import * as Config from "#config/config.ts"
 import { getProcessEnvValue } from "#env/compat.ts"
-import PROMPT_ANTHROPIC from "../prompt/anthropic.txt"
-import PROMPT_BEAST from "../prompt/beast.txt"
-import PROMPT_CODEX from "../prompt/codex.txt"
-import PROMPT_DEFAULT from "../prompt/default.txt"
-import PROMPT_GEMINI from "../prompt/gemini.txt"
-import PROMPT_GPT from "../prompt/gpt.txt"
-import PROMPT_KIMI from "../prompt/kimi.txt"
-import PROMPT_PLAN_REMINDER_ANTHROPIC from "../prompt/plan-reminder-anthropic.txt"
-import PROMPT_PLAN from "../prompt/plan.txt"
-import PROMPT_SIDE_CHAT from "../prompt/side-chat.txt"
-import PROMPT_TRINITY from "../prompt/trinity.txt"
+import PROMPT_ANTHROPIC from "../prompt/anthropic.md" with { type: "text" }
+import PROMPT_BEAST from "../prompt/beast.md" with { type: "text" }
+import PROMPT_CODEX from "../prompt/codex.md" with { type: "text" }
+import PROMPT_DEFAULT from "../prompt/default.md" with { type: "text" }
+import PROMPT_GEMINI from "../prompt/gemini.md" with { type: "text" }
+import PROMPT_GPT from "../prompt/gpt.md" with { type: "text" }
+import PROMPT_KIMI from "../prompt/kimi.md" with { type: "text" }
+import PROMPT_PLAN_REMINDER_ANTHROPIC from "../prompt/plan-reminder-anthropic.md" with { type: "text" }
+import PROMPT_PLAN from "../prompt/plan.md" with { type: "text" }
+import PROMPT_SIDE_CHAT from "../prompt/side-chat.md" with { type: "text" }
+import PROMPT_TRINITY from "../prompt/trinity.md" with { type: "text" }
 
 export type PromptPresetSource = "bundled" | "custom"
 export type PromptPresetTarget = "system" | "plan" | "side-chat"
@@ -100,77 +100,77 @@ const PROMPT_PRESET_DEFINITIONS: PromptPresetDefinition[] = [
     id: "system-default",
     label: "System Prompt",
     description: "Base instructions applied to every session turn.",
-    sourcePath: "src/session/prompt/default.txt",
+    sourcePath: "src/session/prompt/default.md",
     bundledContent: PROMPT_DEFAULT,
   },
   {
     id: "plan-mode",
     label: "Plan Mode Prompt",
     description: "Additional instructions appended when the plan agent is active.",
-    sourcePath: "src/session/prompt/plan.txt",
+    sourcePath: "src/session/prompt/plan.md",
     bundledContent: PROMPT_PLAN,
   },
   {
     id: "side-chat",
     label: "Side Chat Prompt",
     description: "Additional instructions appended when a side chat session is active.",
-    sourcePath: "src/session/prompt/side-chat.txt",
+    sourcePath: "src/session/prompt/side-chat.md",
     bundledContent: PROMPT_SIDE_CHAT,
   },
   {
     id: "provider-anthropic",
     label: "Anthropic Provider Prompt",
     description: "Reserved provider-specific prompt for Anthropic models.",
-    sourcePath: "src/session/prompt/anthropic.txt",
+    sourcePath: "src/session/prompt/anthropic.md",
     bundledContent: PROMPT_ANTHROPIC,
   },
   {
     id: "provider-beast",
     label: "Beast Provider Prompt",
     description: "Reserved provider-specific prompt for Beast-style model routing.",
-    sourcePath: "src/session/prompt/beast.txt",
+    sourcePath: "src/session/prompt/beast.md",
     bundledContent: PROMPT_BEAST,
   },
   {
     id: "provider-gemini",
     label: "Gemini Provider Prompt",
     description: "Reserved provider-specific prompt for Gemini models.",
-    sourcePath: "src/session/prompt/gemini.txt",
+    sourcePath: "src/session/prompt/gemini.md",
     bundledContent: PROMPT_GEMINI,
   },
   {
     id: "provider-gpt",
     label: "GPT Provider Prompt",
     description: "Reserved provider-specific prompt for GPT-family models.",
-    sourcePath: "src/session/prompt/gpt.txt",
+    sourcePath: "src/session/prompt/gpt.md",
     bundledContent: PROMPT_GPT,
   },
   {
     id: "provider-kimi",
     label: "Kimi Provider Prompt",
     description: "Reserved provider-specific prompt for Kimi models.",
-    sourcePath: "src/session/prompt/kimi.txt",
+    sourcePath: "src/session/prompt/kimi.md",
     bundledContent: PROMPT_KIMI,
   },
   {
     id: "provider-codex",
     label: "Codex Provider Prompt",
     description: "Reserved provider-specific prompt for Codex models.",
-    sourcePath: "src/session/prompt/codex.txt",
+    sourcePath: "src/session/prompt/codex.md",
     bundledContent: PROMPT_CODEX,
   },
   {
     id: "provider-trinity",
     label: "Trinity Provider Prompt",
     description: "Reserved provider-specific prompt for Trinity models.",
-    sourcePath: "src/session/prompt/trinity.txt",
+    sourcePath: "src/session/prompt/trinity.md",
     bundledContent: PROMPT_TRINITY,
   },
   {
     id: "helper-plan-reminder-anthropic",
     label: "Anthropic Plan Reminder",
     description: "Helper prompt reserved for provider-specific planning reminders.",
-    sourcePath: "src/session/prompt/plan-reminder-anthropic.txt",
+    sourcePath: "src/session/prompt/plan-reminder-anthropic.md",
     bundledContent: PROMPT_PLAN_REMINDER_ANTHROPIC,
   },
 ]

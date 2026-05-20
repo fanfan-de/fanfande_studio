@@ -1202,8 +1202,7 @@ function normalizeCatalogItem(source: PluginManifestSource): PluginCatalogItem {
     displayAssetURL(manifest.interface?.logo) ??
     displayAssetURL(manifest.interface?.composerIcon)
   const thumbnailUrl = displayAssetURL(manifest.interface?.thumbnailUrl) ??
-    displayAssetURL(manifest.interface?.heroImageUrl) ??
-    iconUrl
+    displayAssetURL(manifest.interface?.heroImageUrl)
   const heroImageUrl = displayAssetURL(manifest.interface?.heroImageUrl) ?? thumbnailUrl
   const screenshots = uniqueStrings((manifest.interface?.screenshots ?? []).map(displayAssetURL))
   const risk = highestRisk([

@@ -1,5 +1,7 @@
 import { useEffect, useId, useState } from "react"
 import {
+  ChevronDownIcon,
+  ChevronRightIcon,
   ConnectedStatusIcon,
   FileTextIcon,
   FolderIcon,
@@ -15,7 +17,9 @@ import type { LeftSidebarView } from "../types"
 interface ActivityRailProps {
   activeView: LeftSidebarView
   bottomSlotRef?: (node: HTMLDivElement | null) => void
+  isSettingsOpen?: boolean
   isSidebarCollapsed: boolean
+  onOpenSettings?: () => void
   onViewChange: (view: LeftSidebarView) => void
   onToggleSidebar: () => void
   side: SidebarSide
@@ -64,7 +68,9 @@ function ActivityRailViewButton({ className, Icon, isActive, label, onClick }: A
 export function ActivityRail({
   activeView,
   bottomSlotRef,
+  isSettingsOpen = false,
   isSidebarCollapsed,
+  onOpenSettings,
   onViewChange,
   onToggleSidebar,
   side,
@@ -73,6 +79,7 @@ export function ActivityRail({
   const configurationMenuID = useId()
   const isConfigurationViewActive = isConfigurationLeftRailView(activeView)
   const [isConfigurationMenuOpen, setIsConfigurationMenuOpen] = useState(isConfigurationViewActive)
+  const ConfigurationToggleIcon = isConfigurationMenuOpen ? ChevronDownIcon : ChevronRightIcon
 
   useEffect(() => {
     if (isConfigurationViewActive) {
@@ -149,10 +156,22 @@ export function ActivityRail({
               type="button"
               onClick={() => setIsConfigurationMenuOpen((nextValue) => !nextValue)}
             >
-              <SettingsIcon />
+              <ConfigurationToggleIcon />
             </button>
           </div>
           {bottomSlotRef ? <div ref={bottomSlotRef} className="activity-rail-bottom" /> : null}
+          {onOpenSettings ? (
+            <button
+              className={joinClassNames("activity-rail-view-button", "activity-rail-settings", isSettingsOpen && "is-active")}
+              aria-label="Open settings"
+              aria-pressed={isSettingsOpen}
+              title="Open settings"
+              type="button"
+              onClick={onOpenSettings}
+            >
+              <SettingsIcon />
+            </button>
+          ) : null}
         </div>
       ) : bottomSlotRef ? (
         <div ref={bottomSlotRef} className="activity-rail-bottom" />

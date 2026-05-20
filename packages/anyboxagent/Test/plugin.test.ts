@@ -26,7 +26,9 @@ type PluginCatalogEnvelope = JsonEnvelope<
     id: string
     name: string
     description: string
+    iconUrl?: string
     thumbnailUrl?: string
+    heroImageUrl?: string
     screenshots: string[]
     installable?: boolean
     source?: string
@@ -865,6 +867,7 @@ describe("plugin marketplace API", () => {
         longDescription: "Remote fixture marketplace details.",
         developerName: "Remote Tests",
         category: "Docs",
+        iconUrl: "https://cdn.example.test/remote-icon.png",
         thumbnailUrl: "./relative-thumbnail.png",
         screenshots: [
           "./relative-screenshot.png",
@@ -938,7 +941,9 @@ describe("plugin marketplace API", () => {
     expect(firstRemotePlugin?.source).toBe("registry")
     expect(firstRemotePlugin?.installable).toBe(true)
     expect(firstRemotePlugin?.download?.url).toBe("https://cdn.example.test/remote-lab.zip")
+    expect(firstRemotePlugin?.iconUrl).toBe("https://cdn.example.test/remote-icon.png")
     expect(firstRemotePlugin?.thumbnailUrl).toBeUndefined()
+    expect(firstRemotePlugin?.heroImageUrl).toBeUndefined()
     expect(firstRemotePlugin?.screenshots).toEqual(["https://cdn.example.test/remote-lab.png"])
 
     const fetchCountBeforeCachedMode = fetchCount
