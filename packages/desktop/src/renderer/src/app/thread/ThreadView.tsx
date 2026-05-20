@@ -3695,6 +3695,21 @@ function VisibleThreadView({
     saveScrollSnapshot?.(key, snapshot)
   }
 
+  function rememberThreadTopScrollSnapshot(threadColumn: HTMLDivElement, key = effectiveScrollStateKey) {
+    if (!key) return
+    if (getThreadScrollMaxTop(threadColumn) <= THREAD_TOP_RESET_THRESHOLD_PX) return
+
+    const snapshot: ThreadScrollSnapshot = {
+      scrollTop: 0,
+      pinnedToBottom: false,
+      updatedAt: Date.now(),
+    }
+    scrollModeRef.current = "detached"
+    lastKnownScrollTopRef.current = 0
+    rememberThreadScrollSnapshot(key, snapshot)
+    saveThreadScrollSnapshotValue(key, snapshot)
+  }
+
   function setThreadScrollTop(threadColumn: HTMLDivElement, scrollTop: number) {
     threadColumn.scrollTop = clampThreadScrollTop(threadColumn, scrollTop)
     lastKnownScrollTopRef.current = threadColumn.scrollTop
@@ -4032,6 +4047,14 @@ function VisibleThreadView({
     handleThreadScrollIntent()
   }
 
+  function handleThreadWheelIntent(event: ReactWheelEvent<HTMLDivElement>) {
+    handleThreadScrollIntent(event)
+
+    if (event.deltaY < 0 && event.currentTarget.scrollTop <= THREAD_TOP_RESET_THRESHOLD_PX) {
+      rememberThreadTopScrollSnapshot(event.currentTarget)
+    }
+  }
+
   function hasRecentThreadScrollIntent() {
     return (
       !userScrollIntentConsumedRef.current &&
@@ -4076,7 +4099,7 @@ function VisibleThreadView({
         onPointerDownCapture={handleThreadScrollIntent}
         onPointerMoveCapture={handleThreadPointerMoveIntent}
         onScroll={handleThreadScroll}
-        onWheelCapture={handleThreadScrollIntent}
+        onWheelCapture={handleThreadWheelIntent}
       >
         {!activeSession ? (
           <article className="turn assistant-turn">
@@ -4156,20 +4179,21 @@ function VisibleThreadView({
               if (renderedItems.length === 0 && !ephemeralHint && insertedUserTurns.length === 0) return null
               const sideChatAnchorMessageID = turn.messageID ?? turn.id
               const turnMessageID = getSessionMessageIDForTurn(turn)
-              const canExposeBranchControls = isAssistantFinalMessageInUserTurn(activeTurns, turnIndex, turn)
-              const branchOptions = canExposeBranchControls ? messageTree?.branchOptionsByParentID[turnMessageID] ?? [] : []
+              const canExposeResponseActions = isAssistantFinalMessageInUserTurn(activeTurns, turnIndex, turn)
+              const branchOptions = canExposeResponseActions ? messageTree?.branchOptionsByParentID[turnMessageID] ?? [] : []
               const existingSideChatCount = sideChatCountsByAnchorMessageID[sideChatAnchorMessageID] ?? 0
-              const lastResponseItems = getLastAssistantResponseSectionItems(traceItems, assistantTraceVisibility)
-              const responseCopyText = buildAssistantResponseCopyText(lastResponseItems)
+              const lastResponseItems = canExposeResponseActions ? getLastAssistantResponseSectionItems(traceItems, assistantTraceVisibility) : []
+              const responseCopyText = canExposeResponseActions ? buildAssistantResponseCopyText(lastResponseItems) : ""
               const canOpenSideChat =
                 !readOnlySideChat &&
                 !turn.isStreaming &&
+                canExposeResponseActions &&
                 lastResponseItems.length > 0 &&
                 Boolean(onOpenSideChat)
               const canForkFromMessage =
                 !readOnlySideChat &&
                 !turn.isStreaming &&
-                canExposeBranchControls &&
+                canExposeResponseActions &&
                 Boolean(onForkFromMessage)
               const activeInlineSideChat = sideChatSession?.origin?.anchorMessageID === sideChatAnchorMessageID ? sideChatSession : null
               const hasAssistantDiffSummary = normalizeTurnDiffSummary(turn.diffSummary).length > 0

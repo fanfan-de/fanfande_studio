@@ -2211,6 +2211,66 @@ describe("ThreadView message actions", () => {
     expect(onOpenSideChat).toHaveBeenCalledWith("assistant-1")
   })
 
+  it("does not show assistant response actions on intermediate assistant messages", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    })
+    const onOpenSideChat = vi.fn()
+
+    const { getAllByRole, getByText } = renderThread(
+      [
+        userTurn("user-1", "Check the setup."),
+        assistantTraceTurn(
+          "assistant-intermediate",
+          [
+            {
+              id: "response-1",
+              kind: "text",
+              timestamp: 1,
+              label: "Assistant",
+              text: "I will inspect the plugin first.",
+              status: "completed",
+            },
+          ],
+          false,
+        ),
+        assistantTraceTurn(
+          "assistant-final",
+          [
+            {
+              id: "response-2",
+              kind: "text",
+              timestamp: 2,
+              label: "Assistant",
+              text: "The plugin is available.",
+              status: "completed",
+            },
+          ],
+          false,
+        ),
+      ],
+      { onOpenSideChat },
+    )
+
+    const copyButtons = getAllByRole("button", { name: "Copy assistant response" })
+    const sideChatButtons = getAllByRole("button", { name: "Open side chat" })
+    const intermediateShell = getByText("I will inspect the plugin first.").closest(".assistant-shell")
+    const finalShell = getByText("The plugin is available.").closest(".assistant-shell")
+
+    expect(copyButtons).toHaveLength(1)
+    expect(sideChatButtons).toHaveLength(1)
+    expect(intermediateShell?.querySelector(".assistant-response-actions")).toBeNull()
+    expect(finalShell?.querySelector(".assistant-response-actions")).not.toBeNull()
+
+    fireEvent.click(copyButtons[0]!)
+    expect(writeText).toHaveBeenCalledWith("The plugin is available.")
+
+    fireEvent.click(sideChatButtons[0]!)
+    expect(onOpenSideChat).toHaveBeenCalledWith("assistant-final")
+  })
+
   it("copies assistant responses without the response format marker", () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", {
