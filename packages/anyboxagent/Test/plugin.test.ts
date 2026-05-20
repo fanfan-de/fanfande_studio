@@ -1405,7 +1405,7 @@ describe("plugin marketplace API", () => {
             refresh_token: "feishu-refresh",
             expires_in: 3600,
             token_type: "Bearer",
-            scope: "offline_access auth:user.id:read drive:drive.search:readonly drive:file:readonly docx:document:readonly",
+            scope: "offline_access auth:user.id:read drive:drive.search:readonly drive:drive.metadata:readonly drive:drive:readonly drive:file:readonly docx:document:readonly wiki:wiki:readonly sheets:spreadsheet:readonly bitable:app:readonly",
             user_id: "ou_feishu_user",
           },
         }), {

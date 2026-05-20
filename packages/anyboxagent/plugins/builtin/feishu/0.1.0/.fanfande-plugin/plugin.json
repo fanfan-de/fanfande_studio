@@ -24,12 +24,23 @@
       "tools": [
         "feishu_profile",
         "feishu_search_files",
-        "feishu_read_docx_raw"
+        "feishu_get_file_metadata",
+        "feishu_read_docx_raw",
+        "feishu_list_docx_blocks",
+        "feishu_list_wiki_spaces",
+        "feishu_get_wiki_node",
+        "feishu_list_wiki_nodes",
+        "feishu_read_sheet_values",
+        "feishu_list_bitable_records"
       ],
       "permissions": [
         "Read the connected Feishu user profile.",
         "Search Feishu Drive files visible to the connected account.",
-        "Read plain text content from Feishu Docx documents."
+        "Read Feishu Drive metadata.",
+        "Read plain text and structured block content from Feishu Docx documents.",
+        "Read Feishu Wiki space and node metadata.",
+        "Read cell values from Feishu spreadsheets.",
+        "Read records from Feishu Bitable tables."
       ],
       "required": true,
       "reason": "User-authorized Feishu access through the Anybox Feishu connector."

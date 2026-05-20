@@ -1,8 +1,9 @@
 import { createRef, type ComponentProps } from "react"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTraceItem, type AssistantTraceItemKind, type AssistantTurn, type SessionSummary, type Turn, type UserTurn } from "../types"
 import type { SessionMessageTree } from "../session-message-tree"
+import { SIDEBAR_RESIZE_END_EVENT } from "../sidebar-resize-events"
 import { ThreadView } from "./ThreadView"
 
 const session: SessionSummary = {
@@ -331,6 +332,36 @@ describe("ThreadView trace item renderers", () => {
     expect(screen.getByText("Tool detail")).toBeInTheDocument()
   })
 
+  it("does not mount tool debug entries while disclosure content is collapsed", () => {
+    const toolItem: AssistantTraceItem = {
+      ...toolStatusTraceItem("completed"),
+      debugEntries: [
+        {
+          label: "Debug payload",
+          value: "Hidden until expanded",
+        },
+      ],
+    }
+
+    renderThread(
+      [
+        assistantTraceTurn("assistant-tools", [toolItem], false),
+      ],
+      {
+        assistantTraceVisibility: {
+          ...DEFAULT_ASSISTANT_TRACE_VISIBILITY,
+          debugMetadata: true,
+        },
+      },
+    )
+
+    expect(screen.queryByText("Hidden until expanded")).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: /^Tool completed$/ }))
+
+    expect(screen.getByText("Hidden until expanded")).toBeInTheDocument()
+  })
+
   it("renders workflow step trace items as a single compact row", () => {
     const { container } = renderThread(
       [
@@ -599,6 +630,48 @@ describe("ThreadView image trace items", () => {
 
     fireEvent.click(getByRole("button", { name: /已编辑\s*src\/app\.tsx/ }))
     expect(screen.queryByRole("region", { name: "Diff preview for src/app.tsx" })).not.toBeInTheDocument()
+  })
+
+  it("does not mount patch debug entries while the file change summary is collapsed", () => {
+    const patchItem: AssistantTraceItem = {
+      id: "patch-debug",
+      kind: "patch",
+      timestamp: 1,
+      label: "Patch",
+      title: "1 file change (+1 -0)",
+      fileChanges: [
+        {
+          file: "src/debug.ts",
+          additions: 1,
+          deletions: 0,
+        },
+      ],
+      debugEntries: [
+        {
+          label: "Patch debug",
+          value: "Hidden patch debug",
+        },
+      ],
+      status: "completed",
+    }
+
+    const { getByRole } = renderThread(
+      [
+        assistantTraceTurn("assistant-patch-debug", [patchItem], false),
+      ],
+      {
+        assistantTraceVisibility: {
+          ...DEFAULT_ASSISTANT_TRACE_VISIBILITY,
+          debugMetadata: true,
+        },
+      },
+    )
+
+    expect(screen.queryByText("Hidden patch debug")).toBeNull()
+
+    fireEvent.click(getByRole("button"))
+
+    expect(screen.getByText("Hidden patch debug")).toBeInTheDocument()
   })
 
   it("uses the folded file change renderer for ordinary patch items", () => {
@@ -2465,5 +2538,61 @@ describe("ThreadView scroll restoration", () => {
     )
 
     expect(threadColumn.scrollTop).toBe(1400)
+  })
+
+  it("defers observed content scroll sync while a sidebar resize is active", () => {
+    const originalResizeObserver = globalThis.ResizeObserver
+    let triggerResize: (() => void) | null = null
+
+    class ManualResizeObserver implements ResizeObserver {
+      readonly callback: ResizeObserverCallback
+
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback
+        triggerResize = () => {
+          callback([], this)
+        }
+      }
+
+      observe() {}
+
+      unobserve() {}
+
+      disconnect() {}
+    }
+
+    globalThis.ResizeObserver = ManualResizeObserver
+
+    try {
+      const { threadColumn } = renderThread([userTurn("user-1", "Prompt"), assistantTurn("assistant-1", "Loaded history")])
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 800,
+        scrollTop: 400,
+      })
+
+      document.body.classList.add("is-resizing-sidebar")
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 1400,
+        scrollTop: 400,
+      })
+
+      act(() => {
+        triggerResize?.()
+      })
+
+      expect(threadColumn.scrollTop).toBe(400)
+
+      document.body.classList.remove("is-resizing-sidebar")
+      act(() => {
+        window.dispatchEvent(new Event(SIDEBAR_RESIZE_END_EVENT))
+      })
+
+      expect(threadColumn.scrollTop).toBe(1400)
+    } finally {
+      document.body.classList.remove("is-resizing-sidebar")
+      globalThis.ResizeObserver = originalResizeObserver
+    }
   })
 })

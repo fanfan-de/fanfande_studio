@@ -2104,6 +2104,19 @@ body.is-image-lightbox-open {
   border-radius: var(--seg-radius-xs);
 }
 
+body.is-resizing-sidebar .assistant-section.is-tools .trace-item,
+body.is-resizing-sidebar .assistant-section.is-reasoning .trace-item,
+body.is-resizing-sidebar .assistant-section.is-file-change .trace-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
+}
+
+body.is-resizing-sidebar .trace-file-change-entry,
+body.is-resizing-sidebar .user-turn-diff-file-entry {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 40px;
+}
+
 .assistant-section.is-reasoning,
 .assistant-section.is-tools {
   padding-top: 0;

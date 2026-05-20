@@ -512,9 +512,51 @@ function builtinDefinitions(): ConnectorDefinition[] {
           readOnly: true,
         },
         {
+          name: "feishu_get_file_metadata",
+          title: "Get Feishu File Metadata",
+          description: "Fetch metadata for Feishu Drive documents by token and document type.",
+          readOnly: true,
+        },
+        {
           name: "feishu_read_docx_raw",
           title: "Read Feishu Doc",
           description: "Read plain text content from a Feishu Docx document.",
+          readOnly: true,
+        },
+        {
+          name: "feishu_list_docx_blocks",
+          title: "List Feishu Doc Blocks",
+          description: "List structured blocks from a Feishu Docx document.",
+          readOnly: true,
+        },
+        {
+          name: "feishu_list_wiki_spaces",
+          title: "List Feishu Wiki Spaces",
+          description: "List Feishu Wiki spaces visible to the connected account.",
+          readOnly: true,
+        },
+        {
+          name: "feishu_get_wiki_node",
+          title: "Get Feishu Wiki Node",
+          description: "Resolve and read metadata for a Feishu Wiki node.",
+          readOnly: true,
+        },
+        {
+          name: "feishu_list_wiki_nodes",
+          title: "List Feishu Wiki Nodes",
+          description: "List child nodes in a Feishu Wiki space.",
+          readOnly: true,
+        },
+        {
+          name: "feishu_read_sheet_values",
+          title: "Read Feishu Sheet Values",
+          description: "Read cell values from a Feishu spreadsheet range.",
+          readOnly: true,
+        },
+        {
+          name: "feishu_list_bitable_records",
+          title: "List Feishu Bitable Records",
+          description: "List records from a Feishu Bitable table.",
           readOnly: true,
         },
       ],
@@ -549,8 +591,13 @@ function builtinDefinitions(): ConnectorDefinition[] {
           "offline_access",
           "auth:user.id:read",
           "drive:drive.search:readonly",
+          "drive:drive.metadata:readonly",
+          "drive:drive:readonly",
           "drive:file:readonly",
           "docx:document:readonly",
+          "wiki:wiki:readonly",
+          "sheets:spreadsheet:readonly",
+          "bitable:app:readonly",
         ],
         tokenEndpointAuthMethod: "client_secret_post",
         tokenRequestFormat: "json",
@@ -566,6 +613,7 @@ function builtinDefinitions(): ConnectorDefinition[] {
         env: {
           FEISHU_ACCESS_TOKEN: "${OAUTH_ACCESS_TOKEN}",
           FEISHU_TOKEN_TYPE: "${OAUTH_TOKEN_TYPE}",
+          FEISHU_GRANTED_SCOPES: "${OAUTH_SCOPES}",
         },
         timeoutMs: 10000,
       },
@@ -916,6 +964,7 @@ async function resolvePlatformRuntime(connectorID: string): Promise<ResolvedConn
     }
     config.OAUTH_ACCESS_TOKEN = session.accessToken
     config.OAUTH_TOKEN_TYPE = session.tokenType ?? "Bearer"
+    config.OAUTH_SCOPES = session.scope ?? ""
   }
 
   if (definition.runtime.transport === "stdio") {

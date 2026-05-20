@@ -1,4 +1,4 @@
-import { Fragment, type MouseEvent, type ReactNode } from "react"
+import { Fragment, useMemo, type MouseEvent, type ReactNode } from "react"
 import {
   normalizeLooseLocalFileMarkdownLinks,
   normalizeMarkdownLinkTarget,
@@ -11,6 +11,8 @@ import type { UserTurnReference } from "./types"
 type ThreadRichTextElement = "div" | "p" | "span"
 
 type ThreadRichTextReference = UserTurnReference
+
+const EMPTY_THREAD_RICH_TEXT_REFERENCES: ThreadRichTextReference[] = []
 
 type ThreadRichTextSegment =
   | {
@@ -438,11 +440,11 @@ export function ThreadRichText({
   className,
   onArtifactLinkOpen,
   onLocalFileLinkOpen,
-  references = [],
+  references = EMPTY_THREAD_RICH_TEXT_REFERENCES,
   text,
 }: ThreadRichTextProps) {
   const Component = as
-  const segments = parseThreadRichText(text, references)
+  const segments = useMemo(() => parseThreadRichText(text, references), [references, text])
 
   return (
     <Component className={className}>

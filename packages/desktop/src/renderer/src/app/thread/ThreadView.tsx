@@ -38,6 +38,7 @@ import { ThreadHtml } from "../thread-html"
 import { parseAssistantResponseFormat, stripStreamingResponseFormatMarker } from "../thread-response-format"
 import { ThreadRichText } from "../thread-rich-text"
 import { logRendererPerf } from "../perf-profiler"
+import { SIDEBAR_RESIZE_END_EVENT } from "../sidebar-resize-events"
 import type {
   AssistantTraceDebugEntry,
   AssistantTraceFileChange,
@@ -261,6 +262,10 @@ function readThreadScrollSnapshot(threadColumn: HTMLDivElement): ThreadScrollSna
     pinnedToBottom: isThreadColumnPinnedToBottom(threadColumn),
     updatedAt: Date.now(),
   }
+}
+
+function isSidebarResizeInProgress() {
+  return typeof document !== "undefined" && document.body.classList.contains("is-resizing-sidebar")
 }
 
 function getRestorableThreadScrollSnapshot(snapshot: ThreadScrollSnapshot | null) {
@@ -2449,9 +2454,9 @@ function PatchTraceItemView({
               </div>
             )
           })}
+          <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
         </div>
       ) : null}
-      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
     </article>
   )
 }
@@ -3037,9 +3042,10 @@ function ToolTraceItemView({
               ) : null}
             </div>
           ) : null}
+          <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
         </div>
       ) : null}
-      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+      {!hasDisclosureContent ? <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} /> : null}
     </article>
   )
 }
@@ -3552,6 +3558,7 @@ function VisibleThreadView({
   const contentResizeObserverRef = useRef<ResizeObserver | null>(null)
   const contentMutationObserverRef = useRef<MutationObserver | null>(null)
   const observedThreadContentRef = useRef<WeakSet<Element>>(new WeakSet())
+  const pendingSidebarResizeScrollSyncRef = useRef(false)
   const lastUserScrollIntentAtRef = useRef(0)
   const userScrollIntentConsumedRef = useRef(false)
   const lastKnownScrollTopRef = useRef(0)
@@ -3694,6 +3701,21 @@ function VisibleThreadView({
 
     restoreDetachedThreadPositionIfNeeded(key)
   }
+
+  function syncThreadScrollAfterObservedContentChange(key = effectiveScrollStateKey) {
+    if (isSidebarResizeInProgress()) {
+      pendingSidebarResizeScrollSyncRef.current = true
+      return
+    }
+
+    syncThreadScrollAfterContentChange(key)
+  }
+
+  const flushDeferredSidebarResizeScrollSync = useEffectEvent((key: string) => {
+    if (!pendingSidebarResizeScrollSyncRef.current) return
+    pendingSidebarResizeScrollSyncRef.current = false
+    syncThreadScrollAfterContentChange(key)
+  })
 
   function readThreadTurnMotion(turnID: string, isLive = false): ThreadTurnMotion {
     const renderedTurnIDs = renderedTurnIDsByScrollKeyRef.current[effectiveScrollStateKey]
@@ -3862,7 +3884,7 @@ function VisibleThreadView({
     contentMutationObserverRef.current?.disconnect()
 
     const resizeObserver = new ResizeObserver(() => {
-      syncThreadScrollAfterContentChange(effectiveScrollStateKey)
+      syncThreadScrollAfterObservedContentChange(effectiveScrollStateKey)
     })
     observedThreadContentRef.current = new WeakSet()
     const observeThreadContent = () => {
@@ -3883,7 +3905,7 @@ function VisibleThreadView({
     if (typeof MutationObserver !== "undefined") {
       const mutationObserver = new MutationObserver(() => {
         observeThreadContent()
-        syncThreadScrollAfterContentChange(effectiveScrollStateKey)
+        syncThreadScrollAfterObservedContentChange(effectiveScrollStateKey)
       })
       mutationObserver.observe(threadColumn, { childList: true })
       contentMutationObserverRef.current = mutationObserver
@@ -3899,6 +3921,17 @@ function VisibleThreadView({
       contentMutationObserverRef.current = null
     }
   }, [effectiveScrollStateKey, threadColumnRef])
+
+  useEffect(() => {
+    function handleSidebarResizeEnd() {
+      flushDeferredSidebarResizeScrollSync(effectiveScrollStateKey)
+    }
+
+    window.addEventListener(SIDEBAR_RESIZE_END_EVENT, handleSidebarResizeEnd)
+    return () => {
+      window.removeEventListener(SIDEBAR_RESIZE_END_EVENT, handleSidebarResizeEnd)
+    }
+  }, [effectiveScrollStateKey, flushDeferredSidebarResizeScrollSync])
 
   useLayoutEffect(() => {
     const threadColumn = threadColumnRef.current

@@ -22,6 +22,7 @@ import {
   type WindowAction,
 } from "./types"
 import { clamp, resolveRightSidebarWidthBounds, resolveSidebarWidthBounds } from "./utils"
+import { SIDEBAR_RESIZE_END_EVENT } from "./sidebar-resize-events"
 
 const ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY = "desktop.activityRailVisible"
 const COLOR_MODE_STORAGE_KEY = "desktop.colorMode"
@@ -581,6 +582,7 @@ export function useDesktopShell() {
       window.removeEventListener("pointerup", handlePointerUp)
       window.removeEventListener("pointercancel", handlePointerCancel)
       window.removeEventListener("blur", handleWindowBlur)
+      window.dispatchEvent(new Event(SIDEBAR_RESIZE_END_EVENT))
       if (activeSidebarResizeCleanupRef.current === cleanupSidebarResize) {
         activeSidebarResizeCleanupRef.current = null
       }
