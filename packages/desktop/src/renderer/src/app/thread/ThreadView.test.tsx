@@ -243,7 +243,7 @@ describe("ThreadView trace item renderers", () => {
     }
   })
 
-  it("renders compact one-line tool status labels and indicators", () => {
+  it("renders tool traces as lightweight log rows", () => {
     const items = [
       toolStatusTraceItem("pending"),
       toolStatusTraceItem("running"),
@@ -257,20 +257,20 @@ describe("ThreadView trace item renderers", () => {
       assistantTraceTurn("assistant-tools", items, true),
     ])
 
-    expect(screen.getByRole("button", { name: /Tool pending.*准备中/ })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /Tool running.*执行中/ })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /Tool waiting-approval.*等待确认/ })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /^Tool completed$/ })).toBeInTheDocument()
-    expect(screen.queryByText("完成")).toBeNull()
-    expect(screen.getByRole("button", { name: /Tool error.*失败/ })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /Tool denied.*已拒绝/ })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /Tool cancelled.*已取消/ })).toBeInTheDocument()
+    expect(container.querySelectorAll(".trace-kind-tool .trace-log-row")).toHaveLength(items.length)
+    expect(screen.getByRole("button", { name: /Tool pending/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Tool running/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Tool waiting-approval/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Tool completed/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Tool error/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Tool denied/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Tool cancelled/ })).toBeInTheDocument()
 
     for (const status of ["pending", "running", "waiting-approval"] as const) {
       const indicator = container.querySelector(`.trace-kind-tool.is-${status} .trace-tool-status-indicator`)
       expect(indicator).not.toBeNull()
       expect(indicator).toHaveClass("is-icon-dot")
-      expect(indicator).toHaveClass("is-breathing")
+      expect(indicator).not.toHaveClass("is-breathing")
     }
 
     const completedIndicator = container.querySelector(".trace-kind-tool.is-completed .trace-tool-status-indicator")
@@ -325,7 +325,7 @@ describe("ThreadView trace item renderers", () => {
       },
     )
 
-    fireEvent.click(screen.getByRole("button", { name: /Tool running.*执行中/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Tool running/ }))
     fireEvent.click(screen.getByRole("button", { name: /Tool running input/ }))
 
     expect(screen.getByText("tool input")).toBeInTheDocument()
@@ -357,12 +357,12 @@ describe("ThreadView trace item renderers", () => {
 
     expect(screen.queryByText("Hidden until expanded")).toBeNull()
 
-    fireEvent.click(screen.getByRole("button", { name: /^Tool completed$/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Tool completed/ }))
 
     expect(screen.getByText("Hidden until expanded")).toBeInTheDocument()
   })
 
-  it("renders workflow step trace items as a single compact row", () => {
+  it("renders workflow step trace items as lightweight log rows", () => {
     const { container } = renderThread(
       [
         assistantTraceTurn(
@@ -391,12 +391,13 @@ describe("ThreadView trace item renderers", () => {
       },
     )
 
-    const row = container.querySelector(".trace-kind-step .trace-item-step-row")
+    const row = container.querySelector(".trace-kind-step .trace-log-row")
 
     expect(row).not.toBeNull()
     expect(row?.textContent).toContain("Model step finished")
-    expect(row?.textContent).toContain("The model completed one generation step.")
-    expect(row?.querySelector(".trace-item-detail")?.tagName).toBe("SPAN")
+    expect(row?.textContent).not.toContain("The model completed one generation step.")
+    expect(container.querySelector(".trace-kind-step .trace-item-step-row")).toBeNull()
+    expect(container.querySelector(".trace-kind-step .trace-log-detail")).toBeNull()
   })
 })
 

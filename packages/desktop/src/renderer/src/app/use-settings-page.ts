@@ -358,6 +358,13 @@ function connectorIDForDefinition(definition: ConnectorDefinition, statuses: Con
   return statuses.find((status) => status.definitionID === definition.id)?.connectorID ?? fallbackConnectorID(definition.id)
 }
 
+function normalizeConnectorDefinition(definition: ConnectorDefinition): ConnectorDefinition {
+  return {
+    ...definition,
+    configFields: definition.configFields ?? [],
+  }
+}
+
 function buildConnectorApiKeyDrafts(
   catalog: ConnectorDefinition[],
   statuses: ConnectorStatus[],
@@ -972,21 +979,23 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     nextCatalog: ConnectorDefinition[],
     nextStatuses: ConnectorStatus[],
   ) {
-    setConnectorCatalog(nextCatalog)
+    const normalizedCatalog = nextCatalog.map(normalizeConnectorDefinition)
+
+    setConnectorCatalog(normalizedCatalog)
     setConnectorStatuses(nextStatuses)
-    setConnectorApiKeyDrafts((current) => buildConnectorApiKeyDrafts(nextCatalog, nextStatuses, current))
-    setConnectorConfigDrafts((current) => buildConnectorConfigDrafts(nextCatalog, nextStatuses, current))
+    setConnectorApiKeyDrafts((current) => buildConnectorApiKeyDrafts(normalizedCatalog, nextStatuses, current))
+    setConnectorConfigDrafts((current) => buildConnectorConfigDrafts(normalizedCatalog, nextStatuses, current))
 
     const connectorIDs = new Set([
-      ...nextCatalog.map((definition) => connectorIDForDefinition(definition, nextStatuses)),
+      ...normalizedCatalog.map((definition) => connectorIDForDefinition(definition, nextStatuses)),
       ...nextStatuses.map((status) => status.connectorID),
     ])
     const currentConnectorID = activeConnectorIDRef.current
     const preferredConnectorID =
       currentConnectorID && connectorIDs.has(currentConnectorID)
         ? currentConnectorID
-        : nextCatalog[0]
-          ? connectorIDForDefinition(nextCatalog[0], nextStatuses)
+        : normalizedCatalog[0]
+          ? connectorIDForDefinition(normalizedCatalog[0], nextStatuses)
           : nextStatuses[0]?.connectorID ?? null
 
     setActiveConnectorSelection(preferredConnectorID)

@@ -6,6 +6,7 @@ import {
   type MarkdownArtifactLinkTarget,
   type MarkdownLocalFileLinkTarget,
 } from "./thread-markdown"
+import { SIDEBAR_RESIZE_END_EVENT } from "./sidebar-resize-events"
 
 interface ThreadHtmlProps {
   className?: string
@@ -16,6 +17,10 @@ interface ThreadHtmlProps {
 
 const MIN_FRAME_HEIGHT = 320
 const MAX_FRAME_HEIGHT = 720
+
+function isSidebarResizeInProgress() {
+  return typeof document !== "undefined" && document.body.classList.contains("is-resizing-sidebar")
+}
 
 const sanitizeConfig = {
   ALLOW_ARIA_ATTR: false,
@@ -139,6 +144,7 @@ export const ThreadHtml = memo(function ThreadHtml({
 }: ThreadHtmlProps) {
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const cleanupFrameRef = useRef<(() => void) | null>(null)
+  const pendingResizeHeightUpdateRef = useRef(false)
   const [frameHeight, setFrameHeight] = useState(MIN_FRAME_HEIGHT)
   const html = useMemo(() => sanitizeThreadHtml(text), [text])
 
@@ -159,12 +165,24 @@ export const ThreadHtml = memo(function ThreadHtml({
     const loadedDocument: Document = frameDocument
 
     function updateHeight() {
+      if (isSidebarResizeInProgress()) {
+        pendingResizeHeightUpdateRef.current = true
+        return
+      }
+
+      pendingResizeHeightUpdateRef.current = false
       const contentHeight = Math.max(
         loadedDocument.documentElement?.scrollHeight ?? 0,
         loadedDocument.body?.scrollHeight ?? 0,
         MIN_FRAME_HEIGHT,
       )
-      setFrameHeight(Math.min(Math.max(contentHeight, MIN_FRAME_HEIGHT), MAX_FRAME_HEIGHT))
+      const nextFrameHeight = Math.min(Math.max(contentHeight, MIN_FRAME_HEIGHT), MAX_FRAME_HEIGHT)
+      setFrameHeight((currentHeight) => (currentHeight === nextFrameHeight ? currentHeight : nextFrameHeight))
+    }
+
+    function handleSidebarResizeEnd() {
+      if (!pendingResizeHeightUpdateRef.current) return
+      updateHeight()
     }
 
     function handleClick(event: globalThis.MouseEvent) {
@@ -191,6 +209,7 @@ export const ThreadHtml = memo(function ThreadHtml({
     }
 
     loadedDocument.addEventListener("click", handleClick)
+    window.addEventListener(SIDEBAR_RESIZE_END_EVENT, handleSidebarResizeEnd)
     const resizeObserver = "ResizeObserver" in window ? new ResizeObserver(updateHeight) : null
     if (resizeObserver) {
       resizeObserver.observe(loadedDocument.documentElement)
@@ -200,6 +219,7 @@ export const ThreadHtml = memo(function ThreadHtml({
 
     cleanupFrameRef.current = () => {
       loadedDocument.removeEventListener("click", handleClick)
+      window.removeEventListener(SIDEBAR_RESIZE_END_EVENT, handleSidebarResizeEnd)
       resizeObserver?.disconnect()
     }
   }

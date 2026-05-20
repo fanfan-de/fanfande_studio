@@ -1,5 +1,6 @@
-import { fireEvent, render } from "@testing-library/react"
+import { act, fireEvent, render } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { SIDEBAR_RESIZE_END_EVENT } from "./sidebar-resize-events"
 import { ThreadHtml } from "./thread-html"
 
 function getFrame(container: HTMLElement) {
@@ -160,5 +161,59 @@ describe("ThreadHtml", () => {
       path: "C:/Projects/anybox_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
     })
     expect(window.desktop?.openExternalUrl).not.toHaveBeenCalled()
+  })
+
+  it("defers iframe height updates while sidebar resize is active", () => {
+    const originalResizeObserver = globalThis.ResizeObserver
+    let triggerResize: (() => void) | null = null
+
+    class ManualResizeObserver implements ResizeObserver {
+      readonly callback: ResizeObserverCallback
+
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback
+        triggerResize = () => callback([], this)
+      }
+
+      observe() {}
+
+      unobserve() {}
+
+      disconnect() {}
+    }
+
+    globalThis.ResizeObserver = ManualResizeObserver
+
+    try {
+      const { container } = render(<ThreadHtml text="<main>Resizable frame</main>" />)
+      const frame = getFrame(container)
+      const frameDocument = loadFrameDocument(frame)
+
+      Object.defineProperty(frameDocument.documentElement, "scrollHeight", {
+        configurable: true,
+        value: 640,
+      })
+      Object.defineProperty(frameDocument.body, "scrollHeight", {
+        configurable: true,
+        value: 640,
+      })
+
+      document.body.classList.add("is-resizing-sidebar")
+      act(() => {
+        triggerResize?.()
+      })
+
+      expect(frame.style.height).toBe("320px")
+
+      document.body.classList.remove("is-resizing-sidebar")
+      act(() => {
+        window.dispatchEvent(new Event(SIDEBAR_RESIZE_END_EVENT))
+      })
+
+      expect(frame.style.height).toBe("640px")
+    } finally {
+      document.body.classList.remove("is-resizing-sidebar")
+      globalThis.ResizeObserver = originalResizeObserver
+    }
   })
 })

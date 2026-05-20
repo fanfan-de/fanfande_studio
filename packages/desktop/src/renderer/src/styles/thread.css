@@ -3349,6 +3349,203 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
   gap: 7px;
 }
 
+.trace-log-list {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  contain: layout paint style;
+}
+
+.trace-log-item {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  contain: layout paint style;
+}
+
+.trace-log-row {
+  width: 100%;
+  min-width: 0;
+  min-height: 26px;
+  display: grid;
+  grid-template-columns: 14px minmax(42px, 72px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--seg-text-2);
+  font: inherit;
+  text-align: left;
+  box-shadow: none;
+  transition: none;
+  contain: layout paint style;
+}
+
+button.trace-log-row {
+  cursor: pointer;
+}
+
+.trace-log-row:hover,
+.trace-log-row:focus-visible {
+  background: var(--mix-seg-panel-muted-86-transparent-14);
+  color: var(--seg-text-1);
+  outline: none;
+}
+
+.trace-log-row.is-static {
+  cursor: default;
+}
+
+.trace-log-status-dot {
+  width: 6px;
+  height: 6px;
+  justify-self: center;
+  border-radius: 999px;
+  background: var(--seg-text-3);
+}
+
+.trace-log-status-dot.is-running,
+.trace-log-status-dot.is-pending {
+  background: var(--brand-accent-active);
+}
+
+.trace-log-status-dot.is-waiting-approval {
+  background: var(--seg-warning);
+}
+
+.trace-log-status-dot.is-completed {
+  background: var(--seg-success);
+}
+
+.trace-log-status-dot.is-error,
+.trace-log-status-dot.is-denied,
+.trace-log-status-dot.is-cancelled {
+  background: var(--seg-danger);
+}
+
+.trace-log-row .trace-tool-status-indicator {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trace-log-row .trace-tool-status-indicator::before {
+  animation: none;
+}
+
+.trace-log-row .trace-tool-status-indicator svg {
+  width: 13px;
+  height: 13px;
+}
+
+.trace-log-label,
+.trace-log-status-text,
+.trace-log-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.trace-log-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--seg-text-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-log-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--seg-text-2);
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-log-row:hover .trace-log-summary,
+.trace-log-row:focus-visible .trace-log-summary {
+  color: var(--seg-text-1);
+}
+
+.trace-log-meta {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--seg-text-3);
+  white-space: nowrap;
+}
+
+.trace-log-status-text {
+  color: currentColor;
+}
+
+.trace-log-status-text.is-running,
+.trace-log-status-text.is-pending {
+  color: var(--brand-accent-active);
+}
+
+.trace-log-status-text.is-waiting-approval {
+  color: var(--seg-warning);
+}
+
+.trace-log-status-text.is-error,
+.trace-log-status-text.is-denied,
+.trace-log-status-text.is-cancelled {
+  color: var(--seg-danger);
+}
+
+.trace-log-chevron {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.trace-log-chevron svg {
+  width: 13px;
+  height: 13px;
+}
+
+.trace-log-detail {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 2px 0 4px 22px;
+  padding: 6px 8px;
+  border-left: 1px solid var(--seg-divider);
+  color: var(--seg-text-2);
+  contain: layout paint style;
+}
+
+.thread-resize-lightweight .trace-log-row,
+body.is-resizing-sidebar .trace-log-row,
+body.is-resizing-sidebar .trace-item,
+body.is-resizing-sidebar .turn {
+  transition: none !important;
+  animation: none !important;
+  box-shadow: none !important;
+}
+
+.thread-resize-lightweight .trace-tool-status-indicator::before,
+body.is-resizing-sidebar .trace-tool-status-indicator::before {
+  animation: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .trace-tool-status-indicator.is-breathing::before {
     animation: none;

@@ -268,6 +268,28 @@ function isSidebarResizeInProgress() {
   return typeof document !== "undefined" && document.body.classList.contains("is-resizing-sidebar")
 }
 
+function useSidebarResizeLightweightMode() {
+  const [isResizeLightweightMode, setIsResizeLightweightMode] = useState(() => isSidebarResizeInProgress())
+
+  useEffect(() => {
+    if (typeof document === "undefined") return
+
+    const syncResizeLightweightMode = () => {
+      setIsResizeLightweightMode(isSidebarResizeInProgress())
+    }
+
+    syncResizeLightweightMode()
+
+    if (typeof MutationObserver === "undefined") return
+
+    const observer = new MutationObserver(syncResizeLightweightMode)
+    observer.observe(document.body, { attributes: true, attributeFilter: ["class"] })
+    return () => observer.disconnect()
+  }, [])
+
+  return isResizeLightweightMode
+}
+
 function getRestorableThreadScrollSnapshot(snapshot: ThreadScrollSnapshot | null) {
   if (!snapshot) return null
   if (snapshot.pinnedToBottom || snapshot.scrollTop <= THREAD_TOP_RESET_THRESHOLD_PX) return null
@@ -1011,6 +1033,34 @@ function getCollapsedReasoningLine(item: AssistantTraceItem) {
   return firstNonEmptyLine(item.text) ?? firstNonEmptyLine(item.detail) ?? item.title ?? item.label
 }
 
+function normalizeTraceLogText(value?: string | null) {
+  return firstNonEmptyLine(value ?? undefined)?.replace(/\s+/g, " ").trim() ?? null
+}
+
+function isWorkflowLogItem(item: AssistantTraceItem) {
+  return (
+    item.kind === "step" ||
+    item.kind === "retry" ||
+    item.kind === "snapshot" ||
+    item.kind === "task-state" ||
+    item.kind === "subtask" ||
+    item.kind === "compaction"
+  )
+}
+
+function getTraceLogSummary(item: AssistantTraceItem) {
+  return normalizeTraceLogText(item.title) ?? normalizeTraceLogText(item.text) ?? normalizeTraceLogText(item.detail) ?? item.label
+}
+
+function hasLazyTraceDetail(item: AssistantTraceItem, debugEntries: AssistantTraceDebugEntry[]) {
+  return Boolean(
+    item.text?.trim() ||
+    item.detail?.trim() ||
+    item.progressItems?.length ||
+    debugEntries.length > 0,
+  )
+}
+
 function AssistantTraceSection({
   children,
   sectionKey,
@@ -1086,7 +1136,9 @@ const AssistantTurnSections = memo(function AssistantTurnSections({
                   ? "assistant-response-stack"
                   : block.sectionKey === "file-change"
                     ? "assistant-file-change-stack"
-                    : "assistant-section-list"
+                    : block.sectionKey === "tools" || block.sectionKey === "workflow"
+                      ? "trace-log-list"
+                      : "assistant-section-list"
               }
             >
               {renderedItems.map((item) => (
@@ -2461,34 +2513,84 @@ function PatchTraceItemView({
   )
 }
 
-function SubtaskTraceItemView(props: TraceItemRendererProps) {
-  return <GenericTraceItemView {...props} />
-}
-
-function StepTraceItemView(props: TraceItemRendererProps) {
-  const { className, debugEntries, item } = props
+function WorkflowLogTraceItemView({
+  className,
+  debugEntries,
+  item,
+}: TraceItemRendererProps) {
   const statusText = formatTraceStatusText(item.status) ?? item.status
+  const [isExpanded, setIsExpanded] = useState(false)
+  const summary = getTraceLogSummary(item)
+  const detailID = `trace-log-detail-${item.id}`
+  const hasDetail = hasLazyTraceDetail(item, debugEntries)
+  const rowContent = (
+    <>
+      <span className={joinClassNames("trace-log-status-dot", item.status && `is-${item.status}`)} aria-hidden="true" />
+      <span className="trace-log-label">{item.label}</span>
+      <span className="trace-log-summary">{summary}</span>
+      <span className="trace-log-meta">
+        {statusText ? <span className={`trace-log-status-text is-${item.status}`}>{statusText}</span> : null}
+        <time className="trace-log-time">{formatTime(item.timestamp)}</time>
+        {hasDetail ? (
+          <span className="trace-log-chevron" aria-hidden="true">
+            {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+          </span>
+        ) : null}
+      </span>
+    </>
+  )
 
   return (
-    <article className={`${className} trace-item-step-line`} data-kind={item.kind}>
-      <div className="trace-item-step-row">
-        <span className="trace-item-label">{item.label}</span>
-        {item.title ? <strong className="trace-item-title">{item.title}</strong> : null}
-        {item.text ? <ThreadRichText as="span" className="trace-item-text trace-item-step-summary" text={item.text} /> : null}
-        {item.detail ? <ThreadRichText as="span" className="trace-item-detail trace-item-step-summary" text={item.detail} /> : null}
-        {item.status ? <span className={`trace-item-status is-${item.status}`}>{statusText}</span> : null}
-      </div>
-      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+    <article className={joinClassNames(className, "trace-log-item")} data-kind={item.kind}>
+      {hasDetail ? (
+        <button
+          type="button"
+          className="trace-log-row"
+          aria-label={summary}
+          aria-expanded={isExpanded}
+          aria-controls={detailID}
+          onClick={() => setIsExpanded((current) => !current)}
+        >
+          {rowContent}
+        </button>
+      ) : (
+        <div className="trace-log-row is-static">{rowContent}</div>
+      )}
+      {hasDetail && isExpanded ? (
+        <div id={detailID} className="trace-log-detail">
+          {item.text ? <ThreadRichText className="trace-item-text" text={item.text} /> : null}
+          {item.detail ? <ThreadRichText className="trace-item-detail" text={item.detail} /> : null}
+          {item.progressItems?.length ? (
+            <ol className="task-progress-list">
+              {item.progressItems.map((progressItem) => (
+                <li key={`${item.id}-${progressItem.id}`} className={`task-progress-item is-${progressItem.status}`}>
+                  <span className="task-progress-status">{progressItem.status === "in_progress" ? "in progress" : progressItem.status}</span>
+                  <span className="task-progress-step">{progressItem.step}</span>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+          <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+        </div>
+      ) : null}
     </article>
   )
 }
 
+function SubtaskTraceItemView(props: TraceItemRendererProps) {
+  return <WorkflowLogTraceItemView {...props} />
+}
+
+function StepTraceItemView(props: TraceItemRendererProps) {
+  return <WorkflowLogTraceItemView {...props} />
+}
+
 function RetryTraceItemView(props: TraceItemRendererProps) {
-  return <GenericTraceItemView {...props} />
+  return <WorkflowLogTraceItemView {...props} />
 }
 
 function SnapshotTraceItemView(props: TraceItemRendererProps) {
-  return <GenericTraceItemView {...props} />
+  return <WorkflowLogTraceItemView {...props} />
 }
 
 function ErrorTraceItemView(props: TraceItemRendererProps) {
@@ -2584,25 +2686,8 @@ function ReasoningTraceItemView({
   )
 }
 
-function CompactionTraceItemView({
-  className,
-  debugEntries,
-  item,
-}: TraceItemRendererProps) {
-  return (
-    <article className={className} data-kind={item.kind} aria-label={item.title || "Context compacted"}>
-      <div className="trace-compaction-separator">
-        <span className="trace-compaction-rule" aria-hidden="true" />
-        <span className="trace-compaction-label">
-          <span className="trace-compaction-glyph" aria-hidden="true" />
-          {item.title || "Context compacted"}
-        </span>
-        <span className="trace-compaction-rule" aria-hidden="true" />
-      </div>
-      {item.detail ? <ThreadRichText className="trace-item-detail trace-compaction-detail" text={item.detail} /> : null}
-      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
-    </article>
-  )
+function CompactionTraceItemView(props: TraceItemRendererProps) {
+  return <WorkflowLogTraceItemView {...props} />
 }
 
 function QuestionTraceItemView({
@@ -2798,31 +2883,8 @@ function QuestionTraceItemView({
   )
 }
 
-function TaskStateTraceItemView({
-  className,
-  debugEntries,
-  item,
-  ...props
-}: TraceItemRendererProps) {
-  if (!item.progressItems?.length) {
-    return <GenericTraceItemView className={className} debugEntries={debugEntries} item={item} {...props} />
-  }
-
-  return (
-    <article className={className} data-kind={item.kind}>
-      <TraceItemHeader item={item} statusText={formatTraceStatusText(item.status) ?? item.status} />
-      {item.detail ? <ThreadRichText className="trace-item-detail" text={item.detail} /> : null}
-      <ol className="task-progress-list">
-        {item.progressItems.map((progressItem) => (
-          <li key={`${item.id}-${progressItem.id}`} className={`task-progress-item is-${progressItem.status}`}>
-            <span className="task-progress-status">{progressItem.status === "in_progress" ? "in progress" : progressItem.status}</span>
-            <span className="task-progress-step">{progressItem.step}</span>
-          </li>
-        ))}
-      </ol>
-      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
-    </article>
-  )
+function TaskStateTraceItemView(props: TraceItemRendererProps) {
+  return <WorkflowLogTraceItemView {...props} />
 }
 
 type ToolTraceDisplayTone = "preparing" | "running" | "waiting-approval" | "success" | "error" | "denied" | "cancelled" | "idle"
@@ -2920,7 +2982,6 @@ function ToolTraceItemView({
     "trace-tool-status-indicator",
     `is-${displayState.tone}`,
     `is-icon-${displayState.iconType}`,
-    displayState.isBreathing && "is-breathing",
   )
   const showsToolInputs = item.status === "pending" || item.status === "running" || item.status === "waiting-approval" || item.status === "cancelled"
   const visibleToolInputText = traceVisibility.toolInputs ? item.toolInputText : undefined
@@ -2929,10 +2990,30 @@ function ToolTraceItemView({
   const outputSectionDetail = !showsToolInputs && traceVisibility.toolOutputs ? item.detail : undefined
   const hasInputDisclosureContent = Boolean(visibleToolInputText || inputSectionDetail)
   const hasOutputDisclosureContent = Boolean(visibleToolOutputText || outputSectionDetail)
-  const hasDisclosureContent = Boolean(hasInputDisclosureContent || hasOutputDisclosureContent)
-  const disclosureID = `trace-item-disclosure-${item.id}`
+  const hasDisclosureContent = Boolean(hasInputDisclosureContent || hasOutputDisclosureContent || debugEntries.length > 0)
+  const disclosureID = `trace-log-detail-${item.id}`
   const inputDisclosureID = `trace-item-disclosure-input-${item.id}`
   const outputDisclosureID = `trace-item-disclosure-output-${item.id}`
+  const statusText = displayState.shouldShowLabel && displayState.label ? displayState.label : formatTraceStatusText(item.status)
+  const rowAriaLabel = displayState.shouldShowLabel && displayState.label ? `${summaryTitle} ${displayState.label}` : summaryTitle
+  const rowContent = (
+    <>
+      <span className={statusIndicatorClassName} aria-hidden="true">
+        <ToolsIcon />
+      </span>
+      <span className="trace-log-label">{item.label}</span>
+      <span className="trace-log-summary">{summaryTitle}</span>
+      <span className="trace-log-meta">
+        {statusText ? <span className={`trace-log-status-text is-${item.status}`}>{statusText}</span> : null}
+        <time className="trace-log-time">{formatTime(item.timestamp)}</time>
+        {hasDisclosureContent ? (
+          <span className="trace-log-chevron" aria-hidden="true">
+            {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+          </span>
+        ) : null}
+      </span>
+    </>
+  )
 
   useLayoutEffect(() => {
     if (!shouldCollapseTraceItem) return
@@ -2952,46 +3033,24 @@ function ToolTraceItemView({
   }
 
   return (
-    <article className={className} data-kind={item.kind}>
+    <article className={joinClassNames(className, "trace-log-item")} data-kind={item.kind}>
       {hasDisclosureContent ? (
         <button
-          className="trace-item-toggle"
+          className="trace-log-row"
           type="button"
+          aria-label={rowAriaLabel}
           aria-expanded={isExpanded}
           aria-controls={disclosureID}
           onClick={handleToolToggle}
         >
-          <span className="trace-item-toggle-summary">
-            <span className={joinClassNames("trace-item-toggle-leading-icon", statusIndicatorClassName)} aria-hidden="true">
-              <ToolsIcon />
-            </span>
-            <span className="trace-item-toggle-line">
-              <span className="trace-item-inline-title">{summaryTitle}</span>
-              {displayState.shouldShowLabel && displayState.label ? (
-                <span className="trace-item-inline-status">{" \u00b7 "}{displayState.label}</span>
-              ) : null}
-            </span>
-            <span className="trace-item-toggle-chevron" aria-hidden="true">
-              {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-            </span>
-          </span>
+          {rowContent}
         </button>
       ) : (
-        <p className="trace-item-toggle-summary trace-item-toggle-static-summary">
-          <span className={joinClassNames("trace-item-toggle-leading-icon", statusIndicatorClassName)} aria-hidden="true">
-            <ToolsIcon />
-          </span>
-          <span className="trace-item-toggle-line">
-            <span className="trace-item-inline-title">{summaryTitle}</span>
-            {displayState.shouldShowLabel && displayState.label ? (
-              <span className="trace-item-inline-status">{" \u00b7 "}{displayState.label}</span>
-            ) : null}
-          </span>
-        </p>
+        <div className="trace-log-row is-static">{rowContent}</div>
       )}
 
       {hasDisclosureContent && isExpanded ? (
-        <div id={disclosureID} className="trace-item-disclosure">
+        <div id={disclosureID} className="trace-log-detail">
           {hasInputDisclosureContent ? (
             <div className="trace-item-subsection">
               <button
@@ -3045,7 +3104,6 @@ function ToolTraceItemView({
           <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
         </div>
       ) : null}
-      {!hasDisclosureContent ? <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} /> : null}
     </article>
   )
 }
@@ -3134,6 +3192,7 @@ const TraceItemView = memo(function TraceItemView({
     "trace-item",
     `trace-kind-${renderedItem.kind}`,
     renderedItem.kind === "reasoning" || renderedItem.kind === "tool" ? "is-plain" : "",
+    isWorkflowLogItem(renderedItem) ? "is-workflow-log" : "",
     renderedItem.isStreaming ? "is-streaming" : "",
     renderedItem.status ? `is-${renderedItem.status}` : "",
   ]
@@ -3572,6 +3631,7 @@ function VisibleThreadView({
   } | null>(null)
   const activeSessionID = activeSession?.id ?? null
   const effectiveScrollStateKey = scrollStateKey ?? activeSessionID ?? "thread:no-session"
+  const isResizeLightweightMode = useSidebarResizeLightweightMode()
   const visibleTurnIDs = useMemo(() => {
     const ids = activeTurns.map((turn) => turn.id)
     const pendingRequestID = pendingPermissionRequests[0]?.id
@@ -4008,7 +4068,7 @@ function VisibleThreadView({
   }
 
   return (
-    <section className="thread-shell">
+    <section className={joinClassNames("thread-shell", isResizeLightweightMode && "thread-resize-lightweight")}>
       <div
         ref={threadColumnRef}
         className="thread-column"
