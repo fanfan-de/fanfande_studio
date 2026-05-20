@@ -85,7 +85,7 @@ afterEach(async () => {
 
 describe("managed agent workspace dependencies", () => {
   it("adds bundled workspace dependency paths and versions to launch env", async () => {
-    const runtimeDir = await createTempDirectory("fanfande-managed-agent-runtime-")
+    const runtimeDir = await createTempDirectory("anybox-managed-agent-runtime-")
     const dependenciesDir = path.join(runtimeDir, "dependencies")
 
     await mkdir(dependenciesDir, { recursive: true })
@@ -94,7 +94,7 @@ describe("managed agent workspace dependencies", () => {
     await writeFile(
       path.join(dependenciesDir, "manifest.json"),
       JSON.stringify({
-        kind: "fanfande-workspace-dependencies",
+        kind: "anybox-workspace-dependencies",
         version: 1,
         bundleVersion: "bundle-test-version",
       }),
@@ -102,7 +102,7 @@ describe("managed agent workspace dependencies", () => {
 
     await withProcessEnv(
       {
-        FANFANDE_AGENT_RUNTIME_DIR: runtimeDir,
+        ANYBOX_AGENT_RUNTIME_DIR: runtimeDir,
       },
       () => {
         const specs = managedAgentInternals.resolveBundledAgentLaunchSpecs()
@@ -117,15 +117,15 @@ describe("managed agent workspace dependencies", () => {
         expect(env[managedAgentInternals.env.workspaceDependenciesDir]).toBe(dependenciesDir)
         expect(env[managedAgentInternals.env.workspaceDependenciesVersion]).toBe("bundle-test-version")
         expect(env[managedAgentInternals.env.agentDataDir]).toBe(agentDataDir)
-        expect(env.FanFande_SERVER_PORT).toBe("4567")
+        expect(env.ANYBOX_SERVER_PORT).toBe("4567")
       },
     )
   })
 
   it("points source runtimes at the build dependency directory without requiring it to exist", async () => {
-    const repoRoot = await createTempDirectory("fanfande-managed-agent-source-")
+    const repoRoot = await createTempDirectory("anybox-managed-agent-source-")
     const desktopAppPath = path.join(repoRoot, "packages", "desktop")
-    const agentEntrypoint = path.join(repoRoot, "packages", "fanfandeagent", "src", "server", "start.ts")
+    const agentEntrypoint = path.join(repoRoot, "packages", "anyboxagent", "src", "server", "start.ts")
     const bunBinary = path.join(repoRoot, process.platform === "win32" ? "bun.exe" : "bun")
     const dependenciesDir = path.join(desktopAppPath, "build", "agent-runtime", "dependencies")
 
@@ -137,7 +137,7 @@ describe("managed agent workspace dependencies", () => {
 
     await withProcessEnv(
       {
-        FANFANDE_BUN_BINARY: bunBinary,
+        ANYBOX_BUN_BINARY: bunBinary,
       },
       () => {
         const spec = managedAgentInternals.resolveSourceAgentLaunchSpec()

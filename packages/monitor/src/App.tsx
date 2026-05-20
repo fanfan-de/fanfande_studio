@@ -18,9 +18,9 @@ import {
 import { FormEvent, useEffect, useId, useMemo, useRef, useState } from "react"
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:4096"
-const BASE_URL_STORAGE_KEY = "fanfande.monitor.baseURL"
+const BASE_URL_STORAGE_KEY = "anybox.monitor.baseURL"
 const MAX_VISIBLE_LOGS = 300
-const NO_SERVICE_FILTER_VALUE = "__fanfande_monitor_no_service__"
+const NO_SERVICE_FILTER_VALUE = "__anybox_monitor_no_service__"
 
 type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
 
@@ -706,7 +706,7 @@ export function App() {
             <Server size={20} />
           </div>
           <div>
-            <p>Fanfande Monitor</p>
+            <p>Anybox Monitor</p>
             <h1>Backend diagnostics</h1>
           </div>
         </div>

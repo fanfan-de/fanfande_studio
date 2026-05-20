@@ -3,6 +3,7 @@ import * as electronUpdater from "electron-updater"
 import type { AppUpdater } from "electron-updater"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { readTrimmedDesktopEnv } from "./env-compat"
 import { safeError, safeLog, safeWarn } from "./safe-console"
 
 type CheckOptions = {
@@ -58,7 +59,7 @@ function isUpdateCheckEnabled() {
 }
 
 function isForcedDevUpdateCheck() {
-  return process.env.FANFANDE_FORCE_UPDATE_CHECK === "1"
+  return readTrimmedDesktopEnv("ANYBOX_FORCE_UPDATE_CHECK") === "1"
 }
 
 function getAppUpdateSettingsPath() {
@@ -163,7 +164,7 @@ function registerUpdaterEvents() {
       void showMessageBox({
         type: "info",
         title: "No Updates Available",
-        message: "Fanfande Studio is up to date.",
+        message: "Anybox is up to date.",
       })
     }
   })
@@ -186,7 +187,7 @@ function registerUpdaterEvents() {
     void showMessageBox({
       type: "info",
       title: "Update Ready",
-      message: `Fanfande Studio ${describeVersion(info)} is ready to install.`,
+      message: `Anybox ${describeVersion(info)} is ready to install.`,
       detail: "Restart the app now to apply the update.",
       buttons: ["Restart Now", "Later"],
       defaultId: 0,
@@ -233,7 +234,7 @@ export async function checkForAppUpdates(options: CheckOptions = {}) {
         type: "info",
         title: "Updates Unavailable",
         message: "Update checks run in packaged builds.",
-        detail: "Build and install the app, or set FANFANDE_FORCE_UPDATE_CHECK=1 with dev-app-update.yml for local updater testing.",
+        detail: "Build and install the app, or set ANYBOX_FORCE_UPDATE_CHECK=1 with dev-app-update.yml for local updater testing.",
       })
     }
     return {
@@ -248,7 +249,7 @@ export async function checkForAppUpdates(options: CheckOptions = {}) {
       await showMessageBox({
         type: "info",
         title: "Update Check In Progress",
-        message: "Fanfande Studio is already checking for updates.",
+        message: "Anybox is already checking for updates.",
       })
     }
     return {

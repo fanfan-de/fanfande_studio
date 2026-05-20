@@ -1,13 +1,13 @@
-appId: com.fanfande.studio
-productName: Fanfande Studio
-artifactName: Fanfande-Studio-${version}-${arch}.${ext}
+appId: com.anybox.app
+productName: Anybox
+artifactName: Anybox-${version}-${arch}.${ext}
 asar: true
 electronUpdaterCompatibility: ">=2.16"
 afterPack: ./scripts/after-pack-icon.cjs
 publish:
   provider: github
   owner: fanfan-de
-  repo: fanfande_studio
+  repo: anybox_studio
 directories:
   buildResources: build
   output: dist

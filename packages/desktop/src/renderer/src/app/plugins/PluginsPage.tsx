@@ -1,4 +1,4 @@
-import { useMemo, useState, type MouseEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react"
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -130,6 +130,12 @@ function permissionSummary(permissions?: string[]) {
 
 function credentialKindLabel(kind: "api_key" | "oauth" | undefined) {
   return kind === "oauth" ? "OAuth" : "API key"
+}
+
+function pluginConfigInputType(field: PluginCatalogItem["configFields"][number]) {
+  if (field.secret || field.type === "password") return "password"
+  if (field.type === "url") return "url"
+  return "text"
 }
 
 function connectorStatusLabel(status: ConnectorStatus | PluginConnectorStatus | undefined) {
@@ -391,9 +397,11 @@ export function PluginsPage({
   onDismissMessage,
   onInstallPlugin,
   onPluginDraftAppApiKeyChange,
+  onPluginDraftConfigChange,
   onPluginDeselect,
   onPluginSelect,
   onSaveInstalledPluginConnectorApiKey,
+  onSaveInstalledPluginConfig,
   onStartInstalledPluginConnectorAuthFlow,
 }: PluginsPageProps) {
   const [searchQuery, setSearchQuery] = useState("")
@@ -505,6 +513,10 @@ export function PluginsPage({
   const heroImageURL = heroPlugin ? pluginImageURL(heroPlugin, "hero") : undefined
   const activeHeroImageURL = activePlugin ? pluginImageURL(activePlugin, "hero") : undefined
   const activeBrandColor = activePlugin ? pluginBrandColor(activePlugin) : undefined
+  const defaultOAuthApp = activePlugin?.apps.find((app) => app.credential.kind === "oauth")
+  const defaultIncludedItemID = activePlugin && defaultOAuthApp
+    ? `${activePlugin.id}:app:${defaultOAuthApp.appID}`
+    : null
   const pluginDetailBreadcrumb = activePlugin ? (
     <nav className="plugins-detail-breadcrumb" aria-label="Plugin detail breadcrumb">
       <button type="button" onClick={onPluginDeselect}>插件</button>
@@ -515,6 +527,10 @@ export function PluginsPage({
   const toggleIncludedItem = (itemID: string) => {
     setExpandedIncludedItemID((currentItemID) => currentItemID === itemID ? null : itemID)
   }
+
+  useEffect(() => {
+    setExpandedIncludedItemID(defaultIncludedItemID)
+  }, [defaultIncludedItemID])
 
   return (
     <section className="plugins-page" aria-label="Plugins">
@@ -571,7 +587,7 @@ export function PluginsPage({
             {!activePlugin ? (
               <>
                 <header className="plugins-marketplace-header">
-              <h1>让 Fanfande 按你的方式工作</h1>
+              <h1>让 Anybox 按你的方式工作</h1>
               <div className="plugins-filter-row" aria-label="Plugin filters">
                 <label className="plugins-search-control">
                   <SearchIcon />
@@ -707,6 +723,55 @@ export function PluginsPage({
                   </section>
 
                   <p className="plugins-detail-description">{pluginDetailDescription(activePlugin)}</p>
+
+                  {activePlugin.configFields.length > 0 ? (
+                    <section className="plugins-detail-section">
+                      <h2>Configuration</h2>
+                      <div className="plugins-config-card">
+                        <div className="plugins-config-fields">
+                          {activePlugin.configFields.map((field) => {
+                            const inputID = `plugin-config:${activePlugin.id}:${field.key}`
+
+                            return (
+                              <label key={field.key} className="plugins-config-field" htmlFor={inputID}>
+                                <span className="plugins-config-field-label">
+                                  <span>{field.label}</span>
+                                  {field.required ? <span className="plugins-config-required">Required</span> : null}
+                                </span>
+                                <input
+                                  id={inputID}
+                                  type={pluginConfigInputType(field)}
+                                  value={pluginDraft.config[field.key] ?? ""}
+                                  placeholder={field.placeholder ?? field.key}
+                                  autoComplete={field.secret ? "new-password" : "off"}
+                                  required={field.required}
+                                  onChange={(event) => onPluginDraftConfigChange(field.key, event.target.value)}
+                                />
+                                {field.description ? <small>{field.description}</small> : null}
+                              </label>
+                            )
+                          })}
+                        </div>
+                        <div className="plugins-config-actions">
+                          <span>
+                            {activeInstalledPlugin && !activeInstalledPlugin.missingPackage
+                              ? "Saved values are injected into this plugin at runtime."
+                              : "Required values are used when installing this plugin."}
+                          </span>
+                          {activeInstalledPlugin && !activeInstalledPlugin.missingPackage ? (
+                            <button
+                              className="plugins-detail-install-button"
+                              type="button"
+                              disabled={pluginBusyIDs.has(activePlugin.id)}
+                              onClick={() => void onSaveInstalledPluginConfig(activePlugin.id)}
+                            >
+                              {updatingPluginID === activePlugin.id ? "Saving..." : "Save configuration"}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </section>
+                  ) : null}
 
                   {(activePlugin.screenshots ?? []).length > 0 ? (
                     <section className="plugins-detail-section">
@@ -932,6 +997,9 @@ export function PluginsPage({
                         const isDiagnosing = diagnosingPluginConnectorID === connectorKey
                         const activeFlow = status?.activeFlow
                         const hasPendingFlow = activeFlow && ["pending", "waiting_user", "authorizing"].includes(activeFlow.status)
+                        const appSummary = activeInstalledPlugin
+                          ? `${connectorStatusLabel(status)} - ${app.description ?? "Connector-backed MCP"}`
+                          : `Install to enable ${credentialKindLabel(credentialKind)}`
 
                         return (
                           <div key={`app:${app.appID}`} className="plugins-included-item">
@@ -946,7 +1014,7 @@ export function PluginsPage({
                               <span className="plugins-included-icon"><ConnectedStatusIcon /></span>
                               <span className="plugins-included-copy">
                                 <strong>{app.name}</strong>
-                                <span>{app.description ?? "Connector-backed MCP"}</span>
+                                <span>{appSummary}</span>
                               </span>
                               <span className={status?.connected ? "plugins-toggle is-on" : "plugins-toggle"} aria-hidden="true">
                                 <span />
@@ -1073,7 +1141,11 @@ export function PluginsPage({
                                       {isDiagnosing ? "Checking..." : "Diagnose"}
                                     </button>
                                   </div>
-                                ) : null}
+                                ) : (
+                                  <p className="plugins-connector-empty">
+                                    Install this plugin before signing in to this connector.
+                                  </p>
+                                )}
                               </div>
                             ) : null}
                           </div>

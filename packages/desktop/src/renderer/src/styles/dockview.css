@@ -4,7 +4,7 @@
   background: var(--seg-shell);
 }
 
-.dockview-theme-fanfande {
+.dockview-theme-anybox {
   width: 100%;
   height: 100%;
   --dv-tabs-and-actions-container-height: 40px;
@@ -27,31 +27,31 @@
   font: inherit;
 }
 
-.dockview-theme-fanfande .dv-view,
-.dockview-theme-fanfande .dv-groupview,
-.dockview-theme-fanfande .dv-content-container {
+.dockview-theme-anybox .dv-view,
+.dockview-theme-anybox .dv-groupview,
+.dockview-theme-anybox .dv-content-container {
   min-width: 0;
   min-height: 0;
 }
 
-.dockview-theme-fanfande .dv-content-container,
-.dockview-theme-fanfande .workbench-pane,
-.dockview-theme-fanfande .workbench-pane-stage,
-.dockview-theme-fanfande .workbench-pane-live-region {
+.dockview-theme-anybox .dv-content-container,
+.dockview-theme-anybox .workbench-pane,
+.dockview-theme-anybox .workbench-pane-stage,
+.dockview-theme-anybox .workbench-pane-live-region {
   -webkit-app-region: no-drag;
 }
 
-.dockview-theme-fanfande .workbench-pane button,
-.dockview-theme-fanfande .workbench-pane input,
-.dockview-theme-fanfande .workbench-pane textarea,
-.dockview-theme-fanfande .workbench-pane select,
-.dockview-theme-fanfande .workbench-pane a,
-.dockview-theme-fanfande .workbench-pane [role="button"],
-.dockview-theme-fanfande .workbench-pane [contenteditable="true"] {
+.dockview-theme-anybox .workbench-pane button,
+.dockview-theme-anybox .workbench-pane input,
+.dockview-theme-anybox .workbench-pane textarea,
+.dockview-theme-anybox .workbench-pane select,
+.dockview-theme-anybox .workbench-pane a,
+.dockview-theme-anybox .workbench-pane [role="button"],
+.dockview-theme-anybox .workbench-pane [contenteditable="true"] {
   -webkit-app-region: no-drag;
 }
 
-.dockview-theme-fanfande .dv-tabs-and-actions-container {
+.dockview-theme-anybox .dv-tabs-and-actions-container {
   --dockview-tab-bar-bg: var(--seg-pane-tab-bar-surface);
   --dockview-tab-border: var(--seg-border);
   --dockview-tab-divider: var(--seg-divider);
@@ -71,7 +71,7 @@
   isolation: isolate;
 }
 
-.dockview-theme-fanfande .dv-tabs-and-actions-container::after {
+.dockview-theme-anybox .dv-tabs-and-actions-container::after {
   content: "";
   position: absolute;
   left: 0;
@@ -83,27 +83,27 @@
   z-index: 1;
 }
 
-.dockview-theme-fanfande .dv-tabs-container {
+.dockview-theme-anybox .dv-tabs-container {
   align-items: stretch;
   overflow: auto hidden;
   scrollbar-width: none;
   -webkit-app-region: no-drag;
 }
 
-.dockview-theme-fanfande .dv-tabs-container::-webkit-scrollbar {
+.dockview-theme-anybox .dv-tabs-container::-webkit-scrollbar {
   display: none;
 }
 
-.dockview-theme-fanfande .dv-tabs-and-actions-container .dv-void-container {
+.dockview-theme-anybox .dv-tabs-and-actions-container .dv-void-container {
   min-height: 100%;
 }
 
-.dockview-theme-fanfande .dv-tabs-and-actions-container .dv-void-container.dv-draggable {
+.dockview-theme-anybox .dv-tabs-and-actions-container .dv-void-container.dv-draggable {
   cursor: default;
   -webkit-app-region: drag;
 }
 
-.dockview-theme-fanfande .dv-tab {
+.dockview-theme-anybox .dv-tab {
   min-width: 0;
   max-width: min(240px, 30vw);
   display: flex;
@@ -123,12 +123,12 @@
     box-shadow 140ms ease;
 }
 
-.dockview-theme-fanfande .dv-tabs-container.dv-horizontal .dv-tab::before {
+.dockview-theme-anybox .dv-tabs-container.dv-horizontal .dv-tab::before {
   display: none;
 }
 
-.dockview-theme-fanfande .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab,
-.dockview-theme-fanfande .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {
+.dockview-theme-anybox .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab,
+.dockview-theme-anybox .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {
   position: relative;
   z-index: 2;
   background: var(--dockview-tab-active-bg);
@@ -139,37 +139,37 @@
     inset -1px 0 0 var(--dockview-tab-border);
 }
 
-.dockview-theme-fanfande .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-inactive-tab,
-.dockview-theme-fanfande .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-inactive-tab {
+.dockview-theme-anybox .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-inactive-tab,
+.dockview-theme-anybox .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-inactive-tab {
   background: transparent;
   color: var(--seg-text-2);
 }
 
-.dockview-theme-fanfande .dv-tabs-container > .dv-tab.dv-inactive-tab:hover,
-.dockview-theme-fanfande .dv-tabs-container > .dv-tab.dv-inactive-tab:focus-within {
+.dockview-theme-anybox .dv-tabs-container > .dv-tab.dv-inactive-tab:hover,
+.dockview-theme-anybox .dv-tabs-container > .dv-tab.dv-inactive-tab:focus-within {
   background: var(--dockview-tab-hover-bg);
   color: var(--seg-text-1);
 }
 
-.dockview-theme-fanfande .dv-tab:not(:first-child) {
+.dockview-theme-anybox .dv-tab:not(:first-child) {
   box-shadow: inset 1px 0 0 var(--dockview-tab-divider);
 }
 
-.dockview-theme-fanfande .dv-tab.dv-active-tab,
-.dockview-theme-fanfande .dv-tab:hover,
-.dockview-theme-fanfande .dv-tab:focus-within {
+.dockview-theme-anybox .dv-tab.dv-active-tab,
+.dockview-theme-anybox .dv-tab:hover,
+.dockview-theme-anybox .dv-tab:focus-within {
   box-shadow: none;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab-content,
-.dockview-theme-fanfande .dockview-workbench-tab-trigger,
-.dockview-theme-fanfande .dockview-workbench-tab-close,
-.dockview-theme-fanfande .dockview-workbench-header-actions,
-.dockview-theme-fanfande .dockview-workbench-header-actions button {
+.dockview-theme-anybox .dockview-workbench-tab-content,
+.dockview-theme-anybox .dockview-workbench-tab-trigger,
+.dockview-theme-anybox .dockview-workbench-tab-close,
+.dockview-theme-anybox .dockview-workbench-header-actions,
+.dockview-theme-anybox .dockview-workbench-header-actions button {
   -webkit-app-region: no-drag;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab-content {
+.dockview-theme-anybox .dockview-workbench-tab-content {
   min-width: 0;
   width: 100%;
   height: 100%;
@@ -179,7 +179,7 @@
   padding: 0 8px 0 12px;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab-trigger {
+.dockview-theme-anybox .dockview-workbench-tab-trigger {
   min-width: 0;
   flex: 1 1 auto;
   display: flex;
@@ -193,24 +193,24 @@
   cursor: default;
 }
 
-.dockview-theme-fanfande .dv-tab.dv-active-tab .dockview-workbench-tab-trigger {
+.dockview-theme-anybox .dv-tab.dv-active-tab .dockview-workbench-tab-trigger {
   font-weight: 500;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab-copy {
+.dockview-theme-anybox .dockview-workbench-tab-copy {
   min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab-title {
+.dockview-theme-anybox .dockview-workbench-tab-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab-close {
+.dockview-theme-anybox .dockview-workbench-tab-close {
   flex: 0 0 auto;
   width: 18px;
   height: 18px;
@@ -226,27 +226,27 @@
   pointer-events: none;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab-close svg {
+.dockview-theme-anybox .dockview-workbench-tab-close svg {
   width: var(--section-toolbar-aux-icon-size);
   height: var(--section-toolbar-aux-icon-size);
   stroke-width: 2;
 }
 
-.dockview-theme-fanfande .dv-tab:hover .dockview-workbench-tab-close,
-.dockview-theme-fanfande .dv-tab:focus-within .dockview-workbench-tab-close,
-.dockview-theme-fanfande .dv-tab.dv-active-tab .dockview-workbench-tab-close {
+.dockview-theme-anybox .dv-tab:hover .dockview-workbench-tab-close,
+.dockview-theme-anybox .dv-tab:focus-within .dockview-workbench-tab-close,
+.dockview-theme-anybox .dv-tab.dv-active-tab .dockview-workbench-tab-close {
   opacity: 1;
   pointer-events: auto;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab-close:hover,
-.dockview-theme-fanfande .dockview-workbench-tab-close:focus-visible {
+.dockview-theme-anybox .dockview-workbench-tab-close:hover,
+.dockview-theme-anybox .dockview-workbench-tab-close:focus-visible {
   background: transparent;
   border-color: transparent;
   color: var(--dockview-tab-icon-hover-color);
 }
 
-.dockview-theme-fanfande .dockview-workbench-header-actions {
+.dockview-theme-anybox .dockview-workbench-header-actions {
   position: relative;
   z-index: 2;
   display: inline-flex;
@@ -255,8 +255,8 @@
   min-height: 40px;
 }
 
-.dockview-theme-fanfande .dockview-workbench-header-actions .sidebar-toggle-button.is-top-menu,
-.dockview-theme-fanfande .dockview-workbench-header-actions .canvas-region-top-menu-add-button {
+.dockview-theme-anybox .dockview-workbench-header-actions .sidebar-toggle-button.is-top-menu,
+.dockview-theme-anybox .dockview-workbench-header-actions .canvas-region-top-menu-add-button {
   width: 28px;
   min-width: 28px;
   min-height: 28px;
@@ -268,27 +268,27 @@
   flex: 0 0 auto;
 }
 
-.dockview-theme-fanfande .dockview-workbench-header-actions .dockview-workbench-dock-back-button {
+.dockview-theme-anybox .dockview-workbench-header-actions .dockview-workbench-dock-back-button {
   width: auto;
   min-width: 92px;
   padding: 0 12px;
   white-space: nowrap;
 }
 
-.dockview-theme-fanfande .dockview-workbench-header-actions .sidebar-toggle-button.is-top-menu:hover,
-.dockview-theme-fanfande .dockview-workbench-header-actions .sidebar-toggle-button.is-top-menu:focus-visible,
-.dockview-theme-fanfande .dockview-workbench-header-actions .canvas-region-top-menu-add-button:hover,
-.dockview-theme-fanfande .dockview-workbench-header-actions .canvas-region-top-menu-add-button:focus-visible {
+.dockview-theme-anybox .dockview-workbench-header-actions .sidebar-toggle-button.is-top-menu:hover,
+.dockview-theme-anybox .dockview-workbench-header-actions .sidebar-toggle-button.is-top-menu:focus-visible,
+.dockview-theme-anybox .dockview-workbench-header-actions .canvas-region-top-menu-add-button:hover,
+.dockview-theme-anybox .dockview-workbench-header-actions .canvas-region-top-menu-add-button:focus-visible {
   background: transparent;
   border-color: transparent;
   color: var(--dockview-tab-icon-hover-color);
 }
 
-.dockview-theme-fanfande .dockview-workbench-header-actions .window-controls {
+.dockview-theme-anybox .dockview-workbench-header-actions .window-controls {
   align-self: center;
 }
 
-.dockview-theme-fanfande .workbench-pane {
+.dockview-theme-anybox .workbench-pane {
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -296,12 +296,12 @@
   box-shadow: none;
 }
 
-.dockview-theme-fanfande .workbench-pane-stage,
-.dockview-theme-fanfande .workbench-pane-live-region {
+.dockview-theme-anybox .workbench-pane-stage,
+.dockview-theme-anybox .workbench-pane-live-region {
   border-radius: 0;
 }
 
-.dockview-theme-fanfande .workbench-pane-live-region.is-dockview-managed {
+.dockview-theme-anybox .workbench-pane-live-region.is-dockview-managed {
   grid-template-rows: auto minmax(0, 1fr) auto auto;
 }
 

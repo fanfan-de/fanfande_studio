@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import { createSourceRuntimeSnapshot, shouldRestartForSourceRuntimeChange } from "./source-runtime-watch"
 
 async function createTempSourceRoot() {
-  return mkdtemp(path.join(os.tmpdir(), "fanfande-source-watch-"))
+  return mkdtemp(path.join(os.tmpdir(), "anybox-source-watch-"))
 }
 
 describe("source runtime watch", () => {

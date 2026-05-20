@@ -1,13 +1,13 @@
 export type InstallerPlatform = "windows" | "mac"
 
-export const repositoryUrl = "https://github.com/fanfan-de/fanfande_studio"
+export const repositoryUrl = "https://github.com/fanfan-de/anybox_studio"
 
 const latestReleaseApiUrl =
-  "https://api.github.com/repos/fanfan-de/fanfande_studio/releases/latest"
+  "https://api.github.com/repos/fanfan-de/anybox_studio/releases/latest"
 
 export const installerFallbackUrls: Record<InstallerPlatform, string> = {
-  windows: `${repositoryUrl}/releases/download/v0.1.5/Fanfande-Studio-0.1.5-x64.exe`,
-  mac: `${repositoryUrl}/releases/download/v0.1.5/Fanfande-Studio-0.1.5-arm64.dmg`,
+  windows: `${repositoryUrl}/releases/download/v0.1.5/Anybox-0.1.5-x64.exe`,
+  mac: `${repositoryUrl}/releases/download/v0.1.5/Anybox-0.1.5-arm64.dmg`,
 }
 
 type GitHubReleaseAsset = {
@@ -25,11 +25,11 @@ const installerMatchers: Record<
 > = {
   windows: (normalizedName) =>
     normalizedName.endsWith(".exe") &&
-    normalizedName.includes("fanfande-studio") &&
+    normalizedName.includes("anybox-studio") &&
     normalizedName.includes("x64"),
   mac: (normalizedName) =>
     normalizedName.endsWith(".dmg") &&
-    normalizedName.includes("fanfande-studio") &&
+    normalizedName.includes("anybox-studio") &&
     normalizedName.includes("arm64"),
 }
 

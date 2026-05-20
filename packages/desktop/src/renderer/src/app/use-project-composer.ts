@@ -4,7 +4,7 @@ import {
   getSupportedReasoningEfforts as getProviderSupportedReasoningEfforts,
   supportsReasoningEffort,
   type ReasoningEffort,
-} from "@fanfande/shared"
+} from "@anybox/shared"
 import {
   describeComposerAttachmentSupport,
   getComposerAttachmentCapabilities,

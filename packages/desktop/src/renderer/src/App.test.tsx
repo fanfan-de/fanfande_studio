@@ -30,7 +30,7 @@ const styles = readBundledStyles()
 
 declare global {
   interface Window {
-    __fanfandeWorkbenchDockviewApi?: DockviewApi | null
+    __anyboxWorkbenchDockviewApi?: DockviewApi | null
   }
 }
 
@@ -142,10 +142,10 @@ function getCreateSessionProjectSelect() {
 
 async function getWorkbenchDockviewApi() {
   await waitFor(() => {
-    expect(window.__fanfandeWorkbenchDockviewApi).toBeTruthy()
+    expect(window.__anyboxWorkbenchDockviewApi).toBeTruthy()
   })
 
-  return window.__fanfandeWorkbenchDockviewApi!
+  return window.__anyboxWorkbenchDockviewApi!
 }
 
 async function findDockviewPanel(panelIDPrefix: string) {
@@ -262,7 +262,7 @@ function createPermissionRequest(overrides: PermissionRequestPromptOverrides = {
       detailsAvailable: true,
       details: {
         paths: ["README.md"],
-        workdir: "C:\\Projects\\fanfande_studio",
+        workdir: "C:\\Projects\\anybox_studio",
       },
       allowedDecisions: ["deny", "allow"],
       recommendedDecision: "allow",
@@ -635,7 +635,7 @@ describe("App", () => {
         isMaximized: false,
       }),
       getAppearanceConfig: vi.fn().mockResolvedValue({
-        path: "C:\\Users\\tester\\AppData\\Roaming\\fanfande-desktop-agent\\appearance-theme.json",
+        path: "C:\\Users\\tester\\AppData\\Roaming\\anybox-desktop-agent\\appearance-theme.json",
         exists: true,
         document: {
           version: 1,
@@ -647,7 +647,7 @@ describe("App", () => {
         },
       }),
       saveAppearanceConfig: vi.fn().mockImplementation(async ({ document }: { document: Record<string, unknown> }) => ({
-        path: "C:\\Users\\tester\\AppData\\Roaming\\fanfande-desktop-agent\\appearance-theme.json",
+        path: "C:\\Users\\tester\\AppData\\Roaming\\anybox-desktop-agent\\appearance-theme.json",
         exists: true,
         document: {
           ...document,
@@ -656,7 +656,7 @@ describe("App", () => {
       })),
       getAgentConfig: vi.fn().mockResolvedValue({
         baseURL: "http://127.0.0.1:4096",
-        defaultDirectory: "C:\\Projects\\fanfande_studio",
+        defaultDirectory: "C:\\Projects\\anybox_studio",
       }),
       getToolPermissionMode: vi.fn().mockResolvedValue({
         mode: "default",
@@ -672,7 +672,7 @@ describe("App", () => {
         id: "pty-1",
         sessionID: "session-chat-1",
         title: "Terminal 1",
-        cwd: "C:\\Projects\\fanfande_studio",
+        cwd: "C:\\Projects\\anybox_studio",
         shell: "powershell.exe",
         rows: 24,
         cols: 80,
@@ -686,7 +686,7 @@ describe("App", () => {
         id: "pty-1",
         sessionID: "session-chat-1",
         title: "Terminal 1",
-        cwd: "C:\\Projects\\fanfande_studio",
+        cwd: "C:\\Projects\\anybox_studio",
         shell: "powershell.exe",
         rows: 24,
         cols: 80,
@@ -702,7 +702,7 @@ describe("App", () => {
         id: "pty-1",
         sessionID: "session-chat-1",
         title: "Terminal 1",
-        cwd: "C:\\Projects\\fanfande_studio",
+        cwd: "C:\\Projects\\anybox_studio",
         shell: "powershell.exe",
         rows: 24,
         cols: 80,
@@ -1020,7 +1020,7 @@ describe("App", () => {
         session: {
           id: "session-backend",
           projectID: "project-backend",
-          directory: "C:\\Projects\\fanfande_studio",
+          directory: "C:\\Projects\\anybox_studio",
           title: "Backend session",
           created: 1,
           updated: 1,
@@ -1194,7 +1194,7 @@ describe("App", () => {
     expect(minimizeWindowButton).toBeInTheDocument()
     expect(minimizeWindowButton.closest(".window-controls")).not.toBeNull()
     expect(minimizeWindowButton.closest(".right-sidebar-top-menu")).toBe(rightSidebarTopMenu)
-    expect(container.querySelector(".dockview-theme-fanfande .dv-tabs-and-actions-container")).not.toBeNull()
+    expect(container.querySelector(".dockview-theme-anybox .dv-tabs-and-actions-container")).not.toBeNull()
     expect(container.querySelector(".session-canvas-top-menu.window-drag-region")).toBeNull()
     expect(leftSidebarTopMenu).toHaveClass("shell-top-menu")
     expect(topMenu).toHaveClass("shell-top-menu")
@@ -1844,7 +1844,7 @@ describe("App", () => {
     const userAgentSpy = vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(
       "Mozilla/5.0 Electron/39.0.0",
     )
-    window.desktop!.previewGuestPreloadPath = "file:///C:/Projects/fanfande_studio/packages/desktop/out/preload/preview-webview.mjs"
+    window.desktop!.previewGuestPreloadPath = "file:///C:/Projects/anybox_studio/packages/desktop/out/preload/preview-webview.mjs"
 
     render(<App />)
 
@@ -7015,7 +7015,7 @@ describe("App", () => {
     const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
     expect(sourcePane.querySelector('[data-testid^="pane-drop-"]')).toBeNull()
     expect(sourcePane.querySelector(".pane-drop-preview")).toBeNull()
-    expect(document.querySelector(".dockview-theme-fanfande")).not.toBeNull()
+    expect(document.querySelector(".dockview-theme-anybox")).not.toBeNull()
   })
 
   it("merges a tab into a sibling Dockview group and activates it there", async () => {
@@ -7076,7 +7076,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(document.querySelector(".workbench-panes")).toHaveClass("has-multiple")
     })
-    expect(document.querySelectorAll(".dockview-theme-fanfande .window-controls")).toHaveLength(0)
+    expect(document.querySelectorAll(".dockview-theme-anybox .window-controls")).toHaveLength(0)
     expect(document.querySelectorAll(".right-sidebar-top-menu .window-controls")).toHaveLength(1)
 
     fireEvent.click(screen.getByRole("button", { name: "Close create session tab" }))
@@ -7087,7 +7087,7 @@ describe("App", () => {
 
     expect(document.querySelector(".workbench-panes")).not.toHaveClass("has-multiple")
     expect(document.querySelector(".dv-tabs-and-actions-container")).not.toHaveClass("has-window-controls-clearance")
-    expect(document.querySelectorAll(".dockview-theme-fanfande .window-controls")).toHaveLength(0)
+    expect(document.querySelectorAll(".dockview-theme-anybox .window-controls")).toHaveLength(0)
     expect(document.querySelectorAll(".right-sidebar-top-menu .window-controls")).toHaveLength(1)
   })
 
@@ -7097,8 +7097,8 @@ describe("App", () => {
     const panes = await createStackedPaneFromCreateTab()
     expect(panes).toHaveLength(2)
 
-    expect(panes[0].closest(".dockview-theme-fanfande")).not.toBeNull()
-    expect(panes[1].closest(".dockview-theme-fanfande")).not.toBeNull()
+    expect(panes[0].closest(".dockview-theme-anybox")).not.toBeNull()
+    expect(panes[1].closest(".dockview-theme-anybox")).not.toBeNull()
     expect(document.querySelector(".pane-tab-bar")).toBeNull()
   })
 
@@ -8111,7 +8111,7 @@ describe("App", () => {
       id: "gmail",
       name: "Gmail",
       description: "Read and draft Gmail messages through a platform-managed connector.",
-      publisher: "Fanfande",
+      publisher: "Anybox",
       risk: "medium",
       permissions: ["Read Gmail metadata"],
       tools: [
@@ -9970,7 +9970,7 @@ describe("App", () => {
         name: "Build Web Apps",
         description: "Frontend app tools.",
         version: "0.1.0",
-        publisher: "Fanfande",
+        publisher: "Anybox",
         category: "Code",
         risk: "medium",
         permissions: [],
@@ -11270,7 +11270,7 @@ describe("App", () => {
           id: "pty-1",
           sessionID: "session-chat-1",
           title: "Terminal 1",
-          cwd: "C:\\Projects\\fanfande_studio",
+          cwd: "C:\\Projects\\anybox_studio",
           shell: "powershell.exe",
           rows: 24,
           cols: 80,
@@ -11323,7 +11323,7 @@ describe("App", () => {
         id: "pty-1",
         sessionID: "session-chat-1",
         title: "Terminal 1",
-        cwd: "C:\\Projects\\fanfande_studio",
+        cwd: "C:\\Projects\\anybox_studio",
         shell: "powershell.exe",
         rows: 24,
         cols: 80,
@@ -11337,7 +11337,7 @@ describe("App", () => {
         id: "pty-2",
         sessionID: "session-chat-1",
         title: "Terminal 2",
-        cwd: "C:\\Projects\\fanfande_studio",
+        cwd: "C:\\Projects\\anybox_studio",
         shell: "powershell.exe",
         rows: 24,
         cols: 80,
@@ -11351,7 +11351,7 @@ describe("App", () => {
       id,
       sessionID: "session-chat-1",
       title: id === "pty-1" ? "Terminal 1" : "Terminal 2",
-      cwd: "C:\\Projects\\fanfande_studio",
+      cwd: "C:\\Projects\\anybox_studio",
       shell: "powershell.exe",
       rows: 24,
       cols: 80,
@@ -11379,7 +11379,7 @@ describe("App", () => {
           id: "pty-1",
           sessionID: "session-chat-1",
           title: "Terminal 1",
-          cwd: "C:\\Projects\\fanfande_studio",
+          cwd: "C:\\Projects\\anybox_studio",
           shell: "powershell.exe",
           rows: 24,
           cols: 80,
@@ -11826,10 +11826,10 @@ describe("App", () => {
     expect(styles).toMatch(/\.canvas\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto auto;[^}]*gap:\s*14px;/s)
     expect(styles).toMatch(/\.canvas-top-stack\s*\{[^}]*display:\s*grid;[^}]*gap:\s*6px;/s)
     expect(styles).toMatch(/\.workbench-pane\s*\{[^}]*flex:\s*1 1 0;[^}]*position:\s*relative;[^}]*overflow:\s*hidden;/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.workbench-pane\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*min-height:\s*0;/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dv-content-container,[\s\S]*?\.dockview-theme-fanfande\s+\.workbench-pane-live-region\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.workbench-pane\s+button,[\s\S]*?\.dockview-theme-fanfande\s+\.workbench-pane\s+\[contenteditable="true"\]\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.workbench-pane-live-region\.is-dockview-managed\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto auto;/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.workbench-pane\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*min-height:\s*0;/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dv-content-container,[\s\S]*?\.dockview-theme-anybox\s+\.workbench-pane-live-region\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.workbench-pane\s+button,[\s\S]*?\.dockview-theme-anybox\s+\.workbench-pane\s+\[contenteditable="true"\]\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.workbench-pane-live-region\.is-dockview-managed\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto auto;/s)
     expect(styles).toMatch(/@property --pane-drop-preview-sheen-x\s*\{[^}]*syntax:\s*"&lt;percentage&gt;"|@property --pane-drop-preview-sheen-x\s*\{[^}]*syntax:\s*"<percentage>";/s)
     expect(styles).toMatch(/@property --pane-drop-preview-sheen-y\s*\{[^}]*initial-value:\s*50%;/s)
     expect(styles).toMatch(/\.workbench-pane-stage\s*\{[^}]*--pane-drop-preview-motion-duration:\s*220ms;[^}]*--pane-drop-preview-fade-duration:\s*180ms;[^}]*--pane-drop-preview-motion-curve:\s*cubic-bezier\(0\.22,\s*1,\s*0\.36,\s*1\);[^}]*--pane-drop-preview-sheen-x:\s*50%;[^}]*--pane-drop-preview-sheen-y:\s*50%;/s)
@@ -11856,18 +11856,18 @@ describe("App", () => {
     expect(styles).toMatch(/\.sidebar-toggle-button\.is-top-menu svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.session-tab-close svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(
-      /\.dockview-theme-fanfande\s+\.dv-tabs-and-actions-container\s*\{[^}]*--dockview-tab-bar-bg:\s*var\(--seg-pane-tab-bar-surface\);[^}]*--dockview-tab-active-bg:\s*var\(--seg-shell\);[^}]*background:\s*var\(--dockview-tab-bar-bg\);[^}]*-webkit-app-region:\s*no-drag;/s,
+      /\.dockview-theme-anybox\s+\.dv-tabs-and-actions-container\s*\{[^}]*--dockview-tab-bar-bg:\s*var\(--seg-pane-tab-bar-surface\);[^}]*--dockview-tab-active-bg:\s*var\(--seg-shell\);[^}]*background:\s*var\(--dockview-tab-bar-bg\);[^}]*-webkit-app-region:\s*no-drag;/s,
     )
     expect(styles).toMatch(/--dockview-tab-hover-bg:\s*var\(--mix-seg-panel-66-seg-panel-muted-34\);/s)
     expect(styles).toMatch(
-      /\.dockview-theme-fanfande\s+\.dv-tabs-and-actions-container::after\s*\{[^}]*bottom:\s*0;[^}]*height:\s*1px;[^}]*background:\s*var\(--dockview-tab-border\);/s,
+      /\.dockview-theme-anybox\s+\.dv-tabs-and-actions-container::after\s*\{[^}]*bottom:\s*0;[^}]*height:\s*1px;[^}]*background:\s*var\(--dockview-tab-border\);/s,
     )
     expect(styles).toMatch(/\.sidebar-resizer\s*\{[^}]*--sidebar-resizer-top-surface:\s*var\(--seg-pane-tab-bar-surface\);[^}]*background-color:\s*transparent;[^}]*background-image:\s*linear-gradient\(var\(--sidebar-resizer-top-surface\),\s*var\(--sidebar-resizer-top-surface\)\);[^}]*background-position:\s*top;[^}]*background-size:\s*100%\s*var\(--section-toolbar-height\);[^}]*background-repeat:\s*no-repeat;/s)
     expect(styles).toMatch(/\.sidebar-resizer::after\s*\{[^}]*top:\s*calc\(var\(--section-toolbar-height\)\s*-\s*1px\);[^}]*height:\s*1px;[^}]*background:\s*var\(--seg-border\);/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dv-tabs-container\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dv-tabs-and-actions-container\s+\.dv-void-container\.dv-draggable\s*\{[^}]*-webkit-app-region:\s*drag;/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-tab-content,[\s\S]*?\.dockview-theme-fanfande\s+\.dockview-workbench-header-actions button\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-header-actions\s*\{[^}]*min-height:\s*40px;/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dv-tabs-container\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dv-tabs-and-actions-container\s+\.dv-void-container\.dv-draggable\s*\{[^}]*-webkit-app-region:\s*drag;/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dockview-workbench-tab-content,[\s\S]*?\.dockview-theme-anybox\s+\.dockview-workbench-header-actions button\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dockview-workbench-header-actions\s*\{[^}]*min-height:\s*40px;/s)
     expect(styles).toMatch(/\.right-sidebar-view-host\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;[^}]*padding-right:\s*2px;/s)
     expect(styles).toMatch(/\.pane-drop-targets\s*\{[^}]*grid-template-columns:\s*144px minmax\(0,\s*1fr\) 144px;[^}]*grid-template-rows:\s*10px minmax\(0,\s*1fr\) 108px;[^}]*grid-template-areas:\s*[\s\S]*"\.\s+top\s+\."[\s\S]*"left center right"[\s\S]*"\.\s+bottom\s+\.";/s)
     expect(styles).toMatch(/\.pane-drop-targets\.is-top-row\s*\{[^}]*grid-template-areas:\s*[\s\S]*"top top top"[\s\S]*"left center right"[\s\S]*"\.\s+bottom\s+\.";/s)
@@ -11898,13 +11898,13 @@ describe("App", () => {
     expect(styles).toMatch(/\.session-tab\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-trigger\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-close\s*\{[^}]*cursor:\s*default;/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-tab-trigger\s*\{[^}]*cursor:\s*default;/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dockview-workbench-tab-trigger\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-trigger,\s*\.session-tab-close,[\s\S]*?\.canvas-region-top-menu-add-button\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(
       /\.canvas-region-top-menu\s+\.session-tab-close:hover,[\s\S]*?\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon-hover\);[^}]*transform:\s*none;/s,
     )
     expect(styles).toMatch(
-      /\.dockview-theme-fanfande\s+\.dockview-workbench-header-actions\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.dockview-theme-fanfande\s+\.dockview-workbench-header-actions\s+\.canvas-region-top-menu-add-button:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--dockview-tab-icon-hover-color\);/s,
+      /\.dockview-theme-anybox\s+\.dockview-workbench-header-actions\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.dockview-theme-anybox\s+\.dockview-workbench-header-actions\s+\.canvas-region-top-menu-add-button:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--dockview-tab-icon-hover-color\);/s,
     )
     expect(styles).toMatch(/\.right-sidebar-top-menu-tabs\s*\{[^}]*align-items:\s*center;[^}]*gap:\s*4px;/s)
     expect(styles).toMatch(
@@ -11930,17 +11930,17 @@ describe("App", () => {
     )
     expect(styles).toMatch(/--canvas-region-tab-inactive-bg:\s*var\(--mix-seg-shell-84-seg-panel-muted-16\);/s)
     expect(styles).toMatch(/--canvas-region-tab-hover:\s*var\(--mix-seg-panel-66-seg-panel-muted-34\);/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dv-tab\s*\{[^}]*margin:\s*0 0 -1px;[^}]*background:\s*transparent;[^}]*overflow:\s*hidden;/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dv-tab\s*\{[^}]*margin:\s*0 0 -1px;[^}]*background:\s*transparent;[^}]*overflow:\s*hidden;/s)
     expect(styles).toMatch(
-      /\.dockview-theme-fanfande\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-active-tab,[\s\S]*?\.dv-tab\.dv-active-tab\s*\{[^}]*background:\s*var\(--dockview-tab-active-bg\);[^}]*box-shadow:[^}]*inset 0 1px 0 var\(--dockview-tab-border\)/s,
+      /\.dockview-theme-anybox\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-active-tab,[\s\S]*?\.dv-tab\.dv-active-tab\s*\{[^}]*background:\s*var\(--dockview-tab-active-bg\);[^}]*box-shadow:[^}]*inset 0 1px 0 var\(--dockview-tab-border\)/s,
     )
     expect(styles).toMatch(
-      /\.dockview-theme-fanfande\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-inactive-tab,[\s\S]*?\.dv-tab\.dv-inactive-tab\s*\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--seg-text-2\);/s,
+      /\.dockview-theme-anybox\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-inactive-tab,[\s\S]*?\.dv-tab\.dv-inactive-tab\s*\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--seg-text-2\);/s,
     )
     expect(styles).toMatch(
-      /\.dockview-theme-fanfande\s+\.dv-tabs-container > \.dv-tab\.dv-inactive-tab:hover,[\s\S]*?\.dv-tabs-container > \.dv-tab\.dv-inactive-tab:focus-within\s*\{[^}]*background:\s*var\(--dockview-tab-hover-bg\);/s,
+      /\.dockview-theme-anybox\s+\.dv-tabs-container > \.dv-tab\.dv-inactive-tab:hover,[\s\S]*?\.dv-tabs-container > \.dv-tab\.dv-inactive-tab:focus-within\s*\{[^}]*background:\s*var\(--dockview-tab-hover-bg\);/s,
     )
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-tab-content\s*\{[^}]*height:\s*100%;[^}]*padding:\s*0 8px 0 12px;/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dockview-workbench-tab-content\s*\{[^}]*height:\s*100%;[^}]*padding:\s*0 8px 0 12px;/s)
     expect(styles).not.toMatch(/session-tab-active-curve/)
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab:hover\s*\{[^}]*background:\s*var\(--canvas-region-tab-hover\);[^}]*border-color:\s*transparent;/s)
     expect(styles).toMatch(
@@ -12013,18 +12013,18 @@ describe("App", () => {
     expect(styles).toMatch(/--seg-accent-icon:\s*var\(--semantic-accent-icon\);/s)
     expect(styles).toMatch(/--seg-accent-icon-hover:\s*var\(--semantic-accent-icon-hover\);/s)
     expect(styles).toMatch(/--seg-accent-icon-active:\s*var\(--semantic-accent-icon-active\);/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dv-tabs-and-actions-container\s*\{[^}]*--dockview-tab-icon-color:\s*var\(--semantic-accent-icon\);[^}]*--dockview-tab-icon-hover-color:\s*var\(--semantic-accent-icon-hover\);/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-header-actions\s+\.sidebar-toggle-button\.is-top-menu,\s*\.dockview-theme-fanfande\s+\.dockview-workbench-header-actions\s+\.canvas-region-top-menu-add-button\s*\{[^}]*color:\s*var\(--dockview-tab-icon-color\);/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dv-tabs-and-actions-container\s*\{[^}]*--dockview-tab-icon-color:\s*var\(--semantic-accent-icon\);[^}]*--dockview-tab-icon-hover-color:\s*var\(--semantic-accent-icon-hover\);/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dockview-workbench-header-actions\s+\.sidebar-toggle-button\.is-top-menu,\s*\.dockview-theme-anybox\s+\.dockview-workbench-header-actions\s+\.canvas-region-top-menu-add-button\s*\{[^}]*color:\s*var\(--dockview-tab-icon-color\);/s)
     expect(styles).not.toMatch(/--dockview-tab-icon-active-color/)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-tab-close\s*\{[^}]*color:\s*var\(--dockview-tab-icon-color\);/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-tab-close:hover,\s*\.dockview-theme-fanfande\s+\.dockview-workbench-tab-close:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--dockview-tab-icon-hover-color\);/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dockview-workbench-tab-close\s*\{[^}]*color:\s*var\(--dockview-tab-icon-color\);/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dockview-workbench-tab-close:hover,\s*\.dockview-theme-anybox\s+\.dockview-workbench-tab-close:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--dockview-tab-icon-hover-color\);/s)
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.sidebar-toggle-button\.is-top-menu,[\s\S]*?\.canvas-region-top-menu-add-button,[\s\S]*?\{[^}]*color:\s*var\(--semantic-accent-icon\);/s)
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.canvas-region-top-menu-add-button:focus-visible,[\s\S]*?\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon-hover\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(/\.terminal-panel-toggle-button\.is-active,[\s\S]*?\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon-active\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(/\.settings-page-close-button:hover,\s*\.settings-page-close-button:focus-visible\s*\{[^}]*color:\s*var\(--semantic-accent-icon-hover\);/s)
     expect(styles).toMatch(/\.session-canvas-top-menu\s+\.canvas-top-menu-editor-launch-button,\s*\.session-canvas-top-menu\s+\.canvas-top-menu-editor-menu-button,[\s\S]*?\{[^}]*color:\s*var\(--semantic-accent-icon\);/s)
     expect(styles).toMatch(/\.session-canvas-top-menu\s+\.canvas-top-menu-editor-menu-button\.is-active,[\s\S]*?\.session-canvas-top-menu\s+\.canvas-top-menu-editor-menu-button\.is-active:focus-visible\s*\{[^}]*color:\s*var\(--semantic-accent-icon-active\);[^}]*transform:\s*none;/s)
-    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dv-tabs-and-actions-container\s*\{[^}]*--dockview-tab-bar-bg:\s*var\(--seg-pane-tab-bar-surface\);[^}]*background:\s*var\(--dockview-tab-bar-bg\);/s)
+    expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dv-tabs-and-actions-container\s*\{[^}]*--dockview-tab-bar-bg:\s*var\(--seg-pane-tab-bar-surface\);[^}]*background:\s*var\(--dockview-tab-bar-bg\);/s)
     expect(styles).toMatch(/\.left-sidebar-top-menu\s*\{[^}]*background:\s*var\(--seg-left-sidebar-top-menu-surface\);/s)
     expect(styles).toMatch(/\.activity-rail\s*\{[^}]*padding:\s*0 0 14px;/s)
     expect(styles).toMatch(/\.activity-rail-top-menu\s*\{[^}]*min-height:\s*var\(--section-toolbar-height\);[^}]*background:\s*var\(--seg-left-sidebar-top-menu-surface\);/s)

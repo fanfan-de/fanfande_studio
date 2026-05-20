@@ -13,7 +13,7 @@ export interface ApplicationMenus {
 
 const menuLabels = {
   "zh-CN": {
-    about: "关于 Fanfande Desktop",
+    about: "关于 Anybox Desktop",
     checkForUpdates: "检查更新...",
     edit: "编辑",
     file: "文件",
@@ -22,7 +22,7 @@ const menuLabels = {
     window: "窗口",
   },
   "en-US": {
-    about: "About Fanfande Desktop",
+    about: "About Anybox Desktop",
     checkForUpdates: "Check for Updates...",
     edit: "Edit",
     file: "File",

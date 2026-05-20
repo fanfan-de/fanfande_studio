@@ -100,8 +100,8 @@ interface ComposerModelProviderGroup {
 }
 
 type ComposerDebugWindow = Window & {
-  __FANFANDE_COMPOSER_DEBUG__?: boolean
-  __FANFANDE_COMPOSER_EVENTS__?: unknown[]
+  __ANYBOX_COMPOSER_DEBUG__?: boolean
+  __ANYBOX_COMPOSER_EVENTS__?: unknown[]
 }
 
 interface ComposerTriggerMatch {
@@ -373,7 +373,7 @@ function isComposerDebugEnabled() {
 
   try {
     const debugWindow = window as ComposerDebugWindow
-    return debugWindow.__FANFANDE_COMPOSER_DEBUG__ === true || window.localStorage.getItem("fanfande:composer-debug") === "1"
+    return debugWindow.__ANYBOX_COMPOSER_DEBUG__ === true || window.localStorage.getItem("anybox:composer-debug") === "1"
   } catch {
     return false
   }
@@ -465,9 +465,9 @@ function logComposerDebug(
 
   try {
     const debugWindow = window as ComposerDebugWindow
-    const events = debugWindow.__FANFANDE_COMPOSER_EVENTS__ ?? []
+    const events = debugWindow.__ANYBOX_COMPOSER_EVENTS__ ?? []
     events.push(entry)
-    debugWindow.__FANFANDE_COMPOSER_EVENTS__ = events.slice(-300)
+    debugWindow.__ANYBOX_COMPOSER_EVENTS__ = events.slice(-300)
   } catch {
     // Ignore debug storage failures.
   }

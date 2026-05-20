@@ -8,9 +8,9 @@
     "skipLibCheck": true,
     "noEmit": true,
     "types": ["node"],
-    "typeRoots": ["../desktop/node_modules/@types", "../fanfandeagent/node_modules/@types"],
+    "typeRoots": ["../desktop/node_modules/@types", "../anyboxagent/node_modules/@types"],
     "paths": {
-      "vitest": ["../fanfandeagent/node_modules/vitest"]
+      "vitest": ["../anyboxagent/node_modules/vitest"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.test.ts"]

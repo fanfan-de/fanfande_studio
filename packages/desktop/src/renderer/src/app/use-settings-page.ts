@@ -312,16 +312,17 @@ function toMcpDraft(server?: McpServerSummary): McpServerDraftState {
   return {
     id: server?.id ?? "",
     name: server?.name ?? "",
-    transport: server?.transport === "connector" ? "remote" : server?.transport ?? "stdio",
+    transport: server?.transport ?? "stdio",
     command: server?.transport === "stdio" ? server.command : "",
     args: server?.transport === "stdio" ? stringifyLineList(server.args) : "",
     env: server?.transport === "stdio" ? stringifyKeyValueEntries(server.env) : "",
     cwd: server?.transport === "stdio" ? (server.cwd ?? "") : "",
     serverUrl: server?.transport === "remote" ? (server.serverUrl ?? "") : "",
+    connectorId: server?.transport === "connector" ? server.connectorId : "",
     authorization: server?.transport === "remote" ? (server.authorization ?? "") : "",
     headers: server?.transport === "remote" ? stringifyKeyValueEntries(server.headers) : "",
-    allowedToolsMode: server?.transport === "remote" ? resolveAllowedToolsMode(server.allowedTools) : "all",
-    allowedToolNames: server?.transport === "remote" ? stringifyAllowedToolNames(server.allowedTools) : "",
+    allowedToolsMode: server?.transport === "remote" || server?.transport === "connector" ? resolveAllowedToolsMode(server.allowedTools) : "all",
+    allowedToolNames: server?.transport === "remote" || server?.transport === "connector" ? stringifyAllowedToolNames(server.allowedTools) : "",
     toolPolicies: normalizeToolPolicyDraft(server?.toolPolicies),
     enabled: server?.enabled ?? true,
     timeoutMs: typeof server?.timeoutMs === "number" ? String(server.timeoutMs) : "",
@@ -374,7 +375,7 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
-function formatMcpDiagnosticMessage(diagnostic: McpServerDiagnostic): SettingsMessage {
+function formatMcpDiagnosticMessage(diagnostic: McpServerDiagnostic, context: "save" | "diagnose" = "save"): SettingsMessage {
   if (diagnostic.ok) {
     return {
       tone: "success",
@@ -385,11 +386,15 @@ function formatMcpDiagnosticMessage(diagnostic: McpServerDiagnostic): SettingsMe
     }
   }
 
+  const failurePrefix = context === "diagnose"
+    ? "Tool discovery failed"
+    : "MCP server saved, but tool discovery failed"
+
   return {
     tone: "error",
     text: diagnostic.error
-      ? `MCP server saved, but tool discovery failed: ${diagnostic.error}`
-      : "MCP server saved, but tool discovery failed.",
+      ? `${failurePrefix}: ${diagnostic.error}`
+      : `${failurePrefix}.`,
   }
 }
 
@@ -452,8 +457,12 @@ function getMcpServerValidationError(draft: McpServerDraftState) {
     return "Remote MCP servers require a server URL."
   }
 
+  if (draft.transport === "connector" && !draft.connectorId.trim()) {
+    return "Connector MCP servers require a connector id."
+  }
+
   if (
-    draft.transport === "remote" &&
+    draft.transport !== "stdio" &&
     (draft.allowedToolsMode === "names" || draft.allowedToolsMode === "read-only-names") &&
     parseLineList(draft.allowedToolNames).length === 0
   ) {
@@ -1231,7 +1240,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     try {
       const diagnostic = await getConnectorDiagnostic({ connectorID })
       await loadConnectorStatus(connectorID)
-      setMessage(formatMcpDiagnosticMessage(diagnostic))
+      setMessage(formatMcpDiagnosticMessage(diagnostic, "diagnose"))
       return diagnostic.ok
     } catch (error) {
       setMessage({
@@ -2580,7 +2589,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
                 enabled: mcpServerDraft.enabled,
                 timeoutMs: mcpServerDraft.timeoutMs.trim() ? Number(mcpServerDraft.timeoutMs.trim()) : undefined,
               }
-            : {
+            : mcpServerDraft.transport === "remote"
+              ? {
                 name: mcpServerDraft.name.trim() || undefined,
                 transport: "remote",
                 serverUrl: mcpServerDraft.serverUrl.trim(),
@@ -2590,7 +2600,16 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
                 toolPolicies: buildToolPolicies(mcpServerDraft),
                 enabled: mcpServerDraft.enabled,
                 timeoutMs: mcpServerDraft.timeoutMs.trim() ? Number(mcpServerDraft.timeoutMs.trim()) : undefined,
-              },
+              }
+              : {
+                  name: mcpServerDraft.name.trim() || undefined,
+                  transport: "connector",
+                  connectorId: mcpServerDraft.connectorId.trim(),
+                  allowedTools: buildAllowedTools(mcpServerDraft),
+                  toolPolicies: buildToolPolicies(mcpServerDraft),
+                  enabled: mcpServerDraft.enabled,
+                  timeoutMs: mcpServerDraft.timeoutMs.trim() ? Number(mcpServerDraft.timeoutMs.trim()) : undefined,
+                },
       })
       await loadMcpServers({ silent: true })
       await notifyMcpUpdated()
@@ -2832,7 +2851,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       const diagnostic = await loadPluginDiagnostic(pluginID)
       if (!diagnostic) return false
       await loadPlugins({ silent: true })
-      setMessage(formatMcpDiagnosticMessage(diagnostic))
+      setMessage(formatMcpDiagnosticMessage(diagnostic, "diagnose"))
       return diagnostic.ok
     } finally {
       setDiagnosingPluginID(null)
@@ -3041,7 +3060,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     try {
       const diagnostic = await window.desktop.getInstalledPluginConnectorDiagnostic({ pluginID, appID })
       await loadPluginConnectorStatuses(pluginID)
-      setMessage(formatMcpDiagnosticMessage(diagnostic))
+      setMessage(formatMcpDiagnosticMessage(diagnostic, "diagnose"))
       return diagnostic.ok
     } catch (error) {
       setMessage({

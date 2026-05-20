@@ -2,6 +2,7 @@ import { BrowserWindow, app } from "electron"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { readTrimmedDesktopEnv } from "./env-compat"
 
 const DEFAULT_MONITOR_DEV_URL = "http://127.0.0.1:4174/"
 const MONITOR_DEV_SERVER_TIMEOUT_MS = 500
@@ -58,7 +59,7 @@ function resolveMonitorIndexPath() {
 }
 
 async function resolveMonitorWindowTarget(): Promise<MonitorWindowTarget> {
-  const devServerURL = normalizeMonitorURL(process.env.FANFANDE_MONITOR_URL ?? DEFAULT_MONITOR_DEV_URL)
+  const devServerURL = normalizeMonitorURL(readTrimmedDesktopEnv("ANYBOX_MONITOR_URL") ?? DEFAULT_MONITOR_DEV_URL)
 
   if (!app.isPackaged && (await isMonitorDevServerAvailable(devServerURL))) {
     return {
@@ -104,7 +105,7 @@ export async function openMonitorWindow() {
     height: 860,
     minWidth: 960,
     minHeight: 640,
-    title: "Fanfande Monitor",
+    title: "Anybox Monitor",
     autoHideMenuBar: true,
     backgroundColor: "#f8fafc",
     show: false,

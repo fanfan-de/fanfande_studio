@@ -1980,6 +1980,10 @@ body.is-dragging-settings-page {
   background: #f7f6f4;
 }
 
+.mcp-transport-segmented-control.is-connector {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .mcp-transport-segment {
   min-height: 28px;
   border-radius: 6px;
@@ -1997,6 +2001,11 @@ body.is-dragging-settings-page {
   background: #ffffff;
   color: #202020;
   box-shadow: 0 1px 3px rgba(41, 37, 36, 0.14);
+}
+
+.mcp-transport-segment:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
 .mcp-line-editor,
@@ -4975,6 +4984,90 @@ body.is-dragging-settings-page {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.plugins-config-card {
+  padding: 14px;
+  border: 1px solid #eceae7;
+  border-radius: 8px;
+  background: #ffffff;
+  display: grid;
+  gap: 14px;
+}
+
+.plugins-config-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.plugins-config-field {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  color: #6f6a64;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.plugins-config-field-label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.plugins-config-required {
+  padding: 3px 6px;
+  border: 1px solid rgba(197, 78, 78, 0.2);
+  border-radius: 6px;
+  background: rgba(197, 78, 78, 0.08);
+  color: #8f3127;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.plugins-config-field input {
+  min-height: 36px;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #dad4cd;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2b2926;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.plugins-config-field input:focus {
+  border-color: #202020;
+  outline: none;
+}
+
+.plugins-config-field small {
+  color: #8a8580;
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.4;
+}
+
+.plugins-config-actions {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.plugins-config-actions > span {
+  min-width: min(320px, 100%);
+  flex: 1 1 auto;
+  color: #77736d;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .plugins-page {
   background: #ffffff;
   color: var(--seg-text-1);
@@ -5961,6 +6054,13 @@ body.is-dragging-settings-page {
   flex-wrap: wrap;
   align-items: end;
   gap: 10px;
+}
+
+.plugins-connector-empty {
+  margin: 14px 0 0;
+  color: #77736d;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .plugins-connector-key-field {

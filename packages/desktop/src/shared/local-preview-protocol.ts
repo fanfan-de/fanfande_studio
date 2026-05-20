@@ -1,4 +1,4 @@
-export const LOCAL_PREVIEW_PROTOCOL = "fanfande-preview"
+export const LOCAL_PREVIEW_PROTOCOL = "anybox-preview"
 
 export function toLocalPreviewProtocolUrl(token: string, relativePath: string) {
   const normalizedPath = relativePath.replace(/\\/g, "/").replace(/^\/+/, "")

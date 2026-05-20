@@ -2,6 +2,11 @@ import { spawn } from "node:child_process"
 
 const AGENT_LOG_LEVELS = new Set(["DEBUG", "INFO", "WARN", "ERROR"])
 
+function writeAgentLogLevel(level) {
+  process.env.ANYBOX_LOG_LEVEL = level
+  delete process.env.FANFANDE_LOG_LEVEL
+}
+
 function printHelp() {
   console.log(`Usage: npm run dev -- [options]
 
@@ -38,7 +43,7 @@ function configureAgentLogging(args) {
       process.exit(1)
     }
 
-    process.env.FanFande_LOG_LEVEL = normalizedLevel
+    writeAgentLogLevel(normalizedLevel)
   }
 }
 

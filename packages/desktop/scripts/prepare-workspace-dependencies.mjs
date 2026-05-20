@@ -19,6 +19,15 @@ const pythonMacPkg = `python-${pythonVersion}-macos11.pkg`
 const pythonMacPkgUrl = `https://www.python.org/ftp/python/${pythonVersion}/${pythonMacPkg}`
 const getPipUrl = "https://bootstrap.pypa.io/get-pip.py"
 
+function readEnv(key) {
+  const value = process.env[key]?.trim()
+  if (value) return value
+  if (key.startsWith("ANYBOX_")) {
+    return process.env[`FANFANDE_${key.slice("ANYBOX_".length)}`]?.trim()
+  }
+  return undefined
+}
+
 export const NODE_PACKAGES = {
   docx: "9.6.1",
   pptxgenjs: "4.0.1",
@@ -162,7 +171,7 @@ async function prepareNodeDependencies(input) {
 
   await fsp.mkdir(nodeDir, { recursive: true })
   await writeJson(path.join(nodeDir, "package.json"), {
-    name: "fanfande-workspace-node-dependencies",
+    name: "anybox-workspace-node-dependencies",
     private: true,
     type: "module",
     dependencies: NODE_PACKAGES,
@@ -413,7 +422,7 @@ async function prepareMacPythonDependencies(input) {
 
 async function writeManifest(input) {
   await writeJson(path.join(input.dependenciesDir, "manifest.json"), {
-    kind: "fanfande-workspace-dependencies",
+    kind: "anybox-workspace-dependencies",
     version: 1,
     bundleVersion,
     platform: process.platform,
@@ -445,9 +454,9 @@ export async function prepareWorkspaceDependencies(options = {}) {
 }
 
 if (path.resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
-  const explicitBunBinary = process.env.FANFANDE_BUN_BINARY?.trim()
+  const explicitBunBinary = readEnv("ANYBOX_BUN_BINARY")
   if (!explicitBunBinary || !fs.existsSync(explicitBunBinary)) {
-    throw new Error("Set FANFANDE_BUN_BINARY to run this script directly.")
+    throw new Error("Set ANYBOX_BUN_BINARY to run this script directly.")
   }
   await prepareWorkspaceDependencies({ bunBinary: explicitBunBinary })
 }

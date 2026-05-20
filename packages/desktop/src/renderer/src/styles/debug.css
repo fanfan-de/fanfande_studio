@@ -6,7 +6,7 @@
   --debug-line-pane-divider: #1fbc7b;
 }
 
-.window-shell.debug-line-colors .dockview-theme-fanfande .dv-tabs-and-actions-container::after {
+.window-shell.debug-line-colors .dockview-theme-anybox .dv-tabs-and-actions-container::after {
   background: var(--debug-line-pane-divider);
 }
 
@@ -38,7 +38,7 @@
   background: var(--debug-region-left-sidebar);
 }
 
-.window-shell.debug-ui-regions .dockview-theme-fanfande .dv-tabs-and-actions-container,
+.window-shell.debug-ui-regions .dockview-theme-anybox .dv-tabs-and-actions-container,
 .window-shell.debug-ui-regions .canvas-region-top-menu {
   background: var(--debug-region-canvas-top-menu);
 }

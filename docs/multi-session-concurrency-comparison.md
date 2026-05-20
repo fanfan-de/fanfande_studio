@@ -6,12 +6,12 @@
 
 本文对比两个项目中“多 session 并行运行”的实现方式：
 
-- `C:\Projects\fanfande_studio`：当前项目，TypeScript/Node 后端 + Electron 桌面端。
+- `C:\Projects\anybox_studio`：当前项目，TypeScript/Node 后端 + Electron 桌面端。
 - `C:\Projects\codex`：Rust/Tokio 核心 + app-server。
 
 为便于对比，本文将以下概念视作同一层级：
 
-- `fanfande_studio` 的 `sessionID`
+- `anybox_studio` 的 `sessionID`
 - `codex` 的 `ThreadId` / `conversation_id` / `CodexThread`
 
 这里的“多 session 并行运行”主要指：
@@ -24,7 +24,7 @@
 
 ## 2. 总体结论
 
-`fanfande_studio` 采用的是“全局内存表 + 请求驱动执行”的模型。
+`anybox_studio` 采用的是“全局内存表 + 请求驱动执行”的模型。
 
 它通过全局 `runningSessions` 记录正在运行的 session，通过 `activeTurns` 记录当前 active turn。同一个 `sessionID` 上一次只能有一个运行中的 prompt/resume。不同 session 之间没有共享互斥，因此可以依靠 Node.js async runtime 并行运行多个 session。
 
@@ -34,7 +34,7 @@
 
 简化对比：
 
-| 维度 | `fanfande_studio` | `codex` |
+| 维度 | `anybox_studio` | `codex` |
 |---|---|---|
 | 并行单位 | `sessionID` | `CodexThread` / `ThreadId` |
 | 同 session 运行策略 | 基本拒绝或等待 | 操作入队串行处理，active regular turn 可被 steer |
@@ -45,13 +45,13 @@
 | 多 agent | 未见一等 subagent/thread tree 模型 | `AgentControl` + `AgentRegistry` |
 | 复杂度 | 简单直接 | 复杂但扩展性强 |
 
-## 3. `fanfande_studio` 的实现方法
+## 3. `anybox_studio` 的实现方法
 
 ### 3.1 核心运行状态：`runningSessions`
 
 核心文件：
 
-- `C:\Projects\fanfande_studio\packages\fanfandeagent\src\session\runtime\running-state.ts`
+- `C:\Projects\anybox_studio\packages\anyboxagent\src\session\runtime\running-state.ts`
 
 该文件维护一个进程内全局对象：
 
@@ -72,7 +72,7 @@ const runningSessions: Record<string, RunningSession> = Object.create(null)
 - `waitForStop(sessionID)`：轮询等待 session 不再运行。
 - `cancel(sessionID)`：调用 `AbortController.abort()`，然后删除 `runningSessions[sessionID]`。
 
-这意味着 `fanfande_studio` 的同 session 互斥主要依赖这个全局 map。
+这意味着 `anybox_studio` 的同 session 互斥主要依赖这个全局 map。
 
 优点是实现直接，几乎没有调度抽象成本；缺点是它只是“运行中标记”，不是完整的 session actor，也不是操作队列。
 
@@ -80,7 +80,7 @@ const runningSessions: Record<string, RunningSession> = Object.create(null)
 
 核心文件：
 
-- `C:\Projects\fanfande_studio\packages\fanfandeagent\src\session\runtime\orchestrator.ts`
+- `C:\Projects\anybox_studio\packages\anyboxagent\src\session\runtime\orchestrator.ts`
 
 该文件维护：
 
@@ -111,7 +111,7 @@ const activeTurns = new Map<string, TurnRuntime>()
 
 核心文件：
 
-- `C:\Projects\fanfande_studio\packages\fanfandeagent\src\session\core\prompt.ts`
+- `C:\Projects\anybox_studio\packages\anyboxagent\src\session\core\prompt.ts`
 
 典型 prompt 流程：
 
@@ -155,8 +155,8 @@ await waitForStop(input.sessionID)
 
 核心文件：
 
-- `C:\Projects\fanfande_studio\packages\fanfandeagent\src\session\core\prompt.ts`
-- `C:\Projects\fanfande_studio\packages\fanfandeagent\src\session\runtime\running-state.ts`
+- `C:\Projects\anybox_studio\packages\anyboxagent\src\session\core\prompt.ts`
+- `C:\Projects\anybox_studio\packages\anyboxagent\src\session\runtime\running-state.ts`
 
 取消路径会做几件事：
 
@@ -175,9 +175,9 @@ await waitForStop(input.sessionID)
 
 核心文件：
 
-- `C:\Projects\fanfande_studio\packages\fanfandeagent\src\session\runtime\event-store.ts`
-- `C:\Projects\fanfande_studio\packages\fanfandeagent\src\session\runtime\live-stream-hub.ts`
-- `C:\Projects\fanfande_studio\packages\fanfandeagent\src\server\usecases\session-stream.ts`
+- `C:\Projects\anybox_studio\packages\anyboxagent\src\session\runtime\event-store.ts`
+- `C:\Projects\anybox_studio\packages\anyboxagent\src\session\runtime\live-stream-hub.ts`
+- `C:\Projects\anybox_studio\packages\anyboxagent\src\server\usecases\session-stream.ts`
 
 事件链路大致如下：
 
@@ -212,7 +212,7 @@ flowchart TD
 
 核心文件：
 
-- `C:\Projects\fanfande_studio\packages\desktop\src\main\ipc.ts`
+- `C:\Projects\anybox_studio\packages\desktop\src\main\ipc.ts`
 
 主进程维护两类状态：
 
@@ -387,9 +387,9 @@ flowchart TD
   D -->|Review/Compact| G["Error: not steerable"]
 ```
 
-这是和 `fanfande_studio` 最大的同 session 行为差异之一。
+这是和 `anybox_studio` 最大的同 session 行为差异之一。
 
-`fanfande_studio` 更偏向“同 session 正在运行就拒绝或等待”；`codex` 则允许把新输入注入 active regular turn。
+`anybox_studio` 更偏向“同 session 正在运行就拒绝或等待”；`codex` 则允许把新输入注入 active regular turn。
 
 ### 4.6 Task 生命周期：`SessionTask`
 
@@ -429,7 +429,7 @@ self.abort_all_tasks(TurnAbortReason::Replaced).await;
 - 将 `RunningTask` 放入 `ActiveTurn`
 - 在 task 完成时统一调用 `on_task_finished`
 
-这比 `fanfande_studio` 的 `AbortController + Promise finally` 更重，但生命周期边界更明确。
+这比 `anybox_studio` 的 `AbortController + Promise finally` 更重，但生命周期边界更明确。
 
 ### 4.7 Interrupt / Cancel
 
@@ -461,7 +461,7 @@ sess.interrupt_task().await;
 - flush rollout
 - 发出 `TurnAborted`
 
-相比 `fanfande_studio`，`codex` 的 interrupt 更像完整状态转移，而不是只 abort controller。
+相比 `anybox_studio`，`codex` 的 interrupt 更像完整状态转移，而不是只 abort controller。
 
 ### 4.8 app-server 事件监听
 
@@ -517,7 +517,7 @@ app-server 侧维护：
 
 ### 5.1 调度模型不同
 
-`fanfande_studio`：
+`anybox_studio`：
 
 - 没有 session 专属 actor loop。
 - 每次 prompt/resume 请求进入后，直接尝试注册 running state 并运行。
@@ -532,12 +532,12 @@ app-server 侧维护：
 
 影响：
 
-- `fanfande_studio` 更简单，延迟更低，代码路径短。
+- `anybox_studio` 更简单，延迟更低，代码路径短。
 - `codex` 更适合复杂交互和长期运行的 agent runtime。
 
 ### 5.2 同 session 策略不同
 
-`fanfande_studio`：
+`anybox_studio`：
 
 - prompt：同 session 运行中通常直接拒绝。
 - resume：等待运行停止。
@@ -552,12 +552,12 @@ app-server 侧维护：
 
 影响：
 
-- `fanfande_studio` 的行为更可预测：一个 session 一次只跑一个 turn。
+- `anybox_studio` 的行为更可预测：一个 session 一次只跑一个 turn。
 - `codex` 的交互更强：用户可以在模型运行时追加输入或引导当前 turn。
 
 ### 5.3 取消语义不同
 
-`fanfande_studio`：
+`anybox_studio`：
 
 - cancel 是外部直接 abort。
 - running state 会立即删除。
@@ -571,12 +571,12 @@ app-server 侧维护：
 
 影响：
 
-- `fanfande_studio` 取消实现轻，但可能出现 running state 和 active turn 短暂不一致。
+- `anybox_studio` 取消实现轻，但可能出现 running state 和 active turn 短暂不一致。
 - `codex` 取消更重，但状态转移更完整，客户端更容易依赖事件语义。
 
 ### 5.4 事件系统不同
 
-`fanfande_studio`：
+`anybox_studio`：
 
 - 以 `EventStore` 和 `LiveStreamHub` 为中心。
 - SQLite event store 是重要事实来源。
@@ -590,12 +590,12 @@ app-server 侧维护：
 
 影响：
 
-- `fanfande_studio` 更容易做 session event replay、UI 订阅和状态投影。
+- `anybox_studio` 更容易做 session event replay、UI 订阅和状态投影。
 - `codex` 更像 runtime event stream，app-server 再做协议转换和 UI 状态同步。
 
 ### 5.5 背压与限流不同
 
-`fanfande_studio`：
+`anybox_studio`：
 
 - 没看到全局 session 并发上限。
 - 没看到每 session 输入 op queue。
@@ -609,12 +609,12 @@ app-server 侧维护：
 
 影响：
 
-- `fanfande_studio` 在大量 session 同时运行时，更依赖外部资源和运行环境自然承压。
+- `anybox_studio` 在大量 session 同时运行时，更依赖外部资源和运行环境自然承压。
 - `codex` 至少在请求入口和 subagent 维度有明确限制点。
 
 ### 5.6 多 agent 能力不同
 
-`fanfande_studio`：
+`anybox_studio`：
 
 - 当前代码主要围绕用户 UI session。
 - 没看到完整 subagent tree、agent registry、agent send/wait/close 机制。
@@ -627,12 +627,12 @@ app-server 侧维护：
 
 影响：
 
-- `fanfande_studio` 的模型更像“多聊天会话并发”。
+- `anybox_studio` 的模型更像“多聊天会话并发”。
 - `codex` 的模型更像“多 actor agent runtime”。
 
 ## 6. 各自优劣
 
-### 6.1 `fanfande_studio` 的优点
+### 6.1 `anybox_studio` 的优点
 
 1. 实现简单
 
@@ -650,7 +650,7 @@ app-server 侧维护：
 
    相比 actor runtime，没有太多跨层抽象。定位 session 是否运行，直接看 `runningSessions` 和 `activeTurns`。
 
-### 6.2 `fanfande_studio` 的不足
+### 6.2 `anybox_studio` 的不足
 
 1. 缺少同 session op queue
 
@@ -712,9 +712,9 @@ app-server 侧维护：
 
    每个 thread 都有 queue、loop、watch/status、event receiver 等结构。大量 thread idle 时也有一定管理成本。
 
-## 7. 对 `fanfande_studio` 的设计启发
+## 7. 对 `anybox_studio` 的设计启发
 
-如果只是维持当前桌面端“多个会话可同时跑”的能力，`fanfande_studio` 当前模型可以继续使用。它简单、直接，并且和现有 SSE/UI 架构匹配。
+如果只是维持当前桌面端“多个会话可同时跑”的能力，`anybox_studio` 当前模型可以继续使用。它简单、直接，并且和现有 SSE/UI 架构匹配。
 
 如果未来要支持更强的 agent 能力，可以考虑吸收 `codex` 的几个设计点。
 
@@ -786,7 +786,7 @@ type SessionRunner = {
 
 ## 8. 适用场景判断
 
-### 8.1 更适合 `fanfande_studio` 当前模型的场景
+### 8.1 更适合 `anybox_studio` 当前模型的场景
 
 - 桌面端 UI 驱动的多会话聊天。
 - 用户通常一次只操作一个 session。
@@ -804,8 +804,8 @@ type SessionRunner = {
 
 两者不是简单的“谁更好”，而是面向不同复杂度。
 
-`fanfande_studio` 的实现是轻量 session 并发模型：用全局 running map 做互斥，用 active turn map 管 turn 生命周期，用 SSE hub 做实时事件分发。它适合当前桌面端产品形态，代码路径短，改动成本低。
+`anybox_studio` 的实现是轻量 session 并发模型：用全局 running map 做互斥，用 active turn map 管 turn 生命周期，用 SSE hub 做实时事件分发。它适合当前桌面端产品形态，代码路径短，改动成本低。
 
 `codex` 的实现是 actor 化 agent runtime：每个 thread 一个 queue 和 loop，同 thread 串行、跨 thread 并行，并在此基础上实现 task 生命周期、interrupt、subagent、app-server listener 和并发限制。它更复杂，但更适合多 agent 和长期演进。
 
-如果 `fanfande_studio` 后续只需要稳定支持多个独立 session 并行，建议保留当前大体架构，只修正 cancel 状态一致性和增加并发限制。如果要演进成更强的 agent runtime，则应优先引入 per-session runner/queue，而不是直接复制 `codex` 的全部抽象。
+如果 `anybox_studio` 后续只需要稳定支持多个独立 session 并行，建议保留当前大体架构，只修正 cancel 状态一致性和增加并发限制。如果要演进成更强的 agent runtime，则应优先引入 per-session runner/queue，而不是直接复制 `codex` 的全部抽象。

@@ -8,10 +8,19 @@ import { prepareWorkspaceDependencies } from "./prepare-workspace-dependencies.m
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const desktopDir = path.resolve(scriptDir, "..")
 const repoRoot = path.resolve(desktopDir, "..", "..")
-const agentDir = path.join(repoRoot, "packages", "fanfandeagent")
+const agentDir = path.join(repoRoot, "packages", "anyboxagent")
 const runtimeDir = path.join(desktopDir, "build", "agent-runtime")
 
 const bunExecutableName = process.platform === "win32" ? "bun.exe" : "bun"
+
+function readEnv(key) {
+  const value = process.env[key]?.trim()
+  if (value) return value
+  if (key.startsWith("ANYBOX_")) {
+    return process.env[`FANFANDE_${key.slice("ANYBOX_".length)}`]?.trim()
+  }
+  return undefined
+}
 
 async function pathExists(target) {
   try {
@@ -35,7 +44,7 @@ function run(command, args, options = {}) {
 }
 
 function resolveBunBinary() {
-  const explicit = process.env.FANFANDE_BUN_BINARY?.trim()
+  const explicit = readEnv("ANYBOX_BUN_BINARY")
   if (explicit && fs.existsSync(explicit)) return explicit
 
   const probe = spawnSync("bun", ["--print", "process.execPath"], {
@@ -62,14 +71,14 @@ function resolveBunBinary() {
   }
 
   throw new Error(
-    "Unable to locate Bun. Set FANFANDE_BUN_BINARY or ensure `bun --print process.execPath` resolves correctly.",
+    "Unable to locate Bun. Set ANYBOX_BUN_BINARY or ensure `bun --print process.execPath` resolves correctly.",
   )
 }
 
 async function copyNodePtyRuntime(runtimeNodeModulesDir) {
   const packageRoot = path.join(agentDir, "node_modules", "node-pty")
   if (!(await pathExists(packageRoot))) {
-    throw new Error("Missing packages/fanfandeagent/node_modules/node-pty. Run `bun install` in fanfandeagent first.")
+    throw new Error("Missing packages/anyboxagent/node_modules/node-pty. Run `bun install` in anyboxagent first.")
   }
 
   const targetRoot = path.join(runtimeNodeModulesDir, "node-pty")

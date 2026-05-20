@@ -1060,11 +1060,15 @@ export function SettingsPage({
         ? !mcpServerDraft.command.trim()
           ? "Local MCP servers require a command."
           : null
-        : !mcpServerDraft.serverUrl.trim()
-          ? "Remote MCP servers require a server URL."
-          : (mcpServerDraft.allowedToolsMode === "names" || mcpServerDraft.allowedToolsMode === "read-only-names") &&
-              !mcpServerDraft.allowedToolNames.trim()
-            ? "Named tool filters require at least one tool name."
+        : mcpServerDraft.transport === "remote"
+          ? !mcpServerDraft.serverUrl.trim()
+            ? "Remote MCP servers require a server URL."
+            : (mcpServerDraft.allowedToolsMode === "names" || mcpServerDraft.allowedToolsMode === "read-only-names") &&
+                !mcpServerDraft.allowedToolNames.trim()
+              ? "Named tool filters require at least one tool name."
+              : null
+          : !mcpServerDraft.connectorId.trim()
+            ? "Connector MCP servers require a connector id."
             : null
     const mcpServerCanSave = !mcpServerValidationError
     const showLoadedState = !isLoading && !loadError
@@ -1635,12 +1639,12 @@ export function SettingsPage({
 
               {activeSection === "general" ? (
                 <div className="settings-general-layout">
-                  <section className="settings-panel settings-about-panel" aria-label="About Fanfande Studio">
+                  <section className="settings-panel settings-about-panel" aria-label="About Anybox">
                     <div className="settings-about-row settings-about-version-row">
                       <div className="settings-about-copy">
                         <span className="label">About</span>
                         <h3>{appVersionLabel}</h3>
-                        <p>Fanfande Studio desktop application.</p>
+                        <p>Anybox desktop application.</p>
                       </div>
                       <button
                         className="primary-button settings-about-check-button"
@@ -2821,6 +2825,9 @@ export function SettingsPage({
                                 >
                                   <option value="stdio">Local stdio</option>
                                   <option value="remote">Remote HTTP</option>
+                                  {mcpServerDraft.transport === "connector" ? (
+                                    <option value="connector">Connector</option>
+                                  ) : null}
                                 </select>
                               </label>
 
@@ -2848,7 +2855,7 @@ export function SettingsPage({
                                     onChange={(event) => onMcpServerDraftChange("cwd", event.target.value)}
                                   />
                                 </label>
-                              ) : (
+                              ) : mcpServerDraft.transport === "remote" ? (
                                 <label className="settings-field">
                                   <span className="settings-field-label">Server URL</span>
                                   <input
@@ -2857,6 +2864,16 @@ export function SettingsPage({
                                     value={mcpServerDraft.serverUrl}
                                     placeholder="https://mcp.example.com"
                                     onChange={(event) => onMcpServerDraftChange("serverUrl", event.target.value)}
+                                  />
+                                </label>
+                              ) : (
+                                <label className="settings-field">
+                                  <span className="settings-field-label">Connector ID</span>
+                                  <input
+                                    aria-label="MCP connector id"
+                                    type="text"
+                                    value={mcpServerDraft.connectorId}
+                                    readOnly
                                   />
                                 </label>
                               )}
@@ -2907,7 +2924,7 @@ export function SettingsPage({
                                   />
                                 </label>
                               </div>
-                            ) : (
+                            ) : mcpServerDraft.transport === "remote" ? (
                               <>
                                 <div className="settings-field-grid">
                                   <label className="settings-field">
@@ -2962,6 +2979,12 @@ export function SettingsPage({
                                   ) : null}
                                 </div>
                               </>
+                            ) : (
+                              <div className="settings-actions-row">
+                                <span className="settings-helper-text">
+                                  This MCP server is generated by a connector. Manage sign-in and diagnostics from the connector or plugin page.
+                                </span>
+                              </div>
                             )}
 
                             <McpToolsPolicyPanel
@@ -2970,12 +2993,14 @@ export function SettingsPage({
                               onPolicyChange={onMcpToolPolicyChange}
                             />
 
-                            {mcpServerValidationError || mcpServerDraft.transport === "remote" ? (
+                            {mcpServerValidationError || mcpServerDraft.transport === "remote" || mcpServerDraft.transport === "connector" ? (
                               <div className="settings-actions-row">
                                 <span className="settings-helper-text">
                                   {mcpServerValidationError
                                     ? mcpServerValidationError
-                                    : "Remote MCP servers are connected locally over HTTP. Approval still flows through the existing permission system."}
+                                    : mcpServerDraft.transport === "connector"
+                                      ? "Connector MCP servers resolve their runtime from the connector record."
+                                      : "Remote MCP servers are connected locally over HTTP. Approval still flows through the existing permission system."}
                                 </span>
                               </div>
                             ) : null}

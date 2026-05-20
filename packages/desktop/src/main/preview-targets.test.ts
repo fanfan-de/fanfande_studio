@@ -12,7 +12,7 @@ import {
 const tempRoots: string[] = []
 
 async function createTempWorkspace() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fanfande-preview-test-"))
+  const root = await mkdtemp(path.join(os.tmpdir(), "anybox-preview-test-"))
   tempRoots.push(root)
   await mkdir(path.join(root, "artifacts"), { recursive: true })
   return root
@@ -84,7 +84,7 @@ describe("preview target resolver", () => {
       workspaceRoot,
     })
     expect(resolved.renderer).toBe("html-preview")
-    expect(resolved.safePreviewUrl).toMatch(/^fanfande-preview:\/\/preview\//)
+    expect(resolved.safePreviewUrl).toMatch(/^anybox-preview:\/\/preview\//)
 
     await expect(resolveLocalPreviewProtocolRequest(resolved.safePreviewUrl!)).resolves.toMatchObject({
       ok: true,
@@ -93,11 +93,11 @@ describe("preview target resolver", () => {
 
     const parsedUrl = new URL(resolved.safePreviewUrl!)
     const token = parsedUrl.pathname.split("/").filter(Boolean)[0]
-    await expect(resolveLocalPreviewProtocolRequest(`fanfande-preview://preview/${token}/%2e%2e%2fsecret.txt`)).resolves.toMatchObject({
+    await expect(resolveLocalPreviewProtocolRequest(`anybox-preview://preview/${token}/%2e%2e%2fsecret.txt`)).resolves.toMatchObject({
       ok: false,
       status: 403,
     })
-    await expect(resolveLocalPreviewProtocolRequest(`fanfande-preview://preview/${token}/data.bin`)).resolves.toMatchObject({
+    await expect(resolveLocalPreviewProtocolRequest(`anybox-preview://preview/${token}/data.bin`)).resolves.toMatchObject({
       ok: false,
       status: 415,
     })

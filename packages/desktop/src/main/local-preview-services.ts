@@ -13,7 +13,7 @@ function probeLocalPreviewService(port: number, timeoutMs: number): Promise<Desk
     const request = http.request(
       {
         headers: {
-          "user-agent": "fanfande-preview-detector",
+          "user-agent": "anybox-preview-detector",
         },
         hostname: "127.0.0.1",
         method: "GET",

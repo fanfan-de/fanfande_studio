@@ -10,7 +10,7 @@ import type {
   ToolPermissionMode as AgentToolPermissionMode,
   ToolPermissionModePayload as AgentToolPermissionModePayload,
 } from "../shared/permission"
-import type { ReasoningEffort } from "@fanfande/shared"
+import type { ReasoningEffort } from "@anybox/shared"
 
 export type MenuKey = "file" | "edit" | "view" | "window" | "help"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
@@ -1185,10 +1185,17 @@ export type AgentPluginOAuthTokenPlacement =
       value?: string
     }
 
+export interface AgentPluginOAuthClientRegistration {
+  registrationURL: string
+  initialAccessToken?: string
+  metadata?: Record<string, unknown>
+}
+
 export interface AgentPluginOAuthAppCredential {
   kind: "oauth"
   label: string
-  clientID: string
+  clientID?: string
+  clientSecret?: string
   authorizationURL: string
   tokenURL: string
   scopes: string[]
@@ -1196,6 +1203,8 @@ export interface AgentPluginOAuthAppCredential {
   tokenPlacement?: AgentPluginOAuthTokenPlacement
   authorizationParams?: Record<string, string>
   tokenParams?: Record<string, string>
+  tokenEndpointAuthMethod?: "none" | "client_secret_post" | "client_secret_basic"
+  registration?: AgentPluginOAuthClientRegistration
   description?: string
 }
 
@@ -1262,6 +1271,7 @@ export interface AgentPluginAppConnector {
   risk?: AgentPluginRisk
   permissions?: string[]
   tools?: AgentPluginToolPreview[]
+  configFields?: AgentPluginConfigField[]
   credential: AgentPluginAppCredential
   runtime: AgentPluginRuntimeTemplate
   installReview?: string[]

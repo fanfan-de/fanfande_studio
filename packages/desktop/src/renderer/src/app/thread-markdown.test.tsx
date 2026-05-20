@@ -106,7 +106,7 @@ describe("ThreadMarkdown", () => {
     const onLocalFileLinkOpen = vi.fn()
     render(
       <ThreadMarkdown
-        text="[ThreadView.tsx](C:/Projects/fanfande_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx)"
+        text="[ThreadView.tsx](C:/Projects/anybox_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx)"
         onLocalFileLinkOpen={onLocalFileLinkOpen}
       />,
     )
@@ -115,7 +115,7 @@ describe("ThreadMarkdown", () => {
 
     expect(onLocalFileLinkOpen).toHaveBeenCalledWith({
       lineRange: null,
-      path: "C:/Projects/fanfande_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
+      path: "C:/Projects/anybox_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
     })
     expect(window.desktop?.openExternalUrl).not.toHaveBeenCalled()
   })
@@ -189,7 +189,7 @@ describe("ThreadMarkdown", () => {
     const image = screen.getByRole("img", { name: "Local" })
     expect(image).toHaveAttribute(
       "src",
-      `fanfande-local-image://image?source=${encodeURIComponent(String.raw`C:\Users\19128\AppData\Local\Temp\a.png`)}`,
+      `anybox-local-image://image?source=${encodeURIComponent(String.raw`C:\Users\19128\AppData\Local\Temp\a.png`)}`,
     )
   })
 
@@ -199,7 +199,7 @@ describe("ThreadMarkdown", () => {
     const image = screen.getByRole("img", { name: "Local" })
     expect(image).toHaveAttribute(
       "src",
-      `fanfande-local-image://image?source=${encodeURIComponent("file:///C:/Users/19128/AppData/Local/Temp/a.png")}`,
+      `anybox-local-image://image?source=${encodeURIComponent("file:///C:/Users/19128/AppData/Local/Temp/a.png")}`,
     )
   })
 

@@ -1,4 +1,5 @@
-import { ApiEnvelopeSchema, SessionEventSchema, type ApiEnvelope, type SessionEvent } from "@fanfande/shared"
+import { ApiEnvelopeSchema, SessionEventSchema, type ApiEnvelope, type SessionEvent } from "@anybox/shared"
+import { readTrimmedDesktopEnv } from "./env-compat"
 import type { AgentConfig } from "./types"
 
 const DEFAULT_AGENT_BASE_URL = "http://127.0.0.1:4096"
@@ -19,8 +20,8 @@ export class AgentAPIError extends Error {
 
 export function getAgentConfig(): AgentConfig {
   return {
-    baseURL: process.env.FANFANDE_AGENT_BASE_URL?.trim() || DEFAULT_AGENT_BASE_URL,
-    defaultDirectory: process.env.FANFANDE_AGENT_WORKDIR?.trim() || process.cwd(),
+    baseURL: readTrimmedDesktopEnv("ANYBOX_AGENT_BASE_URL") || DEFAULT_AGENT_BASE_URL,
+    defaultDirectory: readTrimmedDesktopEnv("ANYBOX_AGENT_WORKDIR") || process.cwd(),
   }
 }
 

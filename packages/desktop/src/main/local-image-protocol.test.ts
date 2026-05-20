@@ -85,7 +85,7 @@ describe("local image protocol", () => {
 
   it("rejects relative sources", async () => {
     await expect(
-      resolveLocalImageProtocolRequest("fanfande-local-image://image?source=relative%2Fimage.png"),
+      resolveLocalImageProtocolRequest("anybox-local-image://image?source=relative%2Fimage.png"),
     ).resolves.toMatchObject({
       ok: false,
       status: 400,

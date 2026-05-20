@@ -1054,7 +1054,7 @@ describe("ThreadView assistant response markdown", () => {
             timestamp: 1,
             label: "Assistant",
             text: [
-              "<!-- fanfande-response-format: html -->",
+              "<!-- anybox-response-format: html -->",
               "<section>",
               "<h2>HTML response</h2>",
               "<p><strong>Ready</strong> to ship.</p>",
@@ -1075,7 +1075,7 @@ describe("ThreadView assistant response markdown", () => {
     expect(container.querySelector(".assistant-section.is-response .thread-markdown")).toBeNull()
     expect(srcDoc).toContain("HTML response")
     expect(srcDoc).toContain("<strong>Ready</strong>")
-    expect(srcDoc).not.toContain("fanfande-response-format")
+    expect(srcDoc).not.toContain("anybox-response-format")
     expect(srcDoc).not.toContain("bad()")
   })
 
@@ -1089,7 +1089,7 @@ describe("ThreadView assistant response markdown", () => {
             kind: "text",
             timestamp: 1,
             label: "Assistant",
-            text: "<!-- fanfande-response-format: markdown -->\n## Markdown response\n\n**Ready**",
+            text: "<!-- anybox-response-format: markdown -->\n## Markdown response\n\n**Ready**",
             status: "completed",
           },
         ],
@@ -1099,7 +1099,7 @@ describe("ThreadView assistant response markdown", () => {
 
     expect(getByRole("heading", { name: "Markdown response" })).toBeInTheDocument()
     expect(container.querySelector(".assistant-section.is-response .thread-html")).toBeNull()
-    expect(container.textContent).not.toContain("fanfande-response-format")
+    expect(container.textContent).not.toContain("anybox-response-format")
   })
 
   it("opens local file links from completed assistant response markdown", () => {
@@ -1113,7 +1113,7 @@ describe("ThreadView assistant response markdown", () => {
             kind: "text",
             timestamp: 1,
             label: "Assistant",
-            text: "[ThreadView.tsx](C:/Projects/fanfande_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx:42)",
+            text: "[ThreadView.tsx](C:/Projects/anybox_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx:42)",
             status: "completed",
           },
         ],
@@ -1130,7 +1130,7 @@ describe("ThreadView assistant response markdown", () => {
         startLineNumber: 42,
         endLineNumber: 42,
       },
-      path: "C:/Projects/fanfande_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
+      path: "C:/Projects/anybox_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
     })
   })
 
@@ -1497,7 +1497,7 @@ describe("ThreadView assistant response markdown", () => {
             kind: "text",
             timestamp: 1,
             label: "Assistant",
-            text: "<!-- fanfande-response-format: html -->\n<p><strong>Streaming</strong></p>",
+            text: "<!-- anybox-response-format: html -->\n<p><strong>Streaming</strong></p>",
             status: "running",
             isStreaming: true,
           },
@@ -1513,7 +1513,7 @@ describe("ThreadView assistant response markdown", () => {
     expect(streamingResponse).not.toHaveClass("thread-markdown")
     expect(container.querySelector(".assistant-section.is-response .thread-html")).toBeNull()
     expect(streamingResponse?.textContent).toContain("<p><strong>Streaming</strong></p>")
-    expect(streamingResponse?.textContent).not.toContain("fanfande-response-format")
+    expect(streamingResponse?.textContent).not.toContain("anybox-response-format")
   })
 })
 
@@ -2152,7 +2152,7 @@ describe("ThreadView message actions", () => {
             kind: "text",
             timestamp: 1,
             label: "Assistant",
-            text: "<!-- fanfande-response-format: html -->\n<p>Copied response.</p>",
+            text: "<!-- anybox-response-format: html -->\n<p>Copied response.</p>",
             status: "completed",
           },
         ],

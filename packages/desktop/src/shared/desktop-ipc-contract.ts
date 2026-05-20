@@ -66,7 +66,7 @@ import type {
   PtyTransportIPCEvent,
   WindowAction,
 } from "../main/types"
-import type { DesktopOpenPathInput, DesktopOpenPathResult } from "@fanfande/shared"
+import type { DesktopOpenPathInput, DesktopOpenPathResult } from "@anybox/shared"
 import type { AppearanceConfigDocument, AppearanceConfigSnapshot } from "./appearance"
 import type { LocaleConfigDocument, LocaleConfigSnapshot } from "./locale"
 import type {

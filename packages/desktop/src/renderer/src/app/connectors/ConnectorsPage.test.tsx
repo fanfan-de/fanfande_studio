@@ -12,7 +12,7 @@ function createConnector(overrides: Partial<ConnectorDefinition> = {}): Connecto
     id: overrides.id ?? "gmail",
     name: overrides.name ?? "Gmail",
     description: overrides.description ?? "Read and draft Gmail messages through a platform connector.",
-    publisher: overrides.publisher ?? "Fanfande",
+    publisher: overrides.publisher ?? "Anybox",
     icon: overrides.icon,
     risk: overrides.risk ?? "medium",
     permissions: overrides.permissions ?? ["Read Gmail metadata"],

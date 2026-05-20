@@ -17,22 +17,22 @@ function getDefaultConfigCandidates() {
 
   const appData = process.env.APPDATA
   if (appData) {
-    candidates.push(path.join(appData, "fanfande-desktop-agent", configFileName))
-    candidates.push(path.join(appData, "Fanfande Studio", configFileName))
+    candidates.push(path.join(appData, "anybox-desktop-agent", configFileName))
+    candidates.push(path.join(appData, "Anybox", configFileName))
   }
 
   const localAppData = process.env.LOCALAPPDATA
   if (localAppData) {
-    candidates.push(path.join(localAppData, "fanfande-desktop-agent", configFileName))
-    candidates.push(path.join(localAppData, "Fanfande Studio", configFileName))
+    candidates.push(path.join(localAppData, "anybox-desktop-agent", configFileName))
+    candidates.push(path.join(localAppData, "Anybox", configFileName))
   }
 
   const homeDirectory = os.homedir()
   if (homeDirectory) {
-    candidates.push(path.join(homeDirectory, "Library", "Application Support", "fanfande-desktop-agent", configFileName))
-    candidates.push(path.join(homeDirectory, "Library", "Application Support", "Fanfande Studio", configFileName))
-    candidates.push(path.join(homeDirectory, ".config", "fanfande-desktop-agent", configFileName))
-    candidates.push(path.join(homeDirectory, ".config", "Fanfande Studio", configFileName))
+    candidates.push(path.join(homeDirectory, "Library", "Application Support", "anybox-desktop-agent", configFileName))
+    candidates.push(path.join(homeDirectory, "Library", "Application Support", "Anybox", configFileName))
+    candidates.push(path.join(homeDirectory, ".config", "anybox-desktop-agent", configFileName))
+    candidates.push(path.join(homeDirectory, ".config", "Anybox", configFileName))
   }
 
   return [...new Set(candidates)]

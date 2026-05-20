@@ -309,7 +309,7 @@ interface CreateSessionCanvasProps {
 }
 
 function CreateSessionLogo() {
-  return <span className="create-session-logo" role="img" aria-label="Fanfande Studio logo" />
+  return <span className="create-session-logo" role="img" aria-label="Anybox logo" />
 }
 
 export function CreateSessionCanvas({

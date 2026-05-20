@@ -116,7 +116,7 @@ describe("UnifiedPreviewPanel", () => {
           normalizedInput: "agent://artifact/html-1",
           path: `${workspaceRoot}\\artifacts\\html-1\\index.html`,
           renderer: "html-preview",
-          safePreviewUrl: "fanfande-preview://preview/token/index.html",
+          safePreviewUrl: "anybox-preview://preview/token/index.html",
           textReadable: false,
           title: "index.html",
           workspaceRoot,
@@ -127,7 +127,7 @@ describe("UnifiedPreviewPanel", () => {
 
     const frame = await screen.findByTitle("Preview of index.html")
     expect(frame).toHaveAttribute("sandbox", "allow-forms allow-popups allow-same-origin allow-scripts")
-    expect(frame).toHaveAttribute("src", "fanfande-preview://preview/token/index.html")
+    expect(frame).toHaveAttribute("src", "anybox-preview://preview/token/index.html")
     expect(screen.getByRole("button", { name: "Comment" })).toBeInTheDocument()
   })
 

@@ -1,6 +1,6 @@
-# Fanfande Desktop
+# Anybox Desktop
 
-`packages/desktop` 是 Fanfande Agent 的 Electron 桌面壳。当前实现已经不是纯本地 mock UI，而是一个包含 Electron 主进程、`preload` 桥接层、React 渲染层和 `fanfandeagent` 后端联动的桌面客户端。
+`packages/desktop` 是 Anybox Agent 的 Electron 桌面壳。当前实现已经不是纯本地 mock UI，而是一个包含 Electron 主进程、`preload` 桥接层、React 渲染层和 `anyboxagent` 后端联动的桌面客户端。
 
 ## 当前状态
 
@@ -35,16 +35,16 @@ npm run dev
 
 开发模式会优先连接外部 agent 服务；未显式配置时，Electron main 会尝试托管本地 Bun agent runtime：
 
-- `FANFANDE_AGENT_BASE_URL`
+- `ANYBOX_AGENT_BASE_URL`
   - 设置后直接连接该地址，不启动托管 agent。
-- `FANFANDE_DISABLE_MANAGED_AGENT`
+- `ANYBOX_DISABLE_MANAGED_AGENT`
   - 设置为 `1` 时禁用 Electron 托管 agent。
-- `FANFANDE_AGENT_WORKDIR`
+- `ANYBOX_AGENT_WORKDIR`
   - 默认值：当前进程工作目录
-- `FANFANDE_AGENT_DATA_DIR`
+- `ANYBOX_AGENT_DATA_DIR`
   - Electron 托管 agent 时由 main 注入；agent 的 config/cache/log/state/database 都从该目录派生。
 
-如果 `fanfandeagent` 没启动，桌面端仍可用，但会回退到本地 seed 数据和本地 assistant fallback。
+如果 `anyboxagent` 没启动，桌面端仍可用，但会回退到本地 seed 数据和本地 assistant fallback。
 
 ## 测试指令
 
@@ -61,7 +61,7 @@ npm run test
 npm run dev
 ```
 
-如果这次改动同时涉及 `desktop <-> fanfandeagent` 协议，请额外在 `packages/fanfandeagent` 执行：
+如果这次改动同时涉及 `desktop <-> anyboxagent` 协议，请额外在 `packages/anyboxagent` 执行：
 
 ```powershell
 bun test Test/server.api.test.ts

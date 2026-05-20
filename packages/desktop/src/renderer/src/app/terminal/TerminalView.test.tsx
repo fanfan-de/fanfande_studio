@@ -7,7 +7,7 @@ const baseSession: TerminalSessionRecord = {
   ptyID: "pty-1",
   sessionID: "session-1",
   title: "Terminal 1",
-  cwd: "C:\\Projects\\fanfande_studio",
+  cwd: "C:\\Projects\\anybox_studio",
   shell: "powershell.exe",
   rows: 24,
   cols: 80,

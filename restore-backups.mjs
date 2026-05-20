@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 async function main() {
-  const srcDir = path.join(process.cwd(), 'packages', 'fanfandeagent', 'src');
+  const srcDir = path.join(process.cwd(), 'packages', 'anyboxagent', 'src');
   console.log(`📁 恢复备份文件在: ${srcDir}`);
   
   let restored = 0;

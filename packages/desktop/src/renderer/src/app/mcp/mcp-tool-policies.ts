@@ -22,7 +22,7 @@ export function defaultMcpToolPolicyForDraft(
   tool: McpToolDiagnostic,
   draft: McpServerDraftState,
 ): McpToolPolicyValue {
-  if (draft.transport === "remote") {
+  if (draft.transport !== "stdio") {
     const allowedToolNames = new Set(parseLineList(draft.allowedToolNames))
     const requiresNamedTool =
       draft.allowedToolsMode === "names" || draft.allowedToolsMode === "read-only-names"

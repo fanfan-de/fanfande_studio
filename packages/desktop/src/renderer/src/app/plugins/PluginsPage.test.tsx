@@ -17,7 +17,7 @@ function createPlugin(overrides: Partial<CatalogPlugin> = {}): CatalogPlugin {
     description: overrides.description ?? "Expose a local directory to MCP.",
     longDescription: overrides.longDescription,
     version: overrides.version ?? "1.0.0",
-    publisher: overrides.publisher ?? "Fanfande",
+    publisher: overrides.publisher ?? "Anybox",
     category: overrides.category ?? "Code",
     iconUrl: overrides.iconUrl,
     thumbnailUrl: overrides.thumbnailUrl,
@@ -361,6 +361,61 @@ describe("PluginsPage", () => {
     expect(screen.getByText("#112233")).toBeInTheDocument()
   })
 
+  it("renders plugin configuration fields before installation", () => {
+    const onInstallPlugin = vi.fn()
+    const onPluginDraftConfigChange = vi.fn()
+    const plugin = {
+      ...createOAuthPlugin(),
+      id: "gmail",
+      name: "Gmail",
+      configFields: [
+        {
+          key: "GOOGLE_OAUTH_CLIENT_ID",
+          label: "Google OAuth client ID",
+          type: "text" as const,
+          required: true,
+          placeholder: "123.apps.googleusercontent.com",
+          description: "OAuth client used for the Gmail connector.",
+        },
+      ],
+    }
+
+    render(
+      <PluginsPage
+        {...createProps({
+          activePluginID: "gmail",
+          pluginCatalog: [plugin],
+          pluginDraft: {
+            pluginID: "gmail",
+            config: {
+              GOOGLE_OAUTH_CLIENT_ID: "",
+            },
+            appApiKeys: {},
+          },
+          onInstallPlugin,
+          onPluginDraftConfigChange,
+        })}
+      />,
+    )
+
+    const clientIDInput = screen.getByLabelText(/Google OAuth client ID/)
+    expect(clientIDInput).toHaveAttribute("placeholder", "123.apps.googleusercontent.com")
+    expect(screen.getByText("Required values are used when installing this plugin.")).toBeInTheDocument()
+
+    fireEvent.change(clientIDInput, {
+      target: {
+        value: "client.apps.googleusercontent.com",
+      },
+    })
+    expect(onPluginDraftConfigChange).toHaveBeenCalledWith(
+      "GOOGLE_OAUTH_CLIENT_ID",
+      "client.apps.googleusercontent.com",
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Install Gmail" }))
+    expect(onInstallPlugin).toHaveBeenCalledWith("gmail")
+  })
+
   it("renders plugin info URLs as clickable desktop links", () => {
     const homepage = "https://example.test/filesystem"
     const documentationUrl = "https://docs.example.test/filesystem"
@@ -649,7 +704,6 @@ describe("PluginsPage", () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Show details for Gmail" }))
     expect(screen.getByText("Credential kind")).toBeInTheDocument()
     expect(screen.getByText("OAuth")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }))

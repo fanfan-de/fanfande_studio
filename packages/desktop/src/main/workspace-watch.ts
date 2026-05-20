@@ -1,5 +1,5 @@
 import fs from "node:fs"
-import { normalizeComparablePath } from "@fanfande/platform"
+import { normalizeComparablePath } from "@anybox/platform"
 import path from "node:path"
 import type { WorkspaceFileChangeIPCEvent } from "../shared/desktop-ipc-contract"
 import { DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL } from "../shared/desktop-ipc-contract"

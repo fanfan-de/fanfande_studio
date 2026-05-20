@@ -1,4 +1,4 @@
-export const LOCAL_IMAGE_PROTOCOL = "fanfande-local-image"
+export const LOCAL_IMAGE_PROTOCOL = "anybox-local-image"
 export const LOCAL_IMAGE_PROTOCOL_HOST = "image"
 
 const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-z]:[\\/]/i

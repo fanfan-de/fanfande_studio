@@ -88,7 +88,7 @@ function convertFile(content) {
  * 主函数
  */
 async function main() {
-  const srcDir = path.join(process.cwd(), 'packages', 'fanfandeagent', 'src');
+  const srcDir = path.join(process.cwd(), 'packages', 'anyboxagent', 'src');
   console.log(`📁 扫描目录: ${srcDir}`);
   
   // 收集所有 .ts 文件

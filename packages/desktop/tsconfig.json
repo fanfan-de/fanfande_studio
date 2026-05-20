@@ -12,10 +12,10 @@
     "types": ["node", "vite/client", "vitest/globals"],
     "noEmit": true,
     "paths": {
-      "@fanfande/shared": ["../shared/src/index.ts"],
-      "@fanfande/shared/*": ["../shared/src/*"],
-      "@fanfande/platform": ["../platform/src/index.ts"],
-      "zod": ["../fanfandeagent/node_modules/zod"]
+      "@anybox/shared": ["../shared/src/index.ts"],
+      "@anybox/shared/*": ["../shared/src/*"],
+      "@anybox/platform": ["../platform/src/index.ts"],
+      "zod": ["../anyboxagent/node_modules/zod"]
     }
   },
   "include": [

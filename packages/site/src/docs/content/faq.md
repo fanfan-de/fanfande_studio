@@ -1,8 +1,8 @@
 # FAQ
 
-## Anybox 和 Fanfande Studio 是什么关系？
+## Anybox 是什么？
 
-Anybox 是 Fanfande Studio 项目中的桌面工作台产品。仓库里还包含本地 Agent 服务、桌面端和配套站点。
+Anybox 是面向本地项目工作的 AI Agent 桌面工作台。仓库里还包含本地 Agent 服务、桌面端和配套站点。
 
 ## 当前支持哪些平台？
 

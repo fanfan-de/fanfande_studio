@@ -26,7 +26,7 @@ describe("terminal storage", () => {
           ptyID: "pty-1",
           sessionID: "session-1",
           title: "Workspace shell",
-          cwd: "C:\\Projects\\fanfande_studio",
+          cwd: "C:\\Projects\\anybox_studio",
           shell: "powershell.exe",
           rows: 40,
           cols: 120,

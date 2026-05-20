@@ -9,7 +9,7 @@ import type {
   PermissionToolKind,
   ToolPermissionMode,
 } from "../../../shared/permission"
-import type { ReasoningEffort as SharedReasoningEffort } from "@fanfande/shared"
+import type { ReasoningEffort as SharedReasoningEffort } from "@anybox/shared"
 import type {
   DesktopPreviewRenderer,
   DesktopResolvedPreviewTarget,
@@ -1567,10 +1567,17 @@ export type PluginOAuthTokenPlacement =
       value?: string
     }
 
+export interface PluginOAuthClientRegistration {
+  registrationURL: string
+  initialAccessToken?: string
+  metadata?: Record<string, unknown>
+}
+
 export interface PluginOAuthAppCredential {
   kind: "oauth"
   label: string
-  clientID: string
+  clientID?: string
+  clientSecret?: string
   authorizationURL: string
   tokenURL: string
   scopes: string[]
@@ -1578,6 +1585,8 @@ export interface PluginOAuthAppCredential {
   tokenPlacement?: PluginOAuthTokenPlacement
   authorizationParams?: Record<string, string>
   tokenParams?: Record<string, string>
+  tokenEndpointAuthMethod?: "none" | "client_secret_post" | "client_secret_basic"
+  registration?: PluginOAuthClientRegistration
   description?: string
 }
 
@@ -1644,6 +1653,7 @@ export interface PluginAppConnector {
   risk?: PluginRisk
   permissions?: string[]
   tools?: PluginToolPreview[]
+  configFields?: PluginConfigField[]
   credential: PluginAppCredential
   runtime: PluginRuntimeTemplate
   installReview?: string[]
@@ -1724,12 +1734,13 @@ export interface PluginDraftState {
 export interface McpServerDraftState {
   id: string
   name: string
-  transport: "stdio" | "remote"
+  transport: "stdio" | "remote" | "connector"
   command: string
   args: string
   env: string
   cwd: string
   serverUrl: string
+  connectorId: string
   authorization: string
   headers: string
   allowedToolsMode: "all" | "names" | "read-only" | "read-only-names"

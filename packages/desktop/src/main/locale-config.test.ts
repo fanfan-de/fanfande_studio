@@ -18,7 +18,7 @@ import { readLocaleConfigSnapshot, writeLocaleConfigSnapshot } from "./locale-co
 let tempDirectory = ""
 
 beforeEach(async () => {
-  tempDirectory = await mkdtemp(path.join(os.tmpdir(), "fanfande-locale-"))
+  tempDirectory = await mkdtemp(path.join(os.tmpdir(), "anybox-locale-"))
   userDataPathMock.value = tempDirectory
 })
 

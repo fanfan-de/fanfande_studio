@@ -72,7 +72,7 @@ type WorkbenchPanelDragPayload = {
 
 const MIN_POPOUT_WIDTH = 720
 const MIN_POPOUT_HEIGHT = 520
-const WORKBENCH_PANEL_DRAG_MIME = "application/x-fanfande-workbench-panel"
+const WORKBENCH_PANEL_DRAG_MIME = "application/x-anybox-workbench-panel"
 
 function useWorkbenchPanelState(
   store: WorkspaceStoreApi,
@@ -174,8 +174,8 @@ function clearDockviewLayout(dockviewApi: DockviewApi) {
 
 function publishTestDockviewApi(dockviewApi: DockviewApi | null) {
   if (import.meta.env.MODE !== "test") return
-  const testWindow = window as Window & { __fanfandeWorkbenchDockviewApi?: DockviewApi | null }
-  testWindow.__fanfandeWorkbenchDockviewApi = dockviewApi
+  const testWindow = window as Window & { __anyboxWorkbenchDockviewApi?: DockviewApi | null }
+  testWindow.__anyboxWorkbenchDockviewApi = dockviewApi
 }
 
 function readDockviewActiveState(dockviewApi: DockviewApi): WorkbenchDockviewActiveState {
@@ -1098,7 +1098,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       >
         <Profiler id="WorkbenchShell.Dockview" onRender={dockviewProfiler}>
           <DockviewReact
-            className="dockview-theme-fanfande"
+            className="dockview-theme-anybox"
             components={components}
             defaultTabComponent={TabComponent}
             disableFloatingGroups

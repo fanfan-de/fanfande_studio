@@ -14,6 +14,7 @@ function createDraft(overrides: Partial<McpServerDraftState> = {}): McpServerDra
     env: "",
     cwd: "",
     serverUrl: "https://mcp.context7.com/mcp",
+    connectorId: "",
     authorization: "",
     headers: "",
     allowedToolsMode: "all",
@@ -160,6 +161,45 @@ describe("McpServersPage tool policies", () => {
     fireEvent.click(screen.getByRole("radio", { name: "STDIO" }))
 
     expect(onMcpServerDraftChange).toHaveBeenCalledWith("transport", "stdio")
+  })
+
+  it("shows connector MCP servers without treating them as HTTP servers", () => {
+    render(
+      <McpServersPage
+        {...createProps({
+          activeMcpServerID: "plugin.gmail.connector.gmail",
+          activeMcpServerDiagnostic: createDiagnostic({
+            serverID: "plugin.gmail.connector.gmail",
+            ok: false,
+            toolCount: 0,
+            toolNames: [],
+            tools: [],
+            error: "Not connected",
+          }),
+          mcpServerDraft: createDraft({
+            id: "plugin.gmail.connector.gmail",
+            name: "Gmail: Gmail",
+            transport: "connector",
+            serverUrl: "",
+            connectorId: "plugin-connector:gmail:gmail",
+          }),
+          mcpServers: [
+            {
+              id: "plugin.gmail.connector.gmail",
+              name: "Gmail: Gmail",
+              transport: "connector",
+              connectorId: "plugin-connector:gmail:gmail",
+              enabled: true,
+            },
+          ],
+        })}
+      />,
+    )
+
+    expect(screen.getByRole("radio", { name: "CONNECTOR" })).toHaveAttribute("aria-checked", "true")
+    expect(screen.getByLabelText("MCP connector id")).toHaveValue("plugin-connector:gmail:gmail")
+    expect(screen.queryByText("Remote MCP servers require a server URL.")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText("MCP server URL")).not.toBeInTheDocument()
   })
 
   it("shows the tools policy section for stdio MCP servers", () => {

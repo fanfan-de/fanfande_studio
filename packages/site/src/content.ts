@@ -4,7 +4,7 @@ export const navigationItems = [
     label: "文档",
   },
   {
-    href: "https://github.com/fanfan-de/fanfande_studio",
+    href: "https://github.com/fanfan-de/anybox_studio",
     label: "GitHub",
     external: true,
   },

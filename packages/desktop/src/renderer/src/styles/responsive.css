@@ -184,13 +184,13 @@
 
   .canvas-region-top-menu,
   .session-canvas-top-menu,
-  .dockview-theme-fanfande .dv-tabs-and-actions-container,
+  .dockview-theme-anybox .dv-tabs-and-actions-container,
   .terminal-tabs {
     padding-left: 10px;
     padding-right: 10px;
   }
 
-  .dockview-theme-fanfande .dv-tabs-and-actions-container {
+  .dockview-theme-anybox .dv-tabs-and-actions-container {
     padding-left: 0;
   }
 

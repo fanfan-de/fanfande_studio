@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const srcDir = path.join(__dirname, 'packages', 'fanfandeagent', 'src');
+const srcDir = path.join(__dirname, 'packages', 'anyboxagent', 'src');
 
 async function checkFile(filePath) {
   const content = await fs.readFile(filePath, 'utf-8');
@@ -40,7 +40,7 @@ async function walkDir(dir) {
 }
 
 async function main() {
-  console.log('🔍 Checking for TypeScript namespaces in fanfandeagent/src...');
+  console.log('🔍 Checking for TypeScript namespaces in anyboxagent/src...');
   const files = await walkDir(srcDir);
   console.log(`📁 Found ${files.length} TypeScript files`);
   

@@ -3,6 +3,7 @@ import { CreateSessionCanvas } from "../canvas/CreateSessionCanvas"
 import { SessionCanvasTopMenu } from "../canvas/SessionCanvasTopMenu"
 import { Composer } from "../composer/Composer"
 import { ComposerTaskProgress } from "../composer/ComposerTaskProgress"
+import { useDeferredComposerDraftSync } from "../composer/use-deferred-composer-draft-sync"
 import { ComposerUtilityBar } from "../ComposerUtilityBar"
 import { getSessionWorkflowBadge, type SessionWorkflowBadge as SessionWorkflowBadgeInfo } from "../session-workflow"
 import { getPendingStreamInsertionUserTurns } from "../stream-insertion"
@@ -294,7 +295,14 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
   })
   const readOnlySideChat = isSideChatSession(pane.activeSession)
   const showGitControls = pane.isActivePanel && !readOnlySideChat
-  const pendingSteerTurns = getPendingStreamInsertionUserTurns(activeTurns)
+  const pendingSteerTurns = useMemo(() => getPendingStreamInsertionUserTurns(activeTurns), [activeTurns])
+  const {
+    flushDraftSync,
+    scheduleDraftSync,
+  } = useDeferredComposerDraftSync({
+    draftKey: pane.tabKey,
+    onSync: onSetDraft,
+  })
   const composerWorkflowBadge = !readOnlySideChat ? getSessionWorkflowBadge(pane.activeSession?.workflow) : null
   const createSessionWorkflowBadge =
     pane.createSessionInitialWorkflowMode === "planning"
@@ -404,7 +412,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                     isSending={pane.isSending || pane.isCreatingSession}
                     mcpOptions={composer.mcpOptions}
                     modelOptions={composer.modelOptions}
-                    onDraftStateChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
+                    onDraftStateChange={scheduleDraftSync}
                     onMcpToggle={composer.handleMcpToggle}
                     reasoningEffortOptions={composer.reasoningEffortOptions}
                     selectedMcpServerIDs={composer.selectedMcpServerIDs}
@@ -445,7 +453,8 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                     }
                     onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
                     onCancelSend={() => void onCancelSend({ tabKey: pane.tabKey })}
-                    onSend={(draftStateOverride) =>
+                    onSend={(draftStateOverride) => {
+                      flushDraftSync()
                       void onSend({
                         attachmentError: composer.attachmentError,
                         createSessionTabID: pane.createSessionTabID,
@@ -457,7 +466,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                         tabKey: pane.tabKey,
                         waitForPendingModelSelection: composer.awaitPendingModelSelection,
                       })
-                    }
+                    }}
                   />
                 </Profiler>
                 {createSessionWorkflowBadge ? <ComposerPlanModeNotice workflow={createSessionWorkflowBadge} /> : null}
@@ -626,7 +635,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                     isSending={pane.isSending}
                     mcpOptions={composer.mcpOptions}
                     modelOptions={composer.modelOptions}
-                    onDraftStateChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
+                    onDraftStateChange={scheduleDraftSync}
                     onMcpToggle={readOnlySideChat ? undefined : composer.handleMcpToggle}
                     reasoningEffortOptions={composer.reasoningEffortOptions}
                     selectedMcpServerIDs={composer.selectedMcpServerIDs}
@@ -668,7 +677,8 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                       sessionID: pane.sessionID,
                       tabKey: pane.tabKey,
                     })}
-                    onSend={(draftStateOverride) =>
+                    onSend={(draftStateOverride) => {
+                      flushDraftSync()
                       void onSend({
                         attachmentError: composer.attachmentError,
                         draftStateOverride,
@@ -681,7 +691,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                         tabKey: pane.tabKey,
                         waitForPendingModelSelection: composer.awaitPendingModelSelection,
                       })
-                    }
+                    }}
                   />
                 </Profiler>
                 {pane.composerParentMessageID ? (

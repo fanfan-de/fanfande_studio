@@ -1,7 +1,7 @@
 # Codex 当前会话可用工具清单
 
 生成时间：2026-05-06  
-工作目录：`C:\Projects\fanfande_studio\packages\desktop`
+工作目录：`C:\Projects\anybox_studio\packages\desktop`
 
 本文档列出当前会话中我可调用的工具及主要元信息。这里的“工具”指 Codex 运行环境暴露给我的内置工具、MCP 工具、插件工具和封装工具；`rg`、`git`、`npm`、`npx`、`node` 等是通过 shell 调用的外部命令，不属于 Codex 内置工具。
 

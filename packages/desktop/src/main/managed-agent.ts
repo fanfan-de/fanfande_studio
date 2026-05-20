@@ -1,5 +1,5 @@
 import { app } from "electron"
-import { createPlatformAdapter, getBundledBunName } from "@fanfande/platform"
+import { createPlatformAdapter, getBundledBunName } from "@anybox/platform"
 import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process"
 import fs from "node:fs"
 import fsp from "node:fs/promises"
@@ -7,17 +7,18 @@ import net from "node:net"
 import path from "node:path"
 import type { Readable } from "node:stream"
 import { setTimeout as delay } from "node:timers/promises"
+import { readTrimmedDesktopEnv } from "./env-compat"
 import { safeError, safeLog } from "./safe-console"
 import { createSourceRuntimeSnapshot, shouldRestartForSourceRuntimeChange, type SourceRuntimeSnapshot } from "./source-runtime-watch"
 
-const MANAGED_AGENT_BASE_URL_ENV = "FANFANDE_AGENT_BASE_URL"
-const MANAGED_AGENT_WORKDIR_ENV = "FANFANDE_AGENT_WORKDIR"
-const MANAGED_AGENT_DISABLE_ENV = "FANFANDE_DISABLE_MANAGED_AGENT"
-const MANAGED_AGENT_RUNTIME_ENV = "FANFANDE_AGENT_RUNTIME_DIR"
-const MANAGED_AGENT_BUN_BINARY_ENV = "FANFANDE_BUN_BINARY"
-const MANAGED_AGENT_DATA_DIR_ENV = "FANFANDE_AGENT_DATA_DIR"
-const WORKSPACE_DEPENDENCIES_DIR_ENV = "FANFANDE_WORKSPACE_DEPENDENCIES_DIR"
-const WORKSPACE_DEPENDENCIES_VERSION_ENV = "FANFANDE_WORKSPACE_DEPENDENCIES_VERSION"
+const MANAGED_AGENT_BASE_URL_ENV = "ANYBOX_AGENT_BASE_URL"
+const MANAGED_AGENT_WORKDIR_ENV = "ANYBOX_AGENT_WORKDIR"
+const MANAGED_AGENT_DISABLE_ENV = "ANYBOX_DISABLE_MANAGED_AGENT"
+const MANAGED_AGENT_RUNTIME_ENV = "ANYBOX_AGENT_RUNTIME_DIR"
+const MANAGED_AGENT_BUN_BINARY_ENV = "ANYBOX_BUN_BINARY"
+const MANAGED_AGENT_DATA_DIR_ENV = "ANYBOX_AGENT_DATA_DIR"
+const WORKSPACE_DEPENDENCIES_DIR_ENV = "ANYBOX_WORKSPACE_DEPENDENCIES_DIR"
+const WORKSPACE_DEPENDENCIES_VERSION_ENV = "ANYBOX_WORKSPACE_DEPENDENCIES_VERSION"
 
 const BUNDLED_AGENT_ENTRYPOINT = "agent-server.js"
 const BUNDLED_BUN_BINARY = getBundledBunName()
@@ -58,7 +59,7 @@ function logError(message: string, error: unknown) {
 
 function resolveBundledRuntimeCandidates() {
   const candidates = []
-  const explicitRuntime = process.env[MANAGED_AGENT_RUNTIME_ENV]?.trim()
+  const explicitRuntime = readTrimmedDesktopEnv(MANAGED_AGENT_RUNTIME_ENV)
   if (explicitRuntime) candidates.push(explicitRuntime)
 
   if (app.isPackaged) {
@@ -71,7 +72,7 @@ function resolveBundledRuntimeCandidates() {
 }
 
 function resolveSystemBunBinary() {
-  const explicitBinary = process.env[MANAGED_AGENT_BUN_BINARY_ENV]?.trim()
+  const explicitBinary = readTrimmedDesktopEnv(MANAGED_AGENT_BUN_BINARY_ENV)
   if (explicitBinary && fs.existsSync(explicitBinary)) {
     return explicitBinary
   }
@@ -107,7 +108,7 @@ function resolveSourceAgentLaunchSpec() {
 
   const desktopAppPath = app.getAppPath()
   const repoRoot = path.resolve(desktopAppPath, "..", "..")
-  const entrypoint = path.join(repoRoot, "packages", "fanfandeagent", "src", "server", "start.ts")
+  const entrypoint = path.join(repoRoot, "packages", "anyboxagent", "src", "server", "start.ts")
   if (!fs.existsSync(entrypoint)) {
     return undefined
   }
@@ -235,10 +236,10 @@ function buildManagedAgentStartEnv(
   const startEnv: NodeJS.ProcessEnv = {
     ...process.env,
     ...proxyEnv,
-    FanFande_NODE_BINARY: process.execPath,
-    FanFande_NODE_RUN_AS_NODE: "1",
-    FanFande_SERVER_HOST: "127.0.0.1",
-    FanFande_SERVER_PORT: String(port),
+    ANYBOX_NODE_BINARY: process.execPath,
+    ANYBOX_NODE_RUN_AS_NODE: "1",
+    ANYBOX_SERVER_HOST: "127.0.0.1",
+    ANYBOX_SERVER_PORT: String(port),
   }
 
   if (spec.dependenciesDir) {
@@ -336,7 +337,7 @@ function resolveSourceWatchRoot() {
 
   const desktopAppPath = app.getAppPath()
   const repoRoot = path.resolve(desktopAppPath, "..", "..")
-  const watchRoot = path.join(repoRoot, "packages", "fanfandeagent", "src")
+  const watchRoot = path.join(repoRoot, "packages", "anyboxagent", "src")
   return fs.existsSync(watchRoot) ? watchRoot : undefined
 }
 
@@ -427,10 +428,10 @@ async function restartManagedAgent(reason: string) {
 export async function ensureManagedAgentRunning() {
   if (managedAgent) return managedAgent.baseURL
 
-  const externalBaseURL = process.env[MANAGED_AGENT_BASE_URL_ENV]?.trim()
+  const externalBaseURL = readTrimmedDesktopEnv(MANAGED_AGENT_BASE_URL_ENV)
   if (externalBaseURL) return externalBaseURL
 
-  if (process.env[MANAGED_AGENT_DISABLE_ENV]?.trim() === "1") {
+  if (readTrimmedDesktopEnv(MANAGED_AGENT_DISABLE_ENV) === "1") {
     return undefined
   }
 
@@ -478,7 +479,7 @@ export async function ensureManagedAgentRunning() {
     try {
       await waitForAgentHealth(baseURL, child)
       process.env[MANAGED_AGENT_BASE_URL_ENV] = baseURL
-      if (!process.env[MANAGED_AGENT_WORKDIR_ENV]?.trim()) {
+      if (!readTrimmedDesktopEnv(MANAGED_AGENT_WORKDIR_ENV)) {
         process.env[MANAGED_AGENT_WORKDIR_ENV] = app.getPath("home")
       }
       applyWorkspaceDependencyEnv(spec)

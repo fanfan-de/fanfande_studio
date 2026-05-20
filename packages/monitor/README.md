@@ -1,6 +1,6 @@
-# Fanfande Monitor 使用说明书
+# Anybox Monitor 使用说明书
 
-Fanfande Monitor 是一个独立运行的 Vite 前端应用，用来查看本机 `fanfandeagent` server 的运行状态、进程指标、运行会话、最近错误和实时日志。
+Anybox Monitor 是一个独立运行的 Vite 前端应用，用来查看本机 `anyboxagent` server 的运行状态、进程指标、运行会话、最近错误和实时日志。
 
 Monitor 只负责检测、展示和查询状态，不会自动重启 server，也不会修复进程。
 
@@ -21,7 +21,7 @@ Monitor 默认连接：
 http://127.0.0.1:4096
 ```
 
-请先确认 `fanfandeagent` server 已启动，并且下面接口可访问：
+请先确认 `anyboxagent` server 已启动，并且下面接口可访问：
 
 ```text
 GET http://127.0.0.1:4096/healthz
@@ -46,7 +46,7 @@ corepack pnpm monitor:dev
 或者直接运行 monitor 包：
 
 ```bash
-corepack pnpm --filter fanfande-monitor dev
+corepack pnpm --filter anybox-monitor dev
 ```
 
 默认本地地址：
@@ -334,18 +334,18 @@ server 只保留最近 `1000` 条内存日志，monitor 默认查询最近 `200`
 Server API 测试：
 
 ```bash
-cd packages/fanfandeagent
+cd packages/anyboxagent
 bun test Test/server.api.test.ts
 ```
 
 Monitor 构建：
 
 ```bash
-corepack pnpm --filter fanfande-monitor build
+corepack pnpm --filter anybox-monitor build
 ```
 
 类型检查：
 
 ```bash
-corepack pnpm --filter fanfande-monitor typecheck
+corepack pnpm --filter anybox-monitor typecheck
 ```

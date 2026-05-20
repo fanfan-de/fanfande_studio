@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fanfande Studio 插件系统设计结构说明</title>
+  <title>Anybox 插件系统设计结构说明</title>
   <style>
     :root {
       color-scheme: light;
@@ -239,13 +239,13 @@
   <main>
     <article>
       <header>
-        <h1>Fanfande Studio 当前插件系统设计结构说明</h1>
+        <h1>Anybox 当前插件系统设计结构说明</h1>
         <p class="lead">
           本文档根据当前仓库代码整理，说明插件包的文件结构、插件清单格式、agent 侧插件管理逻辑、desktop 侧 IPC/UI 连接方式，以及插件在安装后如何进入 MCP、技能和项目会话运行链路。
         </p>
         <div class="meta">
-          <span class="pill">代码范围：packages/fanfandeagent 与 packages/desktop</span>
-          <span class="pill">核心实现：packages/fanfandeagent/src/plugin/plugin.ts</span>
+          <span class="pill">代码范围：packages/anyboxagent 与 packages/desktop</span>
+          <span class="pill">核心实现：packages/anyboxagent/src/plugin/plugin.ts</span>
           <span class="pill">生成日期：2026-05-18</span>
         </div>
       </header>
@@ -253,7 +253,7 @@
       <section>
         <h2>1. 总体定位</h2>
         <p>
-          当前插件系统的核心并不在 Electron renderer 内，而是在 <code>packages/fanfandeagent</code> 中实现。插件被设计成一类“能力包”，一个插件包可以声明三类能力：
+          当前插件系统的核心并不在 Electron renderer 内，而是在 <code>packages/anyboxagent</code> 中实现。插件被设计成一类“能力包”，一个插件包可以声明三类能力：
         </p>
         <ul>
           <li><strong>MCP server</strong>：插件安装后会生成一个或多个全局 MCP server 配置，供项目会话按选择加载。</li>
@@ -269,13 +269,13 @@
       <section>
         <h2>2. 插件包文件结构</h2>
         <p>
-          插件包的约定入口是 <code>.fanfande-plugin/plugin.json</code>。运行时只扫描已下载安装到本机数据目录的插件包：
+          插件包的约定入口是 <code>.anybox-plugin/plugin.json</code>。运行时只扫描已下载安装到本机数据目录的插件包：
         </p>
-        <pre><code>&lt;agent-data&gt;/plugins/installed/&lt;plugin-id&gt;/&lt;version&gt;/.fanfande-plugin/plugin.json</code></pre>
+        <pre><code>&lt;agent-data&gt;/plugins/installed/&lt;plugin-id&gt;/&lt;version&gt;/.anybox-plugin/plugin.json</code></pre>
         <p>
           系统也支持非版本化目录：
         </p>
-        <pre><code>&lt;agent-data&gt;/plugins/installed/&lt;plugin-id&gt;/.fanfande-plugin/plugin.json</code></pre>
+        <pre><code>&lt;agent-data&gt;/plugins/installed/&lt;plugin-id&gt;/.anybox-plugin/plugin.json</code></pre>
         <p>
           版本化目录和非版本化目录都会被扫描。同一个搜索根内如果出现多个同名插件，系统会按 manifest 的 <code>version</code> 选择较新的版本。
         </p>
@@ -283,7 +283,7 @@
         <h3>推荐目录形态</h3>
         <pre><code>&lt;plugin-id&gt;/
   &lt;version&gt;/
-    .fanfande-plugin/
+    .anybox-plugin/
       plugin.json
     skills/
       &lt;skill-directory&gt;/
@@ -306,7 +306,7 @@
           </thead>
           <tbody>
             <tr>
-              <td><code>.fanfande-plugin/plugin.json</code></td>
+              <td><code>.anybox-plugin/plugin.json</code></td>
               <td>插件清单。声明插件元信息、MCP server、技能目录、App connector、权限说明和运行时模板。</td>
             </tr>
             <tr>
@@ -513,11 +513,11 @@
         <h2>4. 插件系统在项目中的实现</h2>
         <h3>4.1 agent 侧是插件系统的主体</h3>
         <p>
-          <code>packages/fanfandeagent/src/plugin/plugin.ts</code> 是插件系统的主体文件，承担以下职责：
+          <code>packages/anyboxagent/src/plugin/plugin.ts</code> 是插件系统的主体文件，承担以下职责：
         </p>
         <ul>
           <li>定义 manifest、catalog、installed record、connector status 等 Zod schema。</li>
-          <li>扫描插件包目录，读取并校验 <code>.fanfande-plugin/plugin.json</code>。</li>
+          <li>扫描插件包目录，读取并校验 <code>.anybox-plugin/plugin.json</code>。</li>
           <li>把原始 manifest 归一化成 UI 和 API 可消费的 <code>PluginCatalogItem</code>。</li>
           <li>安装、更新、删除插件，并同步生成或删除 MCP server 配置。</li>
           <li>保存和删除 App connector API key，并在远程 MCP 连接时解析真实认证信息。</li>
@@ -529,7 +529,7 @@
           插件扫描入口只使用下载安装到本机数据目录的插件包搜索根：
         </p>
         <ul>
-          <li><code>FANFANDE_PLUGIN_INSTALL_DIR</code>：测试或显式配置时使用的插件安装目录。</li>
+          <li><code>ANYBOX_PLUGIN_INSTALL_DIR</code>：测试或显式配置时使用的插件安装目录。</li>
           <li><code>&lt;agent-data&gt;/plugins/installed</code>：默认插件安装目录。</li>
         </ul>
         <p>
@@ -774,7 +774,7 @@
       <section>
         <h2>9. 从插件到会话可用能力的完整链路</h2>
         <ol>
-          <li>插件作者在 <code>.fanfande-plugin/plugin.json</code> 声明元信息、MCP server、skills 或 apps。</li>
+          <li>插件作者在 <code>.anybox-plugin/plugin.json</code> 声明元信息、MCP server、skills 或 apps。</li>
           <li>agent catalog API 拉取远程插件元数据，用户安装时下载插件包到本机 <code>plugins/installed</code> 目录。</li>
           <li>agent 扫描已下载插件 manifest，归一化为 <code>PluginCatalogItem</code>。</li>
           <li>desktop 插件页展示 catalog，用户选择安装。</li>
@@ -797,39 +797,39 @@
           </thead>
           <tbody>
             <tr>
-              <td><code>packages/fanfandeagent/src/plugin/plugin.ts</code></td>
+              <td><code>packages/anyboxagent/src/plugin/plugin.ts</code></td>
               <td>插件 schema、manifest 扫描、catalog 归一化、安装/更新/删除、MCP 绑定、connector 密钥解析、插件技能根目录。</td>
             </tr>
             <tr>
-              <td><code>packages/fanfandeagent/src/server/routes/settings.ts</code></td>
+              <td><code>packages/anyboxagent/src/server/routes/settings.ts</code></td>
               <td>插件设置 API 路由：catalog、installed、diagnostic、connectors。</td>
             </tr>
             <tr>
-              <td><code>packages/fanfandeagent/src/server/usecases/settings.ts</code></td>
+              <td><code>packages/anyboxagent/src/server/usecases/settings.ts</code></td>
               <td>设置 API use case，负责把 PluginError 转成 API error。</td>
             </tr>
             <tr>
-              <td><code>packages/fanfandeagent/src/server/routes/projects.ts</code></td>
+              <td><code>packages/anyboxagent/src/server/routes/projects.ts</code></td>
               <td>项目插件选择 API 路由。</td>
             </tr>
             <tr>
-              <td><code>packages/fanfandeagent/src/server/usecases/projects.ts</code></td>
+              <td><code>packages/anyboxagent/src/server/usecases/projects.ts</code></td>
               <td>项目插件列表、选择、技能和 MCP selection 关联逻辑。</td>
             </tr>
             <tr>
-              <td><code>packages/fanfandeagent/src/config/config.ts</code></td>
+              <td><code>packages/anyboxagent/src/config/config.ts</code></td>
               <td>全局/项目配置，保存 <code>selected_plugins</code>，解析项目 MCP server。</td>
             </tr>
             <tr>
-              <td><code>packages/fanfandeagent/src/skill/skill.ts</code></td>
+              <td><code>packages/anyboxagent/src/skill/skill.ts</code></td>
               <td>插件技能发现、项目技能过滤、prompt 技能目录生成。</td>
             </tr>
             <tr>
-              <td><code>packages/fanfandeagent/src/mcp/client.ts</code></td>
+              <td><code>packages/anyboxagent/src/mcp/client.ts</code></td>
               <td>创建 stdio 或 remote MCP transport，remote connector 运行时解析。</td>
             </tr>
             <tr>
-              <td><code>packages/fanfandeagent/src/mcp/manager.ts</code></td>
+              <td><code>packages/anyboxagent/src/mcp/manager.ts</code></td>
               <td>按项目解析 active MCP servers，发现工具并管理 MCP client 生命周期。</td>
             </tr>
             <tr>

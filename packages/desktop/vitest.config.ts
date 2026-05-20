@@ -2,9 +2,9 @@ import { defineConfig } from "vitest/config"
 import { resolve } from "node:path"
 
 const workspaceAliases = {
-  "@fanfande/shared": resolve(__dirname, "../shared/src/index.ts"),
-  "@fanfande/platform": resolve(__dirname, "../platform/src/index.ts"),
-  zod: resolve(__dirname, "../fanfandeagent/node_modules/zod"),
+  "@anybox/shared": resolve(__dirname, "../shared/src/index.ts"),
+  "@anybox/platform": resolve(__dirname, "../platform/src/index.ts"),
+  zod: resolve(__dirname, "../anyboxagent/node_modules/zod"),
 }
 
 export default defineConfig({

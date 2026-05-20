@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type WebContents } from "electron"
-import { createPlatformAdapter } from "@fanfande/platform"
-import { DesktopIpcSchemas } from "@fanfande/shared"
+import { createPlatformAdapter } from "@anybox/platform"
+import { DesktopIpcSchemas } from "@anybox/shared"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { AppearanceConfigDocument } from "../shared/appearance"

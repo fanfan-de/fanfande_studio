@@ -1,0 +1,113 @@
+{
+  "name": "gmail",
+  "version": "0.1.0",
+  "description": "Read Gmail profile, search messages, and inspect message metadata through a plugin-owned OAuth connector.",
+  "author": {
+    "name": "Fanfande"
+  },
+  "homepage": "https://developers.google.com/gmail/api",
+  "keywords": ["gmail", "google", "email", "oauth"],
+  "interface": {
+    "displayName": "Gmail",
+    "shortDescription": "Connect Gmail with Google OAuth and expose read-only mail tools.",
+    "longDescription": "A built-in plugin that exercises the full plugin-owned connector flow with Google OAuth, a local stdio MCP wrapper, and runtime token injection.",
+    "developerName": "Fanfande",
+    "category": "Automation",
+    "capabilities": ["email", "oauth", "mcp"],
+    "logo": "GM",
+    "brandColor": "#D93025"
+  },
+  "skills": "skills",
+  "connectors": [
+    {
+      "id": "gmail",
+      "name": "Gmail",
+      "description": "Google OAuth connector for read-only Gmail access.",
+      "risk": "medium",
+      "permissions": [
+        "Starts a bundled local Gmail MCP wrapper.",
+        "Requests read-only Gmail access from Google.",
+        "Sends Gmail API requests to gmail.googleapis.com."
+      ],
+      "configFields": [
+        {
+          "key": "GOOGLE_OAUTH_CLIENT_ID",
+          "label": "Google OAuth client ID",
+          "type": "text",
+          "required": true,
+          "placeholder": "1234567890-abcdef.apps.googleusercontent.com",
+          "description": "OAuth client ID from Google Cloud. Register http://localhost:1455/auth/callback as an authorized redirect URI."
+        },
+        {
+          "key": "GOOGLE_OAUTH_CLIENT_SECRET",
+          "label": "Google OAuth client secret",
+          "type": "password",
+          "required": true,
+          "secret": true,
+          "placeholder": "GOCSPX-...",
+          "description": "OAuth client secret from the same Google Desktop OAuth client. Google requires it during token exchange."
+        }
+      ],
+      "credential": {
+        "kind": "oauth",
+        "label": "Google Gmail",
+        "clientID": "${GOOGLE_OAUTH_CLIENT_ID}",
+        "authorizationURL": "https://accounts.google.com/o/oauth2/v2/auth",
+        "tokenURL": "https://oauth2.googleapis.com/token",
+        "revocationURL": "https://oauth2.googleapis.com/revoke",
+        "scopes": [
+          "openid",
+          "email",
+          "profile",
+          "https://www.googleapis.com/auth/gmail.readonly"
+        ],
+        "authorizationParams": {
+          "access_type": "offline",
+          "prompt": "consent"
+        },
+        "tokenParams": {
+          "client_secret": "${GOOGLE_OAUTH_CLIENT_SECRET}"
+        },
+        "tokenPlacement": {
+          "type": "authorization_bearer"
+        }
+      },
+      "runtime": {
+        "transport": "stdio",
+        "command": "node",
+        "args": ["${PLUGIN_ROOT}/connectors/gmail/server.js"],
+        "cwd": "${PLUGIN_ROOT}",
+        "env": {
+          "GMAIL_ACCESS_TOKEN": "${OAUTH_ACCESS_TOKEN}",
+          "GMAIL_TOKEN_TYPE": "${OAUTH_TOKEN_TYPE}"
+        },
+        "timeoutMs": 10000
+      },
+      "tools": [
+        {
+          "name": "gmail_profile",
+          "title": "Gmail Profile",
+          "description": "Read the connected Gmail profile summary.",
+          "readOnly": true
+        },
+        {
+          "name": "gmail_search_messages",
+          "title": "Search Gmail",
+          "description": "Search Gmail messages with Gmail search syntax.",
+          "readOnly": true
+        },
+        {
+          "name": "gmail_read_message",
+          "title": "Read Gmail Message",
+          "description": "Read headers and snippet for a Gmail message.",
+          "readOnly": true
+        }
+      ],
+      "installReview": [
+        "Requires a Google OAuth desktop client ID and client secret configured for the local callback URL.",
+        "Uses the read-only Gmail API scope.",
+        "Runs a local stdio MCP wrapper bundled with the plugin."
+      ]
+    }
+  ]
+}

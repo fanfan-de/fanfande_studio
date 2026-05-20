@@ -5,7 +5,7 @@ export const RENDERER_PERF_PROFILER_STORAGE_KEY = "desktop.perfProfiler.enabled"
 type PerfContext = Record<string, unknown> | (() => Record<string, unknown>)
 
 type PerfWindow = Window & {
-  __FANFANDE_PERF_PROFILER__?: boolean
+  __ANYBOX_PERF_PROFILER__?: boolean
 }
 
 function roundDuration(value: number) {
@@ -21,7 +21,7 @@ export function isRendererPerfProfilerEnabled() {
   if (import.meta.env.MODE === "test" || typeof window === "undefined") return false
 
   const perfWindow = window as PerfWindow
-  if (perfWindow.__FANFANDE_PERF_PROFILER__) return true
+  if (perfWindow.__ANYBOX_PERF_PROFILER__) return true
 
   try {
     return window.localStorage.getItem(RENDERER_PERF_PROFILER_STORAGE_KEY) === "1"

@@ -23,6 +23,7 @@ function createMcpDraft(): McpServerDraftState {
     env: "",
     cwd: "",
     serverUrl: "",
+    connectorId: "",
     authorization: "",
     headers: "",
     allowedToolsMode: "all",

@@ -1,8 +1,8 @@
-# Fanfande Studio
+# Anybox
 
-Fanfande Studio 是一个面向本地项目工作的 AI Agent 桌面工作台。项目基于 `Electron + React + TypeScript` 构建桌面端界面，基于 `Bun + Hono + AI SDK` 提供本地 Agent 服务，目标是把项目工作区、会话、终端、模型配置、技能和工具调用整合到一个桌面应用里。
+Anybox 是一个面向本地项目工作的 AI Agent 桌面工作台。项目基于 `Electron + React + TypeScript` 构建桌面端界面，基于 `Bun + Hono + AI SDK` 提供本地 Agent 服务，目标是把项目工作区、会话、终端、模型配置、技能和工具调用整合到一个桌面应用里。
 
-当前仓库采用 `pnpm workspace` 组织，核心由桌面端 `packages/desktop` 和 Agent 服务 `packages/fanfandeagent` 两部分组成。桌面端在开发和打包场景下都支持托管启动本地 Agent，也支持通过环境变量接入外部 Agent 服务。
+当前仓库采用 `pnpm workspace` 组织，核心由桌面端 `packages/desktop` 和 Agent 服务 `packages/anyboxagent` 两部分组成。桌面端在开发和打包场景下都支持托管启动本地 Agent，也支持通过环境变量接入外部 Agent 服务。
 
 ## 核心能力
 
@@ -23,15 +23,15 @@ Fanfande Studio 是一个面向本地项目工作的 AI Agent 桌面工作台。
 │  │  ├─ src/main/          主进程、菜单、IPC、托管 Agent、PTY 代理
 │  │  ├─ src/preload/       window.desktop 安全桥接层
 │  │  └─ src/renderer/      React 界面、工作区、会话、终端、设置页
-│  ├─ fanfandeagent/        Bun/Hono Agent 服务与核心能力
+│  ├─ anyboxagent/        Bun/Hono Agent 服务与核心能力
 │  │  ├─ src/server/        HTTP / WebSocket 接口与路由
 │  │  ├─ src/session/       会话处理、Prompt、流式输出
 │  │  ├─ src/project/       项目与工作区建模
 │  │  ├─ src/tool/          工具注册与执行
 │  │  ├─ src/skill/         Skill 管理
 │  │  └─ Test/              Agent 侧测试
-│  └─ fanfandedesktoptest/  实验/测试包
-├─ fanfande_studio_vault/   项目笔记、设计稿与补充文档
+│  └─ anyboxdesktoptest/  实验/测试包
+├─ anybox_studio_vault/   项目笔记、设计稿与补充文档
 └─ package.json             Workspace 入口脚本
 ```
 
@@ -51,7 +51,7 @@ Fanfande Studio 是一个面向本地项目工作的 AI Agent 桌面工作台。
 - pnpm 10+
 - Bun 1.3+
 
-> 本地开发和桌面端打包都依赖 Bun。桌面端在开发模式下会优先直接启动 `packages/fanfandeagent/src/server/start.ts`。
+> 本地开发和桌面端打包都依赖 Bun。桌面端在开发模式下会优先直接启动 `packages/anyboxagent/src/server/start.ts`。
 
 ### 1. 安装依赖
 
@@ -63,7 +63,7 @@ pnpm install
 ### 2. 启动桌面端
 
 ```bash
-pnpm --filter fanfande-desktop-agent dev
+pnpm --filter anybox-desktop-agent dev
 ```
 
 默认情况下，桌面端会尝试自动启动本地 Agent 服务。如果你已经单独启动了 Agent，或希望连接远程服务，可通过环境变量覆盖。
@@ -71,7 +71,7 @@ pnpm --filter fanfande-desktop-agent dev
 ### 3. 单独启动 Agent 服务
 
 ```bash
-cd packages/fanfandeagent
+cd packages/anyboxagent
 bun run dev:server
 ```
 
@@ -93,17 +93,17 @@ pnpm typecheck
 ### `packages/desktop`
 
 ```bash
-pnpm --filter fanfande-desktop-agent dev
-pnpm --filter fanfande-desktop-agent build
-pnpm --filter fanfande-desktop-agent dist
-pnpm --filter fanfande-desktop-agent test
-pnpm --filter fanfande-desktop-agent typecheck
+pnpm --filter anybox-desktop-agent dev
+pnpm --filter anybox-desktop-agent build
+pnpm --filter anybox-desktop-agent dist
+pnpm --filter anybox-desktop-agent test
+pnpm --filter anybox-desktop-agent typecheck
 ```
 
-### `packages/fanfandeagent`
+### `packages/anyboxagent`
 
 ```bash
-cd packages/fanfandeagent
+cd packages/anyboxagent
 bun run dev:server
 bun run test:server
 bun run test:prompt
@@ -111,11 +111,11 @@ bun run test:tool
 bun run docs
 ```
 
-开发时如果你同时启动 `packages/fanfandeagent` 的 `bun run dev:server` 和 `packages/desktop` 的 `bun run dev`，建议让桌面端显式连接外部 server，避免它再拉起一份自己的 managed agent：
+开发时如果你同时启动 `packages/anyboxagent` 的 `bun run dev:server` 和 `packages/desktop` 的 `bun run dev`，建议让桌面端显式连接外部 server，避免它再拉起一份自己的 managed agent：
 
 ```powershell
-$env:FANFANDE_DISABLE_MANAGED_AGENT="1"
-$env:FANFANDE_AGENT_BASE_URL="http://127.0.0.1:4096"
+$env:ANYBOX_DISABLE_MANAGED_AGENT="1"
+$env:ANYBOX_AGENT_BASE_URL="http://127.0.0.1:4096"
 cd packages/desktop
 bun run dev
 ```
@@ -124,12 +124,12 @@ bun run dev
 
 | 变量名 | 作用 | 默认值 |
 | --- | --- | --- |
-| `FANFANDE_AGENT_BASE_URL` | 指定桌面端连接的 Agent 服务地址 | `http://127.0.0.1:4096` |
-| `FANFANDE_AGENT_WORKDIR` | 新建会话时使用的默认工作目录 | 当前进程工作目录 |
-| `FANFANDE_DISABLE_MANAGED_AGENT` | 设为 `1` 后禁用桌面端自动拉起 Agent | 未设置 |
-| `FANFANDE_BUN_BINARY` | 指定 Bun 可执行文件路径 | 自动探测 |
-| `FanFande_SERVER_HOST` | Agent 服务监听地址 | `127.0.0.1` |
-| `FanFande_SERVER_PORT` | Agent 服务监听端口 | `4096` |
+| `ANYBOX_AGENT_BASE_URL` | 指定桌面端连接的 Agent 服务地址 | `http://127.0.0.1:4096` |
+| `ANYBOX_AGENT_WORKDIR` | 新建会话时使用的默认工作目录 | 当前进程工作目录 |
+| `ANYBOX_DISABLE_MANAGED_AGENT` | 设为 `1` 后禁用桌面端自动拉起 Agent | 未设置 |
+| `ANYBOX_BUN_BINARY` | 指定 Bun 可执行文件路径 | 自动探测 |
+| `ANYBOX_SERVER_HOST` | Agent 服务监听地址 | `127.0.0.1` |
+| `ANYBOX_SERVER_PORT` | Agent 服务监听端口 | `4096` |
 
 ## 架构说明
 
@@ -139,7 +139,7 @@ bun run dev
 - `src/preload` 通过 `window.desktop` 暴露安全桥接接口。
 - `src/renderer` 提供工作区侧栏、会话画布、设置页、全局技能管理和终端面板。
 
-### Agent 服务 `packages/fanfandeagent`
+### Agent 服务 `packages/anyboxagent`
 
 - `src/server` 暴露项目、会话、权限、设置和 PTY 相关接口。
 - `src/session` 负责消息处理、Prompt 组装、流式输出和工具调用链路。
@@ -159,8 +159,8 @@ pnpm dist
 - `packages/desktop/AI_AGENT_FRONTEND_SPEC.md`：前端状态模型与交互规范
 - `packages/desktop/DESKTOP_SERVER_API_SPEC.md`：桌面端与服务端接口约定
 - `packages/desktop/FRONTEND_ARCHITECTURE_GUIDE.md`：前端结构导读
-- `packages/fanfandeagent/src/server/spec.zh.md`：服务端路由与接口规范
-- `fanfande_studio_vault/`：项目设计记录、架构思考与补充资料
+- `packages/anyboxagent/src/server/spec.zh.md`：服务端路由与接口规范
+- `anybox_studio_vault/`：项目设计记录、架构思考与补充资料
 
 ## 当前状态
 
@@ -175,8 +175,8 @@ pnpm dist
 
 1. `packages/desktop/src/renderer/src/App.tsx`
 2. `packages/desktop/src/main/ipc.ts`
-3. `packages/fanfandeagent/src/server/server.ts`
-4. `packages/fanfandeagent/src/session/`
+3. `packages/anyboxagent/src/server/server.ts`
+4. `packages/anyboxagent/src/session/`
 
 ## License
 

@@ -3,18 +3,26 @@ import { parseAssistantResponseFormat, stripStreamingResponseFormatMarker } from
 
 describe("assistant response format markers", () => {
   it("parses an HTML response marker from the first line", () => {
-    expect(parseAssistantResponseFormat("<!-- fanfande-response-format: html -->\n<p>Hello</p>")).toEqual({
+    expect(parseAssistantResponseFormat("<!-- anybox-response-format: html -->\n<p>Hello</p>")).toEqual({
       format: "html",
-      marker: "<!-- fanfande-response-format: html -->",
+      marker: "<!-- anybox-response-format: html -->",
       text: "<p>Hello</p>",
     })
   })
 
   it("parses a Markdown response marker from the first line", () => {
-    expect(parseAssistantResponseFormat("  <!-- fanfande-response-format: markdown -->\r\n## Hello")).toEqual({
+    expect(parseAssistantResponseFormat("  <!-- anybox-response-format: markdown -->\r\n## Hello")).toEqual({
       format: "markdown",
-      marker: "<!-- fanfande-response-format: markdown -->",
+      marker: "<!-- anybox-response-format: markdown -->",
       text: "## Hello",
+    })
+  })
+
+  it("parses legacy response markers from stored conversations", () => {
+    expect(parseAssistantResponseFormat("<!-- fanfande-response-format: html -->\n<p>Hello</p>")).toEqual({
+      format: "html",
+      marker: "<!-- fanfande-response-format: html -->",
+      text: "<p>Hello</p>",
     })
   })
 
@@ -29,8 +37,8 @@ describe("assistant response format markers", () => {
   })
 
   it("only recognizes markers at the start of the first line", () => {
-    const withLeadingBlank = "\n<!-- fanfande-response-format: html -->\n<p>Hello</p>"
-    const inCodeBlock = "```html\n<!-- fanfande-response-format: html -->\n```"
+    const withLeadingBlank = "\n<!-- anybox-response-format: html -->\n<p>Hello</p>"
+    const inCodeBlock = "```html\n<!-- anybox-response-format: html -->\n```"
 
     expect(parseAssistantResponseFormat(withLeadingBlank)).toMatchObject({
       format: "markdown",
@@ -45,7 +53,7 @@ describe("assistant response format markers", () => {
   })
 
   it("does not recognize marker text followed by same-line body content", () => {
-    const text = "<!-- fanfande-response-format: html --><p>Hello</p>"
+    const text = "<!-- anybox-response-format: html --><p>Hello</p>"
 
     expect(parseAssistantResponseFormat(text)).toEqual({
       format: "markdown",
@@ -55,12 +63,13 @@ describe("assistant response format markers", () => {
   })
 
   it("strips complete and partial markers while streaming", () => {
-    expect(stripStreamingResponseFormatMarker("<!-- fanfande-response-format: html -->\n<p>Hello</p>")).toBe(
+    expect(stripStreamingResponseFormatMarker("<!-- anybox-response-format: html -->\n<p>Hello</p>")).toBe(
       "<p>Hello</p>",
     )
     expect(stripStreamingResponseFormatMarker("<")).toBe("")
+    expect(stripStreamingResponseFormatMarker("<!-- anybox-response-format: h")).toBe("")
     expect(stripStreamingResponseFormatMarker("<!-- fanfande-response-format: h")).toBe("")
-    expect(stripStreamingResponseFormatMarker("   <!-- fanfande-response-format: markdown")).toBe("")
+    expect(stripStreamingResponseFormatMarker("   <!-- anybox-response-format: markdown")).toBe("")
   })
 
   it("keeps non-marker streaming text visible", () => {

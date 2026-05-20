@@ -3,7 +3,7 @@ import * as ts from 'typescript';
 import fs from 'fs/promises';
 import path from 'path';
 
-const filePath = path.join(process.cwd(), 'packages', 'fanfandeagent', 'src', 'id', 'id.ts');
+const filePath = path.join(process.cwd(), 'packages', 'anyboxagent', 'src', 'id', 'id.ts');
 const content = await fs.readFile(filePath, 'utf-8');
 console.log('原始内容:');
 console.log(content.substring(0, 200));
