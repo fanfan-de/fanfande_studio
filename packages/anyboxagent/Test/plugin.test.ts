@@ -138,9 +138,26 @@ type ConnectorCatalogEnvelope = JsonEnvelope<
       kind: "api_key" | "oauth"
       label: string
       key?: string
+      clientID?: string
+      clientIDConfigKey?: string
+      clientSecretConfigKey?: string
+      scopes?: string[]
+      tokenEndpointAuthMethod?: string
+      tokenRequestFormat?: string
     }
+    configFields: Array<{
+      key: string
+      label: string
+      type?: string
+      required?: boolean
+      secret?: boolean
+    }>
     runtime?: {
-      transport: "remote"
+      transport: "stdio" | "remote"
+      command?: string
+      args?: string[]
+      env?: Record<string, string>
+      cwd?: string
       serverUrl?: string
     }
   }>
@@ -153,6 +170,8 @@ type PlatformConnectorStatusEnvelope = JsonEnvelope<
     connected: boolean
     authStatus: "connected" | "not_connected" | "pending" | "expired" | "error" | "unavailable"
     credentialKind?: "api_key" | "oauth"
+    configured?: boolean
+    configurationLabel?: string
     generatedMcpServerID?: string
   }>
 >
@@ -163,6 +182,8 @@ type SinglePlatformConnectorStatusEnvelope = JsonEnvelope<{
   connected: boolean
   authStatus: "connected" | "not_connected" | "pending" | "expired" | "error" | "unavailable"
   credentialKind?: "api_key" | "oauth"
+  configured?: boolean
+  configurationLabel?: string
   generatedMcpServerID?: string
 }>
 
@@ -224,6 +245,11 @@ let previousPluginInstallDir: string | undefined
 let previousPluginRegistryIndexURL: string | undefined
 let previousPluginRegistryCacheDir: string | undefined
 let previousConnectorRegistryFiles: string | undefined
+let previousConnectorBuildConfig: string | undefined
+let previousGmailOAuthClientID: string | undefined
+let previousGmailOAuthClientSecret: string | undefined
+let previousLegacyGmailOAuthClientID: string | undefined
+let previousLegacyGmailOAuthClientSecret: string | undefined
 let previousFetch: typeof fetch | undefined
 
 async function removeTreeWithRetry(path: string) {
@@ -246,17 +272,29 @@ async function useTempDatabase() {
   previousPluginRegistryIndexURL = process.env.ANYBOX_PLUGIN_REGISTRY_INDEX_URL
   previousPluginRegistryCacheDir = process.env.ANYBOX_PLUGIN_REGISTRY_CACHE_DIR
   previousConnectorRegistryFiles = process.env.ANYBOX_CONNECTOR_REGISTRY_FILES
+  previousConnectorBuildConfig = process.env.ANYBOX_CONNECTOR_BUILD_CONFIG
+  previousGmailOAuthClientID = process.env.ANYBOX_GMAIL_OAUTH_CLIENT_ID
+  previousGmailOAuthClientSecret = process.env.ANYBOX_GMAIL_OAUTH_CLIENT_SECRET
+  previousLegacyGmailOAuthClientID = process.env.GOOGLE_OAUTH_CLIENT_ID
+  previousLegacyGmailOAuthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
   previousFetch = globalThis.fetch
   process.env.ANYBOX_PLUGIN_INSTALL_DIR = join(activeRoot, "installed-plugins")
   process.env.ANYBOX_PLUGIN_REGISTRY_INDEX_URL = "off"
   process.env.ANYBOX_PLUGIN_REGISTRY_CACHE_DIR = join(activeRoot, "registry-cache")
   delete process.env.ANYBOX_CONNECTOR_REGISTRY_FILES
+  delete process.env.ANYBOX_CONNECTOR_BUILD_CONFIG
+  delete process.env.ANYBOX_GMAIL_OAUTH_CLIENT_ID
+  delete process.env.ANYBOX_GMAIL_OAUTH_CLIENT_SECRET
+  delete process.env.GOOGLE_OAUTH_CLIENT_ID
+  delete process.env.GOOGLE_OAUTH_CLIENT_SECRET
   await Auth.clearProvider("plugin-app:manifest-lab:docs")
   await Auth.clearProvider("plugin-connector:manifest-lab:docs")
   await Auth.clearProvider("plugin-connector:local-connector-lab:docs-local")
   await Auth.clearProvider("plugin-connector:dynamic-oauth-lab:mail")
   await Auth.clearProvider("plugin-connector:gmail:gmail")
   await Auth.clearProvider("connector:docs:default")
+  await Auth.clearProvider("connector:gmail:default")
+  await Auth.clearProvider("connector:feishu:default")
 }
 
 function pluginInstallRoot() {
@@ -809,6 +847,31 @@ afterEach(async () => {
   } else {
     process.env.ANYBOX_CONNECTOR_REGISTRY_FILES = previousConnectorRegistryFiles
   }
+  if (previousConnectorBuildConfig === undefined) {
+    delete process.env.ANYBOX_CONNECTOR_BUILD_CONFIG
+  } else {
+    process.env.ANYBOX_CONNECTOR_BUILD_CONFIG = previousConnectorBuildConfig
+  }
+  if (previousGmailOAuthClientID === undefined) {
+    delete process.env.ANYBOX_GMAIL_OAUTH_CLIENT_ID
+  } else {
+    process.env.ANYBOX_GMAIL_OAUTH_CLIENT_ID = previousGmailOAuthClientID
+  }
+  if (previousGmailOAuthClientSecret === undefined) {
+    delete process.env.ANYBOX_GMAIL_OAUTH_CLIENT_SECRET
+  } else {
+    process.env.ANYBOX_GMAIL_OAUTH_CLIENT_SECRET = previousGmailOAuthClientSecret
+  }
+  if (previousLegacyGmailOAuthClientID === undefined) {
+    delete process.env.GOOGLE_OAUTH_CLIENT_ID
+  } else {
+    process.env.GOOGLE_OAUTH_CLIENT_ID = previousLegacyGmailOAuthClientID
+  }
+  if (previousLegacyGmailOAuthClientSecret === undefined) {
+    delete process.env.GOOGLE_OAUTH_CLIENT_SECRET
+  } else {
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = previousLegacyGmailOAuthClientSecret
+  }
   if (previousFetch) {
     globalThis.fetch = previousFetch
   }
@@ -816,6 +879,11 @@ afterEach(async () => {
   previousPluginRegistryIndexURL = undefined
   previousPluginRegistryCacheDir = undefined
   previousConnectorRegistryFiles = undefined
+  previousConnectorBuildConfig = undefined
+  previousGmailOAuthClientID = undefined
+  previousGmailOAuthClientSecret = undefined
+  previousLegacyGmailOAuthClientID = undefined
+  previousLegacyGmailOAuthClientSecret = undefined
   previousFetch = undefined
   Sqlite.closeDatabase()
   Sqlite.setDatabaseFile()
@@ -1163,6 +1231,229 @@ describe("plugin marketplace API", () => {
     expect(runtime.headers?.["x-api-key"]).toBe("platform-secret")
   })
 
+  test("reads the Gmail OAuth client ID from connector build config", async () => {
+    await useTempDatabase()
+    if (!activeRoot) throw new Error("Temp root has not been initialized.")
+
+    const googleClientID = "1234567890-buildconfig.apps.googleusercontent.com"
+    const configPath = join(activeRoot, "connectors.json")
+    await writeFile(configPath, JSON.stringify({ schemaVersion: 1, gmailOAuthClientID: googleClientID }))
+    process.env.ANYBOX_CONNECTOR_BUILD_CONFIG = configPath
+
+    const app = createServerApp()
+    const flowResponse = await app.request("/api/connectors/connector%3Agmail%3Adefault/auth/flows", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        serverBaseURL: "http://127.0.0.1:1455",
+      }),
+    })
+    const flowBody = (await flowResponse.json()) as JsonEnvelope<{ id: string; authorizationURL: string }>
+
+    expect(flowResponse.status).toBe(200)
+    expect(new URL(flowBody.data?.authorizationURL ?? "").searchParams.get("client_id")).toBe(googleClientID)
+
+    await app.request(`/api/connectors/connector%3Agmail%3Adefault/auth/flows/${flowBody.data?.id}`, {
+      method: "DELETE",
+    })
+  })
+
+  test("uses the managed Gmail OAuth client secret only for token exchange", async () => {
+    await useTempDatabase()
+    if (!activeRoot) throw new Error("Temp root has not been initialized.")
+
+    const googleClientID = "1234567890-buildconfig.apps.googleusercontent.com"
+    const googleClientSecret = "GOCSPX-buildconfig-secret"
+    const configPath = join(activeRoot, "connectors.json")
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        gmailOAuthClientID: googleClientID,
+        gmailOAuthClientSecret: googleClientSecret,
+      }),
+    )
+    process.env.ANYBOX_CONNECTOR_BUILD_CONFIG = configPath
+
+    const app = createServerApp()
+    const catalogResponse = await app.request("/api/connectors/catalog")
+    const catalogBody = await catalogResponse.text()
+    expect(catalogResponse.status).toBe(200)
+    expect(catalogBody).toContain(googleClientID)
+    expect(catalogBody).not.toContain(googleClientSecret)
+
+    let tokenRequests = 0
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      if (url === "https://oauth2.googleapis.com/token") {
+        tokenRequests += 1
+        const body = init?.body instanceof URLSearchParams ? init.body : new URLSearchParams(String(init?.body))
+        expect(body.get("grant_type")).toBe("authorization_code")
+        expect(body.get("client_id")).toBe(googleClientID)
+        expect(body.get("client_secret")).toBe(googleClientSecret)
+        expect(body.get("code")).toBe("gmail-code")
+        expect(body.get("code_verifier")).toBeTruthy()
+        expect(body.get("redirect_uri")).toContain("/auth/callback")
+        return new Response(JSON.stringify({
+          access_token: "gmail-access",
+          refresh_token: "gmail-refresh",
+          expires_in: 3600,
+          token_type: "Bearer",
+          scope: "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+        }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        })
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`)
+    }) as typeof fetch
+
+    const flowResponse = await app.request("/api/connectors/connector%3Agmail%3Adefault/auth/flows", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        serverBaseURL: "http://127.0.0.1:1455",
+      }),
+    })
+    const flowBody = (await flowResponse.json()) as JsonEnvelope<{ id: string; authorizationURL: string }>
+    expect(flowResponse.status).toBe(200)
+
+    const authorizationURL = new URL(flowBody.data?.authorizationURL ?? "")
+    expect(authorizationURL.searchParams.get("client_id")).toBe(googleClientID)
+    expect(authorizationURL.searchParams.has("client_secret")).toBe(false)
+    const state = authorizationURL.searchParams.get("state") ?? ""
+
+    const callbackResult = await ProviderAuth.completeProviderBrowserCallback({
+      providerID: "connector:gmail:default",
+      url: new URL(`http://localhost/auth/callback?code=gmail-code&state=${encodeURIComponent(state)}`),
+    })
+
+    expect(callbackResult.ok).toBe(true)
+    expect(tokenRequests).toBe(1)
+    const storedCredential = await Auth.getProviderCredential("connector:gmail:default", "oauth")
+    expect(storedCredential?.kind === "oauth_session" ? storedCredential.accessToken : undefined).toBe("gmail-access")
+  })
+
+  test("saves Feishu custom app metadata and uses JSON OAuth token exchange", async () => {
+    await useTempDatabase()
+    const app = createServerApp()
+
+    const catalogResponse = await app.request("/api/connectors/catalog")
+    const catalogBody = (await catalogResponse.json()) as ConnectorCatalogEnvelope
+    const feishuConnector = catalogBody.data?.find((item) => item.id === "feishu")
+    expect(catalogResponse.status).toBe(200)
+    expect(feishuConnector?.credential?.kind).toBe("oauth")
+    expect(feishuConnector?.credential?.clientID).toBeUndefined()
+    expect(feishuConnector?.credential?.clientIDConfigKey).toBe("FEISHU_APP_ID")
+    expect(feishuConnector?.credential?.clientSecretConfigKey).toBe("FEISHU_APP_SECRET")
+    expect(feishuConnector?.credential?.tokenRequestFormat).toBe("json")
+    expect(feishuConnector?.configFields.map((field) => field.key)).toEqual(["FEISHU_APP_ID", "FEISHU_APP_SECRET"])
+
+    const missingConfigResponse = await app.request("/api/connectors/connector%3Afeishu%3Adefault/auth/flows", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    })
+    expect(missingConfigResponse.status).toBe(400)
+
+    const saveConfigResponse = await app.request("/api/connectors/connector%3Afeishu%3Adefault/config", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        config: {
+          FEISHU_APP_ID: "cli_feishu_test",
+          FEISHU_APP_SECRET: "feishu-secret",
+        },
+      }),
+    })
+    const saveConfigBody = (await saveConfigResponse.json()) as SinglePlatformConnectorStatusEnvelope
+    expect(saveConfigResponse.status).toBe(200)
+    expect(saveConfigBody.data?.configured).toBe(true)
+    expect(saveConfigBody.data?.configurationLabel).toContain("cli_feis")
+    expect(JSON.stringify(saveConfigBody)).not.toContain("feishu-secret")
+
+    let tokenRequests = 0
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      if (url === "https://open.feishu.cn/open-apis/authen/v2/oauth/token") {
+        tokenRequests += 1
+        expect(init?.headers).toMatchObject({
+          "content-type": "application/json",
+        })
+        const body = JSON.parse(String(init?.body)) as Record<string, string>
+        expect(body.grant_type).toBe("authorization_code")
+        expect(body.client_id).toBe("cli_feishu_test")
+        expect(body.client_secret).toBe("feishu-secret")
+        expect(body.code).toBe("feishu-code")
+        expect(body.code_verifier).toBeTruthy()
+        expect(body.redirect_uri).toContain("/auth/callback")
+        return new Response(JSON.stringify({
+          code: 0,
+          data: {
+            access_token: "feishu-access",
+            refresh_token: "feishu-refresh",
+            expires_in: 3600,
+            token_type: "Bearer",
+            scope: "offline_access auth:user.id:read drive:drive.search:readonly drive:file:readonly docx:document:readonly",
+            user_id: "ou_feishu_user",
+          },
+        }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        })
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`)
+    }) as typeof fetch
+
+    const flowResponse = await app.request("/api/connectors/connector%3Afeishu%3Adefault/auth/flows", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    })
+    const flowBody = (await flowResponse.json()) as JsonEnvelope<{ id: string; authorizationURL: string; status: string }>
+    expect(flowResponse.status).toBe(200)
+    expect(flowBody.data?.status).toBe("waiting_user")
+
+    const authorizationURL = new URL(flowBody.data?.authorizationURL ?? "")
+    expect(authorizationURL.origin + authorizationURL.pathname).toBe("https://accounts.feishu.cn/open-apis/authen/v1/authorize")
+    expect(authorizationURL.searchParams.get("client_id")).toBe("cli_feishu_test")
+    expect(authorizationURL.searchParams.has("client_secret")).toBe(false)
+    expect(authorizationURL.searchParams.get("scope")).toContain("docx:document:readonly")
+    expect(authorizationURL.searchParams.get("code_challenge_method")).toBe("S256")
+    const state = authorizationURL.searchParams.get("state") ?? ""
+
+    const callbackResult = await ProviderAuth.completeProviderBrowserCallback({
+      providerID: "connector:feishu:default",
+      url: new URL(`http://localhost/auth/callback?code=feishu-code&state=${encodeURIComponent(state)}`),
+    })
+
+    expect(callbackResult.ok).toBe(true)
+    expect(tokenRequests).toBe(1)
+    const storedCredential = await Auth.getProviderCredential("connector:feishu:default", "oauth")
+    expect(storedCredential?.kind === "oauth_session" ? storedCredential.accessToken : undefined).toBe("feishu-access")
+
+    const runtime = await Connector.resolveRuntime("connector:feishu:default")
+    expect(runtime.transport).toBe("stdio")
+    expect(runtime.transport === "stdio" ? runtime.env?.FEISHU_ACCESS_TOKEN : undefined).toBe("feishu-access")
+    expect(runtime.transport === "stdio" ? runtime.env?.FEISHU_TOKEN_TYPE : undefined).toBe("Bearer")
+  })
+
   test("parses platform connector requirements without creating plugin-owned connectors", async () => {
     await useTempDatabase()
     await writeConnectorRegistryFile()
@@ -1391,8 +1682,10 @@ describe("plugin marketplace API", () => {
       .rejects.toThrow("does not resolve to a remote")
   })
 
-  test("loads built-in Gmail plugin and starts a real Google OAuth connector flow", async () => {
+  test("loads built-in Gmail plugin and starts the Anybox-managed Gmail connector OAuth flow", async () => {
     await useTempDatabase()
+    const googleClientID = "1234567890-gmailtest.apps.googleusercontent.com"
+    process.env.ANYBOX_GMAIL_OAUTH_CLIENT_ID = googleClientID
     const app = createServerApp()
 
     const catalogResponse = await app.request("/api/plugins/catalog")
@@ -1400,28 +1693,31 @@ describe("plugin marketplace API", () => {
     const plugin = catalogBody.data?.find((item) => item.id === "gmail")
 
     expect(catalogResponse.status).toBe(200)
-    expect(plugin?.connectors.map((connector) => connector.appID)).toEqual(["gmail"])
-    expect(plugin?.apps.map((connector) => connector.appID)).toEqual(["gmail"])
-    expect(plugin?.connectors[0]?.credential.kind).toBe("oauth")
-    expect(plugin?.connectors[0]?.runtime.transport).toBe("stdio")
-    expect(plugin?.configFields.some((field) => field.key === "GOOGLE_OAUTH_CLIENT_ID")).toBe(true)
-    expect(plugin?.configFields.some((field) => field.key === "GOOGLE_OAUTH_CLIENT_SECRET")).toBe(true)
-
-    const missingConfigResponse = await app.request("/api/plugins/installed/gmail", {
-      method: "PUT",
-      headers: {
-        "content-type": "application/json",
+    expect(plugin?.connectors).toEqual([])
+    expect(plugin?.apps).toEqual([])
+    expect(plugin?.connectorRequirements).toEqual([
+      {
+        connector: "gmail",
+        tools: ["gmail_profile", "gmail_search_messages", "gmail_read_message"],
+        permissions: [
+          "Read the connected Gmail profile summary.",
+          "Search Gmail messages with Gmail search syntax.",
+          "Read Gmail message headers and snippets.",
+        ],
+        required: true,
+        reason: "Read-only Gmail access through the Anybox Gmail connector.",
       },
-      body: JSON.stringify({
-        enabled: true,
-      }),
-    })
-    const missingConfigBody = (await missingConfigResponse.json()) as JsonEnvelope<unknown>
-    expect(missingConfigResponse.status).toBe(400)
-    expect(missingConfigBody.error?.code).toBe("PLUGIN_CONFIG_INVALID")
+    ])
+    expect(plugin?.configFields.some((field) => field.key === "GOOGLE_OAUTH_CLIENT_ID")).toBe(false)
+    expect(plugin?.configFields.some((field) => field.key === "GOOGLE_OAUTH_CLIENT_SECRET")).toBe(false)
 
-    const googleClientID = "1234567890-gmailtest.apps.googleusercontent.com"
-    const googleClientSecret = "GOCSPX-gmail-secret"
+    const connectorCatalogResponse = await app.request("/api/connectors/catalog")
+    const connectorCatalogBody = (await connectorCatalogResponse.json()) as ConnectorCatalogEnvelope
+    const gmailConnector = connectorCatalogBody.data?.find((item) => item.id === "gmail")
+    expect(connectorCatalogResponse.status).toBe(200)
+    expect(gmailConnector?.credential?.kind).toBe("oauth")
+    expect(gmailConnector?.runtime?.transport).toBe("stdio")
+
     const installResponse = await app.request("/api/plugins/installed/gmail", {
       method: "PUT",
       headers: {
@@ -1429,25 +1725,21 @@ describe("plugin marketplace API", () => {
       },
       body: JSON.stringify({
         enabled: true,
-        config: {
-          GOOGLE_OAUTH_CLIENT_ID: googleClientID,
-          GOOGLE_OAUTH_CLIENT_SECRET: googleClientSecret,
-        },
       }),
     })
     const installBody = (await installResponse.json()) as InstalledPluginEnvelope
 
     expect(installResponse.status).toBe(200)
-    expect(installBody.data?.mcpServerIDs).toEqual(["plugin.gmail.connector.gmail"])
-    expect(installBody.data?.connectorIDs).toEqual(["plugin-connector:gmail:gmail"])
+    expect(installBody.data?.mcpServerIDs).toEqual([])
+    expect(installBody.data?.connectorIDs).toEqual([])
+    expect(installBody.data?.connectorRequirementIDs).toEqual(["connector:gmail:default"])
 
-    const server = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.gmail.connector.gmail")
+    const server = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "connector.gmail.default")
     expect(server?.transport).toBe("connector")
-    expect(server?.transport === "connector" ? server.connectorId : undefined).toBe("plugin-connector:gmail:gmail")
+    expect(server?.transport === "connector" ? server.connectorId : undefined).toBe("connector:gmail:default")
     expect(JSON.stringify(server)).not.toContain(googleClientID)
-    expect(JSON.stringify(server)).not.toContain(googleClientSecret)
 
-    const flowResponse = await app.request("/api/plugins/installed/gmail/connectors/gmail/auth/flows", {
+    const flowResponse = await app.request("/api/connectors/connector%3Agmail%3Adefault/auth/flows", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -1473,7 +1765,7 @@ describe("plugin marketplace API", () => {
     expect(authorizationURL.searchParams.get("redirect_uri")).toContain("/auth/callback")
 
     const cancelResponse = await app.request(
-      `/api/plugins/installed/gmail/connectors/gmail/auth/flows/${flowBody.data?.id}`,
+      `/api/connectors/connector%3Agmail%3Adefault/auth/flows/${flowBody.data?.id}`,
       {
         method: "DELETE",
       },
@@ -1481,7 +1773,7 @@ describe("plugin marketplace API", () => {
     expect(cancelResponse.status).toBe(200)
 
     await Auth.setProviderCredential(
-      "plugin-connector:gmail:gmail",
+      "connector:gmail:default",
       "oauth",
       {
         kind: "oauth_session",
@@ -1494,14 +1786,14 @@ describe("plugin marketplace API", () => {
       { activate: true, lastError: null },
     )
 
-    const runtime = await Plugin.resolveConnectorRuntime("plugin-connector:gmail:gmail")
+    const runtime = await Connector.resolveRuntime("connector:gmail:default")
     expect(runtime.transport).toBe("stdio")
     expect(runtime.transport === "stdio" ? runtime.command : undefined).toBe("node")
     expect(runtime.transport === "stdio" ? runtime.args?.[0] : undefined).toContain("connectors")
     expect(runtime.transport === "stdio" ? runtime.env?.GMAIL_ACCESS_TOKEN : undefined).toBe("gmail-access-token")
     expect(runtime.transport === "stdio" ? runtime.env?.GMAIL_TOKEN_TYPE : undefined).toBe("Bearer")
 
-    const diagnosticResponse = await app.request("/api/plugins/installed/gmail/connectors/gmail/diagnostic")
+    const diagnosticResponse = await app.request("/api/connectors/connector%3Agmail%3Adefault/diagnostic")
     const diagnosticBody = (await diagnosticResponse.json()) as DiagnosticEnvelope
     expect(diagnosticResponse.status).toBe(200)
     expect(diagnosticBody.data?.ok).toBe(true)

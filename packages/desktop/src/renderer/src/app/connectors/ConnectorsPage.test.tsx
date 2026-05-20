@@ -24,6 +24,8 @@ function createConnector(overrides: Partial<ConnectorDefinition> = {}): Connecto
         readOnly: true,
       },
     ],
+    configFields: overrides.configFields ?? [],
+    oauthCallbackURL: overrides.oauthCallbackURL,
     credential: overrides.credential ?? {
       kind: "oauth",
       label: "Google account",
@@ -47,6 +49,8 @@ function createStatus(overrides: Partial<ConnectorStatus> = {}): ConnectorStatus
     name: overrides.name ?? "Gmail",
     connected: overrides.connected ?? true,
     available: overrides.available ?? true,
+    configured: overrides.configured,
+    configurationLabel: overrides.configurationLabel,
     authStatus: overrides.authStatus ?? "connected",
     credentialKind: overrides.credentialKind ?? "oauth",
     credentialLabel: overrides.credentialLabel ?? "Google account",
@@ -61,6 +65,7 @@ function createProps(overrides: Partial<ConnectorsPageProps> = {}): ConnectorsPa
     activeConnectorID: "connector:gmail:default",
     connectorApiKeyDrafts: {},
     connectorCatalog: [createConnector()],
+    connectorConfigDrafts: {},
     connectorStatuses: [createStatus()],
     connectorsError: null,
     diagnosingConnectorID: null,
@@ -69,12 +74,15 @@ function createProps(overrides: Partial<ConnectorsPageProps> = {}): ConnectorsPa
     savingConnectorID: null,
     onCancelConnectorAuthFlow: vi.fn(),
     onConnectorApiKeyDraftChange: vi.fn(),
+    onConnectorConfigDraftChange: vi.fn(),
     onConnectorSelect: vi.fn(),
     onDeleteConnectorApiKey: vi.fn(),
+    onDeleteConnectorConfig: vi.fn(),
     onDeleteConnectorAuthSession: vi.fn(),
     onDiagnoseConnector: vi.fn(),
     onDismissMessage: vi.fn(),
     onSaveConnectorApiKey: vi.fn(),
+    onSaveConnectorConfig: vi.fn(),
     onStartConnectorAuthFlow: vi.fn(),
     ...overrides,
   }
@@ -101,6 +109,7 @@ describe("ConnectorsPage", () => {
     expect(screen.getByRole("heading", { name: "Gmail", level: 1 })).toBeInTheDocument()
     expect(screen.getByText("person@example.test")).toBeInTheDocument()
     expect(screen.getByText("connector.gmail.default")).toBeInTheDocument()
+    expect(screen.getByText("Managed by Anybox")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Reconnect" }))
     expect(onStartConnectorAuthFlow).toHaveBeenCalledWith("connector:gmail:default")
@@ -163,4 +172,87 @@ describe("ConnectorsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Update key" }))
     expect(onSaveConnectorApiKey).toHaveBeenCalledWith("connector:docs:default")
   })
+
+  it("edits custom app connector credentials before OAuth sign-in", () => {
+    const onConnectorConfigDraftChange = vi.fn()
+    const onSaveConnectorConfig = vi.fn()
+    const onStartConnectorAuthFlow = vi.fn()
+    const feishuConnector = createConnector({
+      id: "feishu",
+      name: "Feishu",
+      configFields: [
+        {
+          key: "FEISHU_APP_ID",
+          label: "Feishu App ID",
+          type: "text",
+          required: true,
+        },
+        {
+          key: "FEISHU_APP_SECRET",
+          label: "Feishu App Secret",
+          type: "password",
+          required: true,
+          secret: true,
+        },
+      ],
+      oauthCallbackURL: "http://localhost:1455/auth/callback",
+      credential: {
+        kind: "oauth",
+        label: "Feishu Custom App",
+        clientIDConfigKey: "FEISHU_APP_ID",
+        clientSecretConfigKey: "FEISHU_APP_SECRET",
+        authorizationURL: "https://accounts.feishu.cn/open-apis/authen/v1/authorize",
+        tokenURL: "https://open.feishu.cn/open-apis/authen/v2/oauth/token",
+        scopes: ["offline_access"],
+        tokenEndpointAuthMethod: "client_secret_post",
+        tokenRequestFormat: "json",
+      },
+    })
+
+    render(
+      <ConnectorsPage
+        {...createProps({
+          activeConnectorID: "connector:feishu:default",
+          connectorCatalog: [feishuConnector],
+          connectorConfigDrafts: {
+            "connector:feishu:default": {
+              FEISHU_APP_ID: "cli_existing",
+              FEISHU_APP_SECRET: "",
+            },
+          },
+          connectorStatuses: [
+            createStatus({
+              connectorID: "connector:feishu:default",
+              definitionID: "feishu",
+              name: "Feishu",
+              connected: false,
+              configured: false,
+              authStatus: "not_connected",
+              credentialLabel: undefined,
+              email: undefined,
+              generatedMcpServerID: "connector.feishu.default",
+            }),
+          ],
+          onConnectorConfigDraftChange,
+          onSaveConnectorConfig,
+          onStartConnectorAuthFlow,
+        })}
+      />,
+    )
+
+    expect(screen.getByText("http://localhost:1455/auth/callback")).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText("Feishu App ID"), {
+      target: {
+        value: "cli_next",
+      },
+    })
+    expect(onConnectorConfigDraftChange).toHaveBeenCalledWith("connector:feishu:default", "FEISHU_APP_ID", "cli_next")
+
+    fireEvent.click(screen.getByRole("button", { name: "Save credentials" }))
+    expect(onSaveConnectorConfig).toHaveBeenCalledWith("connector:feishu:default")
+
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeDisabled()
+    expect(onStartConnectorAuthFlow).not.toHaveBeenCalled()
+  })
+
 })

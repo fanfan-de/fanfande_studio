@@ -1093,7 +1093,9 @@ export type AgentConnectorOAuthTokenPlacement =
 export interface AgentConnectorOAuthCredential {
   kind: "oauth"
   label: string
-  clientID: string
+  clientID?: string
+  clientIDConfigKey?: string
+  clientSecretConfigKey?: string
   authorizationURL: string
   tokenURL: string
   scopes: string[]
@@ -1101,10 +1103,36 @@ export interface AgentConnectorOAuthCredential {
   tokenPlacement?: AgentConnectorOAuthTokenPlacement
   authorizationParams?: Record<string, string>
   tokenParams?: Record<string, string>
+  tokenEndpointAuthMethod?: "none" | "client_secret_post" | "client_secret_basic"
+  tokenRequestFormat?: "form" | "json"
   description?: string
 }
 
 export type AgentConnectorCredential = AgentConnectorApiKeyCredential | AgentConnectorOAuthCredential
+
+export interface AgentConnectorConfigField {
+  key: string
+  label: string
+  type?: "text" | "password" | "url" | "path"
+  required?: boolean
+  secret?: boolean
+  placeholder?: string
+  defaultValue?: string
+  description?: string
+}
+
+export interface AgentConnectorStdioRuntime {
+  transport: "stdio"
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  serverDescription?: string
+  allowedTools?: AgentMcpAllowedTools
+  toolPolicies?: AgentMcpToolPolicies
+  requireApproval?: AgentMcpRequireApproval
+  timeoutMs?: number
+}
 
 export interface AgentConnectorRemoteRuntime {
   transport: "remote"
@@ -1119,6 +1147,8 @@ export interface AgentConnectorRemoteRuntime {
   timeoutMs?: number
 }
 
+export type AgentConnectorRuntime = AgentConnectorStdioRuntime | AgentConnectorRemoteRuntime
+
 export interface AgentConnectorDefinition {
   id: string
   name: string
@@ -1128,8 +1158,10 @@ export interface AgentConnectorDefinition {
   risk: AgentConnectorRisk
   permissions: string[]
   tools: AgentPluginToolPreview[]
+  configFields: AgentConnectorConfigField[]
+  oauthCallbackURL?: string
   credential?: AgentConnectorCredential
-  runtime?: AgentConnectorRemoteRuntime
+  runtime?: AgentConnectorRuntime
   installReview: string[]
   source: "platform" | "registry"
   available: boolean
@@ -1149,6 +1181,8 @@ export interface AgentConnectorStatus {
   name: string
   connected: boolean
   available: boolean
+  configured?: boolean
+  configurationLabel?: string
   authStatus: "connected" | "not_connected" | "pending" | "expired" | "error" | "unavailable"
   credentialKind?: "api_key" | "oauth"
   credentialLabel?: string

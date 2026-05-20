@@ -886,10 +886,12 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     clearPluginSelection,
     connectorApiKeyDrafts,
     connectorCatalog,
+    connectorConfigDrafts,
     connectorsError,
     connectorStatuses,
     deleteArchivedSession,
     deleteConnectorApiKey,
+    deleteConnectorConfig,
     deleteConnectorAuthSession,
     deleteInstalledPlugin,
     deleteInstalledPluginConnectorApiKey,
@@ -968,6 +970,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     restoreArchivedSession,
     saveBuiltinTools,
     saveConnectorApiKey,
+    saveConnectorConfig,
     saveInstalledPluginConfig,
     saveInstalledPluginConnectorApiKey,
     saveMcpServer,
@@ -983,6 +986,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     testingProviderID,
     selectedPromptPreset,
     selectedPromptUrlInstallIDs,
+    setConnectorConfigDraft,
     setProviderAuthMethod,
     setPromptDraftLabelValue,
     setPromptPresetSelectionValue,
@@ -1604,6 +1608,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 activeConnectorID={activeConnectorID}
                 connectorApiKeyDrafts={connectorApiKeyDrafts}
                 connectorCatalog={connectorCatalog}
+                connectorConfigDrafts={connectorConfigDrafts}
                 connectorStatuses={connectorStatuses}
                 connectorsError={connectorsError}
                 diagnosingConnectorID={diagnosingConnectorID}
@@ -1613,12 +1618,15 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 windowControls={windowControls}
                 onCancelConnectorAuthFlow={cancelConnectorAuthFlow}
                 onConnectorApiKeyDraftChange={setConnectorApiKeyDraft}
+                onConnectorConfigDraftChange={setConnectorConfigDraft}
                 onConnectorSelect={selectConnector}
                 onDeleteConnectorApiKey={deleteConnectorApiKey}
+                onDeleteConnectorConfig={deleteConnectorConfig}
                 onDeleteConnectorAuthSession={deleteConnectorAuthSession}
                 onDiagnoseConnector={diagnoseConnector}
                 onDismissMessage={dismissMessage}
                 onSaveConnectorApiKey={saveConnectorApiKey}
+                onSaveConnectorConfig={saveConnectorConfig}
                 onStartConnectorAuthFlow={startConnectorAuthFlow}
               />
             </Suspense>

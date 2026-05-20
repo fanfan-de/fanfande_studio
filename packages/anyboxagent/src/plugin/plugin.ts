@@ -1631,6 +1631,10 @@ async function syncPluginRuntimeBindings(plugin: PluginCatalogItem, installed: I
       runtimeBindingForAppConnector(plugin, app, installed),
     )
   }
+
+  if (plugin.connectorRequirements.length > 0) {
+    await Connector.syncConnectorRuntimeBindings()
+  }
 }
 
 async function writeInstalled(record: InstalledPlugin) {

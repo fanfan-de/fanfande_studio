@@ -10,8 +10,11 @@ const desktopDir = path.resolve(scriptDir, "..")
 const repoRoot = path.resolve(desktopDir, "..", "..")
 const agentDir = path.join(repoRoot, "packages", "anyboxagent")
 const runtimeDir = path.join(desktopDir, "build", "agent-runtime")
+const gmailConnectorSourceDir = path.join(agentDir, "plugins", "builtin", "gmail", "0.1.0", "connectors", "gmail")
+const feishuConnectorSourceDir = path.join(agentDir, "plugins", "builtin", "feishu", "0.1.0", "connectors", "feishu")
 
 const bunExecutableName = process.platform === "win32" ? "bun.exe" : "bun"
+const connectorBuildConfigFile = path.join(runtimeDir, "config", "connectors.json")
 
 function readEnv(key) {
   const value = process.env[key]?.trim()
@@ -113,6 +116,38 @@ async function fixNodePtySpawnHelperPermissions(runtimeNodeModulesDir) {
   )
 }
 
+async function copyBundledConnectors() {
+  const gmailConnectorTargetDir = path.join(runtimeDir, "connectors", "gmail")
+  const feishuConnectorTargetDir = path.join(runtimeDir, "connectors", "feishu")
+  if (!(await pathExists(path.join(gmailConnectorSourceDir, "server.js")))) {
+    throw new Error(`Missing Gmail connector server at ${gmailConnectorSourceDir}`)
+  }
+  if (!(await pathExists(path.join(feishuConnectorSourceDir, "server.js")))) {
+    throw new Error(`Missing Feishu connector server at ${feishuConnectorSourceDir}`)
+  }
+
+  await fsp.mkdir(gmailConnectorTargetDir, { recursive: true })
+  await fsp.mkdir(feishuConnectorTargetDir, { recursive: true })
+  await fsp.copyFile(path.join(gmailConnectorSourceDir, "server.js"), path.join(gmailConnectorTargetDir, "server.js"))
+  await fsp.copyFile(path.join(feishuConnectorSourceDir, "server.js"), path.join(feishuConnectorTargetDir, "server.js"))
+}
+
+async function writeConnectorBuildConfig() {
+  const gmailOAuthClientID = readEnv("ANYBOX_GMAIL_OAUTH_CLIENT_ID")
+  const gmailOAuthClientSecret = readEnv("ANYBOX_GMAIL_OAUTH_CLIENT_SECRET")
+  if (!gmailOAuthClientID && !gmailOAuthClientSecret) return
+
+  await fsp.mkdir(path.dirname(connectorBuildConfigFile), { recursive: true })
+  await fsp.writeFile(
+    connectorBuildConfigFile,
+    `${JSON.stringify({
+      schemaVersion: 1,
+      ...(gmailOAuthClientID ? { gmailOAuthClientID } : {}),
+      ...(gmailOAuthClientSecret ? { gmailOAuthClientSecret } : {}),
+    }, null, 2)}\n`,
+  )
+}
+
 async function main() {
   const bunBinary = resolveBunBinary()
   const runtimeNodeModulesDir = path.join(runtimeDir, "node_modules")
@@ -133,6 +168,8 @@ async function main() {
   await fsp.copyFile(path.join(agentDir, "src", "pty", "node-pty-worker.mjs"), path.join(runtimeDir, "node-pty-worker.mjs"))
   await copyNodePtyRuntime(runtimeNodeModulesDir)
   await fixNodePtySpawnHelperPermissions(runtimeNodeModulesDir)
+  await copyBundledConnectors()
+  await writeConnectorBuildConfig()
   await prepareWorkspaceDependencies({ bunBinary })
 
   console.log(`[desktop][build] prepared managed agent runtime at ${runtimeDir}`)

@@ -518,6 +518,10 @@ try {
       invokeDesktop("desktop:save-connector-api-key", input) as Promise<ConnectorStatus>,
     deleteConnectorApiKey: (input: { connectorID: string }) =>
       invokeDesktop("desktop:delete-connector-api-key", input) as Promise<ConnectorStatus>,
+    saveConnectorConfig: (input: { connectorID: string; config: Record<string, string | null | undefined> }) =>
+      invokeDesktop("desktop:save-connector-config", input) as Promise<ConnectorStatus>,
+    deleteConnectorConfig: (input: { connectorID: string }) =>
+      invokeDesktop("desktop:delete-connector-config", input) as Promise<ConnectorStatus>,
     startConnectorAuthFlow: (input: { connectorID: string }) =>
       invokeDesktop("desktop:start-connector-auth-flow", input) as Promise<AgentProviderAuthFlow>,
     getConnectorAuthFlow: (input: { connectorID: string; flowID: string }) =>

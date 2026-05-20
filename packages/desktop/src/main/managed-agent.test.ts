@@ -87,10 +87,13 @@ describe("managed agent workspace dependencies", () => {
   it("adds bundled workspace dependency paths and versions to launch env", async () => {
     const runtimeDir = await createTempDirectory("anybox-managed-agent-runtime-")
     const dependenciesDir = path.join(runtimeDir, "dependencies")
+    const connectorBuildConfigPath = path.join(runtimeDir, "config", "connectors.json")
 
     await mkdir(dependenciesDir, { recursive: true })
+    await mkdir(path.dirname(connectorBuildConfigPath), { recursive: true })
     await writeFile(path.join(runtimeDir, process.platform === "win32" ? "bun.exe" : "bun"), "")
     await writeFile(path.join(runtimeDir, "agent-server.js"), "")
+    await writeFile(connectorBuildConfigPath, JSON.stringify({ schemaVersion: 1, gmailOAuthClientID: "client.test" }))
     await writeFile(
       path.join(dependenciesDir, "manifest.json"),
       JSON.stringify({
@@ -117,6 +120,7 @@ describe("managed agent workspace dependencies", () => {
         expect(env[managedAgentInternals.env.workspaceDependenciesDir]).toBe(dependenciesDir)
         expect(env[managedAgentInternals.env.workspaceDependenciesVersion]).toBe("bundle-test-version")
         expect(env[managedAgentInternals.env.agentDataDir]).toBe(agentDataDir)
+        expect(env.ANYBOX_CONNECTOR_BUILD_CONFIG).toBe(connectorBuildConfigPath)
         expect(env.ANYBOX_SERVER_PORT).toBe("4567")
       },
     )

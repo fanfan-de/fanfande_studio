@@ -1049,6 +1049,14 @@ export interface DesktopIpcContract {
     input: { connectorID: string }
     output: AgentConnectorStatus
   }
+  "desktop:save-connector-config": {
+    input: { connectorID: string; config: Record<string, string | null | undefined> }
+    output: AgentConnectorStatus
+  }
+  "desktop:delete-connector-config": {
+    input: { connectorID: string }
+    output: AgentConnectorStatus
+  }
   "desktop:start-connector-auth-flow": {
     input: { connectorID: string }
     output: AgentProviderAuthFlow
@@ -1488,6 +1496,8 @@ export interface DesktopApiMethods {
   getConnector(input: DesktopIpcInput<"desktop:get-connector">): Promise<DesktopIpcOutput<"desktop:get-connector">>
   saveConnectorApiKey(input: DesktopIpcInput<"desktop:save-connector-api-key">): Promise<DesktopIpcOutput<"desktop:save-connector-api-key">>
   deleteConnectorApiKey(input: DesktopIpcInput<"desktop:delete-connector-api-key">): Promise<DesktopIpcOutput<"desktop:delete-connector-api-key">>
+  saveConnectorConfig(input: DesktopIpcInput<"desktop:save-connector-config">): Promise<DesktopIpcOutput<"desktop:save-connector-config">>
+  deleteConnectorConfig(input: DesktopIpcInput<"desktop:delete-connector-config">): Promise<DesktopIpcOutput<"desktop:delete-connector-config">>
   startConnectorAuthFlow(input: DesktopIpcInput<"desktop:start-connector-auth-flow">): Promise<DesktopIpcOutput<"desktop:start-connector-auth-flow">>
   getConnectorAuthFlow(input: DesktopIpcInput<"desktop:get-connector-auth-flow">): Promise<DesktopIpcOutput<"desktop:get-connector-auth-flow">>
   cancelConnectorAuthFlow(input: DesktopIpcInput<"desktop:cancel-connector-auth-flow">): Promise<DesktopIpcOutput<"desktop:cancel-connector-auth-flow">>

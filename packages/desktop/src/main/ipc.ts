@@ -1834,6 +1834,39 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     return result.data
   })
 
+  handleDesktopIpc(
+    "desktop:save-connector-config",
+    async (_event, input: { connectorID: string; config: Record<string, string | null | undefined> }) => {
+      const connectorID = input.connectorID.trim()
+      const result = await requestAgentJSON<AgentConnectorStatus>(
+        `/api/connectors/${encodeURIComponent(connectorID)}/config`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            config: input.config ?? {},
+          }),
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc("desktop:delete-connector-config", async (_event, input: { connectorID: string }) => {
+    const connectorID = input.connectorID.trim()
+    const result = await requestAgentJSON<AgentConnectorStatus>(
+      `/api/connectors/${encodeURIComponent(connectorID)}/config`,
+      {
+        method: "DELETE",
+      },
+    )
+
+    return result.data
+  })
+
   handleDesktopIpc("desktop:start-connector-auth-flow", async (_event, input: { connectorID: string }) => {
     const connectorID = input.connectorID.trim()
     const result = await requestAgentJSON<AgentProviderAuthFlow>(

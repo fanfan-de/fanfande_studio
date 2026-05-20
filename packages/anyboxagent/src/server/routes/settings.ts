@@ -183,6 +183,19 @@ export function SettingsRoutes() {
     ok(c, await SettingsUseCase.deleteConnectorApiKey(c.req.param("connectorID"))),
   )
 
+  app.put("/connectors/:connectorID/config", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.SaveConnectorConfigBody,
+      "Body must contain connector configuration fields.",
+    )
+    return ok(c, await SettingsUseCase.saveConnectorConfig(c.req.param("connectorID"), payload))
+  })
+
+  app.delete("/connectors/:connectorID/config", async (c) =>
+    ok(c, await SettingsUseCase.deleteConnectorConfig(c.req.param("connectorID"))),
+  )
+
   app.post("/connectors/:connectorID/auth/flows", async (c) => {
     await parseJsonBody(
       c,

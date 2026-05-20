@@ -4857,8 +4857,68 @@ body.is-dragging-settings-page {
   gap: 10px;
 }
 
+.connectors-setup-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #eceae7;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.connectors-setup-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: #504c47;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.connectors-callback-url-card {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.24fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e2ded8;
+  border-radius: 8px;
+  background: #faf9f7;
+}
+
+.connectors-callback-url-card span {
+  color: #77736d;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.connectors-callback-url-card code {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #eceae7;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #242321;
+  font-size: 13px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.connectors-config-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
 .connectors-key-field {
   width: min(420px, 100%);
+}
+
+.connectors-key-field small {
+  color: #77736d;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .connectors-action-note {

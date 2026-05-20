@@ -86,6 +86,7 @@ export const InstallPluginBody = Plugin.InstallPluginInput
 export const UpdateInstalledPluginBody = Plugin.UpdateInstalledPluginInput
 export const SavePluginConnectorApiKeyBody = Plugin.SavePluginConnectorApiKeyInput
 export const SaveConnectorApiKeyBody = Connector.SaveConnectorApiKeyInput
+export const SaveConnectorConfigBody = Connector.SaveConnectorConfigInput
 export const PluginConnectorAuthFlowBody = z.object({}).optional()
 export const ConnectorAuthFlowBody = z.object({}).optional()
 
@@ -455,6 +456,8 @@ function toConnectorApiError(error: unknown) {
       case "CONNECTOR_UNAVAILABLE":
       case "CONNECTOR_CREDENTIAL_UNSUPPORTED":
       case "CONNECTOR_NOT_CONNECTED":
+      case "CONNECTOR_CONFIG_REQUIRED":
+      case "CONNECTOR_CONFIG_UNSUPPORTED":
       case "CONNECTOR_REGISTRY_INVALID":
         return new ApiError(400, error.code, error.message)
     }
@@ -787,6 +790,25 @@ export async function saveConnectorApiKey(
 export async function deleteConnectorApiKey(connectorID: string) {
   try {
     return await Connector.removeConnectorApiKey(connectorID)
+  } catch (error) {
+    throw toConnectorApiError(error)
+  }
+}
+
+export async function saveConnectorConfig(
+  connectorID: string,
+  input: z.infer<typeof SaveConnectorConfigBody>,
+) {
+  try {
+    return await Connector.saveConnectorConfig(connectorID, input)
+  } catch (error) {
+    throw toConnectorApiError(error)
+  }
+}
+
+export async function deleteConnectorConfig(connectorID: string) {
+  try {
+    return await Connector.removeConnectorConfig(connectorID)
   } catch (error) {
     throw toConnectorApiError(error)
   }

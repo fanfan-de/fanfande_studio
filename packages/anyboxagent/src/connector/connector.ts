@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
-import { delimiter } from "node:path"
+import { delimiter, dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import z from "zod"
 import * as Auth from "#auth/auth.ts"
 import * as ProviderAuth from "#auth/provider-auth.ts"
@@ -12,6 +13,17 @@ const CONNECTOR_PREFIX = "connector:"
 const PLUGIN_CONNECTOR_PREFIX = "plugin-connector:"
 const LEGACY_PLUGIN_APP_CONNECTOR_PREFIX = "plugin-app:"
 const CONNECTOR_REGISTRY_FILES_ENV = "ANYBOX_CONNECTOR_REGISTRY_FILES"
+const CONNECTOR_BUILD_CONFIG_ENV = "ANYBOX_CONNECTOR_BUILD_CONFIG"
+const GMAIL_OAUTH_CLIENT_ID_ENV = "ANYBOX_GMAIL_OAUTH_CLIENT_ID"
+const GMAIL_OAUTH_CLIENT_SECRET_ENV = "ANYBOX_GMAIL_OAUTH_CLIENT_SECRET"
+const LEGACY_GMAIL_OAUTH_CLIENT_ID_ENV = "GOOGLE_OAUTH_CLIENT_ID"
+const LEGACY_GMAIL_OAUTH_CLIENT_SECRET_ENV = "GOOGLE_OAUTH_CLIENT_SECRET"
+const BUILTIN_GMAIL_PACKAGE_PATH = ["plugins", "builtin", "gmail", "0.1.0"] as const
+const BUILTIN_FEISHU_PACKAGE_PATH = ["plugins", "builtin", "feishu", "0.1.0"] as const
+const BUILD_CONNECTOR_CONFIG_PATH = ["config", "connectors.json"] as const
+const BUILD_GMAIL_CONNECTOR_PATH = ["connectors", "gmail"] as const
+const BUILD_FEISHU_CONNECTOR_PATH = ["connectors", "feishu"] as const
+const CONNECTOR_CUSTOM_OAUTH_CLIENT_KEY = "custom-oauth-client"
 
 export type ResolvedConnectorRuntime =
   | {
@@ -78,7 +90,9 @@ export const ConnectorOAuthCredential = z
   .object({
     kind: z.literal("oauth"),
     label: z.string().min(1),
-    clientID: z.string().min(1),
+    clientID: z.string().min(1).optional(),
+    clientIDConfigKey: z.string().min(1).optional(),
+    clientSecretConfigKey: z.string().min(1).optional(),
     authorizationURL: z.string().min(1),
     tokenURL: z.string().min(1),
     scopes: z.array(z.string().min(1)),
@@ -86,6 +100,8 @@ export const ConnectorOAuthCredential = z
     tokenPlacement: ConnectorOAuthTokenPlacement.optional(),
     authorizationParams: z.record(z.string(), z.string()).optional(),
     tokenParams: z.record(z.string(), z.string()).optional(),
+    tokenEndpointAuthMethod: z.enum(["none", "client_secret_post", "client_secret_basic"]).optional(),
+    tokenRequestFormat: z.enum(["form", "json"]).optional(),
     description: z.string().optional(),
   })
   .strict()
@@ -94,21 +110,54 @@ export type ConnectorOAuthCredential = z.infer<typeof ConnectorOAuthCredential>
 export const ConnectorCredential = z.union([ConnectorApiKeyCredential, ConnectorOAuthCredential])
 export type ConnectorCredential = z.infer<typeof ConnectorCredential>
 
+export const ConnectorConfigField = z
+  .object({
+    key: z.string().min(1),
+    label: z.string().min(1),
+    type: z.enum(["text", "password", "url", "path"]).optional(),
+    required: z.boolean().optional(),
+    secret: z.boolean().optional(),
+    placeholder: z.string().optional(),
+    defaultValue: z.string().optional(),
+    description: z.string().optional(),
+  })
+  .strict()
+export type ConnectorConfigField = z.infer<typeof ConnectorConfigField>
+
+const ConnectorRuntimeBase = {
+  serverDescription: z.string().min(1).optional(),
+  allowedTools: Config.McpAllowedTools,
+  toolPolicies: Config.McpToolPolicies,
+  requireApproval: Config.McpRequireApproval,
+  timeoutMs: z.number().int().positive().optional(),
+} as const
+
+export const ConnectorStdioRuntime = z
+  .object({
+    ...ConnectorRuntimeBase,
+    transport: z.literal("stdio"),
+    command: z.string().min(1),
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    cwd: z.string().min(1).optional(),
+  })
+  .strict()
+export type ConnectorStdioRuntime = z.infer<typeof ConnectorStdioRuntime>
+
 export const ConnectorRemoteRuntime = z
   .object({
+    ...ConnectorRuntimeBase,
     transport: z.literal("remote"),
     provider: Config.McpRemoteProvider.optional(),
     serverUrl: z.string().min(1).optional(),
     authorization: z.string().min(1).optional(),
     headers: z.record(z.string(), z.string()).optional(),
-    serverDescription: z.string().min(1).optional(),
-    allowedTools: Config.McpAllowedTools,
-    toolPolicies: Config.McpToolPolicies,
-    requireApproval: Config.McpRequireApproval,
-    timeoutMs: z.number().int().positive().optional(),
   })
   .strict()
 export type ConnectorRemoteRuntime = z.infer<typeof ConnectorRemoteRuntime>
+
+export const ConnectorRuntime = z.union([ConnectorStdioRuntime, ConnectorRemoteRuntime])
+export type ConnectorRuntime = z.infer<typeof ConnectorRuntime>
 
 export const ConnectorDefinition = z
   .object({
@@ -120,8 +169,10 @@ export const ConnectorDefinition = z
     risk: z.enum(["low", "medium", "high", "critical"]).default("medium"),
     permissions: z.array(z.string()).default([]),
     tools: z.array(ConnectorToolPreview).default([]),
+    configFields: z.array(ConnectorConfigField).default([]),
+    oauthCallbackURL: z.string().min(1).optional(),
     credential: ConnectorCredential.optional(),
-    runtime: ConnectorRemoteRuntime.optional(),
+    runtime: ConnectorRuntime.optional(),
     installReview: z.array(z.string()).default([]),
     source: z.enum(["platform", "registry"]).default("platform"),
     available: z.boolean().default(true),
@@ -146,6 +197,15 @@ const ConnectorRegistryFile = z
     connectors: z.array(ConnectorDefinition),
   })
   .strict()
+
+const ConnectorBuildConfig = z
+  .object({
+    schemaVersion: z.literal(1).optional(),
+    gmailOAuthClientID: z.string().min(1).optional(),
+    gmailOAuthClientSecret: z.string().min(1).optional(),
+  })
+  .strict()
+type ConnectorBuildConfig = z.infer<typeof ConnectorBuildConfig>
 
 const ConnectorDiagnosticTool = z
   .object({
@@ -180,6 +240,8 @@ export const ConnectorStatus = z
     name: z.string().min(1),
     connected: z.boolean(),
     available: z.boolean(),
+    configured: z.boolean().optional(),
+    configurationLabel: z.string().optional(),
     authStatus: z.enum(["connected", "not_connected", "pending", "expired", "error", "unavailable"]),
     credentialKind: z.enum(["api_key", "oauth"]).optional(),
     credentialLabel: z.string().optional(),
@@ -199,6 +261,13 @@ export const SaveConnectorApiKeyInput = z
   })
   .strict()
 export type SaveConnectorApiKeyInput = z.infer<typeof SaveConnectorApiKeyInput>
+
+export const SaveConnectorConfigInput = z
+  .object({
+    config: z.record(z.string(), z.string().nullable().optional()).default({}),
+  })
+  .strict()
+export type SaveConnectorConfigInput = z.infer<typeof SaveConnectorConfigInput>
 
 export class ConnectorError extends Error {
   constructor(
@@ -269,8 +338,246 @@ function readConnectorRegistryFile(path: string): ConnectorDefinition[] {
   }
 }
 
+function moduleRoot() {
+  return dirname(fileURLToPath(import.meta.url))
+}
+
+function packageRootFromAnyboxAgentRoot(...segments: string[]) {
+  return resolve(moduleRoot(), "..", "..", ...segments)
+}
+
+function bundledRuntimeRoot() {
+  return moduleRoot()
+}
+
+function buildConnectorConfigPath() {
+  const configured = getProcessEnvValue(CONNECTOR_BUILD_CONFIG_ENV)?.trim()
+  return configured || resolve(bundledRuntimeRoot(), ...BUILD_CONNECTOR_CONFIG_PATH)
+}
+
+function readConnectorBuildConfig(): ConnectorBuildConfig {
+  const configPath = buildConnectorConfigPath()
+  if (!existsSync(configPath)) return {}
+
+  try {
+    const raw = readFileSync(configPath, "utf8")
+    return ConnectorBuildConfig.parse(JSON.parse(raw))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new ConnectorError("CONNECTOR_REGISTRY_INVALID", `Connector build config '${configPath}' is invalid: ${message}`)
+  }
+}
+
+function builtinGmailPackageRoot() {
+  return packageRootFromAnyboxAgentRoot(...BUILTIN_GMAIL_PACKAGE_PATH)
+}
+
+function builtinFeishuPackageRoot() {
+  return packageRootFromAnyboxAgentRoot(...BUILTIN_FEISHU_PACKAGE_PATH)
+}
+
+function builtinGmailConnectorRoot() {
+  const packagedRoot = resolve(bundledRuntimeRoot(), ...BUILD_GMAIL_CONNECTOR_PATH)
+  return existsSync(packagedRoot) ? packagedRoot : resolve(builtinGmailPackageRoot(), "connectors", "gmail")
+}
+
+function builtinFeishuConnectorRoot() {
+  const packagedRoot = resolve(bundledRuntimeRoot(), ...BUILD_FEISHU_CONNECTOR_PATH)
+  return existsSync(packagedRoot) ? packagedRoot : resolve(builtinFeishuPackageRoot(), "connectors", "feishu")
+}
+
+function builtinGmailOAuthClientID() {
+  const buildConfig = readConnectorBuildConfig()
+  return getProcessEnvValue(GMAIL_OAUTH_CLIENT_ID_ENV)?.trim() ||
+    getProcessEnvValue(LEGACY_GMAIL_OAUTH_CLIENT_ID_ENV)?.trim() ||
+    buildConfig.gmailOAuthClientID?.trim() ||
+    "anybox-gmail-oauth-client-id-unconfigured"
+}
+
+function builtinGmailOAuthClientSecret() {
+  const buildConfig = readConnectorBuildConfig()
+  return getProcessEnvValue(GMAIL_OAUTH_CLIENT_SECRET_ENV)?.trim() ||
+    getProcessEnvValue(LEGACY_GMAIL_OAUTH_CLIENT_SECRET_ENV)?.trim() ||
+    buildConfig.gmailOAuthClientSecret?.trim()
+}
+
 function builtinDefinitions(): ConnectorDefinition[] {
-  return []
+  const gmailConnectorRoot = builtinGmailConnectorRoot()
+  const gmailServerPath = resolve(gmailConnectorRoot, "server.js")
+  const gmailClientID = builtinGmailOAuthClientID()
+  const gmailClientSecret = builtinGmailOAuthClientSecret()
+  const gmailConfigured = gmailClientID !== "anybox-gmail-oauth-client-id-unconfigured"
+  const gmailRuntimeAvailable = existsSync(gmailServerPath)
+  const feishuConnectorRoot = builtinFeishuConnectorRoot()
+  const feishuServerPath = resolve(feishuConnectorRoot, "server.js")
+  const feishuRuntimeAvailable = existsSync(feishuServerPath)
+
+  return [
+    ConnectorDefinition.parse({
+      id: "gmail",
+      name: "Gmail",
+      description: "Connect Gmail with Google OAuth and expose read-only mail tools.",
+      publisher: "Anybox",
+      icon: "GM",
+      risk: "medium",
+      permissions: [
+        "Starts a bundled local Gmail MCP wrapper.",
+        "Requests read-only Gmail access from Google.",
+        "Sends Gmail API requests to gmail.googleapis.com.",
+      ],
+      tools: [
+        {
+          name: "gmail_profile",
+          title: "Gmail Profile",
+          description: "Read the connected Gmail profile summary.",
+          readOnly: true,
+        },
+        {
+          name: "gmail_search_messages",
+          title: "Search Gmail",
+          description: "Search Gmail messages with Gmail search syntax.",
+          readOnly: true,
+        },
+        {
+          name: "gmail_read_message",
+          title: "Read Gmail Message",
+          description: "Read headers and snippet for a Gmail message.",
+          readOnly: true,
+        },
+      ],
+      credential: {
+        kind: "oauth",
+        label: "Google Gmail",
+        clientID: gmailClientID,
+        authorizationURL: "https://accounts.google.com/o/oauth2/v2/auth",
+        tokenURL: "https://oauth2.googleapis.com/token",
+        revocationURL: "https://oauth2.googleapis.com/revoke",
+        scopes: [
+          "openid",
+          "email",
+          "profile",
+          "https://www.googleapis.com/auth/gmail.readonly",
+        ],
+        authorizationParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
+        tokenEndpointAuthMethod: gmailClientSecret ? "client_secret_post" : "none",
+        tokenPlacement: {
+          type: "authorization_bearer",
+        },
+      },
+      runtime: {
+        transport: "stdio",
+        command: "node",
+        args: [gmailServerPath],
+        cwd: gmailConnectorRoot,
+        env: {
+          GMAIL_ACCESS_TOKEN: "${OAUTH_ACCESS_TOKEN}",
+          GMAIL_TOKEN_TYPE: "${OAUTH_TOKEN_TYPE}",
+        },
+        timeoutMs: 10000,
+      },
+      installReview: [
+        "OAuth client metadata is managed by Anybox.",
+        "Uses the read-only Gmail API scope.",
+        "Runs a local stdio MCP wrapper bundled with Anybox.",
+      ],
+      source: "platform",
+      available: gmailConfigured && gmailRuntimeAvailable,
+    }),
+    ConnectorDefinition.parse({
+      id: "feishu",
+      name: "Feishu",
+      description: "Connect a Feishu custom app and expose user-authorized document tools.",
+      publisher: "Anybox",
+      icon: "FS",
+      risk: "medium",
+      permissions: [
+        "Stores Feishu custom app metadata locally on this device.",
+        "Requests user-authorized Feishu access with the scopes enabled on the custom app.",
+        "Sends Feishu OpenAPI requests to open.feishu.cn.",
+      ],
+      tools: [
+        {
+          name: "feishu_profile",
+          title: "Feishu Profile",
+          description: "Read the connected Feishu user profile.",
+          readOnly: true,
+        },
+        {
+          name: "feishu_search_files",
+          title: "Search Feishu Files",
+          description: "Search Feishu Drive files visible to the connected account.",
+          readOnly: true,
+        },
+        {
+          name: "feishu_read_docx_raw",
+          title: "Read Feishu Doc",
+          description: "Read plain text content from a Feishu Docx document.",
+          readOnly: true,
+        },
+      ],
+      configFields: [
+        {
+          key: "FEISHU_APP_ID",
+          label: "Feishu App ID",
+          type: "text",
+          required: true,
+          placeholder: "cli_xxxxxxxxxxxxxxxx",
+          description: "App ID from the Feishu Open Platform custom app.",
+        },
+        {
+          key: "FEISHU_APP_SECRET",
+          label: "Feishu App Secret",
+          type: "password",
+          required: true,
+          secret: true,
+          placeholder: "Enter app secret",
+          description: "App Secret from the same Feishu custom app. It is stored only on this device.",
+        },
+      ],
+      oauthCallbackURL: ProviderAuth.getLocalBrowserCallbackURL(),
+      credential: {
+        kind: "oauth",
+        label: "Feishu Custom App",
+        clientIDConfigKey: "FEISHU_APP_ID",
+        clientSecretConfigKey: "FEISHU_APP_SECRET",
+        authorizationURL: "https://accounts.feishu.cn/open-apis/authen/v1/authorize",
+        tokenURL: "https://open.feishu.cn/open-apis/authen/v2/oauth/token",
+        scopes: [
+          "offline_access",
+          "auth:user.id:read",
+          "drive:drive.search:readonly",
+          "drive:file:readonly",
+          "docx:document:readonly",
+        ],
+        tokenEndpointAuthMethod: "client_secret_post",
+        tokenRequestFormat: "json",
+        tokenPlacement: {
+          type: "authorization_bearer",
+        },
+      },
+      runtime: {
+        transport: "stdio",
+        command: "node",
+        args: [feishuServerPath],
+        cwd: feishuConnectorRoot,
+        env: {
+          FEISHU_ACCESS_TOKEN: "${OAUTH_ACCESS_TOKEN}",
+          FEISHU_TOKEN_TYPE: "${OAUTH_TOKEN_TYPE}",
+        },
+        timeoutMs: 10000,
+      },
+      installReview: [
+        "Create a Feishu Open Platform custom app and copy its App ID and App Secret here.",
+        "Add the local callback URL shown by Anybox to the app security settings when connecting.",
+        "Enable the required Drive and Docx scopes on the Feishu app before authorizing.",
+      ],
+      source: "platform",
+      available: feishuRuntimeAvailable,
+    }),
+  ]
 }
 
 export function listDefinitions(): ConnectorDefinition[] {
@@ -326,16 +633,37 @@ function assertOAuthCredential(definition: ConnectorDefinition): ConnectorOAuthC
   return definition.credential
 }
 
-function oauthConfigForCredential(credential: ConnectorOAuthCredential): ProviderAuth.GenericOAuthProviderConfig {
+function maskedClientID(clientID: string) {
+  if (clientID.length <= 12) return clientID
+  return `${clientID.slice(0, 8)}...${clientID.slice(-4)}`
+}
+
+async function customOAuthClientRegistration(connectorID: string) {
+  return await Auth.getOAuthClientRegistration(connectorID, CONNECTOR_CUSTOM_OAUTH_CLIENT_KEY)
+}
+
+async function oauthConfigForCredential(
+  credential: ConnectorOAuthCredential,
+  connectorID: string,
+  definition?: ConnectorDefinition,
+): Promise<ProviderAuth.GenericOAuthProviderConfig> {
+  const managedClientSecret = definition?.id === "gmail" ? builtinGmailOAuthClientSecret() : undefined
+  const customClient = credential.clientIDConfigKey ? await customOAuthClientRegistration(connectorID) : undefined
+  const clientID = customClient?.clientID ?? credential.clientID
+  const clientSecret = customClient?.clientSecret ?? managedClientSecret
+
   return {
     label: credential.label,
-    clientID: credential.clientID,
+    clientID,
+    clientSecret,
     authorizationURL: credential.authorizationURL,
     tokenURL: credential.tokenURL,
     scopes: credential.scopes,
     revocationURL: credential.revocationURL,
     authorizationParams: credential.authorizationParams,
     tokenParams: credential.tokenParams,
+    tokenEndpointAuthMethod: clientSecret ? credential.tokenEndpointAuthMethod ?? "client_secret_post" : credential.tokenEndpointAuthMethod,
+    tokenRequestFormat: credential.tokenRequestFormat,
   }
 }
 
@@ -368,6 +696,11 @@ async function statusForDefinition(definition: ConnectorDefinition): Promise<Con
   const activeCredential = await Auth.getActiveProviderCredential(connectorID)
   const credential = activeCredential?.credential
   const record = await Auth.getProviderRecord(connectorID)
+  const customClient = definition.credential?.kind === "oauth" && definition.credential.clientIDConfigKey
+    ? await customOAuthClientRegistration(connectorID)
+    : undefined
+  const configured = definition.configFields.length === 0 || Boolean(customClient)
+  const configurationLabel = customClient ? `App ID ${maskedClientID(customClient.clientID)}` : undefined
   const activeFlow = ProviderAuth.getLatestProviderAuthFlow(connectorID)
   const isPendingFlow = activeFlow && ["pending", "waiting_user", "authorizing"].includes(activeFlow.status)
   const connected = !definition.credential
@@ -394,13 +727,15 @@ async function statusForDefinition(definition: ConnectorDefinition): Promise<Con
     name: definition.name,
     connected,
     available: definition.available,
+    configured,
+    configurationLabel,
     authStatus,
     credentialKind: definition.credential?.kind,
     credentialLabel: credential?.kind === "api_key"
       ? credential.label ?? definition.credential?.label
       : credential?.kind === "oauth_session"
         ? credential.email ?? definition.credential?.label
-        : undefined,
+        : configurationLabel ?? undefined,
     account: accountSummary(credential),
     email: credential?.kind === "oauth_session" ? credential.email : undefined,
     expiresAt: credential?.kind === "oauth_session" ? credential.expiresAt : undefined,
@@ -446,6 +781,48 @@ export async function removeConnectorApiKey(connectorID: string) {
   return saveConnectorApiKey(connectorID, { apiKey: null })
 }
 
+function readRequiredConfig(input: SaveConnectorConfigInput, key: string, label: string) {
+  const value = input.config[key]
+  const normalized = typeof value === "string" ? value.trim() : ""
+  if (!normalized) {
+    throw new ConnectorError("CONNECTOR_CONFIG_REQUIRED", `${label} is required.`)
+  }
+  return normalized
+}
+
+export async function saveConnectorConfig(connectorID: string, input: SaveConnectorConfigInput) {
+  const { definition } = assertDefinitionForConnectorID(connectorID)
+  const credential = definition.credential?.kind === "oauth" ? definition.credential : undefined
+  if (!credential?.clientIDConfigKey || !credential.clientSecretConfigKey) {
+    throw new ConnectorError("CONNECTOR_CONFIG_UNSUPPORTED", `${definition.name} does not use custom OAuth app configuration.`)
+  }
+
+  const clientIDField = definition.configFields.find((field) => field.key === credential.clientIDConfigKey)
+  const clientSecretField = definition.configFields.find((field) => field.key === credential.clientSecretConfigKey)
+  const clientID = readRequiredConfig(input, credential.clientIDConfigKey, clientIDField?.label ?? "OAuth client ID")
+  const clientSecret = readRequiredConfig(input, credential.clientSecretConfigKey, clientSecretField?.label ?? "OAuth client secret")
+
+  await Auth.setOAuthClientRegistration(connectorID, CONNECTOR_CUSTOM_OAUTH_CLIENT_KEY, {
+    clientID,
+    clientSecret,
+    tokenEndpointAuthMethod: credential.tokenEndpointAuthMethod,
+    redirectURIs: [],
+    scope: credential.scopes.join(" "),
+  })
+  await Auth.setProviderLastError(connectorID, null)
+  await syncConnectorRuntimeBinding(definition)
+  return statusForDefinition(definition)
+}
+
+export async function removeConnectorConfig(connectorID: string) {
+  const { definition } = assertDefinitionForConnectorID(connectorID)
+  await Auth.removeProviderCredentials(connectorID, ({ credential }) => credential.kind === "oauth_session")
+  await Auth.removeOAuthClientRegistration(connectorID, CONNECTOR_CUSTOM_OAUTH_CLIENT_KEY)
+  await Auth.setProviderLastError(connectorID, null)
+  await syncConnectorRuntimeBinding(definition)
+  return statusForDefinition(definition)
+}
+
 export async function startConnectorOAuthFlow(connectorID: string, input: { serverBaseURL: string }) {
   const { definition } = assertDefinitionForConnectorID(connectorID)
   if (!definition.available) {
@@ -453,11 +830,15 @@ export async function startConnectorOAuthFlow(connectorID: string, input: { serv
   }
 
   const credential = assertOAuthCredential(definition)
+  if (credential.clientIDConfigKey && !(await customOAuthClientRegistration(connectorID))) {
+    throw new ConnectorError("CONNECTOR_CONFIG_REQUIRED", `${definition.name} requires App ID and App Secret before sign-in.`)
+  }
+  await syncConnectorRuntimeBinding(definition)
   return ProviderAuth.startGenericOAuthFlow({
     providerID: connectorID,
     method: oauthMethodForDefinition(definition),
     serverBaseURL: input.serverBaseURL,
-    oauth: oauthConfigForCredential(credential),
+    oauth: await oauthConfigForCredential(credential, connectorID, definition),
   })
 }
 
@@ -479,7 +860,7 @@ export async function deleteConnectorOAuthSession(connectorID: string) {
   await ProviderAuth.deleteGenericOAuthSession(
     connectorID,
     oauthMethodForDefinition(definition),
-    oauthConfigForCredential(credential),
+    await oauthConfigForCredential(credential, connectorID, definition),
   )
   await syncConnectorRuntimeBinding(definition)
   return statusForDefinition(definition)
@@ -505,11 +886,7 @@ function replaceRecordPlaceholders(record: Record<string, string> | undefined, c
   return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
 
-async function resolvePlatformRemoteServer(connectorID: string): Promise<{
-  serverUrl: string
-  authorization?: string
-  headers?: Record<string, string>
-}> {
+async function resolvePlatformRuntime(connectorID: string): Promise<ResolvedConnectorRuntime> {
   const { definition } = assertDefinitionForConnectorID(connectorID)
   if (!definition.available) {
     throw new ConnectorError("CONNECTOR_UNAVAILABLE", `${definition.name} is not available.`)
@@ -532,7 +909,7 @@ async function resolvePlatformRemoteServer(connectorID: string): Promise<{
     const session = await ProviderAuth.resolveGenericOAuthCredential(
       connectorID,
       oauthMethodForDefinition(definition),
-      oauthConfigForCredential(credential),
+      await oauthConfigForCredential(credential, connectorID, definition),
     )
     if (!session) {
       throw new ConnectorError("CONNECTOR_NOT_CONNECTED", `${definition.name} is not connected.`)
@@ -541,16 +918,23 @@ async function resolvePlatformRemoteServer(connectorID: string): Promise<{
     config.OAUTH_TOKEN_TYPE = session.tokenType ?? "Bearer"
   }
 
+  if (definition.runtime.transport === "stdio") {
+    return {
+      transport: "stdio",
+      command: replacePlaceholders(definition.runtime.command, config),
+      args: definition.runtime.args?.map((arg) => replacePlaceholders(arg, config)),
+      cwd: replaceOptionalPlaceholders(definition.runtime.cwd, config),
+      env: replaceRecordPlaceholders(definition.runtime.env, config),
+    }
+  }
+
   const serverUrl = replaceOptionalPlaceholders(definition.runtime.serverUrl, config)
   if (!serverUrl) {
     throw new ConnectorError("CONNECTOR_RUNTIME_MISSING", `${definition.name} does not declare a remote MCP server URL.`)
   }
 
-  const result: {
-    serverUrl: string
-    authorization?: string
-    headers?: Record<string, string>
-  } = {
+  const result: ResolvedConnectorRuntime = {
+    transport: "remote",
     serverUrl,
     authorization: replaceOptionalPlaceholders(definition.runtime.authorization, config),
     headers: replaceRecordPlaceholders(definition.runtime.headers, config),
@@ -577,10 +961,7 @@ export async function resolveRuntime(connectorID: string): Promise<ResolvedConne
     return pluginModule.resolveConnectorRuntime(connectorID)
   }
 
-  return {
-    transport: "remote",
-    ...(await resolvePlatformRemoteServer(connectorID)),
-  }
+  return resolvePlatformRuntime(connectorID)
 }
 
 export async function resolveRemoteServer(connectorID: string): Promise<{
@@ -605,7 +986,7 @@ function runtimeBindingForConnector(definition: ConnectorDefinition): Config.Mcp
   return {
     name: definition.name,
     transport: "connector",
-    provider: definition.runtime.provider,
+    provider: definition.runtime.transport === "remote" ? definition.runtime.provider : undefined,
     connectorId: connectorIDForDefinition(definition.id),
     serverDescription: definition.runtime.serverDescription,
     allowedTools: definition.runtime.allowedTools,

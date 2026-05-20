@@ -371,6 +371,23 @@ function buildConnectorApiKeyDrafts(
   return Object.fromEntries([...connectorIDs].map((connectorID) => [connectorID, current[connectorID] ?? ""]))
 }
 
+function buildConnectorConfigDrafts(
+  catalog: ConnectorDefinition[],
+  statuses: ConnectorStatus[],
+  current: Record<string, Record<string, string>>,
+) {
+  return Object.fromEntries(
+    catalog.map((definition) => {
+      const connectorID = connectorIDForDefinition(definition, statuses)
+      const currentDraft = current[connectorID] ?? {}
+      return [
+        connectorID,
+        Object.fromEntries(definition.configFields.map((field) => [field.key, currentDraft[field.key] ?? field.defaultValue ?? ""])),
+      ]
+    }),
+  )
+}
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
@@ -495,6 +512,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [connectorCatalog, setConnectorCatalog] = useState<ConnectorDefinition[]>([])
   const [connectorStatuses, setConnectorStatuses] = useState<ConnectorStatus[]>([])
   const [connectorApiKeyDrafts, setConnectorApiKeyDrafts] = useState<Record<string, string>>({})
+  const [connectorConfigDrafts, setConnectorConfigDrafts] = useState<Record<string, Record<string, string>>>({})
   const [activeConnectorID, setActiveConnectorID] = useState<string | null>(null)
   const activeConnectorIDRef = useRef<string | null>(null)
   const [activePluginID, setActivePluginID] = useState<string | null>(null)
@@ -944,6 +962,10 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       ...current,
       [status.connectorID]: current[status.connectorID] ?? "",
     }))
+    setConnectorConfigDrafts((current) => ({
+      ...current,
+      [status.connectorID]: current[status.connectorID] ?? {},
+    }))
   }
 
   function applyConnectorSnapshot(
@@ -953,6 +975,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setConnectorCatalog(nextCatalog)
     setConnectorStatuses(nextStatuses)
     setConnectorApiKeyDrafts((current) => buildConnectorApiKeyDrafts(nextCatalog, nextStatuses, current))
+    setConnectorConfigDrafts((current) => buildConnectorConfigDrafts(nextCatalog, nextStatuses, current))
 
     const connectorIDs = new Set([
       ...nextCatalog.map((definition) => connectorIDForDefinition(definition, nextStatuses)),
@@ -976,6 +999,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setConnectorCatalog([])
       setConnectorStatuses([])
       setConnectorApiKeyDrafts({})
+      setConnectorConfigDrafts({})
       setActiveConnectorSelection(null)
       setConnectorsError("Desktop connector APIs are unavailable.")
       return
@@ -1000,6 +1024,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setConnectorCatalog([])
       setConnectorStatuses([])
       setConnectorApiKeyDrafts({})
+      setConnectorConfigDrafts({})
       setActiveConnectorSelection(null)
       setConnectorsError(getErrorMessage(error))
     } finally {
@@ -1036,6 +1061,16 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setConnectorApiKeyDrafts((current) => ({
       ...current,
       [connectorID]: value,
+    }))
+  }
+
+  function setConnectorConfigDraft(connectorID: string, key: string, value: string) {
+    setConnectorConfigDrafts((current) => ({
+      ...current,
+      [connectorID]: {
+        ...(current[connectorID] ?? {}),
+        [key]: value,
+      },
     }))
   }
 
@@ -1085,6 +1120,68 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setMessage({
         tone: "success",
         text: "Connector disconnected.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingConnectorID(null)
+    }
+  }
+
+  async function saveConnectorConfig(connectorID: string) {
+    const saveConnectorConfigApi = window.desktop?.saveConnectorConfig
+    if (!saveConnectorConfigApi) return false
+
+    const config = connectorConfigDrafts[connectorID] ?? {}
+    setSavingConnectorID(connectorID)
+    setMessage(null)
+
+    try {
+      const status = await saveConnectorConfigApi({
+        connectorID,
+        config,
+      })
+      upsertConnectorStatus(status)
+      await notifyMcpUpdated()
+      setConnectorConfigDrafts((current) => ({
+        ...current,
+        [connectorID]: {},
+      }))
+      setMessage({
+        tone: "success",
+        text: "Connector configuration saved. Continue with sign-in when the Feishu app callback URL and scopes are ready.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingConnectorID(null)
+    }
+  }
+
+  async function deleteConnectorConfig(connectorID: string) {
+    const deleteConnectorConfigApi = window.desktop?.deleteConnectorConfig
+    if (!deleteConnectorConfigApi) return false
+
+    setSavingConnectorID(connectorID)
+    setMessage(null)
+
+    try {
+      const status = await deleteConnectorConfigApi({ connectorID })
+      upsertConnectorStatus(status)
+      await notifyMcpUpdated()
+      setMessage({
+        tone: "success",
+        text: "Connector configuration cleared.",
       })
       return true
     } catch (error) {
@@ -3160,10 +3257,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     closeSettings,
     connectorApiKeyDrafts,
     connectorCatalog,
+    connectorConfigDrafts,
     connectorsError,
     connectorStatuses,
     dismissMessage,
     deleteConnectorApiKey,
+    deleteConnectorConfig,
     deleteConnectorAuthSession,
     deleteArchivedSession,
     deleteInstalledPlugin,
@@ -3246,6 +3345,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     savedSelection,
     saveMcpServer,
     saveConnectorApiKey,
+    saveConnectorConfig,
     saveBuiltinTools,
     saveInstalledPluginConfig,
     saveInstalledPluginConnectorApiKey,
@@ -3278,6 +3378,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setMcpToolPolicy,
     setInstalledPluginEnabled,
     setConnectorApiKeyDraft,
+    setConnectorConfigDraft,
     setPluginDraftAppApiKey,
     setPluginDraftConfigValue,
     setPromptDraftValue,

@@ -921,6 +921,8 @@ describe("App", () => {
       getConnector: vi.fn(),
       saveConnectorApiKey: vi.fn(),
       deleteConnectorApiKey: vi.fn(),
+      saveConnectorConfig: vi.fn(),
+      deleteConnectorConfig: vi.fn(),
       startConnectorAuthFlow: vi.fn(),
       getConnectorAuthFlow: vi.fn(),
       cancelConnectorAuthFlow: vi.fn(),

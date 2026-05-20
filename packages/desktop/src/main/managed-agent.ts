@@ -17,6 +17,7 @@ const MANAGED_AGENT_DISABLE_ENV = "ANYBOX_DISABLE_MANAGED_AGENT"
 const MANAGED_AGENT_RUNTIME_ENV = "ANYBOX_AGENT_RUNTIME_DIR"
 const MANAGED_AGENT_BUN_BINARY_ENV = "ANYBOX_BUN_BINARY"
 const MANAGED_AGENT_DATA_DIR_ENV = "ANYBOX_AGENT_DATA_DIR"
+const CONNECTOR_BUILD_CONFIG_ENV = "ANYBOX_CONNECTOR_BUILD_CONFIG"
 const WORKSPACE_DEPENDENCIES_DIR_ENV = "ANYBOX_WORKSPACE_DEPENDENCIES_DIR"
 const WORKSPACE_DEPENDENCIES_VERSION_ENV = "ANYBOX_WORKSPACE_DEPENDENCIES_VERSION"
 
@@ -36,6 +37,7 @@ interface ManagedAgentLaunchSpec {
   readonly command: string
   readonly args: string[]
   readonly dependenciesDir?: string
+  readonly runtimeDir?: string
   readonly sourceRuntime: boolean
 }
 
@@ -123,6 +125,7 @@ function resolveSourceAgentLaunchSpec() {
     command: bunBinary,
     args: ["run", entrypoint],
     dependenciesDir: path.join(desktopAppPath, "build", "agent-runtime", "dependencies"),
+    runtimeDir: path.join(desktopAppPath, "build", "agent-runtime"),
     sourceRuntime: true,
   } satisfies ManagedAgentLaunchSpec
 }
@@ -139,6 +142,7 @@ function resolveBundledAgentLaunchSpecs() {
         command: bunBinary,
         args: [entrypoint],
         dependenciesDir: path.join(candidate, "dependencies"),
+        runtimeDir: candidate,
         sourceRuntime: false,
       })
     }
@@ -257,6 +261,13 @@ function buildManagedAgentStartEnv(
 
   if (dataDir) {
     startEnv[MANAGED_AGENT_DATA_DIR_ENV] = dataDir
+  }
+
+  if (!startEnv[CONNECTOR_BUILD_CONFIG_ENV] && spec.runtimeDir) {
+    const connectorBuildConfigPath = path.join(spec.runtimeDir, "config", "connectors.json")
+    if (fs.existsSync(connectorBuildConfigPath)) {
+      startEnv[CONNECTOR_BUILD_CONFIG_ENV] = connectorBuildConfigPath
+    }
   }
 
   return startEnv

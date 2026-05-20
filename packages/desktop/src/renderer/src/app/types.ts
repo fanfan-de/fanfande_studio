@@ -1475,7 +1475,9 @@ export type ConnectorOAuthTokenPlacement =
 export interface ConnectorOAuthCredential {
   kind: "oauth"
   label: string
-  clientID: string
+  clientID?: string
+  clientIDConfigKey?: string
+  clientSecretConfigKey?: string
   authorizationURL: string
   tokenURL: string
   scopes: string[]
@@ -1483,10 +1485,36 @@ export interface ConnectorOAuthCredential {
   tokenPlacement?: ConnectorOAuthTokenPlacement
   authorizationParams?: Record<string, string>
   tokenParams?: Record<string, string>
+  tokenEndpointAuthMethod?: "none" | "client_secret_post" | "client_secret_basic"
+  tokenRequestFormat?: "form" | "json"
   description?: string
 }
 
 export type ConnectorCredential = ConnectorApiKeyCredential | ConnectorOAuthCredential
+
+export interface ConnectorConfigField {
+  key: string
+  label: string
+  type?: "text" | "password" | "url" | "path"
+  required?: boolean
+  secret?: boolean
+  placeholder?: string
+  defaultValue?: string
+  description?: string
+}
+
+export interface ConnectorStdioRuntime {
+  transport: "stdio"
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  serverDescription?: string
+  allowedTools?: McpAllowedTools
+  toolPolicies?: McpToolPolicies
+  requireApproval?: McpRequireApproval
+  timeoutMs?: number
+}
 
 export interface ConnectorRemoteRuntime {
   transport: "remote"
@@ -1501,6 +1529,8 @@ export interface ConnectorRemoteRuntime {
   timeoutMs?: number
 }
 
+export type ConnectorRuntime = ConnectorStdioRuntime | ConnectorRemoteRuntime
+
 export interface ConnectorDefinition {
   id: string
   name: string
@@ -1510,8 +1540,10 @@ export interface ConnectorDefinition {
   risk: ConnectorRisk
   permissions: string[]
   tools: PluginToolPreview[]
+  configFields: ConnectorConfigField[]
+  oauthCallbackURL?: string
   credential?: ConnectorCredential
-  runtime?: ConnectorRemoteRuntime
+  runtime?: ConnectorRuntime
   installReview: string[]
   source: "platform" | "registry"
   available: boolean
@@ -1531,6 +1563,8 @@ export interface ConnectorStatus {
   name: string
   connected: boolean
   available: boolean
+  configured?: boolean
+  configurationLabel?: string
   authStatus: "connected" | "not_connected" | "pending" | "expired" | "error" | "unavailable"
   credentialKind?: "api_key" | "oauth"
   credentialLabel?: string

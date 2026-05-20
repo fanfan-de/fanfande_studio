@@ -2,12 +2,13 @@ import { useMemo, useState, type ReactNode } from "react"
 import {
   CloseIcon,
   ConnectedStatusIcon,
+  CopyIcon,
   DeleteIcon,
   DisconnectedStatusIcon,
   OpenExternalIcon,
   SearchIcon,
 } from "../icons"
-import { ShellTopMenu } from "../shared-ui"
+import { ShellTopMenu, writeTextToClipboard } from "../shared-ui"
 import type {
   ConnectorDefinition,
   ConnectorStatus,
@@ -22,6 +23,7 @@ interface ConnectorsPageProps {
   activeConnectorID: string | null
   connectorApiKeyDrafts: Record<string, string>
   connectorCatalog: ConnectorDefinition[]
+  connectorConfigDrafts: Record<string, Record<string, string>>
   connectorStatuses: ConnectorStatus[]
   connectorsError: string | null
   diagnosingConnectorID: string | null
@@ -31,12 +33,15 @@ interface ConnectorsPageProps {
   windowControls?: ReactNode
   onCancelConnectorAuthFlow: (connectorID: string) => boolean | Promise<boolean>
   onConnectorApiKeyDraftChange: (connectorID: string, value: string) => void
+  onConnectorConfigDraftChange: (connectorID: string, key: string, value: string) => void
   onConnectorSelect: (connectorID: string) => void
   onDeleteConnectorApiKey: (connectorID: string) => boolean | Promise<boolean>
+  onDeleteConnectorConfig: (connectorID: string) => boolean | Promise<boolean>
   onDeleteConnectorAuthSession: (connectorID: string) => boolean | Promise<boolean>
   onDiagnoseConnector: (connectorID: string) => boolean | Promise<boolean>
   onDismissMessage: () => void
   onSaveConnectorApiKey: (connectorID: string) => boolean | Promise<boolean>
+  onSaveConnectorConfig: (connectorID: string) => boolean | Promise<boolean>
   onStartConnectorAuthFlow: (connectorID: string) => boolean | Promise<boolean>
 }
 
@@ -135,6 +140,7 @@ export function ConnectorsPage({
   activeConnectorID,
   connectorApiKeyDrafts,
   connectorCatalog,
+  connectorConfigDrafts,
   connectorStatuses,
   connectorsError,
   diagnosingConnectorID,
@@ -144,15 +150,19 @@ export function ConnectorsPage({
   windowControls,
   onCancelConnectorAuthFlow,
   onConnectorApiKeyDraftChange,
+  onConnectorConfigDraftChange,
   onConnectorSelect,
   onDeleteConnectorApiKey,
+  onDeleteConnectorConfig,
   onDeleteConnectorAuthSession,
   onDiagnoseConnector,
   onDismissMessage,
   onSaveConnectorApiKey,
+  onSaveConnectorConfig,
   onStartConnectorAuthFlow,
 }: ConnectorsPageProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [copiedCallbackURL, setCopiedCallbackURL] = useState(false)
   const filteredConnectors = useMemo(
     () => connectorCatalog.filter((definition) => doesConnectorMatchSearch(definition, searchQuery)),
     [connectorCatalog, searchQuery],
@@ -170,6 +180,15 @@ export function ConnectorsPage({
   const activeFlow = activeStatus?.activeFlow
   const hasPendingFlow = Boolean(activeFlow && ["pending", "waiting_user", "authorizing"].includes(activeFlow.status))
   const isUnavailable = activeDefinition?.available === false || activeStatus?.authStatus === "unavailable"
+  const hasConfigFields = Boolean(activeDefinition && activeDefinition.configFields.length > 0)
+  const activeConfigDraft = activeConnectorID ? connectorConfigDrafts[activeConnectorID] ?? {} : {}
+  const isConfigReady = !hasConfigFields || Boolean(activeStatus?.configured)
+
+  async function copyCallbackURL(url: string) {
+    await writeTextToClipboard(url)
+    setCopiedCallbackURL(true)
+    window.setTimeout(() => setCopiedCallbackURL(false), 1600)
+  }
 
   return (
     <section className="connectors-page" aria-label="Connectors">
@@ -289,6 +308,73 @@ export function ConnectorsPage({
                     </div>
                   </section>
 
+                  {hasConfigFields ? (
+                    <section className="connectors-detail-section" aria-labelledby="connector-setup-title">
+                      <h2 id="connector-setup-title">Setup</h2>
+                      <div className="connectors-setup-panel">
+                        <ol className="connectors-setup-steps">
+                          <li>Create a custom app in Feishu Open Platform.</li>
+                          <li>Copy the App ID and App Secret from Credentials & Basic Info.</li>
+                          <li>Add the Anybox callback URL to the Feishu app redirect URL settings.</li>
+                          <li>Save credentials here, then sign in with the Feishu account.</li>
+                          <li>Enable the required Drive and Docx scopes before authorizing.</li>
+                        </ol>
+                        {activeDefinition.oauthCallbackURL ? (
+                          <div className="connectors-callback-url-card">
+                            <span>OAuth redirect URL</span>
+                            <code>{activeDefinition.oauthCallbackURL}</code>
+                            <button
+                              className="plugins-detail-uninstall-button"
+                              type="button"
+                              aria-label="Copy OAuth redirect URL"
+                              title={copiedCallbackURL ? "Copied" : "Copy OAuth redirect URL"}
+                              onClick={() => void copyCallbackURL(activeDefinition.oauthCallbackURL!)}
+                            >
+                              <CopyIcon />
+                              <span>{copiedCallbackURL ? "Copied" : "Copy"}</span>
+                            </button>
+                          </div>
+                        ) : null}
+                        <div className="connectors-config-fields">
+                          {activeDefinition.configFields.map((field) => (
+                            <label key={field.key} className="plugins-connector-key-field connectors-key-field">
+                              <span>{field.label}</span>
+                              <input
+                                aria-label={field.label}
+                                type={field.type === "password" ? "password" : "text"}
+                                value={activeConfigDraft[field.key] ?? ""}
+                                placeholder={field.placeholder ?? field.label}
+                                onChange={(event) => onConnectorConfigDraftChange(activeConnectorID, field.key, event.target.value)}
+                              />
+                              {field.description ? <small>{field.description}</small> : null}
+                            </label>
+                          ))}
+                        </div>
+                        <div className="connectors-actions">
+                          <button
+                            className="plugins-detail-install-button"
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => void onSaveConnectorConfig(activeConnectorID)}
+                          >
+                            {isBusy ? "Saving..." : activeStatus?.configured ? "Update credentials" : "Save credentials"}
+                          </button>
+                          {activeStatus?.configured ? (
+                            <button
+                              className="plugins-detail-uninstall-button"
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => void onDeleteConnectorConfig(activeConnectorID)}
+                            >
+                              <DeleteIcon />
+                              <span>{isBusy ? "Clearing..." : "Clear credentials"}</span>
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </section>
+                  ) : null}
+
                   <section className="connectors-detail-section" aria-labelledby="connector-auth-title">
                     <h2 id="connector-auth-title">Authentication</h2>
                     <div className="connectors-detail-table">
@@ -312,6 +398,18 @@ export function ConnectorsPage({
                         <span>Credential kind</span>
                         <strong>{credentialKindLabel(activeDefinition, activeStatus)}</strong>
                       </div>
+                      {activeCredential?.kind === "oauth" ? (
+                        <div>
+                          <span>OAuth</span>
+                          <strong>{hasConfigFields ? "Custom app stored locally" : `Managed by ${activeDefinition.publisher}`}</strong>
+                        </div>
+                      ) : null}
+                      {activeStatus?.configurationLabel ? (
+                        <div>
+                          <span>Configuration</span>
+                          <strong>{activeStatus.configurationLabel}</strong>
+                        </div>
+                      ) : null}
                       {activeStatus?.email ? (
                         <div>
                           <span>Account</span>
@@ -344,7 +442,7 @@ export function ConnectorsPage({
                             <button
                               className="plugins-detail-install-button"
                               type="button"
-                              disabled={isBusy}
+                              disabled={isBusy || !isConfigReady}
                               onClick={() => void onStartConnectorAuthFlow(activeConnectorID)}
                             >
                               <OpenExternalIcon />
@@ -402,7 +500,7 @@ export function ConnectorsPage({
                       <button
                         className="plugins-detail-uninstall-button"
                         type="button"
-                        disabled={isDiagnosing}
+                        disabled={isDiagnosing || !isConfigReady}
                         onClick={() => void onDiagnoseConnector(activeConnectorID)}
                       >
                         {isDiagnosing ? "Checking..." : "Diagnose"}

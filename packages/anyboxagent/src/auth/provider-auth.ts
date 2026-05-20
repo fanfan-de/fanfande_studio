@@ -150,6 +150,7 @@ export type ProviderRuntimeAuthOptions = {
 }
 
 export type GenericOAuthTokenEndpointAuthMethod = "none" | "client_secret_post" | "client_secret_basic"
+export type GenericOAuthTokenRequestFormat = "form" | "json"
 
 export type GenericOAuthDynamicClientRegistrationConfig = {
   registrationURL: string
@@ -168,6 +169,7 @@ export type GenericOAuthProviderConfig = {
   authorizationParams?: Record<string, string>
   tokenParams?: Record<string, string>
   tokenEndpointAuthMethod?: GenericOAuthTokenEndpointAuthMethod
+  tokenRequestFormat?: GenericOAuthTokenRequestFormat
   registration?: GenericOAuthDynamicClientRegistrationConfig
 }
 
@@ -309,6 +311,10 @@ function getOpenAILocalCallbackPort() {
   const configured = parseNumeric(getProcessEnvValue("ANYBOX_OPENAI_CODEX_CALLBACK_PORT"))
   if (configured === undefined) return DEFAULT_OPENAI_LOCAL_CALLBACK_PORT
   return Math.max(0, Math.floor(configured))
+}
+
+export function getLocalBrowserCallbackURL() {
+  return `http://${getOpenAILocalCallbackHost()}:${getOpenAILocalCallbackPort()}${OPENAI_LOCAL_CALLBACK_PATH}`
 }
 
 function resolveCodexAuthFilepath() {
@@ -1493,7 +1499,7 @@ async function resolveGenericOAuthClient(input: {
 }
 
 function applyGenericOAuthClientAuthentication(input: {
-  body: URLSearchParams
+  setBodyParam: (key: string, value: string) => void
   headers: Record<string, string>
   oauth: GenericOAuthProviderConfig & { clientID: string }
 }) {
@@ -1507,12 +1513,12 @@ function applyGenericOAuthClientAuthentication(input: {
     return
   }
 
-  input.body.set("client_id", input.oauth.clientID)
+  input.setBodyParam("client_id", input.oauth.clientID)
   if (method === "client_secret_post") {
     if (!input.oauth.clientSecret) {
       throw new Error("OAuth token endpoint requires client_secret_post but no client secret is available.")
     }
-    input.body.set("client_secret", input.oauth.clientSecret)
+    input.setBodyParam("client_secret", input.oauth.clientSecret)
   }
 }
 
@@ -1544,32 +1550,68 @@ async function exchangeGenericOAuthAuthorizationCode(input: {
   codeVerifier: string
   redirectURI: string
 }) {
-  const body = new URLSearchParams()
+  const request = buildGenericOAuthTokenRequest(input.oauth)
   for (const [key, value] of Object.entries(input.oauth.tokenParams ?? {})) {
-    body.set(key, value)
+    request.setBodyParam(key, value)
   }
-  body.set("grant_type", "authorization_code")
-  body.set("redirect_uri", input.redirectURI)
-  body.set("code", input.authorizationCode)
-  body.set("code_verifier", input.codeVerifier)
-  const headers: Record<string, string> = {
-    accept: "application/json",
-    "content-type": "application/x-www-form-urlencoded",
-  }
+  request.setBodyParam("grant_type", "authorization_code")
+  request.setBodyParam("redirect_uri", input.redirectURI)
+  request.setBodyParam("code", input.authorizationCode)
+  request.setBodyParam("code_verifier", input.codeVerifier)
   applyGenericOAuthClientAuthentication({
-    body,
-    headers,
+    setBodyParam: request.setBodyParam,
+    headers: request.headers,
     oauth: input.oauth,
   })
 
   const response = await fetch(input.oauth.tokenURL, {
     method: "POST",
-    headers,
-    body,
+    headers: request.headers,
+    body: request.body(),
   })
 
-  await ensureOkResponse(response, "OAuth token exchange failed")
-  return (await response.json()) as Record<string, unknown>
+  return await readGenericOAuthTokenResponse(response, "OAuth token exchange failed")
+}
+
+function buildGenericOAuthTokenRequest(oauth: GenericOAuthProviderConfig) {
+  const format = oauth.tokenRequestFormat ?? "form"
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    "content-type": format === "json" ? "application/json" : "application/x-www-form-urlencoded",
+  }
+
+  if (format === "json") {
+    const body: Record<string, string> = {}
+    return {
+      headers,
+      setBodyParam: (key: string, value: string) => {
+        body[key] = value
+      },
+      body: () => JSON.stringify(body),
+    }
+  }
+
+  const body = new URLSearchParams()
+  return {
+    headers,
+    setBodyParam: (key: string, value: string) => body.set(key, value),
+    body: () => body,
+  }
+}
+
+async function readGenericOAuthTokenResponse(response: Response, context: string) {
+  await ensureOkResponse(response, context)
+  const payload = (await response.json()) as Record<string, unknown>
+  const code = parseNumeric(payload.code)
+  if (code !== undefined && code !== 0) {
+    throw new Error(errorMessageFromPayload(payload) ?? `${context}: OAuth provider returned code ${code}.`)
+  }
+
+  if (!normalizeString(payload.access_token) && payload.data && typeof payload.data === "object") {
+    return payload.data as Record<string, unknown>
+  }
+
+  return payload
 }
 
 function readGenericOAuthTokenAccount(
@@ -1664,30 +1706,25 @@ export async function refreshGenericOAuthSession(
   credential: Auth.OAuthSessionCredential,
   oauth: GenericOAuthProviderConfig & { clientID: string },
 ) {
-  const body = new URLSearchParams()
+  const request = buildGenericOAuthTokenRequest(oauth)
   for (const [key, value] of Object.entries(oauth.tokenParams ?? {})) {
-    body.set(key, value)
+    request.setBodyParam(key, value)
   }
-  body.set("grant_type", "refresh_token")
-  body.set("refresh_token", credential.refreshToken)
-  const headers: Record<string, string> = {
-    accept: "application/json",
-    "content-type": "application/x-www-form-urlencoded",
-  }
+  request.setBodyParam("grant_type", "refresh_token")
+  request.setBodyParam("refresh_token", credential.refreshToken)
   applyGenericOAuthClientAuthentication({
-    body,
-    headers,
+    setBodyParam: request.setBodyParam,
+    headers: request.headers,
     oauth,
   })
 
   const response = await fetch(oauth.tokenURL, {
     method: "POST",
-    headers,
-    body,
+    headers: request.headers,
+    body: request.body(),
   })
 
-  await ensureOkResponse(response, "OAuth token refresh failed")
-  const payload = (await response.json()) as Record<string, unknown>
+  const payload = await readGenericOAuthTokenResponse(response, "OAuth token refresh failed")
   return buildGenericOAuthCredential(payload, oauth, credential)
 }
 
@@ -1742,7 +1779,7 @@ async function revokeGenericOAuthSession(
     "content-type": "application/x-www-form-urlencoded",
   }
   applyGenericOAuthClientAuthentication({
-    body,
+    setBodyParam: (key, value) => body.set(key, value),
     headers,
     oauth,
   })
