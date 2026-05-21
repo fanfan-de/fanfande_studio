@@ -8,6 +8,7 @@ export interface SessionMessageTreeNode {
   role: "user" | "assistant"
   created: number
   parentMessageID: string | null
+  content: string
   preview: string
 }
 
@@ -60,15 +61,19 @@ function readTextPartPreview(part: unknown) {
   return readString(record.text)
 }
 
-function getMessagePreview(message: LoadedSessionHistoryMessage) {
+function getMessageContent(message: LoadedSessionHistoryMessage) {
   const displayText = readString(message.info.displayText)
-  if (displayText.trim()) return compactPreview(displayText)
+  if (displayText.trim()) return displayText.trim()
 
-  const text = message.parts.map(readTextPartPreview).filter(Boolean).join(" ")
-  if (text.trim()) return compactPreview(text)
+  const text = message.parts.map(readTextPartPreview).filter(Boolean).join("\n\n").trim()
+  if (text) return text
 
   if (message.info.role === "user") return "User message"
   return "Assistant response"
+}
+
+function getMessagePreview(message: LoadedSessionHistoryMessage) {
+  return compactPreview(getMessageContent(message).replace(/\n+/g, " "))
 }
 
 function hasAssistantResponseText(message: LoadedSessionHistoryMessage) {
@@ -152,6 +157,7 @@ export function buildSessionMessageTree(
       sessionID: message.info.sessionID,
       role: message.info.role,
       created: readNumber(message.info.created),
+      content: getMessageContent(message),
       parentMessageID: typeof message.info.parentMessageID === "string" ? message.info.parentMessageID : null,
       preview: getMessagePreview(message),
     }))

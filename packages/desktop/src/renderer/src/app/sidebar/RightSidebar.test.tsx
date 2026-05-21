@@ -85,6 +85,7 @@ function createMessageTree(input?: {
     },
     nodesByID: {
       "user-1": {
+        content: "Root prompt",
         id: "user-1",
         sessionID: "session-1",
         role: "user",
@@ -93,6 +94,7 @@ function createMessageTree(input?: {
         preview: "Root prompt",
       },
       "assistant-1": {
+        content: "Active answer\n\nThis is the complete response content shown when the response node expands in place.",
         id: "assistant-1",
         sessionID: "session-1",
         role: "assistant",
@@ -101,6 +103,7 @@ function createMessageTree(input?: {
         preview: "Active answer",
       },
       "user-2": {
+        content: "Follow up",
         id: "user-2",
         sessionID: "session-1",
         role: "user",
@@ -109,6 +112,7 @@ function createMessageTree(input?: {
         preview: "Follow up",
       },
       "assistant-2": {
+        content: "Alternative answer\n\nThis is the second complete response content.",
         id: "assistant-2",
         sessionID: "session-1",
         role: "assistant",
@@ -326,7 +330,7 @@ describe("RightSidebar", () => {
     expect(screen.getByText("Active answer").closest(".session-message-tree-graph-node")).not.toHaveClass("is-active-path")
     const graph = document.querySelector(".session-message-tree-graph") as HTMLDivElement | null
     expect(graph).not.toBeNull()
-    expect(graph?.style.transform).toBe("translate(272px, 171px)")
+    expect(graph?.style.transform).toBe("matrix(1, 0, 0, 1, 272, 171)")
     expect(document.querySelector(".session-message-tree-edge")).not.toBeNull()
 
     rerender(
@@ -383,7 +387,7 @@ describe("RightSidebar", () => {
     })
 
     expect(graph.style.transform).not.toBe(initialTransform)
-    expect(graph.style.transform).toMatch(/translate\(-?\d+px,\s*-?\d+px\)/)
+    expect(graph.style.transform).toMatch(/matrix\(1,\s*0,\s*0,\s*1,\s*-?\d+,\s*-?\d+\)/)
 
     fireEvent.pointerUp(window, {
       pointerId: 7,
@@ -416,5 +420,127 @@ describe("RightSidebar", () => {
     const contextMenuEvent = new MouseEvent("contextmenu", { bubbles: true, cancelable: true })
     canvas.dispatchEvent(contextMenuEvent)
     expect(contextMenuEvent.defaultPrevented).toBe(true)
+  })
+
+  it("zooms the message tree canvas with ctrl wheel", () => {
+    const restoreCanvasSize = mockMessageTreeCanvasSize(900, 680)
+    render(
+      <SessionMessageTreePanel
+        session={workspace.sessions[0] ?? null}
+        messageTree={createMessageTree()}
+        onSelectMessage={vi.fn()}
+      />,
+    )
+
+    const canvas = document.querySelector(".session-message-tree-canvas") as HTMLDivElement | null
+    const graph = document.querySelector(".session-message-tree-graph") as HTMLDivElement | null
+    expect(canvas).not.toBeNull()
+    expect(graph).not.toBeNull()
+    if (!canvas || !graph) return
+
+    const initialTransform = graph.style.transform
+    fireEvent.wheel(canvas, {
+      ctrlKey: false,
+      deltaY: -160,
+      clientX: 300,
+      clientY: 240,
+    })
+    expect(graph.style.transform).toBe(initialTransform)
+
+    fireEvent.wheel(canvas, {
+      ctrlKey: true,
+      deltaY: -160,
+      clientX: 300,
+      clientY: 240,
+    })
+
+    expect(graph.style.transform).not.toBe(initialTransform)
+    expect(graph.style.transform).toMatch(/matrix\(1\.\d+,\s*0,\s*0,\s*1\.\d+,\s*-?\d+,\s*-?\d+\)/)
+    restoreCanvasSize()
+  })
+
+  it("expands one assistant response node in place on double click and centers it", () => {
+    const restoreCanvasSize = mockMessageTreeCanvasSize(900, 680)
+    render(
+      <SessionMessageTreePanel
+        session={workspace.sessions[0] ?? null}
+        messageTree={createMessageTree()}
+        onSelectMessage={vi.fn()}
+      />,
+    )
+
+    const activeNode = screen.getByText("Active answer").closest(".session-message-tree-graph-node")
+    expect(activeNode).not.toBeNull()
+    if (!activeNode) return
+
+    fireEvent.doubleClick(activeNode)
+
+    expect(activeNode).toHaveClass("is-expanded-response")
+    expect(activeNode).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByText(/complete response content shown/)).toBeInTheDocument()
+    expect(document.querySelector<HTMLDivElement>(".session-message-tree-graph")?.style.transform).toBe(
+      "matrix(1, 0, 0, 1, 298, 93)",
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse response" }))
+
+    expect(activeNode).not.toHaveClass("is-expanded-response")
+    expect(screen.queryByText(/complete response content shown/)).not.toBeInTheDocument()
+    expect(document.querySelector<HTMLDivElement>(".session-message-tree-graph")?.style.transform).toBe(
+      "matrix(1, 0, 0, 1, 358, 200)",
+    )
+    restoreCanvasSize()
+  })
+
+  it("collapses an expanded assistant response when double clicking anywhere in the tree panel", () => {
+    render(
+      <SessionMessageTreePanel
+        session={workspace.sessions[0] ?? null}
+        messageTree={createMessageTree()}
+        onSelectMessage={vi.fn()}
+      />,
+    )
+
+    const activeNode = screen.getByText("Active answer").closest(".session-message-tree-graph-node")
+    const panel = document.querySelector(".session-message-tree-panel") as HTMLElement | null
+    expect(activeNode).not.toBeNull()
+    expect(panel).not.toBeNull()
+    if (!activeNode || !panel) return
+
+    fireEvent.doubleClick(activeNode)
+    expect(activeNode).toHaveClass("is-expanded-response")
+
+    fireEvent.doubleClick(panel)
+
+    expect(activeNode).not.toHaveClass("is-expanded-response")
+    expect(screen.queryByText(/complete response content shown/)).not.toBeInTheDocument()
+  })
+
+  it("switches the expanded response when double clicking another assistant response", () => {
+    const restoreCanvasSize = mockMessageTreeCanvasSize(900, 680)
+    render(
+      <SessionMessageTreePanel
+        session={workspace.sessions[0] ?? null}
+        messageTree={createMessageTree()}
+        onSelectMessage={vi.fn()}
+      />,
+    )
+
+    const activeNode = screen.getByText("Active answer").closest(".session-message-tree-graph-node")
+    const alternativeNode = screen.getByText("Alternative answer").closest(".session-message-tree-graph-node")
+    expect(activeNode).not.toBeNull()
+    expect(alternativeNode).not.toBeNull()
+    if (!activeNode || !alternativeNode) return
+
+    fireEvent.doubleClick(activeNode)
+    expect(activeNode).toHaveClass("is-expanded-response")
+
+    fireEvent.doubleClick(alternativeNode)
+
+    expect(activeNode).not.toHaveClass("is-expanded-response")
+    expect(alternativeNode).toHaveClass("is-expanded-response")
+    expect(screen.queryByText(/complete response content shown/)).not.toBeInTheDocument()
+    expect(screen.getByText(/second complete response content/)).toBeInTheDocument()
+    restoreCanvasSize()
   })
 })

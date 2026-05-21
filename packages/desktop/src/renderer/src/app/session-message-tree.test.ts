@@ -105,6 +105,23 @@ describe("session message tree", () => {
     expect(Object.keys(tree?.nodesByID ?? {})).toEqual(["user-1", "user-2", "assistant-1"])
     expect(tree?.childIDsByParentID["user-1"]).toEqual(["user-2"])
     expect(tree?.nodesByID["assistant-1"]?.preview).toBe("Final response only")
+    expect(tree?.nodesByID["assistant-1"]?.content).toBe("Final response only")
     expect(tree?.activePathMessageIDs).toEqual(["user-1", "user-2", "assistant-1"])
+  })
+
+  it("keeps full response content while compacting node previews", () => {
+    const longResponse = [
+      "First paragraph with enough detail to go beyond the compact preview length.",
+      "Second paragraph should stay available for the expanded response card.",
+    ].join("\n\n")
+    const tree = buildSessionMessageTree([
+      createMessage({ id: "user-1", role: "user", created: 1, text: "Start" }),
+      createMessage({ id: "assistant-1", role: "assistant", created: 2, parentMessageID: "user-1", text: longResponse }),
+    ], "assistant-1")
+
+    expect(tree?.nodesByID["assistant-1"]?.content).toBe(longResponse)
+    expect(tree?.nodesByID["assistant-1"]?.preview).toBe(
+      "First paragraph with enough detail to go beyond the compact preview len...",
+    )
   })
 })

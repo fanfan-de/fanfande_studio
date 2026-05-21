@@ -25,6 +25,7 @@ function countBranchPoints(messageTree: SessionMessageTree) {
 interface MessageTreeGraphNode {
   column: number
   depth: number
+  height: number
   id: string
   x: number
   y: number
@@ -32,6 +33,7 @@ interface MessageTreeGraphNode {
 
 interface MessageTreeGraphEdge {
   fromID: string
+  fromSourceY: number
   fromX: number
   fromY: number
   isActivePath: boolean
@@ -53,17 +55,47 @@ interface MessageTreeGraphPan {
   y: number
 }
 
-function buildGraphLayout(messageTree: SessionMessageTree, activePathSet: Set<string>) {
+const COLLAPSED_NODE_HEIGHT = 56
+const COLLAPSED_NODE_WIDTH = 136
+const EXPANDED_RESPONSE_NODE_HEIGHT = 270
+const EXPANDED_RESPONSE_NODE_WIDTH = 296
+const NODE_VERTICAL_GAP = 36
+const MIN_GRAPH_ZOOM = 0.5
+const MAX_GRAPH_ZOOM = 1.8
+const GRAPH_ZOOM_DELTA_FACTOR = 0.0014
+
+function canExpandMessageTreeNode(node: SessionMessageTree["nodesByID"][string] | undefined) {
+  return Boolean(node && node.role === "assistant" && node.content.trim())
+}
+
+function getGraphNodeHeight(
+  messageTree: SessionMessageTree,
+  messageID: string,
+  expandedResponseMessageID: string | null,
+) {
+  return expandedResponseMessageID === messageID && canExpandMessageTreeNode(messageTree.nodesByID[messageID])
+    ? EXPANDED_RESPONSE_NODE_HEIGHT
+    : COLLAPSED_NODE_HEIGHT
+}
+
+function buildGraphLayout(
+  messageTree: SessionMessageTree,
+  activePathSet: Set<string>,
+  expandedResponseMessageID: string | null,
+) {
   const nodesByID = new Map<string, MessageTreeGraphNode>()
   const rawEdges: Array<{ fromID: string; toID: string }> = []
-  const columnGap = 156
-  const rowGap = 92
-  const originX = 92
+  const hasExpandedResponse = Boolean(
+    expandedResponseMessageID && canExpandMessageTreeNode(messageTree.nodesByID[expandedResponseMessageID]),
+  )
+  const columnGap = hasExpandedResponse ? 236 : 156
+  const originX = hasExpandedResponse ? 152 : 92
   const originY = 28
   let nextColumn = 0
   let maxDepth = 0
+  let maxY = originY + COLLAPSED_NODE_HEIGHT
 
-  function visit(messageID: string, depth: number, parentID: string | null, visited: Set<string>): number | null {
+  function visit(messageID: string, depth: number, y: number, parentID: string | null, visited: Set<string>): number | null {
     if (visited.has(messageID)) return null
     if (!messageTree.nodesByID[messageID]) return null
 
@@ -76,9 +108,11 @@ function buildGraphLayout(messageTree: SessionMessageTree, activePathSet: Set<st
     const nextVisited = new Set(visited)
     nextVisited.add(messageID)
     const childColumns: number[] = []
+    const nodeHeight = getGraphNodeHeight(messageTree, messageID, expandedResponseMessageID)
+    maxY = Math.max(maxY, y + nodeHeight)
 
     for (const childID of messageTree.childIDsByParentID[messageID] ?? []) {
-      const childColumn = visit(childID, depth + 1, messageID, nextVisited)
+      const childColumn = visit(childID, depth + 1, y + nodeHeight + NODE_VERTICAL_GAP, messageID, nextVisited)
       if (childColumn !== null) {
         childColumns.push(childColumn)
       }
@@ -91,16 +125,17 @@ function buildGraphLayout(messageTree: SessionMessageTree, activePathSet: Set<st
     nodesByID.set(messageID, {
       column,
       depth,
+      height: nodeHeight,
       id: messageID,
       x: originX + column * columnGap,
-      y: originY + depth * rowGap,
+      y,
     })
 
     return column
   }
 
   for (const rootMessageID of messageTree.rootMessageIDs) {
-    visit(rootMessageID, 0, null, new Set())
+    visit(rootMessageID, 0, originY, null, new Set())
   }
 
   const edges: MessageTreeGraphEdge[] = rawEdges.flatMap((edge) => {
@@ -110,6 +145,7 @@ function buildGraphLayout(messageTree: SessionMessageTree, activePathSet: Set<st
 
     return [{
       fromID: edge.fromID,
+      fromSourceY: from.y + (from.height > COLLAPSED_NODE_HEIGHT ? from.height - 18 : 20),
       fromX: from.x,
       fromY: from.y,
       isActivePath: activePathSet.has(edge.fromID) && activePathSet.has(edge.toID),
@@ -127,20 +163,33 @@ function buildGraphLayout(messageTree: SessionMessageTree, activePathSet: Set<st
 
   return {
     edges,
-    height: Math.max(160, originY + (maxDepth + 1) * rowGap + 34),
+    height: hasExpandedResponse
+      ? Math.max(160, maxY + 48)
+      : Math.max(160, originY + (maxDepth + 1) * (COLLAPSED_NODE_HEIGHT + NODE_VERTICAL_GAP) + 34),
     nodes,
-    width: Math.max(260, originX + Math.max(0, nextColumn - 1) * columnGap + 108),
+    width: Math.max(
+      260,
+      originX +
+        Math.max(0, nextColumn - 1) * columnGap +
+        (hasExpandedResponse ? EXPANDED_RESPONSE_NODE_WIDTH : COLLAPSED_NODE_WIDTH) / 2 +
+        40,
+    ),
   }
 }
 
 function buildEdgePath(edge: MessageTreeGraphEdge) {
   const startX = edge.fromX
-  const startY = edge.fromY + 20
+  const startY = edge.fromSourceY
   const endX = edge.toX
   const endY = edge.toY - 10
   const middleY = startY + Math.max(18, (endY - startY) * 0.5)
 
   return `M ${startX} ${startY} L ${startX} ${middleY} L ${endX} ${middleY} L ${endX} ${endY}`
+}
+
+function clampGraphZoom(value: number) {
+  if (!Number.isFinite(value)) return 1
+  return Math.min(MAX_GRAPH_ZOOM, Math.max(MIN_GRAPH_ZOOM, value))
 }
 
 export function SessionMessageTreePanel({
@@ -153,23 +202,27 @@ export function SessionMessageTreePanel({
   const canvasPanStateRef = useRef<MessageTreeCanvasPanState | null>(null)
   const graphPanLayoutKeyRef = useRef<string | null>(null)
   const graphPanWasUserControlledRef = useRef(false)
+  const pendingCenterResponseIDRef = useRef<string | null>(null)
   const [graphPan, setGraphPan] = useState<MessageTreeGraphPan>({ x: 0, y: 0 })
   const graphPanRef = useRef<MessageTreeGraphPan>(graphPan)
+  const [graphZoom, setGraphZoom] = useState(1)
+  const graphZoomRef = useRef(graphZoom)
   const [isCanvasPanning, setIsCanvasPanning] = useState(false)
+  const [expandedResponseMessageID, setExpandedResponseMessageID] = useState<string | null>(null)
   const markerBaseID = useId().replace(/[^a-zA-Z0-9_-]/g, "")
   const markerID = `${markerBaseID}-tree-arrow`
   const activeMarkerID = `${markerBaseID}-tree-arrow-active`
   const activePathKey = messageTree?.activePathMessageIDs.join("\u0000") ?? ""
   const activePathSet = useMemo(() => new Set(messageTree?.activePathMessageIDs ?? []), [activePathKey, messageTree])
   const graphLayout = useMemo(
-    () => (messageTree ? buildGraphLayout(messageTree, activePathSet) : null),
-    [activePathSet, messageTree],
+    () => (messageTree ? buildGraphLayout(messageTree, activePathSet, expandedResponseMessageID) : null),
+    [activePathSet, expandedResponseMessageID, messageTree],
   )
   const nodeCount = messageTree ? Object.keys(messageTree.nodesByID).length : 0
   const branchPointCount = messageTree ? countBranchPoints(messageTree) : 0
   const hasRootNodes = Boolean(messageTree?.rootMessageIDs.some((messageID) => messageTree.nodesByID[messageID]))
   const graphLayoutKey = graphLayout
-    ? `${messageTree?.sessionID ?? ""}:${graphLayout.width}:${graphLayout.height}:${nodeCount}`
+    ? `${messageTree?.sessionID ?? ""}:${graphLayout.width}:${graphLayout.height}:${nodeCount}:${expandedResponseMessageID ?? ""}`
     : ""
 
   useEffect(() => () => {
@@ -179,6 +232,16 @@ export function SessionMessageTreePanel({
   useEffect(() => {
     graphPanRef.current = graphPan
   }, [graphPan])
+
+  useEffect(() => {
+    graphZoomRef.current = graphZoom
+  }, [graphZoom])
+
+  useEffect(() => {
+    if (!expandedResponseMessageID) return
+    if (canExpandMessageTreeNode(messageTree?.nodesByID[expandedResponseMessageID])) return
+    setExpandedResponseMessageID(null)
+  }, [expandedResponseMessageID, messageTree])
 
   useLayoutEffect(() => {
     if (!graphLayout) return
@@ -190,7 +253,7 @@ export function SessionMessageTreePanel({
     let frameID: number | null = null
     let attempts = 0
 
-    function centerGraph() {
+    function readCanvasSize() {
       const canvasWidth = canvasElement.clientWidth
       const canvasHeight = canvasElement.clientHeight
 
@@ -202,16 +265,49 @@ export function SessionMessageTreePanel({
         return
       }
 
+      return { canvasHeight, canvasWidth }
+    }
+
+    function centerGraph() {
+      const canvasSize = readCanvasSize()
+      if (!canvasSize) return
+
       setGraphPanPosition({
-        x: Math.max(24, Math.round((canvasWidth - layout.width) / 2)),
-        y: Math.max(24, Math.round((canvasHeight - layout.height) / 2)),
+        x: Math.max(24, Math.round((canvasSize.canvasWidth - layout.width * graphZoomRef.current) / 2)),
+        y: Math.max(24, Math.round((canvasSize.canvasHeight - layout.height * graphZoomRef.current) / 2)),
+      })
+    }
+
+    function centerGraphNode(messageID: string) {
+      const canvasSize = readCanvasSize()
+      if (!canvasSize) return
+
+      const node = layout.nodes.find((layoutNode) => layoutNode.id === messageID)
+      if (!node) {
+        centerGraph()
+        return
+      }
+
+      const zoom = graphZoomRef.current
+      const nodeCenterX = node.x
+      const nodeCenterY = node.y - 8 + node.height / 2
+      setGraphPanPosition({
+        x: Math.round(canvasSize.canvasWidth / 2 - nodeCenterX * zoom),
+        y: Math.round(canvasSize.canvasHeight / 2 - nodeCenterY * zoom),
       })
     }
 
     if (graphPanLayoutKeyRef.current !== graphLayoutKey) {
       graphPanLayoutKeyRef.current = graphLayoutKey
-      graphPanWasUserControlledRef.current = false
-      centerGraph()
+      const pendingCenterResponseID = pendingCenterResponseIDRef.current
+      pendingCenterResponseIDRef.current = null
+      if (pendingCenterResponseID) {
+        graphPanWasUserControlledRef.current = true
+        centerGraphNode(pendingCenterResponseID)
+      } else {
+        graphPanWasUserControlledRef.current = false
+        centerGraph()
+      }
     } else if (!graphPanWasUserControlledRef.current) {
       centerGraph()
     }
@@ -316,11 +412,39 @@ export function SessionMessageTreePanel({
       event.stopPropagation()
     }
 
+    function handleCanvasWheel(event: WheelEvent) {
+      if (!event.ctrlKey) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      stopCanvasPan()
+
+      const currentZoom = graphZoomRef.current
+      const nextZoom = clampGraphZoom(currentZoom * Math.exp(-event.deltaY * GRAPH_ZOOM_DELTA_FACTOR))
+      if (nextZoom === currentZoom) return
+
+      const rect = canvasElement.getBoundingClientRect()
+      const pointerX = event.clientX - rect.left
+      const pointerY = event.clientY - rect.top
+      const currentPan = graphPanRef.current
+      const graphX = (pointerX - currentPan.x) / currentZoom
+      const graphY = (pointerY - currentPan.y) / currentZoom
+      const nextPan = {
+        x: Math.round(pointerX - graphX * nextZoom),
+        y: Math.round(pointerY - graphY * nextZoom),
+      }
+
+      graphPanWasUserControlledRef.current = true
+      setGraphPanPosition(nextPan)
+      setGraphZoomValue(nextZoom)
+    }
+
     canvasElement.addEventListener("pointerdown", handleCanvasPointerDown, true)
     canvasElement.addEventListener("pointermove", handleCanvasPointerMove, true)
     canvasElement.addEventListener("pointerup", handleCanvasPointerEnd, true)
     canvasElement.addEventListener("pointercancel", handleCanvasPointerEnd, true)
     canvasElement.addEventListener("contextmenu", handleCanvasContextMenu, true)
+    canvasElement.addEventListener("wheel", handleCanvasWheel, { capture: true, passive: false })
 
     return () => {
       canvasElement.removeEventListener("pointerdown", handleCanvasPointerDown, true)
@@ -328,6 +452,7 @@ export function SessionMessageTreePanel({
       canvasElement.removeEventListener("pointerup", handleCanvasPointerEnd, true)
       canvasElement.removeEventListener("pointercancel", handleCanvasPointerEnd, true)
       canvasElement.removeEventListener("contextmenu", handleCanvasContextMenu, true)
+      canvasElement.removeEventListener("wheel", handleCanvasWheel, true)
     }
   }, [])
 
@@ -352,6 +477,11 @@ export function SessionMessageTreePanel({
   function setGraphPanPosition(nextPan: MessageTreeGraphPan) {
     graphPanRef.current = nextPan
     setGraphPan(nextPan)
+  }
+
+  function setGraphZoomValue(nextZoom: number) {
+    graphZoomRef.current = nextZoom
+    setGraphZoom(nextZoom)
   }
 
   function stopCanvasPan() {
@@ -388,8 +518,47 @@ export function SessionMessageTreePanel({
     })
   }
 
+  function toggleExpandedResponse(messageID: string) {
+    const shouldExpand = expandedResponseMessageID !== messageID
+    pendingCenterResponseIDRef.current = messageID
+    setExpandedResponseMessageID(shouldExpand ? messageID : null)
+  }
+
+  function collapseExpandedResponse(messageID: string | null = expandedResponseMessageID) {
+    pendingCenterResponseIDRef.current = messageID
+    setExpandedResponseMessageID(null)
+  }
+
   return (
-    <section className="session-message-tree-panel" aria-label="Session message tree">
+    <section
+      className="session-message-tree-panel"
+      aria-label="Session message tree"
+      onDoubleClickCapture={(event) => {
+        if (!expandedResponseMessageID) return
+
+        const target = event.target
+        const targetNodeElement = target instanceof Element
+          ? target.closest<HTMLElement>(".session-message-tree-graph-node")
+          : null
+        const targetMessageID = targetNodeElement?.dataset.messageTreeNodeId ?? null
+        const targetNode = targetMessageID ? messageTree.nodesByID[targetMessageID] : undefined
+
+        event.preventDefault()
+        event.stopPropagation()
+
+        if (
+          targetMessageID &&
+          targetMessageID !== expandedResponseMessageID &&
+          canExpandMessageTreeNode(targetNode)
+        ) {
+          pendingCenterResponseIDRef.current = targetMessageID
+          setExpandedResponseMessageID(targetMessageID)
+          return
+        }
+
+        collapseExpandedResponse()
+      }}
+    >
       <header className="session-message-tree-header">
         <div className="session-message-tree-title-copy">
           <span>Session tree</span>
@@ -411,7 +580,7 @@ export function SessionMessageTreePanel({
           aria-label={`Message tree for ${currentSession.title}`}
           style={{
             height: graphLayout ? `${graphLayout.height}px` : undefined,
-            transform: `translate(${graphPan.x}px, ${graphPan.y}px)`,
+            transform: `matrix(${graphZoom}, 0, 0, ${graphZoom}, ${graphPan.x}, ${graphPan.y})`,
             width: graphLayout ? `${graphLayout.width}px` : undefined,
           }}
         >
@@ -467,36 +636,81 @@ export function SessionMessageTreePanel({
 
             const isActive = node.id === messageTree.activeMessageID
             const isActivePath = activePathSet.has(node.id)
+            const canExpandResponse = canExpandMessageTreeNode(node)
+            const isExpandedResponse = expandedResponseMessageID === node.id && canExpandResponse
 
             return (
-              <button
+              <div
                 key={node.id}
-                type="button"
                 role="treeitem"
                 aria-disabled={isActive ? "true" : undefined}
                 aria-current={isActive ? "true" : undefined}
+                aria-expanded={canExpandResponse ? isExpandedResponse : undefined}
                 aria-level={layoutNode.depth + 1}
                 className={joinClassNames(
                   "session-message-tree-graph-node session-message-tree-row",
                   `is-${node.role}`,
                   isActivePath && "is-active-path",
                   isActive && "is-active",
+                  isExpandedResponse && "is-expanded-response",
                 )}
                 style={{
                   left: `${layoutNode.x}px`,
                   top: `${layoutNode.y}px`,
                 }}
-                title={node.preview}
+                data-message-tree-node-id={node.id}
+                tabIndex={0}
+                title={isExpandedResponse ? undefined : node.preview}
                 onClick={(event) => {
                   if (event.button !== 0) return
                   if (!isActive) {
                     void onSelectMessage(currentSession.id, node.id)
                   }
                 }}
+                onDoubleClick={(event) => {
+                  if (!canExpandResponse) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  toggleExpandedResponse(node.id)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && isExpandedResponse) {
+                    event.preventDefault()
+                    collapseExpandedResponse(node.id)
+                    return
+                  }
+
+                  if (event.key !== "Enter" && event.key !== " ") return
+                  event.preventDefault()
+                  if (!isActive) {
+                    void onSelectMessage(currentSession.id, node.id)
+                  }
+                }}
               >
                 <span className="session-message-tree-dot" aria-hidden="true" />
-                <span className="session-message-tree-node-preview">{node.preview}</span>
-              </button>
+                {isExpandedResponse ? (
+                  <span className="session-message-tree-response-card">
+                    <span className="session-message-tree-response-card-header">
+                      <span className="session-message-tree-response-card-title">Response</span>
+                      <button
+                        type="button"
+                        className="session-message-tree-response-collapse"
+                        aria-label="Collapse response"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          collapseExpandedResponse(node.id)
+                        }}
+                      >
+                        <span aria-hidden="true">{"\u00d7"}</span>
+                      </button>
+                    </span>
+                    <span className="session-message-tree-response-card-body">{node.content}</span>
+                  </span>
+                ) : (
+                  <span className="session-message-tree-node-preview">{node.preview}</span>
+                )}
+              </div>
             )
           })}
         </div>
