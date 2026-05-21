@@ -351,7 +351,7 @@ describe("ThreadView trace item renderers", () => {
     expect(screen.getByText("Tool detail")).toBeInTheDocument()
   })
 
-  it("renders expanded tool input and output in fixed-height scroll panes", () => {
+  it("renders expanded tool input and output as full content panes", () => {
     const toolItem: AssistantTraceItem = {
       ...toolStatusTraceItem("completed"),
       toolInputText: "tool input",
@@ -374,8 +374,12 @@ describe("ThreadView trace item renderers", () => {
     fireEvent.click(screen.getByRole("button", { name: /Tool completed input/ }))
     fireEvent.click(screen.getByRole("button", { name: /Tool completed output/ }))
 
-    expect(screen.getByRole("region", { name: "Tool completed input content" })).toHaveClass("trace-tool-io-pane")
-    expect(screen.getByRole("region", { name: "Tool completed output content" })).toHaveClass("trace-tool-io-pane")
+    const inputPane = screen.getByRole("region", { name: "Tool completed input content" })
+    const outputPane = screen.getByRole("region", { name: "Tool completed output content" })
+    expect(inputPane).toHaveClass("trace-tool-io-pane")
+    expect(inputPane).not.toHaveClass("trace-fixed-content-pane")
+    expect(outputPane).toHaveClass("trace-tool-io-pane")
+    expect(outputPane).not.toHaveClass("trace-fixed-content-pane")
     expect(container.querySelectorAll(".trace-kind-tool .trace-tool-io-pane")).toHaveLength(2)
   })
 
@@ -949,16 +953,30 @@ describe("ThreadView trace collapse", () => {
     expect(container.textContent).toContain("Inspect files first")
     expect(container.textContent).not.toContain("Then compare the rendering states")
 
-    const reasoningToggle = getByText("Inspect files first").closest('[role="button"]')
+    const reasoningSummary = getByText("Inspect files first")
+    expect(reasoningSummary).toHaveClass("trace-item-collapsed-line")
+
+    const reasoningToggle = reasoningSummary.closest('[role="button"]')
     expect(reasoningToggle).not.toBeNull()
 
     fireEvent.click(reasoningToggle!)
 
     expect(container.textContent).toContain("Then compare the rendering states")
+    expect(container.querySelector(".trace-item-subsection-label")).toBeNull()
+    expect(container.querySelector(".trace-item-subsection-toggle-icon")).toBeNull()
+    expect(reasoningToggle).toHaveAttribute("aria-expanded", "true")
+    expect(reasoningSummary).not.toHaveClass("trace-item-collapsed-line")
+
+    fireEvent.click(reasoningToggle!)
+
+    expect(container.textContent).toContain("Inspect files first")
+    expect(container.textContent).not.toContain("Then compare the rendering states")
+    expect(reasoningToggle).toHaveAttribute("aria-expanded", "false")
+    expect(reasoningSummary).toHaveClass("trace-item-collapsed-line")
   })
 
-  it("renders expanded reasoning in a fixed-height scroll pane", () => {
-    const { getByRole, getByText } = renderThread([
+  it("renders expanded reasoning as plain full content", () => {
+    const { container, getByRole, getByText } = renderThread([
       assistantTraceTurn(
         "assistant-1",
         [
@@ -978,10 +996,47 @@ describe("ThreadView trace collapse", () => {
     fireEvent.click(getByText("Inspect files first").closest('[role="button"]')!)
 
     const reasoningPane = getByRole("region", { name: "Reasoning content" })
-    expect(reasoningPane).toHaveClass("trace-fixed-content-pane", "trace-reasoning-pane")
+    expect(reasoningPane).toHaveClass("trace-reasoning-pane")
+    expect(reasoningPane).not.toHaveClass("trace-fixed-content-pane")
+    expect(reasoningPane.closest(".trace-item")).toHaveClass("is-expanded")
+    expect(container.querySelector(".trace-item-reasoning-toggle")).toHaveAttribute("aria-expanded", "true")
+    expect(getByText("Inspect files first")).not.toHaveClass("trace-item-collapsed-line")
+    expect(reasoningPane).not.toHaveTextContent("Inspect files first")
 
-    fireEvent.click(reasoningPane)
     expect(reasoningPane).toHaveTextContent("Then compare the rendering states")
+  })
+
+  it("reveals a long single-line reasoning item when expanded", () => {
+    const longReasoningLine =
+      "The user wants to test the availability of all tools. Let me run a few simple test commands to verify that different tools are working."
+    const { getByText, queryByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "reasoning-1",
+            kind: "reasoning",
+            timestamp: 1,
+            label: "Reasoning",
+            text: longReasoningLine,
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    const reasoningSummary = getByText(longReasoningLine)
+    const reasoningToggle = reasoningSummary.closest('[role="button"]')
+    expect(reasoningToggle).not.toBeNull()
+    expect(reasoningSummary).toHaveClass("trace-item-collapsed-line")
+
+    fireEvent.click(reasoningToggle!)
+
+    expect(reasoningToggle).toHaveAttribute("aria-expanded", "true")
+    expect(reasoningToggle).not.toHaveAttribute("aria-controls")
+    expect(reasoningSummary).not.toHaveClass("trace-item-collapsed-line")
+    expect(queryByRole("region", { name: "Reasoning content" })).toBeNull()
   })
 
   it("keeps streaming reasoning open, then collapses reasoning and tool content when the turn completes", () => {

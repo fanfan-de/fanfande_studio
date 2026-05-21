@@ -536,12 +536,6 @@ export function sanitizeDockviewLayout(layout: SerializedDockview | null | unkno
       .filter((child): child is SerializedGridObject<SerializedDockviewGroupState> => child !== null)
 
     if (children.length === 0) return null
-    if (children.length === 1) {
-      return {
-        ...children[0],
-        size: node.size,
-      }
-    }
 
     return {
       ...node,
@@ -651,12 +645,6 @@ export function normalizeDockviewLayout(
       .filter((child): child is SerializedGridObject<SerializedDockviewGroupState> => child !== null)
 
     if (children.length === 0) return null
-    if (children.length === 1) {
-      return {
-        ...children[0],
-        size: node.size,
-      }
-    }
 
     return {
       ...node,
@@ -712,65 +700,126 @@ function createPersistableDockviewLayout(layout: SerializedDockview | null) {
   const sanitizedLayout = sanitizeDockviewLayout(layout)
   if (!sanitizedLayout) return null
 
+  const sourceLayout = sanitizedLayout
   const seenPanelIDs = new Set<string>()
-  const leafNodes: Array<SerializedGridObject<SerializedDockviewGroupState> & { data: SerializedDockviewGroupState; type: "leaf" }> = []
   const nextPanels: SerializedDockview["panels"] = {}
 
-  for (const group of getDockviewGroupsInOrder(sanitizedLayout)) {
-    const sessionPanelIDs = group.panelIDs.filter((panelID) => {
+  function createPersistableGroup(group: SerializedDockviewGroupState): SerializedDockviewGroupState | null {
+    if (!isSerializedGroupState(group)) return null
+
+    const views = group.views.filter((panelID) => {
       if (seenPanelIDs.has(panelID)) return false
       const reference = getWorkbenchDockPanelReference(
         panelID,
-        sanitizedLayout.panels[panelID] as SerializedDockviewPanelState | undefined,
+        sourceLayout.panels[panelID] as SerializedDockviewPanelState | undefined,
       )
       return reference?.kind === "session"
     })
-    if (sessionPanelIDs.length === 0) continue
+    if (views.length === 0) return null
 
-    for (const panelID of sessionPanelIDs) {
+    for (const panelID of views) {
       const reference = getWorkbenchDockPanelReference(
         panelID,
-        sanitizedLayout.panels[panelID] as SerializedDockviewPanelState | undefined,
+        sourceLayout.panels[panelID] as SerializedDockviewPanelState | undefined,
       )
       if (!reference) continue
       seenPanelIDs.add(panelID)
-      const title = (sanitizedLayout.panels[panelID] as SerializedDockviewPanelState | undefined)?.title
+      const title = (sourceLayout.panels[panelID] as SerializedDockviewPanelState | undefined)?.title
       nextPanels[panelID] = createPanelState(reference, title)
     }
 
-    const activePanelID = group.activePanelID && sessionPanelIDs.includes(group.activePanelID)
-      ? group.activePanelID
-      : sessionPanelIDs[0]
-    leafNodes.push({
-      type: "leaf",
-      data: {
-        id: group.id,
-        views: sessionPanelIDs,
-        activeView: activePanelID,
-      },
-      size: DEFAULT_DOCKVIEW_SIZE,
-    })
+    return {
+      ...group,
+      views,
+      activeView: group.activeView && views.includes(group.activeView) ? group.activeView : views[0],
+    }
   }
 
-  if (leafNodes.length === 0) return null
+  function createPersistableLeaf(group: SerializedDockviewGroupState): SerializedGridObject<SerializedDockviewGroupState> | null {
+    const data = createPersistableGroup(group)
+    if (!data) return null
 
-  const activeGroup = sanitizedLayout.activeGroup && leafNodes.some((node) => node.data.id === sanitizedLayout.activeGroup)
-    ? sanitizedLayout.activeGroup
-    : leafNodes[0]?.data.id
+    return {
+      type: "leaf",
+      data,
+      size: DEFAULT_DOCKVIEW_SIZE,
+    }
+  }
 
-  return {
-    grid: {
-      root: {
+  function filterPersistableNode(
+    node: SerializedGridObject<SerializedDockviewGroupState>,
+  ): SerializedGridObject<SerializedDockviewGroupState> | null {
+    if (node.type === "leaf") {
+      const group = createPersistableGroup(node.data as SerializedDockviewGroupState)
+      if (!group) return null
+
+      return {
+        ...node,
+        data: group,
+      }
+    }
+
+    const children = (Array.isArray(node.data) ? node.data : [])
+      .map((child) => filterPersistableNode(child as SerializedGridObject<SerializedDockviewGroupState>))
+      .filter((child): child is SerializedGridObject<SerializedDockviewGroupState> => child !== null)
+
+    if (children.length === 0) return null
+
+    return {
+      ...node,
+      data: children,
+    }
+  }
+
+  const gridRoot = filterPersistableNode(sourceLayout.grid.root as SerializedGridObject<SerializedDockviewGroupState>)
+  const detachedLeaves = [
+    ...(sourceLayout.floatingGroups ?? []),
+    ...(sourceLayout.popoutGroups ?? []),
+  ]
+    .map((group) => createPersistableLeaf(group.data as SerializedDockviewGroupState))
+    .filter((node): node is SerializedGridObject<SerializedDockviewGroupState> => node !== null)
+  const hasPersistedPanels = Object.keys(nextPanels).length > 0
+  if (!hasPersistedPanels) return null
+
+  let root: SerializedGridObject<SerializedDockviewGroupState> = gridRoot
+    ? gridRoot.type === "branch"
+      ? gridRoot
+      : {
+          type: "branch",
+          data: [gridRoot],
+          size: gridRoot.size,
+        }
+    : {
         type: "branch",
-        data: leafNodes,
-      },
-      height: sanitizedLayout.grid.height || DEFAULT_DOCKVIEW_HEIGHT,
-      width: sanitizedLayout.grid.width || DEFAULT_DOCKVIEW_WIDTH,
-      orientation: sanitizedLayout.grid.orientation ?? Orientation.HORIZONTAL,
+        data: [],
+      }
+
+  if (detachedLeaves.length > 0) {
+    const rootChildren = root.type === "branch" && Array.isArray(root.data)
+      ? root.data as SerializedGridObject<SerializedDockviewGroupState>[]
+      : [root]
+    root = {
+      ...root,
+      type: "branch",
+      data: [...rootChildren, ...detachedLeaves],
+    }
+  }
+
+  const nextLayout: SerializedDockview = {
+    grid: {
+      root,
+      height: sourceLayout.grid.height || DEFAULT_DOCKVIEW_HEIGHT,
+      width: sourceLayout.grid.width || DEFAULT_DOCKVIEW_WIDTH,
+      orientation: sourceLayout.grid.orientation ?? Orientation.HORIZONTAL,
     },
     panels: nextPanels,
-    activeGroup,
   }
+  const groups = getDockviewGroupsInOrder(nextLayout)
+  nextLayout.activeGroup = sourceLayout.activeGroup && groups.some((group) => group.id === sourceLayout.activeGroup)
+    ? sourceLayout.activeGroup
+    : groups[0]?.id
+
+  return groups.length > 0 ? nextLayout : null
 }
 
 export function readPersistedDockviewLayout() {

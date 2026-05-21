@@ -78,6 +78,44 @@ function addPopoutPanel(layout: SerializedDockview, reference: WorkbenchTabRefer
   return panelID
 }
 
+function addStackedSessionPanel(layout: SerializedDockview, reference: WorkbenchTabReference, title: string) {
+  const panelID = getWorkbenchDockPanelId(reference)
+  layout.panels[panelID] = {
+    id: panelID,
+    contentComponent: WORKBENCH_DOCK_PANEL_COMPONENT,
+    tabComponent: WORKBENCH_DOCK_TAB_COMPONENT,
+    title,
+    params: reference,
+  }
+
+  const root = layout.grid.root
+  if (root.type === "branch" && Array.isArray(root.data)) {
+    const firstLeaf = root.data[0]
+    if (firstLeaf?.type === "leaf") {
+      root.data = [
+        {
+          type: "branch",
+          data: [
+            firstLeaf,
+            {
+              type: "leaf",
+              data: {
+                id: "stacked-group-2",
+                views: [panelID],
+                activeView: panelID,
+              },
+              size: 100,
+            },
+          ],
+          size: 100,
+        },
+      ]
+    }
+  }
+
+  return panelID
+}
+
 describe("dockview state helpers", () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -134,6 +172,28 @@ describe("dockview state helpers", () => {
     expect(getDockviewGroupsInOrder(normalized)[0]?.views).toEqual([sessionReference, createReference])
   })
 
+  it("preserves single-child branches that encode orthogonal Dockview splits", () => {
+    const layout = createInitialDockviewLayout(sessionReference, "Session 1")
+    const stackedReference: WorkbenchTabReference = {
+      kind: "session",
+      sessionID: "session-2",
+    }
+    addStackedSessionPanel(layout, stackedReference, "Session 2")
+
+    const normalized = normalizeDockviewLayout(layout, [sessionReference, stackedReference], {
+      "session:session-1": "Session 1",
+      "session:session-2": "Session 2",
+    })
+
+    expect(normalized?.grid.root.type).toBe("branch")
+    expect(Array.isArray(normalized?.grid.root.data)).toBe(true)
+    expect((normalized?.grid.root.data as Array<{ type: string }> | undefined)?.[0]?.type).toBe("branch")
+    expect(getDockviewGroupsInOrder(normalized).map((group) => group.views)).toEqual([
+      [sessionReference],
+      [stackedReference],
+    ])
+  })
+
   it("sanitizes malformed layouts before business normalization", () => {
     const layout = createInitialDockviewLayout(sessionReference, "Session 1")
     const invalidPanelID = "session:ghost"
@@ -175,6 +235,24 @@ describe("dockview state helpers", () => {
     expect(persisted.panels[createPanelID]).toBeUndefined()
     expect(persisted.panels["session:session-1"]).toBeTruthy()
     expect(getOpenSessionIDs(readPersistedDockviewLayout())).toEqual(["session-1"])
+  })
+
+  it("persists stacked session panes without flattening them into a horizontal split", () => {
+    const layout = createInitialDockviewLayout(sessionReference, "Session 1")
+    const stackedReference: WorkbenchTabReference = {
+      kind: "session",
+      sessionID: "session-2",
+    }
+    addStackedSessionPanel(layout, stackedReference, "Session 2")
+
+    writePersistedDockviewLayout(layout)
+
+    const persisted = readPersistedDockviewLayout()
+    expect((persisted?.grid.root.data as Array<{ type: string }> | undefined)?.[0]?.type).toBe("branch")
+    expect(getDockviewGroupsInOrder(persisted).map((group) => group.views)).toEqual([
+      [sessionReference],
+      [stackedReference],
+    ])
   })
 
   it("reads popout groups with their location", () => {

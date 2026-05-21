@@ -1555,8 +1555,41 @@ function firstNonEmptyLine(value?: string) {
     .find(Boolean)
 }
 
-function getCollapsedReasoningLine(item: AssistantTraceItem) {
-  return firstNonEmptyLine(item.text) ?? firstNonEmptyLine(item.detail) ?? item.title ?? item.label
+function splitFirstNonEmptyLine(value?: string | null) {
+  const lines = value?.split(/\r?\n/) ?? []
+  const firstLineIndex = lines.findIndex((line) => line.trim())
+  if (firstLineIndex < 0) return null
+
+  return {
+    firstLine: lines[firstLineIndex]?.trim() ?? "",
+    remainingText: lines.slice(firstLineIndex + 1).join("\n").trim() || null,
+  }
+}
+
+function getReasoningDisclosureContent(item: AssistantTraceItem, fallbackLine: string) {
+  const textSplit = splitFirstNonEmptyLine(item.text)
+  if (textSplit) {
+    return {
+      detail: item.detail,
+      firstLine: textSplit.firstLine,
+      text: textSplit.remainingText,
+    }
+  }
+
+  const detailSplit = splitFirstNonEmptyLine(item.detail)
+  if (detailSplit) {
+    return {
+      detail: detailSplit.remainingText,
+      firstLine: detailSplit.firstLine,
+      text: null,
+    }
+  }
+
+  return {
+    detail: null,
+    firstLine: fallbackLine,
+    text: null,
+  }
 }
 
 function normalizeTraceLogText(value?: string | null) {
@@ -3341,8 +3374,13 @@ function ReasoningTraceItemView({
   const shouldCollapseTraceItem = shouldCollapseAfterTurnCompletion && isCollapsibleTraceItem(item)
   const [isExpanded, setIsExpanded] = useState(() => !shouldCollapseTraceItem)
   const contentID = `trace-item-reasoning-${item.id}`
-  const collapsedLine = getCollapsedReasoningLine(item)
   const reasoningLabel = item.title || item.label || "Reasoning"
+  const reasoningContent = getReasoningDisclosureContent(item, reasoningLabel)
+  const hasReasoningBodyContent = Boolean(reasoningContent.text || reasoningContent.detail || debugEntries.length > 0)
+  const reasoningSummaryClassName = joinClassNames(
+    "trace-item-text trace-item-plain-text",
+    isExpanded ? "" : "trace-item-collapsed-line",
+  )
 
   useLayoutEffect(() => {
     if (!shouldCollapseTraceItem) return
@@ -3370,38 +3408,25 @@ function ReasoningTraceItemView({
         role="button"
         tabIndex={0}
         aria-expanded={isExpanded}
-        aria-controls={contentID}
-        aria-label={isExpanded ? `Collapse ${reasoningLabel}` : undefined}
+        aria-controls={hasReasoningBodyContent ? contentID : undefined}
         onClick={handleReasoningToggle}
         onKeyDown={handleReasoningKeyDown}
       >
-        {isExpanded ? (
-          <>
-            <span className="trace-item-subsection-toggle-icon" aria-hidden="true">
-              <ChevronDownIcon />
-            </span>
-            <span className="trace-item-subsection-toggle-line">
-              <span className="trace-item-subsection-label">{reasoningLabel}</span>
-            </span>
-          </>
-        ) : (
-          <ThreadRichText
-            as="div"
-            className="trace-item-text trace-item-plain-text trace-item-collapsed-line"
-            text={collapsedLine}
-          />
-        )}
+        <ThreadRichText
+          as="div"
+          className={reasoningSummaryClassName}
+          text={reasoningContent.firstLine}
+        />
       </div>
-      {isExpanded ? (
+      {isExpanded && hasReasoningBodyContent ? (
         <div
           id={contentID}
-          className="trace-item-reasoning-body trace-fixed-content-pane trace-reasoning-pane"
+          className="trace-item-reasoning-body trace-reasoning-pane"
           role="region"
           aria-label={`${reasoningLabel} content`}
-          tabIndex={0}
         >
-          {item.text ? <ThreadRichText className="trace-item-text trace-item-plain-text" text={item.text} /> : null}
-          {item.detail ? <ThreadRichText className="trace-item-detail trace-item-plain-detail" text={item.detail} /> : null}
+          {reasoningContent.text ? <ThreadRichText className="trace-item-text trace-item-plain-text" text={reasoningContent.text} /> : null}
+          {reasoningContent.detail ? <ThreadRichText className="trace-item-detail trace-item-plain-detail" text={reasoningContent.detail} /> : null}
           <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
         </div>
       ) : null}
@@ -3794,10 +3819,9 @@ function ToolTraceItemView({
               {isInputExpanded ? (
                 <div
                   id={inputDisclosureID}
-                  className="trace-item-subsection-body trace-fixed-content-pane trace-tool-io-pane"
+                  className="trace-item-subsection-body trace-tool-io-pane"
                   role="region"
                   aria-label={`${summaryTitle} input content`}
-                  tabIndex={0}
                 >
                   {visibleToolInputText ? <ThreadRichText className="trace-item-text" text={visibleToolInputText} /> : null}
                   {inputSectionDetail ? <ThreadRichText className="trace-item-detail" text={inputSectionDetail} /> : null}
@@ -3825,10 +3849,9 @@ function ToolTraceItemView({
               {isOutputExpanded ? (
                 <div
                   id={outputDisclosureID}
-                  className="trace-item-subsection-body trace-fixed-content-pane trace-tool-io-pane"
+                  className="trace-item-subsection-body trace-tool-io-pane"
                   role="region"
                   aria-label={`${summaryTitle} output content`}
-                  tabIndex={0}
                 >
                   {visibleToolOutputText ? <ThreadRichText className="trace-item-text" text={visibleToolOutputText} /> : null}
                   {outputSectionDetail ? <ThreadRichText className="trace-item-detail" text={outputSectionDetail} /> : null}

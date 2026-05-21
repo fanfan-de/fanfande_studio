@@ -7157,6 +7157,28 @@ describe("App", () => {
     expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
   })
 
+  it("keeps a vertical Dockview split after sending from the lower pane", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Chat 2" }))
+    const panes = await moveDockviewPanelToNewGroup("session:session-chat-2", "bottom")
+    const lowerPane = panes.find((pane) => getPaneCanvasTitle(pane) === "Chat 2")
+    expect(lowerPane).toBeTruthy()
+
+    const api = await getWorkbenchDockviewApi()
+    const stackedGrid = api.toJSON().grid
+
+    setComposerDraftValue(within(lowerPane!).getByRole("textbox", { name: "Task draft" }), "Keep the stacked split")
+    await act(async () => {
+      fireEvent.click(within(lowerPane!).getByRole("button", { name: /^(Send|Sending|Stop) task$|^Resolve approval first$/ }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(await within(lowerPane!).findByText("Keep the stacked split")).toBeInTheDocument()
+    expect(api.toJSON().grid).toEqual(stackedGrid)
+  })
+
   it("drops a tab into another pane and activates it there", async () => {
     render(<App />)
 

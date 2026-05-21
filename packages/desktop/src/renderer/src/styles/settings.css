@@ -4583,14 +4583,27 @@ body.is-dragging-settings-page {
   background: var(--seg-shell);
 }
 
+.shell-top-menu.connections-top-menu.is-three-column {
+  grid-template-columns: minmax(0, 1fr) minmax(0, max-content) minmax(0, 1fr);
+}
+
 .connections-top-menu-content {
+  grid-column: 2;
   min-width: 0;
-  width: 100%;
+  width: max-content;
+  max-width: calc(100vw - var(--window-controls-canvas-clearance) - 24px);
+  justify-self: center;
+  justify-content: center;
+}
+
+.connections-top-menu .shell-top-menu-trailing {
+  grid-column: 3;
+  grid-row: 1;
 }
 
 .connections-top-menu-inner {
   min-width: 0;
-  width: 100%;
+  max-width: 100%;
   display: flex;
   align-items: center;
   gap: 18px;
@@ -4657,7 +4670,6 @@ body.is-dragging-settings-page {
   min-width: 180px;
   width: min(280px, 34vw);
   min-height: 30px;
-  margin-left: auto;
   padding: 0 9px;
   border: 1px solid var(--seg-border);
   border-radius: 8px;
