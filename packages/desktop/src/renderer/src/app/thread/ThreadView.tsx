@@ -179,8 +179,73 @@ const IMAGE_TALL_RATIO_THRESHOLD = 1.8
 const THREAD_BOTTOM_LOCK_THRESHOLD_PX = 32
 const THREAD_LATEST_AGENT_TOP_PADDING_PX = 8
 const THREAD_USER_SCROLL_INTENT_WINDOW_MS = 800
+const THREAD_COMPLETION_SCROLL_SYNC_SUPPRESS_MS = 600
 const THREAD_TOP_RESET_THRESHOLD_PX = 2
+const THREAD_VIRTUALIZATION_MIN_ROWS = 80
+const THREAD_VIRTUAL_OVERSCAN_PX = 900
+const THREAD_VIRTUAL_OVERSCAN_ROWS = 2
+const THREAD_VIRTUAL_ROW_GAP_PX = 7
+const THREAD_VIRTUAL_ROW_MIN_HEIGHT_PX = 12
+const THREAD_VIRTUAL_ROW_MEASURE_EPSILON_PX = 1
 const threadScrollSnapshots = new Map<string, ThreadScrollSnapshot>()
+
+interface LatestAssistantTurnState {
+  id: string
+  isStreaming: boolean
+}
+
+type ThreadRenderRow =
+  | {
+      id: string
+      estimatedHeight: number
+      kind: "session-banner"
+    }
+  | {
+      id: string
+      estimatedHeight: number
+      kind: "user"
+      turn: UserTurn
+      turnIndex: number
+    }
+  | {
+      ephemeralHint: string | null
+      estimatedHeight: number
+      id: string
+      insertedUserTurns: UserTurn[]
+      kind: "assistant"
+      renderedItems: AssistantTraceItem[]
+      turn: AssistantTurn
+      turnIndex: number
+    }
+  | {
+      estimatedHeight: number
+      id: string
+      kind: "permission"
+    }
+
+interface ThreadVirtualLayoutItem {
+  height: number
+  index: number
+  row: ThreadRenderRow
+  top: number
+}
+
+interface ThreadVirtualLayout {
+  items: ThreadVirtualLayoutItem[]
+  totalHeight: number
+}
+
+interface ThreadVirtualRange {
+  endIndex: number
+  items: ThreadVirtualLayoutItem[]
+  startIndex: number
+}
+
+interface ThreadVirtualViewport {
+  height: number
+  paddingTop: number
+  scrollTop: number
+}
 
 type ImagePreviewFitMode = "fit-width" | "fit-contain"
 
@@ -223,12 +288,29 @@ function scrollThreadColumnToBottom(threadColumn: HTMLDivElement) {
   threadColumn.scrollTop = threadColumn.scrollHeight
 }
 
+function getThreadOwnTurnElements(threadColumn: HTMLDivElement, selector: string) {
+  return Array.from(threadColumn.querySelectorAll<HTMLElement>(selector)).filter(
+    (element) => element.closest(".thread-column") === threadColumn,
+  )
+}
+
 function findLatestAgentTurnElement(threadColumn: HTMLDivElement) {
-  const assistantTurns = threadColumn.querySelectorAll<HTMLElement>(".assistant-turn[data-turn-id]")
+  const assistantTurns = getThreadOwnTurnElements(threadColumn, ".assistant-turn[data-turn-id]")
   return assistantTurns[assistantTurns.length - 1] ?? null
 }
 
-function scrollThreadColumnToLatestAgentContent(threadColumn: HTMLDivElement) {
+function findLatestTurnElement(threadColumn: HTMLDivElement) {
+  const turns = getThreadOwnTurnElements(threadColumn, ".turn[data-turn-id]")
+  return turns[turns.length - 1] ?? null
+}
+
+function scrollThreadColumnToLatestContent(threadColumn: HTMLDivElement) {
+  const latestTurn = findLatestTurnElement(threadColumn)
+  if (latestTurn?.classList.contains("user-turn")) {
+    scrollThreadColumnToBottom(threadColumn)
+    return isThreadColumnPinnedToBottom(threadColumn)
+  }
+
   const latestAgentTurn = findLatestAgentTurnElement(threadColumn)
   if (!latestAgentTurn) {
     scrollThreadColumnToBottom(threadColumn)
@@ -262,6 +344,114 @@ function readThreadScrollSnapshot(threadColumn: HTMLDivElement): ThreadScrollSna
     pinnedToBottom: isThreadColumnPinnedToBottom(threadColumn),
     updatedAt: Date.now(),
   }
+}
+
+function readLatestAssistantTurnState(turns: Turn[]): LatestAssistantTurnState | null {
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index]
+    if (turn.kind === "assistant") return { id: turn.id, isStreaming: Boolean(turn.isStreaming) }
+  }
+
+  return null
+}
+
+function readThreadColumnPaddingTop(threadColumn: HTMLDivElement) {
+  if (typeof window === "undefined") return 0
+
+  const value = Number.parseFloat(window.getComputedStyle(threadColumn).paddingTop)
+  return Number.isFinite(value) ? value : 0
+}
+
+function readThreadColumnPaddingBottom(threadColumn: HTMLDivElement) {
+  if (typeof window === "undefined") return 0
+
+  const value = Number.parseFloat(window.getComputedStyle(threadColumn).paddingBottom)
+  return Number.isFinite(value) ? value : 0
+}
+
+function buildThreadVirtualLayout(rows: ThreadRenderRow[], measuredHeights: Map<string, number>): ThreadVirtualLayout {
+  const items: ThreadVirtualLayoutItem[] = []
+  let top = 0
+
+  rows.forEach((row, index) => {
+    const measuredHeight = measuredHeights.get(row.id)
+    const height = Math.max(THREAD_VIRTUAL_ROW_MIN_HEIGHT_PX, measuredHeight ?? row.estimatedHeight)
+    items.push({
+      height,
+      index,
+      row,
+      top,
+    })
+    top += height
+    if (index < rows.length - 1) {
+      top += THREAD_VIRTUAL_ROW_GAP_PX
+    }
+  })
+
+  return {
+    items,
+    totalHeight: top,
+  }
+}
+
+function findThreadVirtualRange(layout: ThreadVirtualLayout, viewport: ThreadVirtualViewport): ThreadVirtualRange {
+  if (layout.items.length === 0) {
+    return {
+      endIndex: 0,
+      items: [],
+      startIndex: 0,
+    }
+  }
+
+  const viewportTop = Math.max(0, viewport.scrollTop - viewport.paddingTop)
+  const startOffset = Math.max(0, viewportTop - THREAD_VIRTUAL_OVERSCAN_PX)
+  const endOffset = viewportTop + Math.max(0, viewport.height) + THREAD_VIRTUAL_OVERSCAN_PX
+  let startIndex = layout.items.findIndex((item) => item.top + item.height >= startOffset)
+  if (startIndex === -1) startIndex = layout.items.length - 1
+
+  let endIndex = startIndex
+  while (endIndex < layout.items.length && layout.items[endIndex]!.top <= endOffset) {
+    endIndex += 1
+  }
+
+  startIndex = Math.max(0, startIndex - THREAD_VIRTUAL_OVERSCAN_ROWS)
+  endIndex = Math.min(layout.items.length, endIndex + THREAD_VIRTUAL_OVERSCAN_ROWS)
+
+  return {
+    endIndex,
+    items: layout.items.slice(startIndex, endIndex),
+    startIndex,
+  }
+}
+
+function estimateAssistantThreadRowHeight(row: {
+  ephemeralHint: string | null
+  insertedUserTurns: UserTurn[]
+  renderedItems: AssistantTraceItem[]
+  turn: AssistantTurn
+}) {
+  if (row.ephemeralHint) return 96 + row.insertedUserTurns.length * 92
+
+  const itemEstimate = row.renderedItems.reduce((height, item) => {
+    const textLength = `${item.title ?? ""}${item.text ?? ""}${item.detail ?? ""}`.length
+    const textHeight = Math.min(320, Math.max(42, Math.ceil(textLength / 110) * 22))
+    const kindHeight =
+      item.kind === "tool" || item.kind === "patch" || item.kind === "file" || item.kind === "image"
+        ? 84
+        : item.kind === "reasoning"
+          ? 58
+          : 48
+    return height + Math.max(kindHeight, textHeight)
+  }, 64)
+
+  return Math.max(row.turn.isStreaming ? 180 : 140, itemEstimate + row.insertedUserTurns.length * 92)
+}
+
+function estimateUserThreadRowHeight(turn: UserTurn) {
+  const textLength = getUserTurnBodyText(turn).length
+  const attachmentCount = turn.attachments?.length ?? 0
+  const diffHeight = hasUserTurnDiffSummary(turn) ? 220 : 0
+  return 64 + Math.ceil(textLength / 90) * 22 + attachmentCount * 28 + diffHeight
 }
 
 function isSidebarResizeInProgress() {
@@ -3619,10 +3809,21 @@ function VisibleThreadView({
   const observedThreadContentRef = useRef<WeakSet<Element>>(new WeakSet())
   const pendingSidebarResizeScrollSyncRef = useRef(false)
   const lastUserScrollIntentAtRef = useRef(0)
+  const lastUserScrollIntentDirectionRef = useRef<"up" | "down" | null>(null)
+  const followScrollSyncSuppressedUntilRef = useRef(0)
+  const latestAssistantTurnStateRef = useRef<LatestAssistantTurnState | null>(null)
   const userScrollIntentConsumedRef = useRef(false)
   const lastKnownScrollTopRef = useRef(0)
   const currentScrollStateKeyRef = useRef<string | null>(null)
   const renderedTurnIDsByScrollKeyRef = useRef<Record<string, Set<string>>>({})
+  const threadVirtualHeightCachesRef = useRef<Record<string, Map<string, number>>>({})
+  const [threadVirtualMeasurementVersion, setThreadVirtualMeasurementVersion] = useState(0)
+  const [threadVirtualViewport, setThreadVirtualViewport] = useState<ThreadVirtualViewport>({
+    height: 0,
+    paddingTop: 0,
+    scrollTop: 0,
+  })
+  const threadVirtualViewportRef = useRef(threadVirtualViewport)
   const lastInlineLinkActivationRef = useRef<{
     href: string
     time: number
@@ -3638,6 +3839,222 @@ function VisibleThreadView({
     return pendingRequestID ? [...ids, `permission-request:${pendingRequestID}`] : ids
   }, [activeTurns, pendingPermissionRequests])
   const visibleTurnIDsKey = visibleTurnIDs.join("\u0000")
+  const threadRows = useMemo<ThreadRenderRow[]>(() => {
+    if (!activeSession) return []
+
+    const rows: ThreadRenderRow[] = []
+    if (showSessionBanner && readOnlySideChat) {
+      rows.push({
+        id: "session-banner",
+        estimatedHeight: 82,
+        kind: "session-banner",
+      })
+    }
+
+    activeTurns.forEach((turn, turnIndex) => {
+      if (turn.kind === "user") {
+        if (hasStreamInsertionTarget(activeTurns, turn)) return
+
+        rows.push({
+          id: turn.id,
+          estimatedHeight: estimateUserThreadRowHeight(turn),
+          kind: "user",
+          turn,
+          turnIndex,
+        })
+        return
+      }
+
+      const insertedUserTurns = getAssistantStreamInsertionUserTurns(activeTurns, turn)
+      const renderedItems = filterRenderedAssistantTraceItems(
+        turn.items,
+        !turn.isStreaming,
+        assistantTraceVisibility,
+      )
+      const ephemeralHint = renderedItems.length === 0 ? getAssistantEphemeralHint(turn) : null
+      if (renderedItems.length === 0 && !ephemeralHint && insertedUserTurns.length === 0) return
+
+      rows.push({
+        ephemeralHint,
+        estimatedHeight: estimateAssistantThreadRowHeight({
+          ephemeralHint,
+          insertedUserTurns,
+          renderedItems,
+          turn,
+        }),
+        id: turn.id,
+        insertedUserTurns,
+        kind: "assistant",
+        renderedItems,
+        turn,
+        turnIndex,
+      })
+    })
+
+    const pendingRequestID = pendingPermissionRequests[0]?.id
+    if (pendingRequestID && !isResolvingPermissionRequest) {
+      rows.push({
+        id: `permission-request:${pendingRequestID}`,
+        estimatedHeight: 420,
+        kind: "permission",
+      })
+    }
+
+    return rows
+  }, [
+    activeSession,
+    activeTurns,
+    assistantTraceVisibility,
+    isResolvingPermissionRequest,
+    pendingPermissionRequests,
+    readOnlySideChat,
+    showSessionBanner,
+  ])
+  const shouldVirtualizeThreadRows = threadRows.length >= THREAD_VIRTUALIZATION_MIN_ROWS
+  const threadVirtualHeightCache = getThreadVirtualHeightCache(effectiveScrollStateKey)
+  const threadVirtualLayout = useMemo(
+    () => buildThreadVirtualLayout(threadRows, threadVirtualHeightCache),
+    [effectiveScrollStateKey, threadRows, threadVirtualHeightCache, threadVirtualMeasurementVersion],
+  )
+  const threadVirtualRange = useMemo(
+    () => (shouldVirtualizeThreadRows
+      ? findThreadVirtualRange(threadVirtualLayout, threadVirtualViewport)
+      : {
+          endIndex: threadRows.length,
+          items: threadVirtualLayout.items,
+          startIndex: 0,
+        }),
+    [shouldVirtualizeThreadRows, threadRows.length, threadVirtualLayout, threadVirtualViewport],
+  )
+  const threadVirtualRenderedRangeKey = `${threadVirtualRange.startIndex}:${threadVirtualRange.endIndex}:${threadVirtualLayout.totalHeight}`
+
+  function getThreadVirtualHeightCache(key = effectiveScrollStateKey) {
+    const existingCache = threadVirtualHeightCachesRef.current[key]
+    if (existingCache) return existingCache
+
+    const nextCache = new Map<string, number>()
+    threadVirtualHeightCachesRef.current[key] = nextCache
+    return nextCache
+  }
+
+  function syncThreadVirtualViewport(threadColumn: HTMLDivElement) {
+    if (!shouldVirtualizeThreadRows) return
+
+    const nextViewport: ThreadVirtualViewport = {
+      height: threadColumn.clientHeight,
+      paddingTop: readThreadColumnPaddingTop(threadColumn),
+      scrollTop: threadColumn.scrollTop,
+    }
+    const previousViewport = threadVirtualViewportRef.current
+    if (
+      Math.abs(previousViewport.height - nextViewport.height) < THREAD_VIRTUAL_ROW_MEASURE_EPSILON_PX &&
+      Math.abs(previousViewport.paddingTop - nextViewport.paddingTop) < THREAD_VIRTUAL_ROW_MEASURE_EPSILON_PX &&
+      Math.abs(previousViewport.scrollTop - nextViewport.scrollTop) < THREAD_VIRTUAL_ROW_MEASURE_EPSILON_PX
+    ) {
+      return
+    }
+
+    threadVirtualViewportRef.current = nextViewport
+    setThreadVirtualViewport(nextViewport)
+  }
+
+  function getThreadVirtualScrollMaxTop(threadColumn: HTMLDivElement) {
+    const virtualScrollHeight =
+      threadVirtualLayout.totalHeight +
+      readThreadColumnPaddingTop(threadColumn) +
+      readThreadColumnPaddingBottom(threadColumn)
+    return Math.max(getThreadScrollMaxTop(threadColumn), virtualScrollHeight - threadColumn.clientHeight)
+  }
+
+  function clampThreadVirtualScrollTop(threadColumn: HTMLDivElement, scrollTop: number) {
+    return Math.min(Math.max(0, scrollTop), Math.max(0, getThreadVirtualScrollMaxTop(threadColumn)))
+  }
+
+  function findLatestThreadVirtualContentRow() {
+    for (let index = threadRows.length - 1; index >= 0; index -= 1) {
+      const row = threadRows[index]
+      if (row?.kind === "assistant" || row?.kind === "user") return row
+    }
+
+    return null
+  }
+
+  function scrollThreadColumnToLatestThreadContent(threadColumn: HTMLDivElement) {
+    if (!shouldVirtualizeThreadRows) {
+      scrollThreadColumnToLatestContent(threadColumn)
+      return
+    }
+
+    const latestRow = findLatestThreadVirtualContentRow()
+    if (!latestRow || latestRow.kind === "user") {
+      threadColumn.scrollTop = getThreadVirtualScrollMaxTop(threadColumn)
+      syncThreadVirtualViewport(threadColumn)
+      return
+    }
+
+    const latestLayoutItem = threadVirtualLayout.items.find((item) => item.row.id === latestRow.id)
+    if (!latestLayoutItem) {
+      threadColumn.scrollTop = getThreadVirtualScrollMaxTop(threadColumn)
+      syncThreadVirtualViewport(threadColumn)
+      return
+    }
+
+    const nextScrollTop =
+      latestLayoutItem.top +
+      readThreadColumnPaddingTop(threadColumn) -
+      THREAD_LATEST_AGENT_TOP_PADDING_PX
+    threadColumn.scrollTop = clampThreadVirtualScrollTop(threadColumn, nextScrollTop)
+    syncThreadVirtualViewport(threadColumn)
+  }
+
+  function measureThreadVirtualRowElement(element: HTMLElement) {
+    const rowID = element.dataset.threadVirtualRowId
+    if (!rowID) return false
+
+    const height = Math.max(element.offsetHeight, element.getBoundingClientRect().height)
+    if (!Number.isFinite(height) || height < THREAD_VIRTUAL_ROW_MIN_HEIGHT_PX) return false
+
+    const heightCache = getThreadVirtualHeightCache()
+    const previousHeight = heightCache.get(rowID)
+    if (previousHeight !== undefined && Math.abs(previousHeight - height) < THREAD_VIRTUAL_ROW_MEASURE_EPSILON_PX) {
+      return false
+    }
+
+    heightCache.set(rowID, height)
+    return true
+  }
+
+  function measureRenderedThreadVirtualRows() {
+    const threadColumn = threadColumnRef.current
+    if (!threadColumn || !shouldVirtualizeThreadRows) return false
+
+    let didMeasure = false
+    for (const element of Array.from(threadColumn.querySelectorAll<HTMLElement>("[data-thread-virtual-row-id]"))) {
+      didMeasure = measureThreadVirtualRowElement(element) || didMeasure
+    }
+
+    if (didMeasure) {
+      setThreadVirtualMeasurementVersion((version) => version + 1)
+    }
+
+    return didMeasure
+  }
+
+  function measureThreadVirtualRowsFromResizeEntries(entries: ResizeObserverEntry[]) {
+    if (!shouldVirtualizeThreadRows) return false
+
+    let didMeasure = false
+    for (const entry of entries) {
+      if (!(entry.target instanceof HTMLElement)) continue
+      didMeasure = measureThreadVirtualRowElement(entry.target) || didMeasure
+    }
+
+    if (didMeasure) {
+      setThreadVirtualMeasurementVersion((version) => version + 1)
+    }
+
+    return didMeasure
+  }
 
   function captureThreadScrollSnapshot(
     threadColumn: HTMLDivElement,
@@ -3713,12 +4130,21 @@ function VisibleThreadView({
   function setThreadScrollTop(threadColumn: HTMLDivElement, scrollTop: number) {
     threadColumn.scrollTop = clampThreadScrollTop(threadColumn, scrollTop)
     lastKnownScrollTopRef.current = threadColumn.scrollTop
+    syncThreadVirtualViewport(threadColumn)
   }
 
   function followLatestThreadContent(threadColumn: HTMLDivElement, key = effectiveScrollStateKey) {
     scrollModeRef.current = "follow"
-    scrollThreadColumnToLatestAgentContent(threadColumn)
+    scrollThreadColumnToLatestThreadContent(threadColumn)
     lastKnownScrollTopRef.current = threadColumn.scrollTop
+    syncThreadVirtualViewport(threadColumn)
+    persistThreadScrollSnapshot(key, "follow")
+  }
+
+  function preserveCurrentFollowThreadPosition(threadColumn: HTMLDivElement, key = effectiveScrollStateKey) {
+    scrollModeRef.current = "follow"
+    lastKnownScrollTopRef.current = threadColumn.scrollTop
+    syncThreadVirtualViewport(threadColumn)
     persistThreadScrollSnapshot(key, "follow")
   }
 
@@ -3765,11 +4191,19 @@ function VisibleThreadView({
     return restoreDetachedThreadPosition(threadColumn, snapshot, key)
   }
 
-  function syncThreadScrollAfterContentChange(key = effectiveScrollStateKey) {
+  function syncThreadScrollAfterContentChange(
+    key = effectiveScrollStateKey,
+    options: { preserveFollowPosition?: boolean } = {},
+  ) {
     const threadColumn = threadColumnRef.current
     if (!threadColumn || currentScrollStateKeyRef.current !== key) return
 
     if (scrollModeRef.current === "follow") {
+      if (options.preserveFollowPosition || Date.now() <= followScrollSyncSuppressedUntilRef.current) {
+        preserveCurrentFollowThreadPosition(threadColumn, key)
+        return
+      }
+
       followLatestThreadContent(threadColumn, key)
       return
     }
@@ -3958,7 +4392,8 @@ function VisibleThreadView({
     contentResizeObserverRef.current?.disconnect()
     contentMutationObserverRef.current?.disconnect()
 
-    const resizeObserver = new ResizeObserver(() => {
+    const resizeObserver = new ResizeObserver((entries) => {
+      measureThreadVirtualRowsFromResizeEntries(entries)
       syncThreadScrollAfterObservedContentChange(effectiveScrollStateKey)
     })
     observedThreadContentRef.current = new WeakSet()
@@ -3972,6 +4407,13 @@ function VisibleThreadView({
         resizeObserver.observe(child)
         observedThreadContentRef.current.add(child)
       }
+      if (shouldVirtualizeThreadRows) {
+        for (const row of Array.from(threadColumn.querySelectorAll<HTMLElement>("[data-thread-virtual-row-id]"))) {
+          if (observedThreadContentRef.current.has(row)) continue
+          resizeObserver.observe(row)
+          observedThreadContentRef.current.add(row)
+        }
+      }
     }
 
     observeThreadContent()
@@ -3982,7 +4424,7 @@ function VisibleThreadView({
         observeThreadContent()
         syncThreadScrollAfterObservedContentChange(effectiveScrollStateKey)
       })
-      mutationObserver.observe(threadColumn, { childList: true })
+      mutationObserver.observe(threadColumn, { childList: true, subtree: shouldVirtualizeThreadRows })
       contentMutationObserverRef.current = mutationObserver
     }
 
@@ -3995,7 +4437,34 @@ function VisibleThreadView({
       contentMutationObserverRef.current?.disconnect()
       contentMutationObserverRef.current = null
     }
-  }, [effectiveScrollStateKey, threadColumnRef])
+  }, [effectiveScrollStateKey, shouldVirtualizeThreadRows, threadColumnRef])
+
+  useLayoutEffect(() => {
+    const threadColumn = threadColumnRef.current
+    if (!threadColumn || !shouldVirtualizeThreadRows) return
+
+    syncThreadVirtualViewport(threadColumn)
+  }, [
+    effectiveScrollStateKey,
+    shouldVirtualizeThreadRows,
+    threadColumnRef,
+    threadRows.length,
+    threadVirtualLayout.totalHeight,
+  ])
+
+  useLayoutEffect(() => {
+    if (!shouldVirtualizeThreadRows) return
+
+    const didMeasure = measureRenderedThreadVirtualRows()
+    if (didMeasure) {
+      syncThreadScrollAfterObservedContentChange(effectiveScrollStateKey)
+    }
+  }, [
+    effectiveScrollStateKey,
+    shouldVirtualizeThreadRows,
+    threadColumnRef,
+    threadVirtualRenderedRangeKey,
+  ])
 
   useEffect(() => {
     function handleSidebarResizeEnd() {
@@ -4012,7 +4481,24 @@ function VisibleThreadView({
     const threadColumn = threadColumnRef.current
     if (!threadColumn) return
 
-    syncThreadScrollAfterContentChange(effectiveScrollStateKey)
+    const previousLatestAssistantTurnState = latestAssistantTurnStateRef.current
+    const latestAssistantTurnState = readLatestAssistantTurnState(activeTurns)
+    const isCompletingLatestAssistantTurn = Boolean(
+      previousLatestAssistantTurnState &&
+      latestAssistantTurnState &&
+      previousLatestAssistantTurnState.id === latestAssistantTurnState.id &&
+      previousLatestAssistantTurnState.isStreaming &&
+      !latestAssistantTurnState.isStreaming,
+    )
+
+    if (isCompletingLatestAssistantTurn) {
+      followScrollSyncSuppressedUntilRef.current = Date.now() + THREAD_COMPLETION_SCROLL_SYNC_SUPPRESS_MS
+    }
+
+    syncThreadScrollAfterContentChange(effectiveScrollStateKey, {
+      preserveFollowPosition: isCompletingLatestAssistantTurn,
+    })
+    latestAssistantTurnStateRef.current = latestAssistantTurnState
   }, [
     activeTurns,
     effectiveScrollStateKey,
@@ -4048,6 +4534,12 @@ function VisibleThreadView({
   }
 
   function handleThreadWheelIntent(event: ReactWheelEvent<HTMLDivElement>) {
+    if (event.deltaY < 0) {
+      lastUserScrollIntentDirectionRef.current = "up"
+    } else if (event.deltaY > 0) {
+      lastUserScrollIntentDirectionRef.current = "down"
+    }
+
     handleThreadScrollIntent(event)
 
     if (event.deltaY < 0 && event.currentTarget.scrollTop <= THREAD_TOP_RESET_THRESHOLD_PX) {
@@ -4062,13 +4554,27 @@ function VisibleThreadView({
     )
   }
 
+  function hasRecentUpwardThreadScrollIntent() {
+    return (
+      lastUserScrollIntentDirectionRef.current === "up" &&
+      Date.now() - lastUserScrollIntentAtRef.current <= THREAD_USER_SCROLL_INTENT_WINDOW_MS
+    )
+  }
+
   function handleThreadScroll() {
     const threadColumn = threadColumnRef.current
     if (!threadColumn) return
+    syncThreadVirtualViewport(threadColumn)
 
     if (!hasRecentThreadScrollIntent()) {
-      if (threadColumn.scrollTop <= THREAD_TOP_RESET_THRESHOLD_PX && restoreDetachedThreadPositionIfNeeded(effectiveScrollStateKey)) {
-        return
+      if (threadColumn.scrollTop <= THREAD_TOP_RESET_THRESHOLD_PX) {
+        if (hasRecentUpwardThreadScrollIntent()) {
+          rememberThreadTopScrollSnapshot(threadColumn, effectiveScrollStateKey)
+          return
+        }
+        if (restoreDetachedThreadPositionIfNeeded(effectiveScrollStateKey)) {
+          return
+        }
       }
       lastKnownScrollTopRef.current = threadColumn.scrollTop
       return
@@ -4090,11 +4596,303 @@ function VisibleThreadView({
     saveThreadScrollSnapshotValue(effectiveScrollStateKey, snapshot)
   }
 
+  function renderThreadRow(row: ThreadRenderRow) {
+    if (row.kind === "session-banner") {
+      return (
+        <article key={row.id} className="thread-session-banner">
+          <div className="thread-session-banner-copy">
+            <span className="label">Side chat</span>
+            <strong>Linked reply thread</strong>
+            <p>Scoped discussion linked to one assistant reply. It stays out of the main session context.</p>
+          </div>
+          <span className="thread-session-banner-pill">Isolated</span>
+        </article>
+      )
+    }
+
+    if (row.kind === "user") {
+      const { turn, turnIndex } = row
+      return (
+        <UserTurnArticle
+          key={row.id}
+          copied={copiedUserTurnID === turn.id}
+          motion={readThreadTurnMotion(turn.id)}
+          onCopy={handleCopyUserMessage}
+          turn={turn}
+          diffCard={
+            shouldRenderDiffOnStandaloneUserTurn(activeTurns, turnIndex, turn) ? (
+              <TurnDiffCard
+                turnID={turn.id}
+                diffSummary={turn.diffSummary}
+                activeSessionDiff={activeSessionDiff}
+                allowWorkspaceDiffFallback={turnIndex === activeTurns.length - 1}
+                onFileChangeSelect={onFileChangeSelect}
+                onTurnDiffSummaryHydrate={onTurnDiffSummaryHydrate}
+                onTurnDiffRestore={onTurnDiffRestore}
+                onTurnDiffReview={onTurnDiffReview}
+              />
+            ) : null
+          }
+        />
+      )
+    }
+
+    if (row.kind === "permission") {
+      return (
+        <PermissionRequestInlinePrompt
+          key={row.id}
+          activeSession={activeSession}
+          isResolvingPermissionRequest={isResolvingPermissionRequest}
+          pendingPermissionRequests={pendingPermissionRequests}
+          permissionRequestActionError={permissionRequestActionError}
+          permissionRequestActionRequestID={permissionRequestActionRequestID}
+          motion={readThreadTurnMotion(
+            pendingPermissionRequests[0]?.id ? `permission-request:${pendingPermissionRequests[0].id}` : "permission-request",
+          )}
+          onPermissionRequestResponse={onPermissionRequestResponse}
+        />
+      )
+    }
+
+    const { ephemeralHint, insertedUserTurns, turn, turnIndex } = row
+    const traceItems = turn.items
+    const sideChatAnchorMessageID = turn.messageID ?? turn.id
+    const turnMessageID = getSessionMessageIDForTurn(turn)
+    const canExposeResponseActions = isAssistantFinalMessageInUserTurn(activeTurns, turnIndex, turn)
+    const branchOptions = canExposeResponseActions ? messageTree?.branchOptionsByParentID[turnMessageID] ?? [] : []
+    const existingSideChatCount = sideChatCountsByAnchorMessageID[sideChatAnchorMessageID] ?? 0
+    const lastResponseItems = canExposeResponseActions ? getLastAssistantResponseSectionItems(traceItems, assistantTraceVisibility) : []
+    const responseCopyText = canExposeResponseActions ? buildAssistantResponseCopyText(lastResponseItems) : ""
+    const canOpenSideChat =
+      !readOnlySideChat &&
+      !turn.isStreaming &&
+      canExposeResponseActions &&
+      lastResponseItems.length > 0 &&
+      Boolean(onOpenSideChat)
+    const canForkFromMessage =
+      !readOnlySideChat &&
+      !turn.isStreaming &&
+      canExposeResponseActions &&
+      Boolean(onForkFromMessage)
+    const activeInlineSideChat = sideChatSession?.origin?.anchorMessageID === sideChatAnchorMessageID ? sideChatSession : null
+    const hasAssistantDiffSummary = normalizeTurnDiffSummary(turn.diffSummary).length > 0
+    const trailingUserDiffTurn = hasAssistantDiffSummary ? null : getAssistantTrailingUserDiffTurn(activeTurns, turnIndex, turn)
+    const shouldRenderResponseActions = Boolean(
+      responseCopyText ||
+      canOpenSideChat ||
+      canForkFromMessage ||
+      branchOptions.length > 1,
+    )
+    const isLatestAssistantMessage = isAssistantLatestRenderableTurn(activeTurns, turnIndex, turn)
+
+    return (
+      <article
+        key={row.id}
+        className="turn assistant-turn"
+        data-turn-id={turn.id}
+        data-turn-motion={readThreadTurnMotion(turn.id, turn.isStreaming)}
+      >
+        <div className={turn.isStreaming ? "assistant-shell is-sectioned is-streaming" : "assistant-shell is-sectioned"}>
+          {ephemeralHint ? (
+            <>
+              <AssistantTurnPlaceholder message={ephemeralHint} />
+              {insertedUserTurns.map((insertedTurn) => (
+                <UserTurnArticle
+                  key={insertedTurn.id}
+                  className="assistant-stream-insertion-user-turn"
+                  copied={copiedUserTurnID === insertedTurn.id}
+                  motion={readThreadTurnMotion(insertedTurn.id)}
+                  onCopy={handleCopyUserMessage}
+                  turn={insertedTurn}
+                />
+              ))}
+            </>
+          ) : (
+            <AssistantTurnSectionsWithStreamInsertions
+              answeredQuestionIDs={answeredQuestionIDs}
+              assistantTurnPhase={turn.runtime.phase}
+              isQuestionAnswerDisabled={isResolvingPermissionRequest || pendingPermissionRequests.length > 0}
+              copiedUserTurnID={copiedUserTurnID}
+              insertedUserTurns={insertedUserTurns}
+              isLatestMessage={isLatestAssistantMessage}
+              items={traceItems}
+              getTurnMotion={readThreadTurnMotion}
+              onCopyUserMessage={handleCopyUserMessage}
+              onOpenImagePreview={handleOpenImagePreview}
+              onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+              onFileChangeSelect={onFileChangeSelect}
+              onArtifactLinkOpen={onArtifactLinkOpen}
+              onLocalFileLinkOpen={onLocalFileLinkOpen}
+              onProposedPlanConfirm={onProposedPlanConfirm}
+              showFileChanges={!turn.isStreaming}
+              shouldCollapseReasoningAndTools={!turn.isStreaming}
+              traceVisibility={assistantTraceVisibility}
+            />
+          )}
+          {hasAssistantDiffSummary ? (
+            <TurnDiffCard
+              turnID={turn.id}
+              diffSummary={turn.diffSummary}
+              activeSessionDiff={activeSessionDiff}
+              allowWorkspaceDiffFallback={isLatestAssistantMessage}
+              patchSourceFileChanges={collectAssistantPatchFileChanges(turn)}
+              onFileChangeSelect={onFileChangeSelect}
+              onTurnDiffSummaryHydrate={onTurnDiffSummaryHydrate}
+              onTurnDiffRestore={onTurnDiffRestore}
+              onTurnDiffReview={onTurnDiffReview}
+            />
+          ) : trailingUserDiffTurn ? (
+            <TurnDiffCard
+              turnID={trailingUserDiffTurn.id}
+              diffSummary={trailingUserDiffTurn.diffSummary}
+              activeSessionDiff={activeSessionDiff}
+              allowWorkspaceDiffFallback={isLatestAssistantMessage}
+              patchSourceFileChanges={collectAssistantPatchFileChanges(turn)}
+              onFileChangeSelect={onFileChangeSelect}
+              onTurnDiffSummaryHydrate={onTurnDiffSummaryHydrate}
+              onTurnDiffRestore={onTurnDiffRestore}
+              onTurnDiffReview={onTurnDiffReview}
+            />
+          ) : null}
+          {shouldRenderResponseActions ? (
+            <div className="assistant-response-side-chat">
+              {activeInlineSideChat &&
+              onSideChatDraftStateChange &&
+              onSideChatPickAttachments &&
+              onSideChatRemoveAttachment &&
+              onSideChatCreate &&
+              onSideChatDelete &&
+              onSideChatSelect &&
+              onSideChatSend ? (
+                <InlineSideChatThread
+                  activeProjectID={activeProjectID}
+                  attachments={sideChatAttachments}
+                  assistantTraceVisibility={assistantTraceVisibility}
+                  composerRefreshVersion={composerRefreshVersion}
+                  draftState={sideChatDraftState}
+                  isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+                  isResolvingPermissionRequest={isResolvingPermissionRequest}
+                  isCancelling={sideChatIsCancelling}
+                  isInterruptible={sideChatIsInterruptible}
+                  isSending={sideChatIsSending}
+                  pendingPermissionRequests={sideChatPendingPermissionRequests}
+                  permissionRequestActionError={sideChatPermissionRequestActionError}
+                  permissionRequestActionRequestID={sideChatPermissionRequestActionRequestID}
+                  session={activeInlineSideChat}
+                  sideChatSessions={sideChatSessionsByAnchorMessageID[sideChatAnchorMessageID] ?? [activeInlineSideChat]}
+                  turns={sideChatTurns}
+                  isThreadVisible={isThreadVisible}
+                  readScrollSnapshot={readScrollSnapshot}
+                  saveScrollSnapshot={saveScrollSnapshot}
+                  onDraftStateChange={onSideChatDraftStateChange}
+                  onHide={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
+                  onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+                  onArtifactLinkOpen={onArtifactLinkOpen}
+                  onLocalFileLinkOpen={onLocalFileLinkOpen}
+                  onPermissionRequestResponse={onPermissionRequestResponse}
+                  onPickAttachments={onSideChatPickAttachments}
+                  onPasteImageAttachments={onSideChatPasteImageAttachments}
+                  onRemoveAttachment={onSideChatRemoveAttachment}
+                  onCancelSend={onSideChatCancelSend}
+                  onCreateSideChat={() => onSideChatCreate(sideChatAnchorMessageID)}
+                  onDeleteSideChat={onSideChatDelete}
+                  onSend={onSideChatSend}
+                  onSelectSideChat={onSideChatSelect}
+                  onSessionModelSelectionChange={onSessionModelSelectionChange}
+                />
+              ) : null}
+
+              <div className="assistant-response-actions">
+                <BranchSwitcher options={branchOptions} onSelect={onBranchSelect} />
+                {responseCopyText ? (
+                  <button
+                    className={joinClassNames(
+                      "assistant-response-action-button message-action-icon-button",
+                      copiedResponseTurnID === turn.id && "is-active",
+                    )}
+                    type="button"
+                    aria-label={copiedResponseTurnID === turn.id ? "Copied assistant response" : "Copy assistant response"}
+                    title={copiedResponseTurnID === turn.id ? "Copied" : "Copy"}
+                    onClick={() => void handleCopyAssistantResponse(turn.id, responseCopyText)}
+                  >
+                    <CopyIcon />
+                  </button>
+                ) : null}
+                {canOpenSideChat ? (
+                  <button
+                    className={joinClassNames(
+                      "assistant-response-action-button message-action-icon-button",
+                      activeInlineSideChat && "is-active",
+                    )}
+                    type="button"
+                    aria-label={
+                      activeInlineSideChat
+                        ? "Hide this side chat"
+                        : existingSideChatCount > 0
+                          ? `Open side chat (${existingSideChatCount})`
+                          : "Open side chat"
+                    }
+                    aria-pressed={Boolean(activeInlineSideChat)}
+                    title={
+                      activeInlineSideChat
+                        ? "Hide this side chat"
+                        : existingSideChatCount > 0
+                          ? `${existingSideChatCount} side chat thread${existingSideChatCount === 1 ? "" : "s"}`
+                          : "Open a side chat for this reply"
+                    }
+                    onClick={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
+                  >
+                    <SideChatIcon />
+                  </button>
+                ) : null}
+                {canForkFromMessage ? (
+                  <button
+                    className="assistant-response-action-button message-action-icon-button"
+                    type="button"
+                    aria-label="Fork from here"
+                    title="Fork from here"
+                    onClick={() => void onForkFromMessage?.(turnMessageID)}
+                  >
+                    <ForkIcon />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </article>
+    )
+  }
+
+  function renderThreadRows() {
+    if (!shouldVirtualizeThreadRows) {
+      return threadRows.map((row) => renderThreadRow(row))
+    }
+
+    return (
+      <div
+        className="thread-virtual-spacer"
+        style={{ height: `${threadVirtualLayout.totalHeight}px` }}
+      >
+        {threadVirtualRange.items.map((item) => (
+          <div
+            key={item.row.id}
+            className="thread-virtual-row"
+            data-thread-virtual-row-id={item.row.id}
+            style={{ transform: `translateY(${item.top}px)` }}
+          >
+            {renderThreadRow(item.row)}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <section className={joinClassNames("thread-shell", isResizeLightweightMode && "thread-resize-lightweight")}>
       <div
         ref={threadColumnRef}
-        className="thread-column"
+        className={joinClassNames("thread-column", shouldVirtualizeThreadRows && "is-virtualized")}
         onKeyDownCapture={handleThreadScrollIntent}
         onPointerDownCapture={handleThreadScrollIntent}
         onPointerMoveCapture={handleThreadPointerMoveIntent}
@@ -4129,6 +4927,10 @@ function VisibleThreadView({
           </article>
         ) : (
           <>
+            {shouldVirtualizeThreadRows ? (
+              renderThreadRows()
+            ) : (
+              <>
             {showSessionBanner && readOnlySideChat ? (
               <article className="thread-session-banner">
                 <div className="thread-session-banner-copy">
@@ -4396,6 +5198,8 @@ function VisibleThreadView({
               )}
               onPermissionRequestResponse={onPermissionRequestResponse}
             />
+              </>
+            )}
           </>
         )}
       </div>

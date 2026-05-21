@@ -69,13 +69,30 @@
   height: 0;
 }
 
+.thread-column.is-virtualized {
+  gap: 0;
+}
+
+.thread-virtual-spacer {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.thread-virtual-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  min-width: 0;
+}
+
 .turn {
   display: grid;
   gap: 6px;
   min-width: 0;
   max-width: 100%;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 180px;
 }
 
 .turn[data-turn-motion="new"],

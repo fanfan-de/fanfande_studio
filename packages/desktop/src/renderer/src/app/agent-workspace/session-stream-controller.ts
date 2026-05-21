@@ -766,12 +766,15 @@ export function resolveStreamMessageID(event: { data: unknown }) {
   const payload = runtimePayload ?? readStreamRecord(event.data)
   if (!payload) return undefined
 
-  const partMessageID = readMessageIDFromStreamPart(payload.part)
-  if (partMessageID) return partMessageID
+  const directMessageID = readStreamString(payload.messageID)
+  if (directMessageID) return directMessageID
 
   const message = readStreamRecord(payload.message)
   const messageID = readStreamString(message?.id)
   if (messageID) return messageID
+
+  const partMessageID = readMessageIDFromStreamPart(payload.part)
+  if (partMessageID) return partMessageID
 
   if (Array.isArray(payload.parts)) {
     for (const part of payload.parts) {

@@ -119,6 +119,25 @@ function setScrollMetrics(
   }
 }
 
+function createElementRect(input: { top?: number; left?: number; width?: number; height?: number } = {}) {
+  const top = input.top ?? 0
+  const left = input.left ?? 0
+  const width = input.width ?? 100
+  const height = input.height ?? 0
+
+  return {
+    x: left,
+    y: top,
+    width,
+    height,
+    top,
+    left,
+    right: left + width,
+    bottom: top + height,
+    toJSON: () => ({}),
+  } as DOMRect
+}
+
 const traceItemKinds: AssistantTraceItemKind[] = [
   "system",
   "reasoning",
@@ -2471,6 +2490,32 @@ describe("ThreadView turn motion", () => {
   })
 })
 
+describe("ThreadView virtual list", () => {
+  it("renders only the visible window for long threads and swaps rows on scroll", async () => {
+    const activeTurns = Array.from({ length: 120 }, (_, index) => userTurn(`user-${index}`, `Prompt ${index}`))
+    const { container, threadColumn } = renderThread(activeTurns, {
+      scrollStateKey: "virtual-list-session",
+    })
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 12000,
+      scrollTop: threadColumn.scrollTop,
+    })
+
+    expect(threadColumn).toHaveClass("is-virtualized")
+    expect(container.querySelector(".thread-virtual-spacer")).not.toBeNull()
+    expect(container.querySelectorAll("[data-turn-id]").length).toBeLessThan(80)
+    await waitFor(() => expect(screen.getByText("Prompt 119")).toBeInTheDocument())
+
+    threadColumn.scrollTop = 0
+    fireEvent.wheel(threadColumn, { deltaY: -120 })
+    fireEvent.scroll(threadColumn)
+
+    await waitFor(() => expect(screen.getByText("Prompt 0")).toBeInTheDocument())
+    expect(screen.queryByText("Prompt 119")).not.toBeInTheDocument()
+  })
+})
+
 describe("ThreadView scroll restoration", () => {
   it("defaults a newly loaded session to the latest content", () => {
     const { rerender, props, threadColumn } = renderThread([])
@@ -2524,6 +2569,50 @@ describe("ThreadView scroll restoration", () => {
     rerender(<ThreadView {...props} activeTurns={[userTurn("user-1", "Prompt")]} />)
 
     expect(threadColumn.scrollTop).toBe(260)
+  })
+
+  it("keeps the user at the top when wheel momentum reaches the thread boundary", () => {
+    const snapshots: Record<string, { scrollTop: number; pinnedToBottom: boolean; updatedAt: number }> = {}
+    const readScrollSnapshot = vi.fn((key: string) => snapshots[key] ?? null)
+    const saveScrollSnapshot = vi.fn((key: string, snapshot: { scrollTop: number; pinnedToBottom: boolean; updatedAt: number }) => {
+      snapshots[key] = snapshot
+    })
+    const { rerender, props, threadColumn } = renderThread([userTurn("user-1", "Prompt")], {
+      readScrollSnapshot,
+      saveScrollSnapshot,
+      scrollStateKey: "session:session-1",
+    })
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 1200,
+      scrollTop: 800,
+    })
+
+    threadColumn.scrollTop = 120
+    fireEvent.wheel(threadColumn, { deltaY: -120 })
+    fireEvent.scroll(threadColumn)
+    expect(snapshots["session:session-1"]?.scrollTop).toBe(120)
+
+    threadColumn.scrollTop = 0
+    fireEvent.scroll(threadColumn)
+
+    expect(snapshots["session:session-1"]?.scrollTop).toBe(0)
+    expect(snapshots["session:session-1"]?.pinnedToBottom).toBe(false)
+
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 1200,
+      scrollTop: 0,
+    })
+    rerender(
+      <ThreadView
+        {...props}
+        activeTurns={[userTurn("user-1", "Prompt"), userTurn("user-2", "Another prompt")]}
+        scrollStateKey="session:session-1"
+      />,
+    )
+
+    expect(threadColumn.scrollTop).toBe(0)
   })
 
   it("uses the external tab scroll key when switching workbench tabs", () => {
@@ -2599,6 +2688,120 @@ describe("ThreadView scroll restoration", () => {
     )
 
     expect(threadColumn.scrollTop).toBe(1400)
+  })
+
+  it("scrolls to the bottom when a stream-inserted user turn becomes visible", () => {
+    const layoutSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("thread-column")) return createElementRect({ top: 0, height: 400 })
+
+      const turnID = this.getAttribute("data-turn-id")
+      if (turnID === "assistant-1") return createElementRect({ top: 64, height: 700 })
+      if (turnID === "user-steer") return createElementRect({ top: 430, height: 80 })
+
+      return createElementRect()
+    })
+    const assistantItems: AssistantTraceItem[] = [
+      {
+        id: "assistant-before",
+        kind: "text",
+        timestamp: 1,
+        label: "Assistant",
+        text: "Before steer",
+        status: "running",
+        isStreaming: true,
+      },
+      {
+        id: "assistant-after",
+        kind: "text",
+        timestamp: 2,
+        label: "Assistant",
+        text: "After steer",
+        status: "running",
+        isStreaming: true,
+      },
+    ]
+    const steerTurn: UserTurn = {
+      ...userTurn("user-steer", "Adjust the current task"),
+      submissionMode: "steer",
+      streamInsertion: {
+        assistantTurnID: "assistant-1",
+        afterItemCount: 1,
+      },
+    }
+
+    try {
+      const { rerender, props, threadColumn } = renderThread([
+        userTurn("user-1", "Prompt"),
+        assistantTraceTurn("assistant-1", assistantItems, true),
+      ])
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 1400,
+        scrollTop: 800,
+      })
+
+      rerender(
+        <ThreadView
+          {...props}
+          activeTurns={[
+            userTurn("user-1", "Prompt"),
+            assistantTraceTurn("assistant-1", assistantItems, true),
+            steerTurn,
+          ]}
+        />,
+      )
+
+      expect(threadColumn.scrollTop).toBe(1400)
+    } finally {
+      layoutSpy.mockRestore()
+    }
+  })
+
+  it("does not realign to the latest assistant turn when streaming completes", () => {
+    const streamingItems: AssistantTraceItem[] = [
+      {
+        id: "reasoning-1",
+        kind: "reasoning",
+        timestamp: 1,
+        label: "Reasoning",
+        text: "Inspect files first",
+        status: "running",
+        isStreaming: true,
+      },
+      {
+        id: "response-1",
+        kind: "text",
+        timestamp: 2,
+        label: "Assistant",
+        text: "Drafting",
+        status: "running",
+        isStreaming: true,
+      },
+    ]
+    const completedItems: AssistantTraceItem[] = streamingItems.map((item) => ({
+      ...item,
+      status: "completed",
+      isStreaming: false,
+      text: item.id === "response-1" ? "Done" : item.text,
+    }))
+    const { rerender, props, threadColumn } = renderThread([
+      userTurn("user-1", "Prompt"),
+      assistantTraceTurn("assistant-1", streamingItems, true),
+    ])
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 1200,
+      scrollTop: 360,
+    })
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeTurns={[userTurn("user-1", "Prompt"), assistantTraceTurn("assistant-1", completedItems, false)]}
+      />,
+    )
+
+    expect(threadColumn.scrollTop).toBe(360)
   })
 
   it("defers observed content scroll sync while a sidebar resize is active", () => {

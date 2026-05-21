@@ -12107,6 +12107,12 @@ describe("App", () => {
     )
   })
 
+  it("keeps normal thread scrolling on stable layout heights", () => {
+    expect(styles).not.toMatch(/(?:^|\n)\.turn\s*\{[^}]*content-visibility:/s)
+    expect(styles).not.toMatch(/(?:^|\n)\.turn\s*\{[^}]*contain-intrinsic-size:/s)
+    expect(styles).toMatch(/body\.is-resizing-sidebar \.assistant-section\.is-tools \.trace-item,[\s\S]*?content-visibility:\s*auto;/s)
+  })
+
   it("gives composer and user body text a slightly larger size than tag text", () => {
     expect(styles).toMatch(
       /\.composer-editor-input\s*\{[^}]*font-size:\s*16px;[^}]*line-height:\s*1\.65;/s,

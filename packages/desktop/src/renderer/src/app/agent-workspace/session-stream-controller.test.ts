@@ -138,6 +138,13 @@ describe("session stream controller helpers", () => {
 
   it("resolves assistant message IDs from runtime part and terminal events", () => {
     expect(resolveStreamMessageID({
+      data: createRuntimeEvent("text.part.delta", {
+        messageID: "message-assistant-direct",
+        partID: "part-text-1",
+        delta: "token",
+      }),
+    })).toBe("message-assistant-direct")
+    expect(resolveStreamMessageID({
       data: createRuntimeEvent("tool.call.completed", {
         part: {
           id: "part-tool-1",
@@ -153,6 +160,20 @@ describe("session stream controller helpers", () => {
         },
       }),
     })).toBe("message-assistant-2")
+    expect(resolveStreamMessageID({
+      data: createRuntimeEvent("turn.completed", {
+        message: {
+          id: "message-assistant-final",
+        },
+        parts: [
+          {
+            id: "part-old-tool",
+            messageID: "message-assistant-old-tool",
+            type: "tool",
+          },
+        ],
+      }),
+    })).toBe("message-assistant-final")
     expect(resolveStreamMessageID({
       data: {
         parts: [
