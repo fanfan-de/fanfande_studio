@@ -5328,41 +5328,115 @@ describe("App", () => {
     const sectionTitlesBeforeExpand = sectionElementsBeforeExpand.map((section) => section.getAttribute("aria-label"))
 
     expect(sectionTitlesBeforeExpand).toEqual(["Response", "File Changes"])
-    const processedTraceButton = within(assistantTurn as HTMLElement).getByRole("button", { name: /Processed/ })
+    const threadColumn = (assistantTurn as HTMLElement).closest(".thread-column") as HTMLElement
+    const processedTraceButton = within(threadColumn).getByRole("button", { name: /Processed/ })
     expect(processedTraceButton).toHaveAttribute("aria-expanded", "false")
     fireEvent.click(processedTraceButton)
 
+    const processSectionElements = Array.from(threadColumn.querySelectorAll(".assistant-process-item-row.assistant-section"))
+    const processSectionTitles = processSectionElements.map((section) => section.getAttribute("aria-label"))
     const sectionElements = Array.from((assistantTurn as HTMLElement).querySelectorAll(".assistant-section"))
     const sectionTitles = sectionElements.map((section) => section.getAttribute("aria-label"))
 
-    expect(sectionTitles).toEqual(["Reasoning", "Tools", "Reasoning", "Tools", "Response", "File Changes"])
-    expect((assistantTurn as HTMLElement).querySelector(".assistant-section-header")).toBeNull()
+    expect(processSectionTitles).toEqual(["Reasoning", "Tools", "Reasoning", "Tools"])
+    expect(sectionTitles).toEqual(["Response", "File Changes"])
+    expect(threadColumn.querySelector(".assistant-section-header")).toBeNull()
 
-    expect(within(sectionElements[0] as HTMLElement).getByText("Inspecting workspace.")).toBeInTheDocument()
-    expect(within(sectionElements[0] as HTMLElement).queryByRole("button", { name: /npm test/i })).not.toBeInTheDocument()
+    expect(within(processSectionElements[0] as HTMLElement).getByText("Inspecting workspace.")).toBeInTheDocument()
+    expect(within(processSectionElements[0] as HTMLElement).queryByRole("button", { name: /npm test/i })).not.toBeInTheDocument()
 
-    expect(within(sectionElements[1] as HTMLElement).getByRole("button", { name: /^npm test$/i })).toBeInTheDocument()
-    expect(within(sectionElements[1] as HTMLElement).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
+    expect(within(processSectionElements[1] as HTMLElement).getByRole("button", { name: /^npm test$/i })).toBeInTheDocument()
+    expect(within(processSectionElements[1] as HTMLElement).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
 
-    expect(within(sectionElements[2] as HTMLElement).getByText("Evaluating test output.")).toBeInTheDocument()
-    expect(within(sectionElements[2] as HTMLElement).queryByRole("button", { name: /replace-text/i })).not.toBeInTheDocument()
+    expect(within(processSectionElements[2] as HTMLElement).getByText("Evaluating test output.")).toBeInTheDocument()
+    expect(within(processSectionElements[2] as HTMLElement).queryByRole("button", { name: /replace-text/i })).not.toBeInTheDocument()
 
-    expect(within(sectionElements[3] as HTMLElement).getByRole("button", { name: /^replace-text$/i })).toBeInTheDocument()
-    expect(within(sectionElements[3] as HTMLElement).queryByText("Evaluating test output.")).not.toBeInTheDocument()
+    expect(within(processSectionElements[3] as HTMLElement).getByRole("button", { name: /^replace-text$/i })).toBeInTheDocument()
+    expect(within(processSectionElements[3] as HTMLElement).queryByText("Evaluating test output.")).not.toBeInTheDocument()
 
-    expect(within(sectionElements[4] as HTMLElement).getByText("All checks passed.")).toBeInTheDocument()
-    expect(within(sectionElements[4] as HTMLElement).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
+    expect(within(sectionElements[0] as HTMLElement).getByText("All checks passed.")).toBeInTheDocument()
+    expect(within(sectionElements[0] as HTMLElement).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
 
-    const sectionFileChangeSummary = within(sectionElements[5] as HTMLElement).getByRole("button", { name: "已编辑 2 个文件" })
+    const sectionFileChangeSummary = within(sectionElements[1] as HTMLElement).getByRole("button", { name: "已编辑 2 个文件" })
     expect(sectionFileChangeSummary).toHaveAttribute("aria-expanded", "false")
-    expect(within(sectionElements[5] as HTMLElement).queryByText("1 file change (+2 -1)")).not.toBeInTheDocument()
-    expect(within(sectionElements[5] as HTMLElement).queryByText("src/App.tsx")).not.toBeInTheDocument()
+    expect(within(sectionElements[1] as HTMLElement).queryByText("1 file change (+2 -1)")).not.toBeInTheDocument()
+    expect(within(sectionElements[1] as HTMLElement).queryByText("src/App.tsx")).not.toBeInTheDocument()
     fireEvent.click(sectionFileChangeSummary)
-    expect(within(sectionElements[5] as HTMLElement).getAllByText("src/App.tsx").length).toBeGreaterThan(0)
-    expect(within(sectionElements[5] as HTMLElement).getByLabelText("2 additions, 1 deletions")).toBeInTheDocument()
-    expect(within(sectionElements[5] as HTMLElement).getAllByText("src/styles.css").length).toBeGreaterThan(0)
-    expect(within(sectionElements[5] as HTMLElement).getByLabelText("1 additions, 0 deletions")).toBeInTheDocument()
-    expect(within(sectionElements[5] as HTMLElement).queryByText("All checks passed.")).not.toBeInTheDocument()
+    expect(within(sectionElements[1] as HTMLElement).getAllByText("src/App.tsx").length).toBeGreaterThan(0)
+    expect(within(sectionElements[1] as HTMLElement).getByLabelText("2 additions, 1 deletions")).toBeInTheDocument()
+    expect(within(sectionElements[1] as HTMLElement).getAllByText("src/styles.css").length).toBeGreaterThan(0)
+    expect(within(sectionElements[1] as HTMLElement).getByLabelText("1 additions, 0 deletions")).toBeInTheDocument()
+    expect(within(sectionElements[1] as HTMLElement).queryByText("All checks passed.")).not.toBeInTheDocument()
+  })
+
+  it("virtualizes expanded assistant process trace rows", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-long-trace",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas long trace",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-1",
+          sessionID: "session-atlas-long-trace",
+          role: "user",
+          created: 100,
+        },
+        parts: [{ id: "part-user-1", type: "text", text: "Generate a long trace" }],
+      },
+      {
+        info: {
+          id: "msg-assistant-1",
+          sessionID: "session-atlas-long-trace",
+          role: "assistant",
+          created: 101,
+        },
+        parts: [
+          ...Array.from({ length: 500 }, (_, index) => ({
+            id: `reasoning-${index}`,
+            type: "reasoning" as const,
+            text: `Trace reasoning ${index}`,
+          })),
+          { id: "text-1", type: "text", text: "Final answer." },
+        ],
+      },
+    ])
+
+    render(<App />)
+
+    expect(await screen.findByText("Final answer.")).toBeInTheDocument()
+    const processedTraceButton = screen.getByRole("button", { name: /Processed/ })
+    const threadColumn = processedTraceButton.closest(".thread-column") as HTMLElement
+    expect(processedTraceButton).toHaveAttribute("aria-expanded", "false")
+    fireEvent.click(processedTraceButton)
+
+    await waitFor(() => {
+      expect(threadColumn).toHaveClass("is-virtualized")
+    })
+
+    const renderedProcessRows = threadColumn.querySelectorAll(".assistant-process-item-row")
+    expect(renderedProcessRows.length).toBeGreaterThan(0)
+    expect(renderedProcessRows.length).toBeLessThan(80)
   })
 
   it("keeps folded file-change summaries scoped to their source assistant message", async () => {
@@ -5474,16 +5548,19 @@ describe("App", () => {
     expect(finalAssistantTurn).not.toBeNull()
     expect(screen.queryByText("Created the first draft of the release notes.")).not.toBeInTheDocument()
 
-    const processTraceButton = within(finalAssistantTurn as HTMLElement).getByRole("button", { name: /Processed/ })
+    const threadColumn = (finalAssistantTurn as HTMLElement).closest(".thread-column") as HTMLElement
+    const processTraceButton = within(threadColumn).getByRole("button", { name: /Processed/ })
     expect(processTraceButton).toHaveAttribute("aria-expanded", "false")
     fireEvent.click(processTraceButton)
 
-    expect(within(finalAssistantTurn as HTMLElement).getByText("Created the first draft of the release notes.")).toBeInTheDocument()
+    expect(within(threadColumn).getByText("Created the first draft of the release notes.")).toBeInTheDocument()
 
-    const fileChangeSections = within(finalAssistantTurn as HTMLElement).getAllByRole("region", { name: "File Changes" })
-    expect(fileChangeSections).toHaveLength(2)
+    const processFileChangeSections = Array.from(threadColumn.querySelectorAll(".assistant-process-item-row.assistant-section.is-file-change"))
+    const finalFileChangeSections = within(finalAssistantTurn as HTMLElement).getAllByRole("region", { name: "File Changes" })
+    expect(processFileChangeSections).toHaveLength(1)
+    expect(finalFileChangeSections).toHaveLength(1)
 
-    const firstFileChangeSection = fileChangeSections[0] as HTMLElement
+    const firstFileChangeSection = processFileChangeSections[0] as HTMLElement
     const firstFileChangeSummary = within(firstFileChangeSection).getByRole("button", { name: "已编辑 1 个文件" })
     expect(firstFileChangeSummary).toHaveAttribute("aria-expanded", "false")
     expect(within(firstFileChangeSection).queryByText("docs/release-notes.md")).not.toBeInTheDocument()
@@ -5492,7 +5569,7 @@ describe("App", () => {
     expect(within(firstFileChangeSection).getByLabelText("4 additions, 0 deletions")).toBeInTheDocument()
     expect(within(firstFileChangeSection).queryByText("docs/release-checklist.md")).not.toBeInTheDocument()
 
-    const finalFileChangeSection = fileChangeSections[1] as HTMLElement
+    const finalFileChangeSection = finalFileChangeSections[0] as HTMLElement
     const finalFileChangeSummary = within(finalFileChangeSection).getByRole("button", { name: "已编辑 1 个文件" })
     expect(finalFileChangeSummary).toHaveAttribute("aria-expanded", "false")
     expect(within(finalFileChangeSection).queryByText("docs/release-checklist.md")).not.toBeInTheDocument()
@@ -5500,7 +5577,8 @@ describe("App", () => {
     expect(within(finalFileChangeSection).getAllByText("docs/release-checklist.md").length).toBeGreaterThan(0)
     expect(within(finalFileChangeSection).getByLabelText("2 additions, 1 deletions")).toBeInTheDocument()
     expect(within(finalFileChangeSection).queryByText("docs/release-notes.md")).not.toBeInTheDocument()
-    expect(within(finalAssistantTurn as HTMLElement).getAllByRole("region", { name: "File Changes" })).toHaveLength(2)
+    expect(threadColumn.querySelectorAll(".assistant-process-item-row.assistant-section.is-file-change")).toHaveLength(1)
+    expect(within(finalAssistantTurn as HTMLElement).getAllByRole("region", { name: "File Changes" })).toHaveLength(1)
   })
 
   it("replays detached backend turns from the session event stream", async () => {

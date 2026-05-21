@@ -290,6 +290,26 @@
   padding-bottom: 0;
 }
 
+.assistant-process-trace-row {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.assistant-process-item-row {
+  min-width: 0;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 0 0 22px;
+}
+
+.assistant-process-item-row .trace-item {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .assistant-section-header {
   display: flex;
   align-items: center;

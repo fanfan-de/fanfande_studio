@@ -2446,8 +2446,11 @@ describe("ThreadView message actions", () => {
     expect(finalShell?.querySelector(".assistant-response-actions")).not.toBeNull()
 
     fireEvent.click(processTraceButton)
-    expect(getByText("I will inspect the plugin first.")).toBeInTheDocument()
-    expect(getByText("I will inspect the plugin first.").closest(".assistant-shell")).toBe(finalShell)
+    const foldedTraceText = getByText("I will inspect the plugin first.")
+    expect(foldedTraceText).toBeInTheDocument()
+    expect(foldedTraceText.closest(".thread-column")).toBe(finalShell?.closest(".thread-column"))
+    expect(foldedTraceText.closest(".assistant-process-item-row")).not.toBeNull()
+    expect(foldedTraceText.closest(".assistant-shell")).not.toBe(finalShell)
 
     fireEvent.click(copyButtons[0]!)
     expect(writeText).toHaveBeenCalledWith("The plugin is available.")

@@ -195,25 +195,48 @@ interface LatestAssistantTurnState {
   isStreaming: boolean
 }
 
-type ThreadRenderRow =
+type ThreadDisplayRow =
   | {
-      id: string
       estimatedHeight: number
       kind: "session-banner"
+      rowID: string
     }
   | {
-      id: string
       estimatedHeight: number
-      kind: "user"
+      kind: "user-turn"
+      rowID: string
       turn: UserTurn
+      turnIndex: number
+    }
+  | {
+      blocks: AssistantTraceBlock[]
+      estimatedHeight: number
+      expanded: boolean
+      kind: "process-header"
+      rowID: string
+      shouldCollapseReasoningAndTools: boolean
+      turn: AssistantTurn
+      turnID: string
+      turnIndex: number
+    }
+  | {
+      estimatedHeight: number
+      item: AssistantTraceItem
+      itemID: string
+      kind: "process-item"
+      rowID: string
+      section: AssistantTraceSectionKey
+      shouldCollapseReasoningAndTools: boolean
+      turn: AssistantTurn
+      turnID: string
       turnIndex: number
     }
   | {
       ephemeralHint: string | null
       estimatedHeight: number
-      id: string
       insertedUserTurns: UserTurn[]
       kind: "assistant"
+      rowID: string
       processPrefixItems: AssistantTraceItem[]
       renderedItems: AssistantTraceItem[]
       turn: AssistantTurn
@@ -221,14 +244,18 @@ type ThreadRenderRow =
     }
   | {
       estimatedHeight: number
-      id: string
-      kind: "permission"
+      kind: "permission-request"
+      rowID: string
     }
+
+type ThreadViewUiState = {
+  processTraceExpansionByTurnID: Record<string, boolean>
+}
 
 interface ThreadVirtualLayoutItem {
   height: number
   index: number
-  row: ThreadRenderRow
+  row: ThreadDisplayRow
   top: number
 }
 
@@ -371,12 +398,12 @@ function readThreadColumnPaddingBottom(threadColumn: HTMLDivElement) {
   return Number.isFinite(value) ? value : 0
 }
 
-function buildThreadVirtualLayout(rows: ThreadRenderRow[], measuredHeights: Map<string, number>): ThreadVirtualLayout {
+function buildThreadVirtualLayout(rows: ThreadDisplayRow[], measuredHeights: Map<string, number>): ThreadVirtualLayout {
   const items: ThreadVirtualLayoutItem[] = []
   let top = 0
 
   rows.forEach((row, index) => {
-    const measuredHeight = measuredHeights.get(row.id)
+    const measuredHeight = measuredHeights.get(row.rowID)
     const height = Math.max(THREAD_VIRTUAL_ROW_MIN_HEIGHT_PX, measuredHeight ?? row.estimatedHeight)
     items.push({
       height,
@@ -426,27 +453,27 @@ function findThreadVirtualRange(layout: ThreadVirtualLayout, viewport: ThreadVir
   }
 }
 
+function estimateAssistantTraceItemHeight(item: AssistantTraceItem) {
+  const textLength = `${item.title ?? ""}${item.text ?? ""}${item.detail ?? ""}`.length
+  const textHeight = Math.min(320, Math.max(42, Math.ceil(textLength / 110) * 22))
+  const kindHeight =
+    item.kind === "tool" || item.kind === "patch" || item.kind === "file" || item.kind === "image"
+      ? 84
+      : item.kind === "reasoning"
+        ? 58
+        : 48
+  return Math.max(kindHeight, textHeight)
+}
+
 function estimateAssistantThreadRowHeight(row: {
   ephemeralHint: string | null
   insertedUserTurns: UserTurn[]
-  processPrefixItems?: AssistantTraceItem[]
   renderedItems: AssistantTraceItem[]
   turn: AssistantTurn
 }) {
   if (row.ephemeralHint) return 96 + row.insertedUserTurns.length * 92
 
-  const estimatedItems = [...(row.processPrefixItems ?? []), ...row.renderedItems]
-  const itemEstimate = estimatedItems.reduce((height, item) => {
-    const textLength = `${item.title ?? ""}${item.text ?? ""}${item.detail ?? ""}`.length
-    const textHeight = Math.min(320, Math.max(42, Math.ceil(textLength / 110) * 22))
-    const kindHeight =
-      item.kind === "tool" || item.kind === "patch" || item.kind === "file" || item.kind === "image"
-        ? 84
-        : item.kind === "reasoning"
-          ? 58
-          : 48
-    return height + Math.max(kindHeight, textHeight)
-  }, 64)
+  const itemEstimate = row.renderedItems.reduce((height, item) => height + estimateAssistantTraceItemHeight(item), 64)
 
   return Math.max(row.turn.isStreaming ? 180 : 140, itemEstimate + row.insertedUserTurns.length * 92)
 }
@@ -456,6 +483,144 @@ function estimateUserThreadRowHeight(turn: UserTurn) {
   const attachmentCount = turn.attachments?.length ?? 0
   const diffHeight = hasUserTurnDiffSummary(turn) ? 220 : 0
   return 64 + Math.ceil(textLength / 90) * 22 + attachmentCount * 28 + diffHeight
+}
+
+function buildThreadDisplayRows({
+  activeSession,
+  activeTurns,
+  assistantTraceVisibility,
+  isResolvingPermissionRequest,
+  pendingPermissionRequests,
+  readOnlySideChat,
+  showSessionBanner,
+  uiState,
+}: {
+  activeSession: SessionSummary | null
+  activeTurns: Turn[]
+  assistantTraceVisibility: AssistantTraceVisibility
+  isResolvingPermissionRequest: boolean
+  pendingPermissionRequests: PermissionRequest[]
+  readOnlySideChat: boolean
+  showSessionBanner?: boolean
+  uiState: ThreadViewUiState
+}): ThreadDisplayRow[] {
+  if (!activeSession) return []
+
+  const rows: ThreadDisplayRow[] = []
+  if (showSessionBanner && readOnlySideChat) {
+    rows.push({
+      estimatedHeight: 82,
+      kind: "session-banner",
+      rowID: "session-banner",
+    })
+  }
+
+  activeTurns.forEach((turn, turnIndex) => {
+    if (turn.kind === "user") {
+      if (hasStreamInsertionTarget(activeTurns, turn)) return
+
+      rows.push({
+        estimatedHeight: estimateUserThreadRowHeight(turn),
+        kind: "user-turn",
+        rowID: turn.id,
+        turn,
+        turnIndex,
+      })
+      return
+    }
+
+    if (shouldFoldAssistantTurnIntoFinalRunTrace(activeTurns, turnIndex, turn)) return
+
+    const processPrefixItems = collectAssistantRunProcessPrefixItems(
+      activeTurns,
+      turnIndex,
+      assistantTraceVisibility,
+    )
+    const insertedUserTurns = getAssistantStreamInsertionUserTurns(activeTurns, turn)
+    const renderedItems = filterRenderedAssistantTraceItems(
+      turn.items,
+      !turn.isStreaming,
+      assistantTraceVisibility,
+    )
+    const ephemeralHint = renderedItems.length === 0 ? getAssistantEphemeralHint(turn) : null
+    if (renderedItems.length === 0 && !ephemeralHint && insertedUserTurns.length === 0) return
+
+    const shouldCollapseReasoningAndTools = canCollapseAssistantProcessTrace(turn)
+    const traceDisplayBlocks = buildAssistantTraceDisplayBlocks({
+      items: turn.items,
+      processPrefixItems,
+      showFileChanges: !turn.isStreaming,
+      shouldCollapseReasoningAndTools,
+      traceVisibility: assistantTraceVisibility,
+    })
+    const processTraceExpanded =
+      uiState.processTraceExpansionByTurnID[turn.id] ?? !shouldCollapseReasoningAndTools
+
+    if (!ephemeralHint && traceDisplayBlocks.shouldRenderProcessTrace) {
+      rows.push({
+        blocks: traceDisplayBlocks.processBlocks,
+        estimatedHeight: 34,
+        expanded: processTraceExpanded,
+        kind: "process-header",
+        rowID: `process-header:${turn.id}`,
+        shouldCollapseReasoningAndTools,
+        turn,
+        turnID: turn.id,
+        turnIndex,
+      })
+
+      if (processTraceExpanded) {
+        traceDisplayBlocks.processBlocks.forEach((block, blockIndex) => {
+          getAssistantTraceBlockRenderedItems(block).forEach((item, itemIndex) => {
+            rows.push({
+              estimatedHeight: estimateAssistantTraceItemHeight(item),
+              item,
+              itemID: item.id,
+              kind: "process-item",
+              rowID: `process-item:${turn.id}:${blockIndex}:${item.id}:${itemIndex}`,
+              section: block.sectionKey,
+              shouldCollapseReasoningAndTools,
+              turn,
+              turnID: turn.id,
+              turnIndex,
+            })
+          })
+        })
+      }
+    }
+
+    const assistantRenderedItems = traceDisplayBlocks.shouldRenderProcessTrace
+      ? flattenAssistantTraceBlockItems(traceDisplayBlocks.mainBlocks)
+      : renderedItems
+
+    rows.push({
+      ephemeralHint,
+      estimatedHeight: estimateAssistantThreadRowHeight({
+        ephemeralHint,
+        insertedUserTurns,
+        renderedItems: assistantRenderedItems,
+        turn,
+      }),
+      insertedUserTurns,
+      kind: "assistant",
+      processPrefixItems,
+      renderedItems: assistantRenderedItems,
+      rowID: turn.id,
+      turn,
+      turnIndex,
+    })
+  })
+
+  const pendingRequestID = pendingPermissionRequests[0]?.id
+  if (pendingRequestID && !isResolvingPermissionRequest) {
+    rows.push({
+      estimatedHeight: 420,
+      kind: "permission-request",
+      rowID: `permission-request:${pendingRequestID}`,
+    })
+  }
+
+  return rows
 }
 
 function isSidebarResizeInProgress() {
@@ -1191,6 +1356,51 @@ function buildAssistantTraceBlocks(items: AssistantTraceItem[]) {
   )
 }
 
+interface AssistantTraceDisplayBlocks {
+  blocks: AssistantTraceBlock[]
+  mainBlocks: AssistantTraceBlock[]
+  processBlocks: AssistantTraceBlock[]
+  shouldRenderProcessTrace: boolean
+}
+
+function getAssistantTraceBlockRenderedItems(block: AssistantTraceBlock) {
+  return block.sectionKey === "file-change" ? summarizeFileChangeItems(block.items) : block.items
+}
+
+function flattenAssistantTraceBlockItems(blocks: AssistantTraceBlock[]) {
+  return blocks.flatMap((block) => getAssistantTraceBlockRenderedItems(block))
+}
+
+function buildAssistantTraceDisplayBlocks({
+  items,
+  processPrefixItems = [],
+  showFileChanges,
+  shouldCollapseReasoningAndTools,
+  traceVisibility,
+}: {
+  items: AssistantTraceItem[]
+  processPrefixItems?: AssistantTraceItem[]
+  showFileChanges: boolean
+  shouldCollapseReasoningAndTools: boolean
+  traceVisibility: AssistantTraceVisibility
+}): AssistantTraceDisplayBlocks {
+  const blocks = buildAssistantTraceBlocks(filterRenderedAssistantTraceItems(items, showFileChanges, traceVisibility))
+  const finalResponseBlockIndex = shouldCollapseReasoningAndTools ? findFinalResponseBlockIndex(blocks) : -1
+  const processPrefixBlocks = processPrefixItems.length > 0 ? buildAssistantTraceBlocks(processPrefixItems) : []
+  const shouldRenderProcessTrace = finalResponseBlockIndex >= 0 && (finalResponseBlockIndex > 0 || processPrefixBlocks.length > 0)
+  const processBlocks = shouldRenderProcessTrace
+    ? [...processPrefixBlocks, ...blocks.slice(0, finalResponseBlockIndex)]
+    : []
+  const mainBlocks = shouldRenderProcessTrace ? blocks.slice(finalResponseBlockIndex) : blocks
+
+  return {
+    blocks,
+    mainBlocks,
+    processBlocks,
+    shouldRenderProcessTrace,
+  }
+}
+
 function filterRenderedAssistantTraceItems(
   items: AssistantTraceItem[],
   showFileChanges: boolean,
@@ -1433,7 +1643,7 @@ function AssistantTraceBlockView({
   shouldCollapseReasoningAndTools,
   traceVisibility,
 }: AssistantTraceBlockViewProps) {
-  const renderedItems = block.sectionKey === "file-change" ? summarizeFileChangeItems(block.items) : block.items
+  const renderedItems = getAssistantTraceBlockRenderedItems(block)
 
   return (
     <AssistantTraceSection
@@ -1569,6 +1779,7 @@ const AssistantTurnSections = memo(function AssistantTurnSections({
   onLocalFileLinkOpen,
   onProposedPlanConfirm,
   processPrefixItems = [],
+  renderProcessTrace = true,
   runtime,
   showFileChanges,
   shouldCollapseReasoningAndTools,
@@ -1586,19 +1797,22 @@ const AssistantTurnSections = memo(function AssistantTurnSections({
   onLocalFileLinkOpen: ((target: MarkdownLocalFileLinkTarget) => void) | undefined
   onProposedPlanConfirm?: ProposedPlanConfirmHandler
   processPrefixItems?: AssistantTraceItem[]
+  renderProcessTrace?: boolean
   runtime?: AssistantTurnRuntime
   showFileChanges: boolean
   shouldCollapseReasoningAndTools: boolean
   traceVisibility: AssistantTraceVisibility
 }) {
-  const blocks = buildAssistantTraceBlocks(filterRenderedAssistantTraceItems(items, showFileChanges, traceVisibility))
-  const finalResponseBlockIndex = shouldCollapseReasoningAndTools ? findFinalResponseBlockIndex(blocks) : -1
-  const processPrefixBlocks = processPrefixItems.length > 0 ? buildAssistantTraceBlocks(processPrefixItems) : []
-  const shouldRenderProcessTrace = finalResponseBlockIndex >= 0 && (finalResponseBlockIndex > 0 || processPrefixBlocks.length > 0)
-  const processBlocks = shouldRenderProcessTrace
-    ? [...processPrefixBlocks, ...blocks.slice(0, finalResponseBlockIndex)]
-    : []
-  const mainBlocks = shouldRenderProcessTrace ? blocks.slice(finalResponseBlockIndex) : blocks
+  const traceDisplayBlocks = buildAssistantTraceDisplayBlocks({
+    items,
+    processPrefixItems,
+    showFileChanges,
+    shouldCollapseReasoningAndTools,
+    traceVisibility,
+  })
+  const shouldRenderProcessTrace = renderProcessTrace && traceDisplayBlocks.shouldRenderProcessTrace
+  const processBlocks = shouldRenderProcessTrace ? traceDisplayBlocks.processBlocks : []
+  const mainBlocks = traceDisplayBlocks.mainBlocks
 
   return (
     <>
@@ -1660,6 +1874,7 @@ const AssistantTurnSectionsWithStreamInsertions = memo(function AssistantTurnSec
   onLocalFileLinkOpen,
   onProposedPlanConfirm,
   processPrefixItems = [],
+  renderProcessTrace = true,
   runtime,
   showFileChanges,
   shouldCollapseReasoningAndTools,
@@ -1681,6 +1896,7 @@ const AssistantTurnSectionsWithStreamInsertions = memo(function AssistantTurnSec
   onLocalFileLinkOpen: ((target: MarkdownLocalFileLinkTarget) => void) | undefined
   onProposedPlanConfirm?: ProposedPlanConfirmHandler
   processPrefixItems?: AssistantTraceItem[]
+  renderProcessTrace?: boolean
   runtime?: AssistantTurnRuntime
   showFileChanges: boolean
   shouldCollapseReasoningAndTools: boolean
@@ -1701,6 +1917,7 @@ const AssistantTurnSectionsWithStreamInsertions = memo(function AssistantTurnSec
         onLocalFileLinkOpen={onLocalFileLinkOpen}
         onProposedPlanConfirm={onProposedPlanConfirm}
         processPrefixItems={processPrefixItems}
+        renderProcessTrace={renderProcessTrace}
         runtime={runtime}
         showFileChanges={showFileChanges}
         shouldCollapseReasoningAndTools={shouldCollapseReasoningAndTools}
@@ -1732,6 +1949,7 @@ const AssistantTurnSectionsWithStreamInsertions = memo(function AssistantTurnSec
         onLocalFileLinkOpen={onLocalFileLinkOpen}
         onProposedPlanConfirm={onProposedPlanConfirm}
         processPrefixItems={segmentProcessPrefixItems}
+        renderProcessTrace={renderProcessTrace}
         runtime={runtime}
         showFileChanges={showFileChanges}
         shouldCollapseReasoningAndTools={shouldCollapseReasoningAndTools}
@@ -4145,6 +4363,9 @@ function VisibleThreadView({
   const renderedTurnIDsByScrollKeyRef = useRef<Record<string, Set<string>>>({})
   const threadVirtualHeightCachesRef = useRef<Record<string, Map<string, number>>>({})
   const [threadVirtualMeasurementVersion, setThreadVirtualMeasurementVersion] = useState(0)
+  const [threadViewUiState, setThreadViewUiState] = useState<ThreadViewUiState>(() => ({
+    processTraceExpansionByTurnID: {},
+  }))
   const [threadVirtualViewport, setThreadVirtualViewport] = useState<ThreadVirtualViewport>({
     height: 0,
     paddingTop: 0,
@@ -4166,101 +4387,43 @@ function VisibleThreadView({
     return pendingRequestID ? [...ids, `permission-request:${pendingRequestID}`] : ids
   }, [activeTurns, pendingPermissionRequests])
   const visibleTurnIDsKey = visibleTurnIDs.join("\u0000")
-  const threadRows = useMemo<ThreadRenderRow[]>(() => {
-    if (!activeSession) return []
-
-    const rows: ThreadRenderRow[] = []
-    if (showSessionBanner && readOnlySideChat) {
-      rows.push({
-        id: "session-banner",
-        estimatedHeight: 82,
-        kind: "session-banner",
-      })
-    }
-
-    activeTurns.forEach((turn, turnIndex) => {
-      if (turn.kind === "user") {
-        if (hasStreamInsertionTarget(activeTurns, turn)) return
-
-        rows.push({
-          id: turn.id,
-          estimatedHeight: estimateUserThreadRowHeight(turn),
-          kind: "user",
-          turn,
-          turnIndex,
-        })
-        return
-      }
-
-      if (shouldFoldAssistantTurnIntoFinalRunTrace(activeTurns, turnIndex, turn)) return
-
-      const processPrefixItems = collectAssistantRunProcessPrefixItems(
-        activeTurns,
-        turnIndex,
-        assistantTraceVisibility,
-      )
-      const insertedUserTurns = getAssistantStreamInsertionUserTurns(activeTurns, turn)
-      const renderedItems = filterRenderedAssistantTraceItems(
-        turn.items,
-        !turn.isStreaming,
-        assistantTraceVisibility,
-      )
-      const ephemeralHint = renderedItems.length === 0 ? getAssistantEphemeralHint(turn) : null
-      if (renderedItems.length === 0 && !ephemeralHint && insertedUserTurns.length === 0) return
-
-      rows.push({
-        ephemeralHint,
-        estimatedHeight: estimateAssistantThreadRowHeight({
-          ephemeralHint,
-          insertedUserTurns,
-          processPrefixItems,
-          renderedItems,
-          turn,
-        }),
-        id: turn.id,
-        insertedUserTurns,
-        kind: "assistant",
-        processPrefixItems,
-        renderedItems,
-        turn,
-        turnIndex,
-      })
-    })
-
-    const pendingRequestID = pendingPermissionRequests[0]?.id
-    if (pendingRequestID && !isResolvingPermissionRequest) {
-      rows.push({
-        id: `permission-request:${pendingRequestID}`,
-        estimatedHeight: 420,
-        kind: "permission",
-      })
-    }
-
-    return rows
-  }, [
-    activeSession,
-    activeTurns,
-    assistantTraceVisibility,
-    isResolvingPermissionRequest,
-    pendingPermissionRequests,
-    readOnlySideChat,
-    showSessionBanner,
-  ])
-  const shouldVirtualizeThreadRows = threadRows.length >= THREAD_VIRTUALIZATION_MIN_ROWS
+  const displayRows = useMemo(
+    () => buildThreadDisplayRows({
+      activeSession,
+      activeTurns,
+      assistantTraceVisibility,
+      isResolvingPermissionRequest,
+      pendingPermissionRequests,
+      readOnlySideChat,
+      showSessionBanner,
+      uiState: threadViewUiState,
+    }),
+    [
+      activeSession,
+      activeTurns,
+      assistantTraceVisibility,
+      isResolvingPermissionRequest,
+      pendingPermissionRequests,
+      readOnlySideChat,
+      showSessionBanner,
+      threadViewUiState,
+    ],
+  )
+  const shouldVirtualizeThreadRows = displayRows.length >= THREAD_VIRTUALIZATION_MIN_ROWS
   const threadVirtualHeightCache = getThreadVirtualHeightCache(effectiveScrollStateKey)
   const threadVirtualLayout = useMemo(
-    () => buildThreadVirtualLayout(threadRows, threadVirtualHeightCache),
-    [effectiveScrollStateKey, threadRows, threadVirtualHeightCache, threadVirtualMeasurementVersion],
+    () => buildThreadVirtualLayout(displayRows, threadVirtualHeightCache),
+    [effectiveScrollStateKey, displayRows, threadVirtualHeightCache, threadVirtualMeasurementVersion],
   )
   const threadVirtualRange = useMemo(
     () => (shouldVirtualizeThreadRows
       ? findThreadVirtualRange(threadVirtualLayout, threadVirtualViewport)
       : {
-          endIndex: threadRows.length,
+          endIndex: displayRows.length,
           items: threadVirtualLayout.items,
           startIndex: 0,
         }),
-    [shouldVirtualizeThreadRows, threadRows.length, threadVirtualLayout, threadVirtualViewport],
+    [shouldVirtualizeThreadRows, displayRows.length, threadVirtualLayout, threadVirtualViewport],
   )
   const threadVirtualRenderedRangeKey = `${threadVirtualRange.startIndex}:${threadVirtualRange.endIndex}:${threadVirtualLayout.totalHeight}`
 
@@ -4307,9 +4470,9 @@ function VisibleThreadView({
   }
 
   function findLatestThreadVirtualContentRow() {
-    for (let index = threadRows.length - 1; index >= 0; index -= 1) {
-      const row = threadRows[index]
-      if (row?.kind === "assistant" || row?.kind === "user") return row
+    for (let index = displayRows.length - 1; index >= 0; index -= 1) {
+      const row = displayRows[index]
+      if (row?.kind === "assistant" || row?.kind === "user-turn") return row
     }
 
     return null
@@ -4322,13 +4485,13 @@ function VisibleThreadView({
     }
 
     const latestRow = findLatestThreadVirtualContentRow()
-    if (!latestRow || latestRow.kind === "user") {
+    if (!latestRow || latestRow.kind === "user-turn") {
       threadColumn.scrollTop = getThreadVirtualScrollMaxTop(threadColumn)
       syncThreadVirtualViewport(threadColumn)
       return
     }
 
-    const latestLayoutItem = threadVirtualLayout.items.find((item) => item.row.id === latestRow.id)
+    const latestLayoutItem = threadVirtualLayout.items.find((item) => item.row.rowID === latestRow.rowID)
     if (!latestLayoutItem) {
       threadColumn.scrollTop = getThreadVirtualScrollMaxTop(threadColumn)
       syncThreadVirtualViewport(threadColumn)
@@ -4784,7 +4947,7 @@ function VisibleThreadView({
     effectiveScrollStateKey,
     shouldVirtualizeThreadRows,
     threadColumnRef,
-    threadRows.length,
+    displayRows.length,
     threadVirtualLayout.totalHeight,
   ])
 
@@ -4932,10 +5095,20 @@ function VisibleThreadView({
     saveThreadScrollSnapshotValue(effectiveScrollStateKey, snapshot)
   }
 
-  function renderThreadRow(row: ThreadRenderRow) {
+  function toggleProcessTraceRow(turnID: string, expanded: boolean) {
+    setThreadViewUiState((current) => ({
+      ...current,
+      processTraceExpansionByTurnID: {
+        ...current.processTraceExpansionByTurnID,
+        [turnID]: !expanded,
+      },
+    }))
+  }
+
+  function renderDisplayRow(row: ThreadDisplayRow) {
     if (row.kind === "session-banner") {
       return (
-        <article key={row.id} className="thread-session-banner">
+        <article key={row.rowID} className="thread-session-banner">
           <div className="thread-session-banner-copy">
             <span className="label">Side chat</span>
             <strong>Linked reply thread</strong>
@@ -4946,11 +5119,11 @@ function VisibleThreadView({
       )
     }
 
-    if (row.kind === "user") {
+    if (row.kind === "user-turn") {
       const { turn, turnIndex } = row
       return (
         <UserTurnArticle
-          key={row.id}
+          key={row.rowID}
           copied={copiedUserTurnID === turn.id}
           motion={readThreadTurnMotion(turn.id)}
           onCopy={handleCopyUserMessage}
@@ -4973,10 +5146,10 @@ function VisibleThreadView({
       )
     }
 
-    if (row.kind === "permission") {
+    if (row.kind === "permission-request") {
       return (
         <PermissionRequestInlinePrompt
-          key={row.id}
+          key={row.rowID}
           activeSession={activeSession}
           isResolvingPermissionRequest={isResolvingPermissionRequest}
           pendingPermissionRequests={pendingPermissionRequests}
@@ -4987,6 +5160,81 @@ function VisibleThreadView({
           )}
           onPermissionRequestResponse={onPermissionRequestResponse}
         />
+      )
+    }
+
+    if (row.kind === "process-header") {
+      const duration = formatAssistantTraceDuration(row.turn.runtime)
+      const summary = summarizeProcessTraceBlocks(row.blocks)
+
+      return (
+        <article
+          key={row.rowID}
+          className={joinClassNames(
+            "thread-row",
+            "assistant-process-trace",
+            "assistant-process-trace-row",
+            row.expanded ? "is-expanded" : "is-collapsed",
+          )}
+          data-depth="0"
+          data-kind="process-header"
+          data-turn-id={row.turnID}
+          data-turn-motion={readThreadTurnMotion(row.turnID, row.turn.isStreaming)}
+        >
+          <button
+            className="assistant-process-trace-header"
+            type="button"
+            aria-label={`Processed ${duration ? `${duration} ` : ""}${summary}`}
+            aria-expanded={row.expanded}
+            onClick={() => toggleProcessTraceRow(row.turnID, row.expanded)}
+          >
+            <span className="assistant-process-trace-chevron" aria-hidden="true">
+              {row.expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+            </span>
+            <span className="assistant-process-trace-title">Processed</span>
+            {duration ? <span className="assistant-process-trace-duration">{duration}</span> : null}
+            <span className="assistant-process-trace-summary">{summary}</span>
+          </button>
+        </article>
+      )
+    }
+
+    if (row.kind === "process-item") {
+      const isLatestAssistantMessage = isAssistantLatestRenderableTurn(activeTurns, row.turnIndex, row.turn)
+
+      return (
+        <article
+          key={row.rowID}
+          className={joinClassNames(
+            "thread-row",
+            "assistant-process-item-row",
+            "assistant-section",
+            `is-${row.section}`,
+          )}
+          data-depth="1"
+          data-kind="process-item"
+          data-turn-id={row.turnID}
+          role="region"
+          aria-label={traceSectionTitle(row.section)}
+        >
+          <div className={getAssistantTraceBlockStackClassName(row.section)}>
+            <TraceItemView
+              answeredQuestionIDs={answeredQuestionIDs}
+              assistantTurnPhase={row.turn.runtime.phase}
+              item={row.item}
+              isQuestionAnswerDisabled={isResolvingPermissionRequest || pendingPermissionRequests.length > 0}
+              onOpenImagePreview={handleOpenImagePreview}
+              onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+              onFileChangeSelect={onFileChangeSelect}
+              onArtifactLinkOpen={onArtifactLinkOpen}
+              onLocalFileLinkOpen={onLocalFileLinkOpen}
+              isLatestMessage={isLatestAssistantMessage}
+              onProposedPlanConfirm={onProposedPlanConfirm}
+              shouldCollapseAfterTurnCompletion={row.shouldCollapseReasoningAndTools}
+              traceVisibility={assistantTraceVisibility}
+            />
+          </div>
+        </article>
       )
     }
 
@@ -5023,7 +5271,7 @@ function VisibleThreadView({
 
     return (
       <article
-        key={row.id}
+        key={row.rowID}
         className="turn assistant-turn"
         data-turn-id={turn.id}
         data-turn-motion={readThreadTurnMotion(turn.id, turn.isStreaming)}
@@ -5061,6 +5309,7 @@ function VisibleThreadView({
               onLocalFileLinkOpen={onLocalFileLinkOpen}
               onProposedPlanConfirm={onProposedPlanConfirm}
               processPrefixItems={processPrefixItems}
+              renderProcessTrace={false}
               runtime={turn.runtime}
               showFileChanges={!turn.isStreaming}
               shouldCollapseReasoningAndTools={canCollapseAssistantProcessTrace(turn)}
@@ -5204,7 +5453,7 @@ function VisibleThreadView({
 
   function renderThreadRows() {
     if (!shouldVirtualizeThreadRows) {
-      return threadRows.map((row) => renderThreadRow(row))
+      return displayRows.map((row) => renderDisplayRow(row))
     }
 
     return (
@@ -5214,12 +5463,12 @@ function VisibleThreadView({
       >
         {threadVirtualRange.items.map((item) => (
           <div
-            key={item.row.id}
+            key={item.row.rowID}
             className="thread-virtual-row"
-            data-thread-virtual-row-id={item.row.id}
+            data-thread-virtual-row-id={item.row.rowID}
             style={{ transform: `translateY(${item.top}px)` }}
           >
-            {renderThreadRow(item.row)}
+            {renderDisplayRow(item.row)}
           </div>
         ))}
       </div>
@@ -5264,290 +5513,7 @@ function VisibleThreadView({
             </div>
           </article>
         ) : (
-          <>
-            {shouldVirtualizeThreadRows ? (
-              renderThreadRows()
-            ) : (
-              <>
-            {showSessionBanner && readOnlySideChat ? (
-              <article className="thread-session-banner">
-                <div className="thread-session-banner-copy">
-                  <span className="label">Side chat</span>
-                  <strong>Linked reply thread</strong>
-                  <p>Scoped discussion linked to one assistant reply. It stays out of the main session context.</p>
-                </div>
-                <span className="thread-session-banner-pill">Isolated</span>
-              </article>
-            ) : null}
-            {activeTurns.map((turn, turnIndex) => {
-              if (turn.kind === "user") {
-                if (hasStreamInsertionTarget(activeTurns, turn)) return null
-
-                return (
-                  <UserTurnArticle
-                    key={turn.id}
-                    copied={copiedUserTurnID === turn.id}
-                    motion={readThreadTurnMotion(turn.id)}
-                    onCopy={handleCopyUserMessage}
-                    turn={turn}
-                    diffCard={
-                      shouldRenderDiffOnStandaloneUserTurn(activeTurns, turnIndex, turn) ? (
-                        <TurnDiffCard
-                          turnID={turn.id}
-                          diffSummary={turn.diffSummary}
-                          activeSessionDiff={activeSessionDiff}
-                          allowWorkspaceDiffFallback={turnIndex === activeTurns.length - 1}
-                          onFileChangeSelect={onFileChangeSelect}
-                          onTurnDiffSummaryHydrate={onTurnDiffSummaryHydrate}
-                          onTurnDiffRestore={onTurnDiffRestore}
-                          onTurnDiffReview={onTurnDiffReview}
-                        />
-                      ) : null
-                    }
-                  />
-                )
-              }
-
-              if (shouldFoldAssistantTurnIntoFinalRunTrace(activeTurns, turnIndex, turn)) return null
-
-              const traceItems = turn.items
-              const processPrefixItems = collectAssistantRunProcessPrefixItems(
-                activeTurns,
-                turnIndex,
-                assistantTraceVisibility,
-              )
-              const insertedUserTurns = getAssistantStreamInsertionUserTurns(activeTurns, turn)
-              const renderedItems = filterRenderedAssistantTraceItems(
-                traceItems,
-                !turn.isStreaming,
-                assistantTraceVisibility,
-              )
-              const ephemeralHint = renderedItems.length === 0 ? getAssistantEphemeralHint(turn) : null
-              if (renderedItems.length === 0 && !ephemeralHint && insertedUserTurns.length === 0) return null
-              const sideChatAnchorMessageID = turn.messageID ?? turn.id
-              const turnMessageID = getSessionMessageIDForTurn(turn)
-              const canExposeResponseActions = isAssistantFinalMessageInUserTurn(activeTurns, turnIndex, turn)
-              const branchOptions = canExposeResponseActions ? messageTree?.branchOptionsByParentID[turnMessageID] ?? [] : []
-              const existingSideChatCount = sideChatCountsByAnchorMessageID[sideChatAnchorMessageID] ?? 0
-              const lastResponseItems = canExposeResponseActions ? getLastAssistantResponseSectionItems(traceItems, assistantTraceVisibility) : []
-              const responseCopyText = canExposeResponseActions ? buildAssistantResponseCopyText(lastResponseItems) : ""
-              const canOpenSideChat =
-                !readOnlySideChat &&
-                !turn.isStreaming &&
-                canExposeResponseActions &&
-                lastResponseItems.length > 0 &&
-                Boolean(onOpenSideChat)
-              const canForkFromMessage =
-                !readOnlySideChat &&
-                !turn.isStreaming &&
-                canExposeResponseActions &&
-                Boolean(onForkFromMessage)
-              const activeInlineSideChat = sideChatSession?.origin?.anchorMessageID === sideChatAnchorMessageID ? sideChatSession : null
-              const hasAssistantDiffSummary = normalizeTurnDiffSummary(turn.diffSummary).length > 0
-              const trailingUserDiffTurn = hasAssistantDiffSummary ? null : getAssistantTrailingUserDiffTurn(activeTurns, turnIndex, turn)
-              const shouldRenderResponseActions = Boolean(
-                responseCopyText ||
-                canOpenSideChat ||
-                canForkFromMessage ||
-                branchOptions.length > 1,
-              )
-              const isLatestAssistantMessage = isAssistantLatestRenderableTurn(activeTurns, turnIndex, turn)
-
-              return (
-                <article
-                  key={turn.id}
-                  className="turn assistant-turn"
-                  data-turn-id={turn.id}
-                  data-turn-motion={readThreadTurnMotion(turn.id, turn.isStreaming)}
-                >
-                  <div className={turn.isStreaming ? "assistant-shell is-sectioned is-streaming" : "assistant-shell is-sectioned"}>
-                    {ephemeralHint ? (
-                      <>
-                        <AssistantTurnPlaceholder message={ephemeralHint} />
-                        {insertedUserTurns.map((insertedTurn) => (
-                          <UserTurnArticle
-                            key={insertedTurn.id}
-                            className="assistant-stream-insertion-user-turn"
-                            copied={copiedUserTurnID === insertedTurn.id}
-                            motion={readThreadTurnMotion(insertedTurn.id)}
-                            onCopy={handleCopyUserMessage}
-                            turn={insertedTurn}
-                          />
-                        ))}
-                      </>
-                    ) : (
-                      <AssistantTurnSectionsWithStreamInsertions
-                        answeredQuestionIDs={answeredQuestionIDs}
-                        assistantTurnPhase={turn.runtime.phase}
-                        isQuestionAnswerDisabled={isResolvingPermissionRequest || pendingPermissionRequests.length > 0}
-                        copiedUserTurnID={copiedUserTurnID}
-                        insertedUserTurns={insertedUserTurns}
-                        isLatestMessage={isLatestAssistantMessage}
-                        items={traceItems}
-                        getTurnMotion={readThreadTurnMotion}
-                        onCopyUserMessage={handleCopyUserMessage}
-                        onOpenImagePreview={handleOpenImagePreview}
-                        onAskUserQuestionAnswer={onAskUserQuestionAnswer}
-                        onFileChangeSelect={onFileChangeSelect}
-                        onArtifactLinkOpen={onArtifactLinkOpen}
-                        onLocalFileLinkOpen={onLocalFileLinkOpen}
-                        onProposedPlanConfirm={onProposedPlanConfirm}
-                        processPrefixItems={processPrefixItems}
-                        runtime={turn.runtime}
-                        showFileChanges={!turn.isStreaming}
-                        shouldCollapseReasoningAndTools={canCollapseAssistantProcessTrace(turn)}
-                        traceVisibility={assistantTraceVisibility}
-                      />
-                    )}
-                    {hasAssistantDiffSummary ? (
-                      <TurnDiffCard
-                        turnID={turn.id}
-                        diffSummary={turn.diffSummary}
-                        activeSessionDiff={activeSessionDiff}
-                        allowWorkspaceDiffFallback={isLatestAssistantMessage}
-                        patchSourceFileChanges={collectAssistantPatchFileChanges(turn)}
-                        onFileChangeSelect={onFileChangeSelect}
-                        onTurnDiffSummaryHydrate={onTurnDiffSummaryHydrate}
-                        onTurnDiffRestore={onTurnDiffRestore}
-                        onTurnDiffReview={onTurnDiffReview}
-                      />
-                    ) : trailingUserDiffTurn ? (
-                      <TurnDiffCard
-                        turnID={trailingUserDiffTurn.id}
-                        diffSummary={trailingUserDiffTurn.diffSummary}
-                        activeSessionDiff={activeSessionDiff}
-                        allowWorkspaceDiffFallback={isLatestAssistantMessage}
-                        patchSourceFileChanges={collectAssistantPatchFileChanges(turn)}
-                        onFileChangeSelect={onFileChangeSelect}
-                        onTurnDiffSummaryHydrate={onTurnDiffSummaryHydrate}
-                        onTurnDiffRestore={onTurnDiffRestore}
-                        onTurnDiffReview={onTurnDiffReview}
-                      />
-                    ) : null}
-                    {shouldRenderResponseActions ? (
-                      <div className="assistant-response-side-chat">
-                        {activeInlineSideChat &&
-                        onSideChatDraftStateChange &&
-                        onSideChatPickAttachments &&
-                        onSideChatRemoveAttachment &&
-                        onSideChatCreate &&
-                        onSideChatDelete &&
-                        onSideChatSelect &&
-                        onSideChatSend ? (
-                          <InlineSideChatThread
-                            activeProjectID={activeProjectID}
-                            attachments={sideChatAttachments}
-                            assistantTraceVisibility={assistantTraceVisibility}
-                            composerRefreshVersion={composerRefreshVersion}
-                            draftState={sideChatDraftState}
-                            isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
-                            isResolvingPermissionRequest={isResolvingPermissionRequest}
-                            isCancelling={sideChatIsCancelling}
-                            isInterruptible={sideChatIsInterruptible}
-                            isSending={sideChatIsSending}
-                            pendingPermissionRequests={sideChatPendingPermissionRequests}
-                            permissionRequestActionError={sideChatPermissionRequestActionError}
-                            permissionRequestActionRequestID={sideChatPermissionRequestActionRequestID}
-                            session={activeInlineSideChat}
-                            sideChatSessions={sideChatSessionsByAnchorMessageID[sideChatAnchorMessageID] ?? [activeInlineSideChat]}
-                            turns={sideChatTurns}
-                            isThreadVisible={isThreadVisible}
-                            readScrollSnapshot={readScrollSnapshot}
-                            saveScrollSnapshot={saveScrollSnapshot}
-                            onDraftStateChange={onSideChatDraftStateChange}
-                            onHide={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
-                            onAskUserQuestionAnswer={onAskUserQuestionAnswer}
-                            onArtifactLinkOpen={onArtifactLinkOpen}
-                            onLocalFileLinkOpen={onLocalFileLinkOpen}
-                            onPermissionRequestResponse={onPermissionRequestResponse}
-                            onPickAttachments={onSideChatPickAttachments}
-                            onPasteImageAttachments={onSideChatPasteImageAttachments}
-                            onRemoveAttachment={onSideChatRemoveAttachment}
-                            onCancelSend={onSideChatCancelSend}
-                            onCreateSideChat={() => onSideChatCreate(sideChatAnchorMessageID)}
-                            onDeleteSideChat={onSideChatDelete}
-                            onSend={onSideChatSend}
-                            onSelectSideChat={onSideChatSelect}
-                            onSessionModelSelectionChange={onSessionModelSelectionChange}
-                          />
-                        ) : null}
-
-                        <div className="assistant-response-actions">
-                          <BranchSwitcher options={branchOptions} onSelect={onBranchSelect} />
-                          {responseCopyText ? (
-                            <button
-                              className={joinClassNames(
-                                "assistant-response-action-button message-action-icon-button",
-                                copiedResponseTurnID === turn.id && "is-active",
-                              )}
-                              type="button"
-                              aria-label={copiedResponseTurnID === turn.id ? "Copied assistant response" : "Copy assistant response"}
-                              title={copiedResponseTurnID === turn.id ? "Copied" : "Copy"}
-                              onClick={() => void handleCopyAssistantResponse(turn.id, responseCopyText)}
-                            >
-                              <CopyIcon />
-                            </button>
-                          ) : null}
-                          {canOpenSideChat ? (
-                            <button
-                              className={joinClassNames(
-                                "assistant-response-action-button message-action-icon-button",
-                                activeInlineSideChat && "is-active",
-                              )}
-                              type="button"
-                              aria-label={
-                                activeInlineSideChat
-                                  ? "Hide this side chat"
-                                  : existingSideChatCount > 0
-                                    ? `Open side chat (${existingSideChatCount})`
-                                    : "Open side chat"
-                              }
-                              aria-pressed={Boolean(activeInlineSideChat)}
-                              title={
-                                activeInlineSideChat
-                                  ? "Hide this side chat"
-                                  : existingSideChatCount > 0
-                                    ? `${existingSideChatCount} side chat thread${existingSideChatCount === 1 ? "" : "s"}`
-                                    : "Open a side chat for this reply"
-                              }
-                              onClick={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
-                            >
-                              <SideChatIcon />
-                            </button>
-                          ) : null}
-                          {canForkFromMessage ? (
-                            <button
-                              className="assistant-response-action-button message-action-icon-button"
-                              type="button"
-                              aria-label="Fork from here"
-                              title="Fork from here"
-                              onClick={() => void onForkFromMessage?.(turnMessageID)}
-                            >
-                              <ForkIcon />
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </article>
-              )
-            })}
-
-            <PermissionRequestInlinePrompt
-              activeSession={activeSession}
-              isResolvingPermissionRequest={isResolvingPermissionRequest}
-              pendingPermissionRequests={pendingPermissionRequests}
-              permissionRequestActionError={permissionRequestActionError}
-              permissionRequestActionRequestID={permissionRequestActionRequestID}
-              motion={readThreadTurnMotion(
-                pendingPermissionRequests[0]?.id ? `permission-request:${pendingPermissionRequests[0].id}` : "permission-request",
-              )}
-              onPermissionRequestResponse={onPermissionRequestResponse}
-            />
-              </>
-            )}
-          </>
+          renderThreadRows()
         )}
       </div>
       {activeImagePreview ? (
