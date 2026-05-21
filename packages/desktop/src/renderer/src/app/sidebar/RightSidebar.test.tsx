@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import type { RightSidebarState, RightSidebarTab, WorkspaceGroup } from "../types"
+import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type RightSidebarState, type RightSidebarTab, type WorkspaceGroup } from "../types"
 import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE, DEFAULT_WORKSPACE_PREVIEW_STATE } from "../agent-workspace/review-preview-state"
 import { RightSidebar } from "./RightSidebar"
 
@@ -74,18 +74,28 @@ function renderRightSidebar(input: {
       activeSessionDirectory={workspace.directory}
       activeWorkspaceFileScopeDirectory={workspace.directory}
       activeWorkspaceFileScopeName={workspace.name}
+      assistantTraceVisibility={DEFAULT_ASSISTANT_TRACE_VISIBILITY}
       canInsertWorkspaceFileCommentsIntoDraft={true}
       canOpenReview={input.canOpenReview ?? true}
       canOpenTerminal={input.canOpenTerminal ?? true}
+      composerRefreshVersion={0}
+      isAgentDebugTraceEnabled={false}
+      isResolvingPermissionRequest={false}
+      permissionRequestActionError={null}
+      permissionRequestActionRequestID={null}
       rightSidebar={input.rightSidebar}
       selectedDiffFileBySession={{}}
       sessionDiffBySession={{}}
       sessionDiffStateBySession={{}}
+      sideChatPanelState={null}
       workspaces={[workspace]}
       onActivateTab={input.onActivateTab ?? vi.fn()}
       onCloseTab={input.onCloseTab ?? vi.fn()}
+      onAskUserQuestionAnswer={vi.fn()}
+      onArtifactLinkOpen={vi.fn()}
       onDiffFileRestore={vi.fn()}
       onDiffFileSelect={vi.fn()}
+      onLocalFileLinkOpen={vi.fn()}
       onOpenBrowserTab={input.onOpenBrowserTab ?? vi.fn()}
       onOpenFilesTab={input.onOpenFilesTab ?? vi.fn()}
       onOpenReviewTab={input.onOpenReviewTab ?? vi.fn()}
@@ -97,6 +107,15 @@ function renderRightSidebar(input: {
       onPreviewOpenExternal={vi.fn()}
       onPreviewOpenUrl={vi.fn()}
       onPreviewReload={vi.fn()}
+      onPermissionRequestResponse={vi.fn()}
+      onSideChatCreate={vi.fn()}
+      onSideChatDelete={vi.fn()}
+      onSideChatDraftStateChange={vi.fn()}
+      onSideChatPickAttachments={vi.fn()}
+      onSideChatRemoveAttachment={vi.fn()}
+      onSideChatSelect={vi.fn()}
+      onSideChatSend={vi.fn()}
+      onSessionModelSelectionChange={vi.fn()}
       onWorkspaceFileCommentCancel={vi.fn()}
       onWorkspaceFileCommentChange={vi.fn()}
       onWorkspaceFileCommentConfirm={vi.fn()}

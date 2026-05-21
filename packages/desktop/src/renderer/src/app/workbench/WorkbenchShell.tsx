@@ -335,6 +335,7 @@ export interface WorkbenchShellProps {
     workspaceDirectory: string | null
     workspaceID: string | null
   }) => void
+  sideChatPlacement?: WorkbenchPaneSurfaceProps["sideChatPlacement"]
   onMoveSessionPanel?: (input: {
     panelID: string
     placement: WorkbenchDropPlacement
@@ -862,6 +863,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           workspaces={workspaces}
           readThreadScrollSnapshot={props.readThreadScrollSnapshot}
           saveThreadScrollSnapshot={props.saveThreadScrollSnapshot}
+          sideChatPlacement={props.sideChatPlacement}
           onCreateSessionSubmit={props.onCreateSessionSubmit}
           onCreateSessionWorkspaceChange={props.onCreateSessionWorkspaceChange}
           onInspectFileInSidebar={props.onInspectFileInSidebar}

@@ -19,7 +19,8 @@
 .right-sidebar-view-host.is-preview,
 .right-sidebar-view-host.is-files,
 .right-sidebar-view-host.is-changes,
-.right-sidebar-view-host.is-terminal {
+.right-sidebar-view-host.is-terminal,
+.right-sidebar-view-host.is-side-chat {
   overflow: hidden;
   scrollbar-gutter: auto;
   padding-right: 0;
@@ -69,15 +70,22 @@
 }
 
 .right-sidebar-top-menu {
+  --right-sidebar-tab-bar-bg: var(--seg-pane-tab-bar-surface);
   --right-sidebar-tab-border: var(--seg-border);
+  --right-sidebar-tab-divider: var(--seg-divider);
+  --right-sidebar-tab-radius: 6px;
+  --right-sidebar-tab-active-bg: var(--seg-shell);
+  --right-sidebar-tab-hover-bg: var(--mix-seg-panel-66-seg-panel-muted-34);
+  --right-sidebar-tab-icon-color: var(--semantic-accent-icon);
+  --right-sidebar-tab-icon-hover-color: var(--semantic-accent-icon-hover);
   position: relative;
   min-height: 40px;
   margin: 0;
-  padding-left: 12px;
-  padding-right: 8px;
+  padding-left: 0;
+  padding-right: 12px;
   align-items: stretch;
   gap: 0;
-  background: var(--seg-right-sidebar-top-menu-surface);
+  background: var(--right-sidebar-tab-bar-bg);
   isolation: isolate;
 }
 
@@ -116,8 +124,8 @@
 .right-sidebar-top-menu-tabs {
   min-width: 0;
   min-height: 40px;
-  align-items: center;
-  gap: 4px;
+  align-items: stretch;
+  gap: 0;
   overflow: auto hidden;
   scrollbar-width: none;
 }
@@ -148,31 +156,47 @@
 
 .right-sidebar-tab {
   flex: 0 1 auto;
-  min-width: 74px;
-  max-width: 180px;
+  min-width: 0;
+  max-width: min(240px, 30vw);
   min-height: 40px;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  border: 1px solid transparent;
-  border-bottom-color: transparent;
-  border-radius: 8px 8px 0 0;
+  gap: 6px;
+  margin: 0 0 -1px;
+  padding: 0 8px 0 12px;
+  border: 0;
+  border-radius: var(--right-sidebar-tab-radius) var(--right-sidebar-tab-radius) 0 0;
+  background: transparent;
   color: var(--seg-text-2);
+  font-size: 13px;
+  overflow: hidden;
+  cursor: default;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.right-sidebar-tab:not(:first-child) {
+  box-shadow: inset 1px 0 0 var(--right-sidebar-tab-divider);
 }
 
 .right-sidebar-tab:hover,
 .right-sidebar-tab:focus-within {
-  background: rgba(84, 96, 109, 0.06);
+  background: var(--right-sidebar-tab-hover-bg);
   color: var(--seg-text-1);
+  box-shadow: none;
 }
 
 .right-sidebar-tab.is-active {
-  border-color: var(--seg-border);
-  border-bottom-color: var(--seg-panel);
-  background: var(--seg-panel);
+  background: var(--right-sidebar-tab-active-bg);
   color: var(--seg-text-1);
   position: relative;
   z-index: 2;
+  box-shadow:
+    inset 0 1px 0 var(--right-sidebar-tab-border),
+    inset 1px 0 0 var(--right-sidebar-tab-border),
+    inset -1px 0 0 var(--right-sidebar-tab-border);
 }
 
 .right-sidebar-tab-trigger,
@@ -192,8 +216,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0 6px 0 8px;
-  font-size: 12px;
+  padding: 0 6px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 0;
   text-align: left;
@@ -214,14 +238,18 @@
 }
 
 .right-sidebar-tab-close {
-  width: 22px;
-  min-width: 22px;
-  height: 22px;
-  margin-right: 3px;
-  border-radius: 6px;
-  color: var(--seg-text-3);
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 5px;
+  color: var(--right-sidebar-tab-icon-color);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0;
   pointer-events: none;
+  line-height: 1;
 }
 
 .right-sidebar-tab:hover .right-sidebar-tab-close,
@@ -232,50 +260,64 @@
 }
 
 .right-sidebar-tab-close:hover,
-.right-sidebar-tab-close:focus-visible,
-.right-sidebar-add-tab-button:hover,
-.right-sidebar-add-tab-button:focus-visible,
-.right-sidebar-add-tab-button.is-active {
-  background: rgba(84, 96, 109, 0.08);
-  color: var(--seg-text-1);
+.right-sidebar-tab-close:focus-visible {
+  background: transparent;
+  border-color: transparent;
+  color: var(--right-sidebar-tab-icon-hover-color);
   outline: none;
 }
 
 .right-sidebar-tab-close svg,
 .right-sidebar-add-tab-button svg {
-  width: 14px;
-  height: 14px;
+  width: var(--section-toolbar-aux-icon-size);
+  height: var(--section-toolbar-aux-icon-size);
 }
 
 .right-sidebar-add-tab-button {
   align-self: center;
   flex: 0 0 auto;
-  width: var(--section-toolbar-control-size);
-  min-width: var(--section-toolbar-control-size);
-  height: var(--section-toolbar-control-size);
-  margin: 3px 4px 3px 2px;
-  border-radius: 8px;
-  color: var(--semantic-accent-icon);
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  margin: 0 0 0 6px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--right-sidebar-tab-icon-color);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.right-sidebar-add-tab-button:hover,
+.right-sidebar-add-tab-button:focus-visible,
+.right-sidebar-add-tab-button.is-active {
+  background: transparent;
+  border-color: transparent;
+  color: var(--right-sidebar-tab-icon-hover-color);
+  outline: none;
 }
 
 .right-sidebar-launcher {
   min-height: 100%;
-  padding: 72px 18px 24px;
+  padding: clamp(24px, 6vh, 48px) 24px;
   display: grid;
+  grid-template-columns: minmax(0, min(300px, 100%));
   justify-content: center;
-  align-content: start;
-  gap: 12px;
+  align-content: center;
+  gap: 14px;
   background: var(--seg-panel);
 }
 
 .right-sidebar-launcher-card {
-  width: min(100%, 330px);
-  min-height: 116px;
-  padding: 18px 20px;
+  width: 100%;
+  min-height: 128px;
+  padding: 20px 24px;
   display: grid;
   justify-items: center;
   align-content: center;
-  gap: 8px;
+  gap: 9px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: rgba(84, 96, 109, 0.05);
@@ -303,8 +345,8 @@
 }
 
 .right-sidebar-launcher-card-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
 }
 
 .right-sidebar-launcher-card-title,
@@ -313,14 +355,14 @@
 }
 
 .right-sidebar-launcher-card-title {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 700;
   letter-spacing: 0;
 }
 
 .right-sidebar-launcher-card-description {
   color: var(--seg-text-3);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0;
 }

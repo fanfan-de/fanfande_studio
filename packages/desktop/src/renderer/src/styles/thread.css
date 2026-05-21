@@ -2408,6 +2408,24 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
   box-shadow: none;
 }
 
+.right-sidebar-side-chat-panel {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.inline-side-chat-thread.is-sidebar {
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 8px 10px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
 .inline-side-chat-thread::before {
   content: none;
 }
@@ -2641,9 +2659,19 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
   min-width: 0;
 }
 
+.inline-side-chat-thread.is-sidebar .inline-side-chat-body {
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
 .inline-side-chat-thread .thread-shell {
   padding: 0;
   min-width: 0;
+}
+
+.inline-side-chat-thread.is-sidebar .thread-shell {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .inline-side-chat-thread .thread-column {
@@ -2653,6 +2681,10 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
   margin: 0;
   padding: 0;
   gap: 12px;
+}
+
+.inline-side-chat-thread.is-sidebar .thread-column {
+  overflow-y: auto;
 }
 
 .inline-side-chat-thread .turn {

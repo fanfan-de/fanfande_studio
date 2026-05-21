@@ -133,6 +133,12 @@ function getRightSidebarTabTargetKey(input: RightSidebarOpenTabInput) {
       return ["review", normalizeRightSidebarTargetSegment(input.sessionID)].join(":")
     case "terminal":
       return ["terminal", normalizeRightSidebarTargetSegment(input.sessionID)].join(":")
+    case "side-chat":
+      return [
+        "side-chat",
+        normalizeRightSidebarTargetSegment(input.parentSessionID),
+        normalizeRightSidebarTargetSegment(input.anchorMessageID),
+      ].join(":")
   }
 }
 
@@ -148,6 +154,8 @@ function getRightSidebarTabTitle(input: RightSidebarOpenTabInput) {
       return "Review"
     case "terminal":
       return "Terminal"
+    case "side-chat":
+      return "Side chat"
   }
 }
 
@@ -188,6 +196,14 @@ function createRightSidebarTab(input: RightSidebarOpenTabInput): RightSidebarTab
       return {
         ...base,
         kind: "terminal",
+        sessionID: input.sessionID,
+      }
+    case "side-chat":
+      return {
+        ...base,
+        kind: "side-chat",
+        anchorMessageID: input.anchorMessageID,
+        parentSessionID: input.parentSessionID,
         sessionID: input.sessionID,
       }
   }
@@ -233,6 +249,16 @@ function updateRightSidebarTab(
         kind: "terminal",
         title,
         targetKey,
+        sessionID: update.sessionID ?? tab.sessionID,
+      }
+    case "side-chat":
+      return {
+        ...tab,
+        kind: "side-chat",
+        title,
+        targetKey,
+        anchorMessageID: update.anchorMessageID ?? tab.anchorMessageID,
+        parentSessionID: update.parentSessionID ?? tab.parentSessionID,
         sessionID: update.sessionID ?? tab.sessionID,
       }
   }

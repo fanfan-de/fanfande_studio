@@ -1421,7 +1421,7 @@ describe("App", () => {
     expect(within(inspector).queryByText("Current execution state")).not.toBeInTheDocument()
   })
 
-  it("opens side chat inline under the assistant response without replacing the current session tab", async () => {
+  it("opens side chat in the right sidebar without replacing the current session tab", async () => {
     render(<App />)
 
     const threadSideChatButton = await screen.findByRole("button", { name: "Open side chat" })
@@ -1438,7 +1438,7 @@ describe("App", () => {
       })
     })
 
-    const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
+    const nestedSideChat = await screen.findByRole("region", { name: "Side chat" })
 
     expect(currentSessionTab).toHaveAttribute("aria-pressed", "true")
     expect(screen.queryByRole("button", { name: "Switch to session Chat 1 / Side chat" })).not.toBeInTheDocument()
@@ -1465,11 +1465,11 @@ describe("App", () => {
 
     fireEvent.click(threadSideChatButton)
 
-    const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
+    const nestedSideChat = await screen.findByRole("region", { name: "Side chat" })
     fireEvent.click(within(nestedSideChat).getByRole("button", { name: "Hide side chat" }))
 
     await waitFor(() => {
-      expect(screen.queryByRole("region", { name: "Nested side chat" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("region", { name: "Side chat" })).not.toBeInTheDocument()
     })
 
     const responseActionRow = (assistantTurn as HTMLElement).querySelector(".assistant-response-side-chat") as HTMLElement | null
@@ -1481,7 +1481,7 @@ describe("App", () => {
     )
   })
 
-  it("adds and switches between multiple inline side chat tabs for one assistant response", async () => {
+  it("adds and switches between multiple right sidebar side chat tabs for one assistant response", async () => {
     const createSideChat = vi.mocked(window.desktop!.createSideChat!)
     createSideChat.mockReset()
     createSideChat
@@ -1522,8 +1522,8 @@ describe("App", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Open side chat" }))
 
-    const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
-    const getNestedSideChat = () => screen.getByRole("region", { name: "Nested side chat" })
+    const nestedSideChat = await screen.findByRole("region", { name: "Side chat" })
+    const getNestedSideChat = () => screen.getByRole("region", { name: "Side chat" })
     expect(await within(nestedSideChat).findByRole("tab", { name: "Chat 1" })).toHaveAttribute("aria-selected", "true")
 
     setComposerDraftValue(within(nestedSideChat).getByRole("textbox", { name: "Task draft" }), "First side chat draft")
@@ -1566,7 +1566,7 @@ describe("App", () => {
     })
   })
 
-  it("archives an inline side chat tab from the tab context menu", async () => {
+  it("archives a right sidebar side chat tab from the tab context menu", async () => {
     const createSideChat = vi.mocked(window.desktop!.createSideChat!)
     createSideChat.mockReset()
     createSideChat
@@ -1615,8 +1615,8 @@ describe("App", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Open side chat" }))
 
-    await screen.findByRole("region", { name: "Nested side chat" })
-    const getNestedSideChat = () => screen.getByRole("region", { name: "Nested side chat" })
+    await screen.findByRole("region", { name: "Side chat" })
+    const getNestedSideChat = () => screen.getByRole("region", { name: "Side chat" })
     fireEvent.click(await within(getNestedSideChat()).findByRole("button", { name: "Create side chat tab" }))
 
     await waitFor(() => {
@@ -1653,7 +1653,7 @@ describe("App", () => {
     expect(within(assistantTurn as HTMLElement).getByRole("button", { name: "Copied assistant response" })).toBeInTheDocument()
   })
 
-  it("renders full assistant sections inside inline side chat", async () => {
+  it("renders full assistant sections inside right sidebar side chat", async () => {
     window.desktop!.agentSession!.loadHistory = vi.fn().mockImplementation(async ({ backendSessionID: sessionID }: { backendSessionID: string }) => {
       if (sessionID !== "session-side-chat-1") return []
 
@@ -1718,7 +1718,7 @@ describe("App", () => {
       })
     })
 
-    const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
+    const nestedSideChat = await screen.findByRole("region", { name: "Side chat" })
     expect(await within(nestedSideChat).findByText("I found the root cause in the config parser.")).toBeInTheDocument()
 
     expect(within(nestedSideChat).queryByText("Scoped")).not.toBeInTheDocument()
@@ -1734,12 +1734,12 @@ describe("App", () => {
     expect(within(nestedSideChat).getByRole("region", { name: "File Changes" })).toBeInTheDocument()
   })
 
-  it("clears the inline side chat draft after sending a prompt", async () => {
+  it("clears the right sidebar side chat draft after sending a prompt", async () => {
     render(<App />)
 
     fireEvent.click(await screen.findByRole("button", { name: "Open side chat" }))
 
-    const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
+    const nestedSideChat = await screen.findByRole("region", { name: "Side chat" })
     const sideChatDraft = within(nestedSideChat).getByRole("textbox", { name: "Task draft" })
 
     setComposerDraftValue(sideChatDraft, "Drill into the parser failure from this reply")
@@ -10540,7 +10540,7 @@ describe("App", () => {
     })
   })
 
-  it("removes inline side chats when archiving a parent session cascade", async () => {
+  it("removes right sidebar side chats when archiving a parent session cascade", async () => {
     window.desktop!.archiveAgentSession = vi.fn().mockResolvedValue({
       sessionID: "session-chat-1",
       projectID: "project-2",
@@ -10552,7 +10552,7 @@ describe("App", () => {
     render(<App />)
 
     fireEvent.click(await screen.findByRole("button", { name: "Open side chat" }))
-    expect(await screen.findByRole("region", { name: "Nested side chat" })).toBeInTheDocument()
+    expect(await screen.findByRole("region", { name: "Side chat" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Archive session Chat 1" }))
 
@@ -10562,7 +10562,7 @@ describe("App", () => {
       })
     })
     await waitFor(() => {
-      expect(screen.queryByRole("region", { name: "Nested side chat" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("region", { name: "Side chat" })).not.toBeInTheDocument()
       expect(screen.queryByText("Anchored reply snapshot")).not.toBeInTheDocument()
       expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
     })
@@ -12053,7 +12053,7 @@ describe("App", () => {
     expect(styles).toMatch(
       /\.dockview-theme-anybox\s+\.dockview-workbench-header-actions\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.dockview-theme-anybox\s+\.dockview-workbench-header-actions\s+\.canvas-region-top-menu-add-button:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--dockview-tab-icon-hover-color\);/s,
     )
-    expect(styles).toMatch(/\.right-sidebar-top-menu-tabs\s*\{[^}]*align-items:\s*center;[^}]*gap:\s*4px;/s)
+    expect(styles).toMatch(/\.right-sidebar-top-menu-tabs\s*\{[^}]*align-items:\s*stretch;[^}]*gap:\s*0;/s)
     expect(styles).toMatch(
       /\.left-sidebar-top-menu\s+\.top-menu-view-button,\s*\.right-sidebar-top-menu\s+\.top-menu-view-button\s*\{[^}]*align-self:\s*center;[^}]*border:\s*1px solid transparent;[^}]*background:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon\);/s,
     )
@@ -12176,7 +12176,7 @@ describe("App", () => {
     expect(styles).toMatch(/\.activity-rail\s*\{[^}]*padding:\s*0 0 14px;/s)
     expect(styles).toMatch(/\.activity-rail-top-menu\s*\{[^}]*min-height:\s*var\(--section-toolbar-height\);[^}]*background:\s*var\(--seg-left-sidebar-top-menu-surface\);/s)
     expect(styles).toMatch(/\.activity-rail-top-menu::after\s*\{[^}]*bottom:\s*0;[^}]*height:\s*1px;[^}]*background:\s*var\(--mix-seg-border-76-transparent-24\);/s)
-    expect(styles).toMatch(/\.right-sidebar-top-menu\s*\{[^}]*background:\s*var\(--seg-right-sidebar-top-menu-surface\);/s)
+    expect(styles).toMatch(/\.right-sidebar-top-menu\s*\{[^}]*--right-sidebar-tab-bar-bg:\s*var\(--seg-pane-tab-bar-surface\);[^}]*background:\s*var\(--right-sidebar-tab-bar-bg\);/s)
     expect(styles).toMatch(/--semantic-composer-surface-light:\s*#ffffff;/i)
     expect(styles).toMatch(/--semantic-composer-surface:\s*var\(--semantic-composer-surface-light\);/s)
     expect(styles).toMatch(/--semantic-composer-surface:\s*var\(--semantic-composer-surface-dark\);/s)

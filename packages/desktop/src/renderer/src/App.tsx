@@ -15,12 +15,22 @@ import {
 import { WorkspaceStoreProvider } from "./app/agent-workspace/workspace-store-context"
 import { resolveWorkspaceRelativePath } from "./app/agent-workspace/workspace-loading-hooks"
 import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "./app/thread-markdown"
-import type { ConnectionsTab, SessionDiffFile, ToolPermissionMode } from "./app/types"
+import type {
+  ComposerAttachment,
+  ComposerDraftState,
+  ConnectionsTab,
+  PermissionRequest,
+  SessionDiffFile,
+  SessionSummary,
+  ToolPermissionMode,
+  Turn,
+} from "./app/types"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
 import { useSettingsPage } from "./app/use-settings-page"
 import { createRendererProfilerOnRender } from "./app/perf-profiler"
+import { createEmptyComposerDraftState } from "./app/composer/draft-state"
 import type { BuiltinToolKindKey } from "./app/tools/BuiltinToolsPage"
 import { findSession, isSideChatSession } from "./app/workspace"
 import { WorkbenchShell } from "./app/workbench/WorkbenchShell"
@@ -31,6 +41,9 @@ import {
 } from "./app/workbench/dockview-state"
 import {
   buildWorkbenchPublishSnapshot,
+  collectSideChatSessionsByAnchorMessageID,
+  createSessionWorkbenchTab,
+  getWorkbenchTabKey,
   workbenchPublishSnapshotsAreEqual,
 } from "./app/agent-workspace/workspace-derived-state"
 import type { WorkbenchSharedState, WorkbenchWindowContext } from "../../shared/desktop-ipc-contract"
@@ -46,6 +59,57 @@ const EMPTY_CONNECTION_SEARCH_QUERIES: Record<ConnectionsTab, string> = {
   plugins: "",
   connectors: "",
   mcp: "",
+}
+const EMPTY_SIDE_CHAT_DRAFT_STATE = createEmptyComposerDraftState()
+const EMPTY_SIDE_CHAT_ATTACHMENTS: ComposerAttachment[] = []
+const EMPTY_SIDE_CHAT_PERMISSION_REQUESTS: PermissionRequest[] = []
+const EMPTY_SIDE_CHAT_TURNS: Turn[] = []
+
+interface RightSidebarSideChatPanelState {
+  activeProjectID: string | null
+  activeTabID: string
+  anchorMessageID: string
+  attachments: ComposerAttachment[]
+  draftState: ComposerDraftState
+  isCancelling: boolean
+  isInterruptible: boolean
+  isSending: boolean
+  parentSessionID: string
+  pendingPermissionRequests: PermissionRequest[]
+  session: SessionSummary
+  sideChatSessions: SessionSummary[]
+  tabKey: string
+  turns: Turn[]
+  workspaceDirectory: string | null
+  workspaceID: string | null
+}
+
+function rightSidebarSideChatPanelStatesAreEqual(
+  left: RightSidebarSideChatPanelState | null,
+  right: RightSidebarSideChatPanelState | null,
+) {
+  if (left === right) return true
+  if (!left || !right) return false
+
+  return (
+    left.activeProjectID === right.activeProjectID &&
+    left.activeTabID === right.activeTabID &&
+    left.anchorMessageID === right.anchorMessageID &&
+    left.attachments === right.attachments &&
+    left.draftState === right.draftState &&
+    left.isCancelling === right.isCancelling &&
+    left.isInterruptible === right.isInterruptible &&
+    left.isSending === right.isSending &&
+    left.parentSessionID === right.parentSessionID &&
+    left.pendingPermissionRequests === right.pendingPermissionRequests &&
+    left.session === right.session &&
+    left.sideChatSessions.length === right.sideChatSessions.length &&
+    left.sideChatSessions.every((session, index) => session === right.sideChatSessions[index]) &&
+    left.tabKey === right.tabKey &&
+    left.turns === right.turns &&
+    left.workspaceDirectory === right.workspaceDirectory &&
+    left.workspaceID === right.workspaceID
+  )
 }
 
 function getErrorMessage(error: unknown) {
@@ -714,6 +778,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     activateRightSidebarTab,
     closeRightSidebarTab,
     openOrFocusRightSidebarTab,
+    updateRightSidebarTab,
     handleDockviewActiveChange,
     handleForkFromMessage,
     handleMovePanelIntoSurface,
@@ -1059,6 +1124,70 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     return session && !isSideChatSession(session) ? session.id : null
   })
   const activeRightSidebarTab = rightSidebar.tabs.find((tab) => tab.id === rightSidebar.activeTabID) ?? null
+  const rightSidebarSideChatPanelState = useWorkspaceStoreSelector(
+    workspaceStore,
+    (state): RightSidebarSideChatPanelState | null => {
+      const tab = state.sessions.rightSidebar.tabs.find((candidate) => (
+        candidate.id === state.sessions.rightSidebar.activeTabID
+      ))
+      if (!tab || tab.kind !== "side-chat") return null
+
+      const sideChatSessionsByAnchorMessageID = collectSideChatSessionsByAnchorMessageID(
+        state.sessions.workspaces,
+        tab.parentSessionID,
+      )
+      const sideChatSessions = sideChatSessionsByAnchorMessageID[tab.anchorMessageID] ?? []
+      const activeMappedSessionID = state.sessions.activeSideChatSessionIDByParentSessionID[tab.parentSessionID] ?? null
+      const activeMappedSelection = findSession(state.sessions.workspaces, activeMappedSessionID)
+      const activeMappedSession =
+        activeMappedSelection.session?.origin?.parentSessionID === tab.parentSessionID &&
+        activeMappedSelection.session.origin.anchorMessageID === tab.anchorMessageID
+          ? activeMappedSelection.session
+          : null
+      const tabSessionSelection = findSession(state.sessions.workspaces, tab.sessionID)
+      const tabSession =
+        tabSessionSelection.session?.origin?.parentSessionID === tab.parentSessionID &&
+        tabSessionSelection.session.origin.anchorMessageID === tab.anchorMessageID
+          ? tabSessionSelection.session
+          : null
+      const session = activeMappedSession ?? tabSession ?? sideChatSessions[sideChatSessions.length - 1] ?? null
+      if (!session) return null
+
+      const sessionSelection = findSession(state.sessions.workspaces, session.id)
+      const tabKey = getWorkbenchTabKey(createSessionWorkbenchTab(session.id))
+      const turns = state.agentStream.conversations[session.id] ?? EMPTY_SIDE_CHAT_TURNS
+      const activity = state.agentStream.conversationActivityBySession[session.id]
+      const isInterruptible = Boolean(
+        state.composer.isSendingByTabKey[tabKey] ||
+        state.agentStream.cancellingSessionIDs[session.id] ||
+        activity?.hasStreamingAssistantTurn ||
+        turns.some((turn) => turn.kind === "assistant" && turn.isStreaming),
+      )
+
+      return {
+        activeProjectID: sessionSelection.workspace?.project.id ?? null,
+        activeTabID: tab.id,
+        anchorMessageID: tab.anchorMessageID,
+        attachments: state.composer.composerAttachmentsByTabKey[tabKey] ?? EMPTY_SIDE_CHAT_ATTACHMENTS,
+        draftState: state.composer.composerDraftStateByTabKey[tabKey] ?? EMPTY_SIDE_CHAT_DRAFT_STATE,
+        isCancelling: Boolean(state.agentStream.cancellingSessionIDs[session.id]),
+        isInterruptible,
+        isSending: Boolean(state.composer.isSendingByTabKey[tabKey]),
+        parentSessionID: tab.parentSessionID,
+        pendingPermissionRequests:
+          state.agentStream.pendingPermissionRequestsBySession[session.id] ?? EMPTY_SIDE_CHAT_PERMISSION_REQUESTS,
+        session,
+        sideChatSessions: sideChatSessions.some((sideChat) => sideChat.id === session.id)
+          ? sideChatSessions
+          : [...sideChatSessions, session],
+        tabKey,
+        turns,
+        workspaceDirectory: sessionSelection.workspace?.directory ?? null,
+        workspaceID: sessionSelection.workspace?.id ?? null,
+      }
+    },
+    rightSidebarSideChatPanelStatesAreEqual,
+  )
   const rightSidebarProfiler = useMemo(
     () => createRendererProfilerOnRender("RightSidebar commit", () => ({
       activeTabID: activeRightSidebarTab?.id ?? null,
@@ -1105,6 +1234,37 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
       sessionID: terminalSessionID,
       title: "Terminal",
     })
+  }
+
+  async function handleOpenSideChatInRightSidebar(
+    anchorMessageID: string,
+    options?: { parentSessionID?: string | null; paneID?: string | null },
+  ) {
+    if (isRightSidebarCollapsed) {
+      handleRightSidebarToggle()
+    }
+
+    await handleOpenSideChat(anchorMessageID, {
+      ...options,
+      placement: "right-sidebar",
+    })
+  }
+
+  async function handleSelectSideChatTabInRightSidebar(sessionID: string, tabID = activeRightSidebarTab?.id ?? null) {
+    await handleSelectSideChatTab(sessionID)
+    if (tabID) {
+      updateRightSidebarTab(tabID, {
+        sessionID,
+      })
+    }
+  }
+
+  function handleActivateRightSidebarTab(tabID: string) {
+    const tab = rightSidebar.tabs.find((candidate) => candidate.id === tabID) ?? null
+    activateRightSidebarTab(tabID)
+    if (tab?.kind === "side-chat" && tab.sessionID) {
+      void handleSelectSideChatTabInRightSidebar(tab.sessionID, tab.id)
+    }
   }
 
   useEffect(() => {
@@ -1766,12 +1926,13 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onArtifactLinkOpen={handleArtifactLinkOpen}
                 onLocalFileLinkOpen={handleLocalFileLinkOpen}
                 onMoveSessionPanel={handleMoveSessionPanel}
+                sideChatPlacement="right-sidebar"
                 onCreateSideChatTab={handleCreateSideChatTab}
                 onDeleteSideChatTab={handleDeleteSideChatTab}
                 onBranchSelect={handleSessionBranchSelect}
                 onClearComposerParentMessage={handleClearComposerParentMessage}
                 onOpenCreateSessionTab={handleOpenCreateSessionTab}
-                onOpenSideChat={handleOpenSideChat}
+                onOpenSideChat={handleOpenSideChatInRightSidebar}
                 onForkFromMessage={handleForkFromMessage}
                 onPermissionRequestResponse={handlePermissionRequestResponse}
                 onApproveProposedPlan={handleApproveProposedPlan}
@@ -1816,18 +1977,44 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 activeWorkspaceFileScopeName={activeWorkspaceFileScopeName}
                 activeSessionDirectory={activeSessionDirectory}
                 activeSession={activeSession}
+                assistantTraceVisibility={assistantTraceVisibility}
                 canOpenReview={Boolean(activeSession)}
                 canOpenTerminal={Boolean(terminalSessionID)}
                 canInsertWorkspaceFileCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
+                composerRefreshVersion={composerRefreshVersion}
+                isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+                isResolvingPermissionRequest={isResolvingPermissionRequest}
+                permissionRequestActionError={permissionRequestActionError}
+                permissionRequestActionRequestID={permissionRequestActionRequestID}
                 rightSidebar={rightSidebar}
                 selectedDiffFileBySession={selectedDiffFileBySession}
                 sessionDiffBySession={sessionDiffBySession}
                 sessionDiffStateBySession={sessionDiffStateBySession}
+                sideChatPanelState={rightSidebarSideChatPanelState}
                 workspaces={workspaces}
-                onActivateTab={activateRightSidebarTab}
+                onActivateTab={handleActivateRightSidebarTab}
                 onCloseTab={closeRightSidebarTab}
+                onAskUserQuestionAnswer={handleAskUserQuestionAnswer}
+                onArtifactLinkOpen={(target) =>
+                  handleArtifactLinkOpen({
+                    paneID: "right-sidebar",
+                    sessionID: rightSidebarSideChatPanelState?.session.id ?? null,
+                    target,
+                    workspaceDirectory: rightSidebarSideChatPanelState?.workspaceDirectory ?? null,
+                    workspaceID: rightSidebarSideChatPanelState?.workspaceID ?? null,
+                  })
+                }
                 onDiffFileSelect={handleActiveSessionDiffFileSelect}
                 onDiffFileRestore={handleActiveSessionDiffFileRestore}
+                onLocalFileLinkOpen={(target) =>
+                  handleLocalFileLinkOpen({
+                    paneID: "right-sidebar",
+                    sessionID: rightSidebarSideChatPanelState?.session.id ?? null,
+                    target,
+                    workspaceDirectory: rightSidebarSideChatPanelState?.workspaceDirectory ?? null,
+                    workspaceID: rightSidebarSideChatPanelState?.workspaceID ?? null,
+                  })
+                }
                 onPreviewActiveInteractionChange={handlePreviewActiveInteractionChange}
                 onPreviewCommitInteraction={handlePreviewCommitInteraction}
                 onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
@@ -1835,6 +2022,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onPreviewOpenExternal={handlePreviewOpenExternal}
                 onPreviewOpenUrl={handlePreviewOpenUrl}
                 onPreviewReload={handlePreviewReload}
+                onPermissionRequestResponse={handlePermissionRequestResponse}
                 onWorkspaceFileCommentCancel={handleWorkspaceFileCommentCancel}
                 onWorkspaceFileCommentChange={handleWorkspaceFileCommentChange}
                 onWorkspaceFileCommentConfirm={handleWorkspaceFileCommentConfirm}
@@ -1845,6 +2033,57 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onOpenFilesTab={handleOpenRightSidebarFilesTab}
                 onOpenReviewTab={handleOpenRightSidebarReviewTab}
                 onOpenTerminalTab={handleOpenRightSidebarTerminalTab}
+                onSideChatCancelSend={() => handleCancelSend({
+                  sessionID: rightSidebarSideChatPanelState?.session.id,
+                  tabKey: rightSidebarSideChatPanelState?.tabKey,
+                })}
+                onSideChatCreate={(anchorMessageID, parentSessionID) =>
+                  handleCreateSideChatTab(anchorMessageID, {
+                    parentSessionID,
+                    placement: "right-sidebar",
+                  })
+                }
+                onSideChatDelete={handleDeleteSideChatTab}
+                onSideChatDraftStateChange={(value) => {
+                  const tabKey = rightSidebarSideChatPanelState?.tabKey
+                  if (tabKey) {
+                    setDraftForTab(tabKey, value)
+                  }
+                }}
+                onSideChatPasteImageAttachments={({ allowImage, disabledReason, images }) =>
+                  handlePasteComposerImageAttachments({
+                    allowImage,
+                    disabledReason,
+                    images,
+                    tabKey: rightSidebarSideChatPanelState?.tabKey,
+                  })
+                }
+                onSideChatPickAttachments={({ allowImage, allowPdf, disabledReason }) =>
+                  handlePickComposerAttachments({
+                    allowImage,
+                    allowPdf,
+                    disabledReason,
+                    tabKey: rightSidebarSideChatPanelState?.tabKey,
+                  })
+                }
+                onSideChatRemoveAttachment={(path) => handleRemoveComposerAttachment(path, rightSidebarSideChatPanelState?.tabKey)}
+                onSideChatSelect={handleSelectSideChatTabInRightSidebar}
+                onSideChatSend={(input) =>
+                  handleSend({
+                    attachmentError: input.attachmentError,
+                    draftStateOverride: input.draftStateOverride,
+                    preserveComposerState: Boolean(input.questionAnswer),
+                    questionAnswer: input.questionAnswer,
+                    selectedReasoningEffort: input.selectedReasoningEffort,
+                    selectedModel: input.selectedModel,
+                    selectedSkillIDs: input.selectedSkillIDs,
+                    sessionID: rightSidebarSideChatPanelState?.session.id,
+                    submissionMode: input.submissionMode,
+                    tabKey: rightSidebarSideChatPanelState?.tabKey,
+                    waitForPendingModelSelection: input.waitForPendingModelSelection,
+                  })
+                }
+                onSessionModelSelectionChange={handleSessionModelSelectionChange}
                 renderTerminalTab={(sessionID) => (
                   <TerminalAreaHost
                     brandTheme={brandTheme}

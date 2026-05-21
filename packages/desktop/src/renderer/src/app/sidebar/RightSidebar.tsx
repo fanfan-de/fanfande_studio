@@ -7,38 +7,84 @@ import {
   FileSearchIcon,
   PlusIcon,
   PreviewIcon,
+  SideChatIcon,
   TerminalIcon,
 } from "../icons"
 import { UnifiedPreviewPanel } from "../preview/UnifiedPreviewPanel"
 import { ShellTopMenu } from "../shared-ui"
+import { InlineSideChatThread } from "../thread/ThreadView"
 import type {
+  AssistantTraceVisibility,
+  ComposerAttachment,
+  ComposerDraftState,
+  ComposerPastedImageAttachment,
   PreviewInteractionCommitInput,
   PreviewInteractionPluginID,
+  PermissionDecision,
+  PermissionRequest,
+  ReasoningEffort,
   RightSidebarState,
   RightSidebarTab,
   SessionDiffState,
   SessionDiffSummary,
   SessionSummary,
+  Turn,
+  UserTurn,
   WorkspaceGroup,
 } from "../types"
+import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "../thread-markdown"
+
+interface RightSidebarSideChatPanelState {
+  activeProjectID: string | null
+  activeTabID: string
+  anchorMessageID: string
+  attachments: ComposerAttachment[]
+  draftState: ComposerDraftState
+  isCancelling: boolean
+  isInterruptible: boolean
+  isSending: boolean
+  parentSessionID: string
+  pendingPermissionRequests: PermissionRequest[]
+  session: SessionSummary
+  sideChatSessions: SessionSummary[]
+  tabKey: string
+  turns: Turn[]
+}
 
 interface RightSidebarProps {
   activeSession: SessionSummary | null
   activeSessionDirectory: string | null
   activeWorkspaceFileScopeDirectory: string | null
   activeWorkspaceFileScopeName: string | null
+  assistantTraceVisibility: AssistantTraceVisibility
   canInsertWorkspaceFileCommentsIntoDraft: boolean
   canOpenReview: boolean
   canOpenTerminal: boolean
+  composerRefreshVersion: number
+  isAgentDebugTraceEnabled: boolean
+  isResolvingPermissionRequest: boolean
+  permissionRequestActionError: string | null
+  permissionRequestActionRequestID: string | null
   rightSidebar: RightSidebarState
   selectedDiffFileBySession: Record<string, string | null>
   sessionDiffBySession: Record<string, SessionDiffSummary>
   sessionDiffStateBySession: Record<string, SessionDiffState>
+  sideChatPanelState: RightSidebarSideChatPanelState | null
   workspaces: WorkspaceGroup[]
   onActivateTab: (tabID: string) => void
   onCloseTab: (tabID: string) => void
+  onAskUserQuestionAnswer: (input: {
+    freeformText?: string
+    questionID?: string
+    selectedOptions?: string[]
+    sessionID?: string | null
+    tabKey?: string | null
+    text: string
+  }) => void | Promise<void>
   onDiffFileRestore: (file: string, sessionID?: string | null) => void | Promise<void>
   onDiffFileSelect: (file: string | null, sessionID?: string | null) => void
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
+  onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onOpenBrowserTab: () => void
   onOpenFilesTab: () => void
   onOpenReviewTab: () => void
@@ -50,6 +96,43 @@ interface RightSidebarProps {
   onPreviewOpenExternal: () => void | Promise<void>
   onPreviewOpenUrl: (url: string) => void
   onPreviewReload: () => void
+  onPermissionRequestResponse: (input: {
+    sessionID: string
+    request: PermissionRequest
+    decision: PermissionDecision
+    note?: string
+  }) => void | Promise<void>
+  onSideChatCancelSend?: () => void | Promise<void>
+  onSideChatCreate: (anchorMessageID: string, parentSessionID: string) => void | Promise<void>
+  onSideChatDelete: (sessionID: string) => void | Promise<void>
+  onSideChatDraftStateChange: (value: ComposerDraftState) => void
+  onSideChatPasteImageAttachments?: (input: {
+    allowImage: boolean
+    disabledReason: string | null
+    images: ComposerPastedImageAttachment[]
+  }) => void | Promise<void>
+  onSideChatPickAttachments: (input: {
+    allowImage: boolean
+    allowPdf: boolean
+    disabledReason: string | null
+  }) => void | Promise<void>
+  onSideChatRemoveAttachment: (path: string) => void
+  onSideChatSelect: (sessionID: string) => void | Promise<void>
+  onSideChatSend: (input: {
+    attachmentError?: string | null
+    draftStateOverride?: ComposerDraftState
+    questionAnswer?: {
+      questionID: string
+      selectedOptions?: string[]
+      freeformText?: string
+    }
+    selectedReasoningEffort?: ReasoningEffort | null
+    selectedModel?: string | null
+    selectedSkillIDs: string[]
+    submissionMode?: UserTurn["submissionMode"]
+    waitForPendingModelSelection: () => Promise<void>
+  }) => void | Promise<void>
+  onSessionModelSelectionChange?: (sessionID: string, selection: SessionSummary["modelSelection"] | undefined) => void
   onWorkspaceFileCommentCancel: () => void
   onWorkspaceFileCommentChange: (text: string) => void
   onWorkspaceFileCommentConfirm: () => void
@@ -60,11 +143,13 @@ interface RightSidebarProps {
   windowControls?: ReactNode
 }
 
+type RightSidebarLauncherTabKind = Exclude<RightSidebarTab["kind"], "side-chat">
+
 interface LauncherCard {
   description: string
   disabled?: boolean
   icon: ReactNode
-  key: RightSidebarTab["kind"]
+  key: RightSidebarLauncherTabKind
   title: string
 }
 
@@ -89,6 +174,8 @@ function getTabIcon(kind: RightSidebarTab["kind"]) {
       return <ChangesIcon />
     case "terminal":
       return <TerminalIcon />
+    case "side-chat":
+      return <SideChatIcon />
   }
 }
 
@@ -104,6 +191,8 @@ function getViewHostClassName(tab: RightSidebarTab | null, isLauncherVisible: bo
       return "right-sidebar-view-host is-changes"
     case "terminal":
       return "right-sidebar-view-host is-terminal"
+    case "side-chat":
+      return "right-sidebar-view-host is-side-chat"
   }
 }
 
@@ -112,18 +201,28 @@ export function RightSidebar({
   activeSessionDirectory,
   activeWorkspaceFileScopeDirectory,
   activeWorkspaceFileScopeName,
+  assistantTraceVisibility,
   canInsertWorkspaceFileCommentsIntoDraft,
   canOpenReview,
   canOpenTerminal,
+  composerRefreshVersion,
+  isAgentDebugTraceEnabled,
+  isResolvingPermissionRequest,
+  permissionRequestActionError,
+  permissionRequestActionRequestID,
   rightSidebar,
   selectedDiffFileBySession,
   sessionDiffBySession,
   sessionDiffStateBySession,
+  sideChatPanelState,
   workspaces,
   onActivateTab,
   onCloseTab,
+  onAskUserQuestionAnswer,
   onDiffFileRestore,
   onDiffFileSelect,
+  onArtifactLinkOpen,
+  onLocalFileLinkOpen,
   onOpenBrowserTab,
   onOpenFilesTab,
   onOpenReviewTab,
@@ -135,6 +234,17 @@ export function RightSidebar({
   onPreviewOpenExternal,
   onPreviewOpenUrl,
   onPreviewReload,
+  onPermissionRequestResponse,
+  onSideChatCancelSend,
+  onSideChatCreate,
+  onSideChatDelete,
+  onSideChatDraftStateChange,
+  onSideChatPasteImageAttachments,
+  onSideChatPickAttachments,
+  onSideChatRemoveAttachment,
+  onSideChatSelect,
+  onSideChatSend,
+  onSessionModelSelectionChange,
   onWorkspaceFileCommentCancel,
   onWorkspaceFileCommentChange,
   onWorkspaceFileCommentConfirm,
@@ -203,7 +313,7 @@ export function RightSidebar({
     onCloseTab(tabID)
   }
 
-  function handleOpenLauncherCard(kind: RightSidebarTab["kind"]) {
+  function handleOpenLauncherCard(kind: RightSidebarLauncherTabKind) {
     switch (kind) {
       case "files":
         onOpenFilesTab()
@@ -292,6 +402,65 @@ export function RightSidebar({
       }
       case "terminal":
         return renderTerminalTab(activeTab.sessionID)
+      case "side-chat":
+        if (!sideChatPanelState || sideChatPanelState.activeTabID !== activeTab.id) {
+          return (
+            <div className="right-sidebar-empty" role="status">
+              <p>Side chat is unavailable.</p>
+            </div>
+          )
+        }
+
+        return (
+          <div className="right-sidebar-side-chat-panel">
+            <InlineSideChatThread
+              activeProjectID={sideChatPanelState.activeProjectID}
+              ariaLabel="Side chat"
+              attachments={sideChatPanelState.attachments}
+              assistantTraceVisibility={assistantTraceVisibility}
+              composerRefreshVersion={composerRefreshVersion}
+              draftState={sideChatPanelState.draftState}
+              isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+              isResolvingPermissionRequest={isResolvingPermissionRequest}
+              isCancelling={sideChatPanelState.isCancelling}
+              isInterruptible={sideChatPanelState.isInterruptible}
+              isSending={sideChatPanelState.isSending}
+              pendingPermissionRequests={sideChatPanelState.pendingPermissionRequests}
+              permissionRequestActionError={permissionRequestActionError}
+              permissionRequestActionRequestID={permissionRequestActionRequestID}
+              session={sideChatPanelState.session}
+              sideChatSessions={sideChatPanelState.sideChatSessions}
+              turns={sideChatPanelState.turns}
+              onAskUserQuestionAnswer={(answer) =>
+                onAskUserQuestionAnswer({
+                  freeformText: answer.freeformText,
+                  questionID: answer.questionID,
+                  selectedOptions: answer.selectedOptions,
+                  sessionID: sideChatPanelState.session.id,
+                  tabKey: sideChatPanelState.tabKey,
+                  text: answer.text,
+                })
+              }
+              onArtifactLinkOpen={onArtifactLinkOpen}
+              onCancelSend={onSideChatCancelSend}
+              onCreateSideChat={() =>
+                onSideChatCreate(sideChatPanelState.anchorMessageID, sideChatPanelState.parentSessionID)
+              }
+              onDeleteSideChat={onSideChatDelete}
+              onDraftStateChange={onSideChatDraftStateChange}
+              onHide={() => handleCloseTab(activeTab.id)}
+              onLocalFileLinkOpen={onLocalFileLinkOpen}
+              onPasteImageAttachments={onSideChatPasteImageAttachments}
+              onPermissionRequestResponse={onPermissionRequestResponse}
+              onPickAttachments={onSideChatPickAttachments}
+              onRemoveAttachment={onSideChatRemoveAttachment}
+              onSelectSideChat={onSideChatSelect}
+              onSend={onSideChatSend}
+              onSessionModelSelectionChange={onSessionModelSelectionChange}
+              variant="sidebar"
+            />
+          </div>
+        )
     }
   }
 

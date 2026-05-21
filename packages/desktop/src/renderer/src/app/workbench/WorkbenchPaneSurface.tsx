@@ -103,6 +103,7 @@ export interface WorkbenchPaneSurfaceProps {
   workspaces: WorkspaceGroup[]
   readThreadScrollSnapshot: (key: string) => ThreadScrollSnapshot | null
   saveThreadScrollSnapshot: (key: string, snapshot: ThreadScrollSnapshot) => void
+  sideChatPlacement?: "inline" | "right-sidebar"
   onCreateSessionSubmit: (createSessionTabID?: string | null, paneID?: string) => Promise<void>
   onCreateSessionWorkspaceChange: (workspaceID: string, createSessionTabID?: string | null) => void
   onInspectFileInSidebar: (file: string | null, sessionID: string | null, paneID: string) => void
@@ -120,9 +121,9 @@ export interface WorkbenchPaneSurfaceProps {
     workspaceDirectory: string | null
     workspaceID: string | null
   }) => void
-  onCreateSideChatTab: (anchorMessageID: string, options?: { paneID?: string | null; parentSessionID?: string | null }) => Promise<void>
+  onCreateSideChatTab: (anchorMessageID: string, options?: { paneID?: string | null; parentSessionID?: string | null; placement?: "inline" | "right-sidebar" }) => Promise<void>
   onDeleteSideChatTab: (sessionID: string) => Promise<void>
-  onOpenSideChat: (anchorMessageID: string, options?: { paneID?: string | null; parentSessionID?: string | null }) => Promise<void>
+  onOpenSideChat: (anchorMessageID: string, options?: { paneID?: string | null; parentSessionID?: string | null; placement?: "inline" | "right-sidebar" }) => Promise<void>
   onBranchSelect: (input: { messageID: string; sessionID?: string | null }) => Promise<void>
   onClearComposerParentMessage: (input?: { tabKey?: string | null }) => void
   onForkFromMessage: (messageID: string, options?: { tabKey?: string | null }) => void
@@ -235,6 +236,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
   workspaces,
   readThreadScrollSnapshot,
   saveThreadScrollSnapshot,
+  sideChatPlacement = "inline",
   onCreateSessionSubmit,
   onCreateSessionWorkspaceChange,
   onInspectFileInSidebar,
@@ -507,6 +509,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                   sideChatSession={pane.activeSideChatSession}
                   sideChatSessionsByAnchorMessageID={pane.sideChatSessionsByAnchorMessageID}
                   sideChatTurns={activeSideChatTurns}
+                  sideChatPlacement={sideChatPlacement === "right-sidebar" ? "external" : "inline"}
                   scrollStateKey={pane.tabKey}
                   threadColumnRef={threadColumnRef}
                   isThreadVisible={pane.isActivePanel}
@@ -551,12 +554,14 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                     void onOpenSideChat(anchorMessageID, {
                       paneID: pane.id,
                       parentSessionID: pane.sessionID,
+                      placement: sideChatPlacement,
                     })
                   }
                   onSideChatCreate={(anchorMessageID) =>
                     void onCreateSideChatTab(anchorMessageID, {
                       paneID: pane.id,
                       parentSessionID: pane.sessionID,
+                      placement: sideChatPlacement,
                     })
                   }
                   onSideChatDelete={(sessionID) => void onDeleteSideChatTab(sessionID)}

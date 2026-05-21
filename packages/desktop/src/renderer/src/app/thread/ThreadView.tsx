@@ -118,6 +118,7 @@ interface ThreadViewProps {
   isThreadVisible?: boolean
   readScrollSnapshot?: (key: string) => ThreadScrollSnapshot | null
   saveScrollSnapshot?: (key: string, snapshot: ThreadScrollSnapshot) => void
+  sideChatPlacement?: "inline" | "external"
   onAskUserQuestionAnswer: QuestionAnswerHandler
   onSideChatDraftStateChange?: (value: ComposerDraftState) => void
   onSideChatPickAttachments?: (input: {
@@ -2345,7 +2346,7 @@ function ImageLightbox({
   )
 }
 
-interface InlineSideChatThreadProps {
+export interface InlineSideChatThreadProps {
   activeProjectID: string | null
   attachments: ComposerAttachment[]
   assistantTraceVisibility: AssistantTraceVisibility
@@ -2401,9 +2402,11 @@ interface InlineSideChatThreadProps {
   }) => void | Promise<void>
   onSelectSideChat: (sessionID: string) => void | Promise<void>
   onSessionModelSelectionChange?: (sessionID: string, selection: SessionSummary["modelSelection"] | undefined) => void
+  ariaLabel?: string
+  variant?: "inline" | "sidebar"
 }
 
-function InlineSideChatThread({
+export function InlineSideChatThread({
   activeProjectID,
   attachments,
   assistantTraceVisibility,
@@ -2438,6 +2441,8 @@ function InlineSideChatThread({
   onSend,
   onSelectSideChat,
   onSessionModelSelectionChange,
+  ariaLabel = "Nested side chat",
+  variant = "inline",
 }: InlineSideChatThreadProps) {
   const composer = useProjectComposer({
     attachmentPaths: attachments.map((attachment) => attachment.path),
@@ -2573,7 +2578,10 @@ function InlineSideChatThread({
   }
 
   return (
-    <section className="inline-side-chat-thread" aria-label="Nested side chat">
+    <section
+      className={joinClassNames("inline-side-chat-thread", variant === "sidebar" && "is-sidebar")}
+      aria-label={ariaLabel}
+    >
       <header className="inline-side-chat-header">
         <div className="inline-side-chat-tabs" aria-label="Side chat tabs">
           <div className="inline-side-chat-tab-list" role="tablist" aria-label="Side chat threads">
@@ -4278,6 +4286,7 @@ function getThreadViewPropsChangeReason(left: ThreadViewProps, right: ThreadView
     return "sideChatSessionsByAnchorMessageID"
   }
   if (!areArraysShallowEqual(left.sideChatTurns, right.sideChatTurns)) return "sideChatTurns"
+  if (left.sideChatPlacement !== right.sideChatPlacement) return "sideChatPlacement"
   if (left.scrollStateKey !== right.scrollStateKey) return "scrollStateKey"
   if (left.threadColumnRef !== right.threadColumnRef) return "threadColumnRef"
   if (left.isThreadVisible !== right.isThreadVisible) return "isThreadVisible"
@@ -4344,6 +4353,7 @@ function VisibleThreadView({
   sideChatSession = null,
   sideChatSessionsByAnchorMessageID = {},
   sideChatTurns = [],
+  sideChatPlacement = "inline",
   scrollStateKey,
   threadColumnRef,
   isThreadVisible = true,
@@ -5282,6 +5292,20 @@ function VisibleThreadView({
       canExposeResponseActions &&
       Boolean(onForkFromMessage)
     const activeInlineSideChat = sideChatSession?.origin?.anchorMessageID === sideChatAnchorMessageID ? sideChatSession : null
+    const rendersSideChatInline = sideChatPlacement === "inline"
+    const marksSideChatButtonActive = rendersSideChatInline && Boolean(activeInlineSideChat)
+    const sideChatButtonLabel =
+      rendersSideChatInline && activeInlineSideChat
+        ? "Hide this side chat"
+        : existingSideChatCount > 0
+          ? `Open side chat (${existingSideChatCount})`
+          : "Open side chat"
+    const sideChatButtonTitle =
+      rendersSideChatInline && activeInlineSideChat
+        ? "Hide this side chat"
+        : existingSideChatCount > 0
+          ? `${existingSideChatCount} side chat thread${existingSideChatCount === 1 ? "" : "s"}`
+          : "Open a side chat for this reply"
     const hasAssistantDiffSummary = normalizeTurnDiffSummary(turn.diffSummary).length > 0
     const trailingUserDiffTurn = hasAssistantDiffSummary ? null : getAssistantTrailingUserDiffTurn(activeTurns, turnIndex, turn)
     const shouldRenderResponseActions = Boolean(
@@ -5366,7 +5390,8 @@ function VisibleThreadView({
           ) : null}
           {shouldRenderResponseActions ? (
             <div className="assistant-response-side-chat">
-              {activeInlineSideChat &&
+              {rendersSideChatInline &&
+              activeInlineSideChat &&
               onSideChatDraftStateChange &&
               onSideChatPickAttachments &&
               onSideChatRemoveAttachment &&
@@ -5432,24 +5457,12 @@ function VisibleThreadView({
                   <button
                     className={joinClassNames(
                       "assistant-response-action-button message-action-icon-button",
-                      activeInlineSideChat && "is-active",
+                      marksSideChatButtonActive && "is-active",
                     )}
                     type="button"
-                    aria-label={
-                      activeInlineSideChat
-                        ? "Hide this side chat"
-                        : existingSideChatCount > 0
-                          ? `Open side chat (${existingSideChatCount})`
-                          : "Open side chat"
-                    }
-                    aria-pressed={Boolean(activeInlineSideChat)}
-                    title={
-                      activeInlineSideChat
-                        ? "Hide this side chat"
-                        : existingSideChatCount > 0
-                          ? `${existingSideChatCount} side chat thread${existingSideChatCount === 1 ? "" : "s"}`
-                          : "Open a side chat for this reply"
-                    }
+                    aria-label={sideChatButtonLabel}
+                    aria-pressed={marksSideChatButtonActive}
+                    title={sideChatButtonTitle}
                     onClick={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
                   >
                     <SideChatIcon />

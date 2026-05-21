@@ -477,7 +477,7 @@ export interface WorkspaceFileReviewState {
   pendingComment: WorkspaceFilePendingComment | null
 }
 
-export type RightSidebarTabKind = "files" | "browser" | "review" | "terminal"
+export type RightSidebarTabKind = "files" | "browser" | "review" | "terminal" | "side-chat"
 
 interface RightSidebarBaseTab {
   id: string
@@ -511,11 +511,19 @@ export interface RightSidebarTerminalTab extends RightSidebarBaseTab {
   sessionID: string | null
 }
 
+export interface RightSidebarSideChatTab extends RightSidebarBaseTab {
+  kind: "side-chat"
+  anchorMessageID: string
+  parentSessionID: string
+  sessionID: string | null
+}
+
 export type RightSidebarTab =
   | RightSidebarFilesTab
   | RightSidebarBrowserTab
   | RightSidebarReviewTab
   | RightSidebarTerminalTab
+  | RightSidebarSideChatTab
 
 export interface RightSidebarState {
   tabs: RightSidebarTab[]
@@ -551,8 +559,18 @@ export type RightSidebarOpenTabInput =
       targetKey?: string
       title?: string
     }
+  | {
+      kind: "side-chat"
+      anchorMessageID: string
+      parentSessionID: string
+      sessionID: string | null
+      targetKey?: string
+      title?: string
+    }
 
 export interface RightSidebarTabUpdate {
+  anchorMessageID?: string
+  parentSessionID?: string
   scopeDirectory?: string | null
   scopeName?: string | null
   sessionID?: string | null

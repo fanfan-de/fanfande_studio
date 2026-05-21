@@ -13,6 +13,8 @@ import type {
   ComposerDraftState,
   PendingAgentStream,
   PermissionRequest,
+  RightSidebarOpenTabInput,
+  RightSidebarTabUpdate,
   SessionContextUsage,
   SessionDiffState,
   SessionDiffSummary,
@@ -68,6 +70,8 @@ import {
 } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
+type SideChatPanelPlacement = "inline" | "right-sidebar"
+type SideChatOpenOptions = { parentSessionID?: string | null; paneID?: string | null; placement?: SideChatPanelPlacement }
 
 export function filterSideChatMappingForCleanup(
   mapping: Record<string, string>,
@@ -136,6 +140,7 @@ interface UseSessionLifecycleControllerOptions {
   ensurePendingPermissionRequestsLoaded: (sessionID: string, backendSessionID?: string, options?: SessionDataLoadOptions) => Promise<void>
   ensureSessionHistoryLoaded: (sessionID: string, backendSessionID?: string, options?: SessionDataLoadOptions) => Promise<void>
   openCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string, workspaceScope?: WorkspaceGroup[]) => void
+  openOrFocusRightSidebarTab: (input: RightSidebarOpenTabInput) => string
   pendingStreamsRef: MutableRefObject<Record<string, PendingAgentStream>>
   permissionRequestsRequestRef: MutableRefObject<Record<string, number>>
   preserveLocalWorkspaceStateOnInitialLoadRef: MutableRefObject<boolean>
@@ -171,6 +176,7 @@ interface UseSessionLifecycleControllerOptions {
   setSessionRuntimeDebugStateBySession: StateSetter<Record<string, SessionRuntimeDebugState>>
   setDockviewLayout: StateSetter<SerializedDockview | null>
   setWorkspaces: StateSetter<WorkspaceGroup[]>
+  updateRightSidebarTab: (tabID: string, update: RightSidebarTabUpdate) => void
   clearRuntimeDebugRefreshTimer: (sessionID: string) => void
   clearSessionDiffRefreshTimer: (sessionID: string) => void
   handleCreateSessionWorkspaceChange: (workspaceID: string, createSessionTabID?: string | null) => void
@@ -211,6 +217,7 @@ export function useSessionLifecycleController({
   ensurePendingPermissionRequestsLoaded,
   ensureSessionHistoryLoaded,
   openCreateSessionTab,
+  openOrFocusRightSidebarTab,
   pendingStreamsRef,
   permissionRequestsRequestRef,
   preserveLocalWorkspaceStateOnInitialLoadRef,
@@ -244,6 +251,7 @@ export function useSessionLifecycleController({
   setSessionRuntimeDebugStateBySession,
   setDockviewLayout,
   setWorkspaces,
+  updateRightSidebarTab,
   clearRuntimeDebugRefreshTimer,
   clearSessionDiffRefreshTimer,
   selectedFolderID,
@@ -722,6 +730,22 @@ export function useSessionLifecycleController({
     ])
   }
 
+  function openSideChatRightSidebarTab(parentSessionID: string, anchorMessageID: string, session: SessionSummary) {
+    const tabID = openOrFocusRightSidebarTab({
+      kind: "side-chat",
+      anchorMessageID,
+      parentSessionID,
+      sessionID: session.id,
+      title: "Side chat",
+    })
+    updateRightSidebarTab(tabID, {
+      anchorMessageID,
+      parentSessionID,
+      sessionID: session.id,
+      title: "Side chat",
+    })
+  }
+
   async function createSideChatForAnchor(parentSessionID: string, anchorMessageID: string, parentWorkspace: WorkspaceGroup) {
     const createSideChat = window.desktop?.createSideChat
     if (!createSideChat) return null
@@ -787,7 +811,7 @@ export function useSessionLifecycleController({
     }
   }
 
-  async function handleCreateSideChatTab(anchorMessageID: string, input?: { parentSessionID?: string | null; paneID?: string | null }) {
+  async function handleCreateSideChatTab(anchorMessageID: string, input?: SideChatOpenOptions) {
     const parentSessionID = input?.parentSessionID ?? activeSessionID
     if (!parentSessionID) return
 
@@ -801,12 +825,15 @@ export function useSessionLifecycleController({
       if (!nextSession) return
 
       await activateSideChatThread(parentSessionID, nextSession.id, parentSelection.workspace.id)
+      if (input?.placement === "right-sidebar") {
+        openSideChatRightSidebarTab(parentSessionID, anchorMessageID, nextSession)
+      }
     } catch (error) {
       console.error("[desktop] createSideChat failed:", error)
     }
   }
 
-  async function handleOpenSideChat(anchorMessageID: string, input?: { parentSessionID?: string | null; paneID?: string | null }) {
+  async function handleOpenSideChat(anchorMessageID: string, input?: SideChatOpenOptions) {
     const parentSessionID = input?.parentSessionID ?? activeSessionID
     if (!parentSessionID) return
 
@@ -817,7 +844,9 @@ export function useSessionLifecycleController({
 
     const activeInlineSideChatID = activeSideChatSessionIDByParentSessionID[parentSessionID] ?? null
     const activeInlineSideChatSelection = findSession(workspaces, activeInlineSideChatID)
+    const opensRightSidebar = input?.placement === "right-sidebar"
     if (
+      !opensRightSidebar &&
       activeInlineSideChatSelection.session?.origin?.parentSessionID === parentSessionID &&
       activeInlineSideChatSelection.session.origin.anchorMessageID === anchorMessageID
     ) {
@@ -832,6 +861,9 @@ export function useSessionLifecycleController({
       : findLatestSideChatForAnchor(workspaces, parentSessionID, anchorMessageID)
     if (existing) {
       await activateSideChatThread(parentSessionID, existing.session.id, existing.workspace.id)
+      if (opensRightSidebar) {
+        openSideChatRightSidebarTab(parentSessionID, anchorMessageID, existing.session)
+      }
       return
     }
 
