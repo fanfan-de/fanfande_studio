@@ -1015,6 +1015,7 @@ export function useAgentWorkspace({
     leftSidebarView,
     permissionRequestActionError,
     permissionRequestActionRequestID,
+    messageTreeBySession,
     pinnedWorkspaceIDs,
     projectRowRefs,
     refreshComposerMcp,

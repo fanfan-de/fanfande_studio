@@ -1455,6 +1455,115 @@ describe("App", () => {
     expect(screen.getAllByRole("textbox", { name: "Task draft" }).length).toBeGreaterThan(1)
   })
 
+  it("inherits the parent session model selection when opening a right sidebar side chat", async () => {
+    const parentModelSelection = {
+      model: "deepseek/deepseek-v4-pro",
+      small_model: "deepseek/deepseek-chat",
+    }
+
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "workspace-model-selection",
+        directory: "C:\\Projects\\Project 2\\app",
+        name: "app",
+        created: 1,
+        updated: 1,
+        project: {
+          id: "project-2",
+          name: "Project 2",
+          worktree: "C:\\Projects\\Project 2",
+        },
+        sessions: [
+          {
+            id: "session-chat-1",
+            projectID: "project-2",
+            directory: "C:\\Projects\\Project 2\\app",
+            title: "Chat 1",
+            created: 1,
+            updated: 1,
+            modelSelection: parentModelSelection,
+          },
+        ],
+      },
+    ])
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockImplementation(async ({ backendSessionID }: { backendSessionID: string }) => {
+      if (backendSessionID !== "session-chat-1") return []
+
+      return [
+        {
+          info: {
+            id: "msg-user-main-1",
+            sessionID: backendSessionID,
+            role: "user",
+            created: 1,
+          },
+          parts: [{ id: "part-user-main-1", type: "text", text: "Use the selected model." }],
+        },
+        {
+          info: {
+            id: "msg-assistant-main-1",
+            sessionID: backendSessionID,
+            role: "assistant",
+            created: 2,
+            completed: 3,
+          },
+          parts: [{ id: "part-assistant-main-1", type: "text", text: "The parent response is ready." }],
+        },
+      ]
+    })
+    window.desktop!.createSideChat = vi.fn().mockResolvedValue({
+      session: {
+        id: "session-side-chat-1",
+        projectID: "project-2",
+        directory: "C:\\Projects\\Project 2\\app",
+        title: "Chat 1 / Side chat",
+        kind: "side-chat",
+        origin: {
+          parentSessionID: "session-chat-1",
+          anchorMessageID: "msg-assistant-main-1",
+          anchorPreview: "The parent response is ready.",
+        },
+        created: 4,
+        updated: 4,
+      },
+    })
+    window.desktop!.updateSessionModelSelection = vi.fn().mockResolvedValue(parentModelSelection)
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open side chat" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.createSideChat).toHaveBeenCalledWith({
+        parentSessionID: "session-chat-1",
+        anchorMessageID: "msg-assistant-main-1",
+      })
+      expect(window.desktop!.updateSessionModelSelection).toHaveBeenCalledWith({
+        sessionID: "session-side-chat-1",
+        model: "deepseek/deepseek-v4-pro",
+        small_model: "deepseek/deepseek-chat",
+      })
+    })
+
+    const nestedSideChat = await screen.findByRole("region", { name: "Side chat" })
+    setComposerDraftValue(within(nestedSideChat).getByRole("textbox", { name: "Task draft" }), "Follow up with the same model")
+    fireEvent.click(within(nestedSideChat).getByRole("button", { name: "Send task" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "session-side-chat-1",
+        model: {
+          providerID: "deepseek",
+          modelID: "deepseek-v4-pro",
+        },
+      }))
+    })
+  })
+
   it("keeps the response action row available after hiding an existing side chat", async () => {
     render(<App />)
 
@@ -1749,6 +1858,63 @@ describe("App", () => {
       expect(within(nestedSideChat).getAllByText("Drill into the parser failure from this reply").length).toBeGreaterThan(0)
       expectComposerDraftValue(within(nestedSideChat).getByRole("textbox", { name: "Task draft" }), "")
     })
+  })
+
+  it("streams right sidebar side chat output before the turn completes", async () => {
+    let activeStreamID = ""
+    let activeBackendSessionID = ""
+
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.agentSession!.sendTurn = vi.fn().mockImplementation(
+      async (input: {
+        clientTurnID: string
+        backendSessionID: string
+      }) => {
+        activeStreamID = input.clientTurnID
+        activeBackendSessionID = input.backendSessionID
+
+        return {
+          clientTurnID: input.clientTurnID,
+        }
+      },
+    )
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.agentSession!.onEvent).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open side chat" }))
+
+    const nestedSideChat = await screen.findByRole("region", { name: "Side chat" })
+    const sideChatDraft = within(nestedSideChat).getByRole("textbox", { name: "Task draft" })
+
+    setComposerDraftValue(sideChatDraft, "Stream from the side chat")
+    fireEvent.click(within(nestedSideChat).getByRole("button", { name: "Send task" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalledTimes(1)
+      expect(activeStreamID).not.toBe("")
+      expect(activeBackendSessionID).not.toBe("")
+    })
+
+    act(() => {
+      for (const listener of agentSessionEventListeners) {
+        listener(createRequestStreamEvent({
+          backendSessionID: activeBackendSessionID,
+          clientTurnID: activeStreamID,
+          event: "delta",
+          data: { kind: "text", delta: "Live side chat response." },
+        }))
+      }
+    })
+
+    expect(await within(nestedSideChat).findByText("Live side chat response.")).toBeInTheDocument()
   })
 
   it("opens a local URL in the unified preview sidebar", async () => {

@@ -39,6 +39,7 @@ import {
   isWorkspaceAvailable,
   mapLoadedSession,
   mapLoadedWorkspace,
+  normalizeSessionModelSelection,
   sortWorkspaceGroups,
   upsertSessionInWorkspace,
   upsertWorkspaceGroup,
@@ -746,7 +747,46 @@ export function useSessionLifecycleController({
     })
   }
 
-  async function createSideChatForAnchor(parentSessionID: string, anchorMessageID: string, parentWorkspace: WorkspaceGroup) {
+  function sessionModelSelectionsAreEqual(
+    left: SessionSummary["modelSelection"] | undefined,
+    right: SessionSummary["modelSelection"] | undefined,
+  ) {
+    return (left?.model ?? null) === (right?.model ?? null) && (left?.small_model ?? null) === (right?.small_model ?? null)
+  }
+
+  async function resolveSideChatModelSelectionFromParent(parentSession: SessionSummary, sideChatSession: SessionSummary) {
+    const inheritedSelection = normalizeSessionModelSelection(parentSession.modelSelection)
+    if (!inheritedSelection || sessionModelSelectionsAreEqual(sideChatSession.modelSelection, inheritedSelection)) {
+      return sideChatSession
+    }
+
+    let nextSelection = inheritedSelection
+    const updateSessionModelSelection = window.desktop?.updateSessionModelSelection
+    if (updateSessionModelSelection) {
+      try {
+        const savedSelection = await updateSessionModelSelection({
+          sessionID: sideChatSession.id,
+          model: inheritedSelection.model ?? null,
+          small_model: inheritedSelection.small_model ?? null,
+        })
+        nextSelection = normalizeSessionModelSelection(savedSelection) ?? inheritedSelection
+      } catch (error) {
+        console.error("[desktop] inherit side chat model selection failed:", error)
+      }
+    }
+
+    return {
+      ...sideChatSession,
+      modelSelection: nextSelection,
+    }
+  }
+
+  async function createSideChatForAnchor(
+    parentSessionID: string,
+    anchorMessageID: string,
+    parentWorkspace: WorkspaceGroup,
+    parentSession: SessionSummary,
+  ) {
     const createSideChat = window.desktop?.createSideChat
     if (!createSideChat) return null
 
@@ -754,7 +794,8 @@ export function useSessionLifecycleController({
       parentSessionID,
       anchorMessageID,
     })
-    const nextSession = mapLoadedSession(created.session, parentWorkspace.sessions.length)
+    const createdSession = mapLoadedSession(created.session, parentWorkspace.sessions.length)
+    const nextSession = await resolveSideChatModelSelectionFromParent(parentSession, createdSession)
 
     upsertSideChatSessions(parentWorkspace.id, [nextSession])
     return nextSession
@@ -821,7 +862,7 @@ export function useSessionLifecycleController({
     }
 
     try {
-      const nextSession = await createSideChatForAnchor(parentSessionID, anchorMessageID, parentSelection.workspace)
+      const nextSession = await createSideChatForAnchor(parentSessionID, anchorMessageID, parentSelection.workspace, parentSelection.session)
       if (!nextSession) return
 
       await activateSideChatThread(parentSessionID, nextSession.id, parentSelection.workspace.id)
@@ -860,9 +901,13 @@ export function useSessionLifecycleController({
       ? { workspace: parentSelection.workspace, session: latestSyncedSideChat }
       : findLatestSideChatForAnchor(workspaces, parentSessionID, anchorMessageID)
     if (existing) {
-      await activateSideChatThread(parentSessionID, existing.session.id, existing.workspace.id)
+      const nextSession = await resolveSideChatModelSelectionFromParent(parentSelection.session, existing.session)
+      if (nextSession !== existing.session) {
+        upsertSideChatSessions(existing.workspace.id, [nextSession])
+      }
+      await activateSideChatThread(parentSessionID, nextSession.id, existing.workspace.id)
       if (opensRightSidebar) {
-        openSideChatRightSidebarTab(parentSessionID, anchorMessageID, existing.session)
+        openSideChatRightSidebarTab(parentSessionID, anchorMessageID, nextSession)
       }
       return
     }

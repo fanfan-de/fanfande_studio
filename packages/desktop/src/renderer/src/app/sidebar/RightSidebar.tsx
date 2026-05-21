@@ -7,11 +7,13 @@ import {
   FileSearchIcon,
   PlusIcon,
   PreviewIcon,
+  SessionTreeIcon,
   SideChatIcon,
   TerminalIcon,
 } from "../icons"
 import { UnifiedPreviewPanel } from "../preview/UnifiedPreviewPanel"
 import { ShellTopMenu } from "../shared-ui"
+import type { SessionMessageTree } from "../session-message-tree"
 import { InlineSideChatThread } from "../thread/ThreadView"
 import type {
   AssistantTraceVisibility,
@@ -33,6 +35,7 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "../thread-markdown"
+import { SessionMessageTreePanel } from "./SessionMessageTreePanel"
 
 interface RightSidebarSideChatPanelState {
   activeProjectID: string | null
@@ -69,6 +72,7 @@ interface RightSidebarProps {
   selectedDiffFileBySession: Record<string, string | null>
   sessionDiffBySession: Record<string, SessionDiffSummary>
   sessionDiffStateBySession: Record<string, SessionDiffState>
+  messageTreeBySession: Record<string, SessionMessageTree>
   sideChatPanelState: RightSidebarSideChatPanelState | null
   workspaces: WorkspaceGroup[]
   onActivateTab: (tabID: string) => void
@@ -87,8 +91,10 @@ interface RightSidebarProps {
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onOpenBrowserTab: () => void
   onOpenFilesTab: () => void
+  onOpenMessageTreeTab: () => void
   onOpenReviewTab: () => void
   onOpenTerminalTab: () => void
+  onMessageTreeNodeSelect: (sessionID: string, messageID: string) => void | Promise<void>
   onPreviewActiveInteractionChange: (pluginID: PreviewInteractionPluginID | null) => void
   onPreviewCommitInteraction: (input: PreviewInteractionCommitInput) => void
   onPreviewDraftUrlChange: (value: string) => void
@@ -174,6 +180,8 @@ function getTabIcon(kind: RightSidebarTab["kind"]) {
       return <ChangesIcon />
     case "terminal":
       return <TerminalIcon />
+    case "message-tree":
+      return <SessionTreeIcon />
     case "side-chat":
       return <SideChatIcon />
   }
@@ -191,6 +199,8 @@ function getViewHostClassName(tab: RightSidebarTab | null, isLauncherVisible: bo
       return "right-sidebar-view-host is-changes"
     case "terminal":
       return "right-sidebar-view-host is-terminal"
+    case "message-tree":
+      return "right-sidebar-view-host is-message-tree"
     case "side-chat":
       return "right-sidebar-view-host is-side-chat"
   }
@@ -214,6 +224,7 @@ export function RightSidebar({
   selectedDiffFileBySession,
   sessionDiffBySession,
   sessionDiffStateBySession,
+  messageTreeBySession,
   sideChatPanelState,
   workspaces,
   onActivateTab,
@@ -225,8 +236,10 @@ export function RightSidebar({
   onLocalFileLinkOpen,
   onOpenBrowserTab,
   onOpenFilesTab,
+  onOpenMessageTreeTab,
   onOpenReviewTab,
   onOpenTerminalTab,
+  onMessageTreeNodeSelect,
   onPreviewActiveInteractionChange,
   onPreviewCommitInteraction,
   onPreviewDraftUrlChange,
@@ -272,6 +285,13 @@ export function RightSidebar({
       icon: <PreviewIcon />,
     },
     {
+      key: "message-tree",
+      title: "Tree",
+      description: "Navigate message branches",
+      disabled: !activeSession,
+      icon: <SessionTreeIcon />,
+    },
+    {
       key: "review",
       title: "Review",
       description: "Inspect code changes",
@@ -285,7 +305,7 @@ export function RightSidebar({
       disabled: !canOpenTerminal,
       icon: <TerminalIcon />,
     },
-  ], [canOpenReview, canOpenTerminal])
+  ], [activeSession, canOpenReview, canOpenTerminal])
 
   useEffect(() => {
     if (rightSidebar.tabs.length === 0) {
@@ -328,6 +348,10 @@ export function RightSidebar({
       case "terminal":
         if (!canOpenTerminal) return
         onOpenTerminalTab()
+        break
+      case "message-tree":
+        if (!activeSession) return
+        onOpenMessageTreeTab()
         break
     }
     setIsLauncherVisible(false)
@@ -402,6 +426,16 @@ export function RightSidebar({
       }
       case "terminal":
         return renderTerminalTab(activeTab.sessionID)
+      case "message-tree": {
+        const treeSession = findSessionByID(workspaces, activeTab.sessionID)
+        return (
+          <SessionMessageTreePanel
+            session={treeSession}
+            messageTree={messageTreeBySession[activeTab.sessionID] ?? null}
+            onSelectMessage={onMessageTreeNodeSelect}
+          />
+        )
+      }
       case "side-chat":
         if (!sideChatPanelState || sideChatPanelState.activeTabID !== activeTab.id) {
           return (

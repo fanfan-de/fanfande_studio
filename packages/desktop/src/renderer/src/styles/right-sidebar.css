@@ -20,6 +20,7 @@
 .right-sidebar-view-host.is-files,
 .right-sidebar-view-host.is-changes,
 .right-sidebar-view-host.is-terminal,
+.right-sidebar-view-host.is-message-tree,
 .right-sidebar-view-host.is-side-chat {
   overflow: hidden;
   scrollbar-gutter: auto;
@@ -1719,6 +1720,208 @@
   padding: 10px 12px;
   border: 1px dashed rgba(166, 186, 208, 0.5);
   background: rgba(248, 251, 255, 0.8);
+}
+
+.session-message-tree-panel {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  overflow: hidden;
+}
+
+.session-message-tree-header {
+  min-width: 0;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--seg-border);
+  display: grid;
+  gap: 8px;
+}
+
+.session-message-tree-title-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.session-message-tree-title-copy span {
+  color: var(--seg-text-3);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.session-message-tree-title-copy h3 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--seg-text-1);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-message-tree-meta {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.session-message-tree-meta span {
+  min-height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--seg-border);
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--seg-text-2);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.session-message-tree-canvas {
+  min-height: 0;
+  padding: 12px 12px 18px;
+  overflow: hidden;
+  position: relative;
+  cursor: grab;
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+
+.session-message-tree-canvas.is-panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.session-message-tree-canvas.is-panning .session-message-tree-graph-node {
+  pointer-events: none;
+}
+
+.session-message-tree-graph {
+  min-width: 260px;
+  min-height: 160px;
+  position: relative;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.session-message-tree-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.session-message-tree-edge {
+  fill: none;
+  stroke: var(--seg-border);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.25px;
+}
+
+.session-message-tree-edge.is-active-path {
+  stroke: var(--mix-seg-accent-34-seg-border-66);
+  stroke-width: 1.7px;
+}
+
+.session-message-tree-edge-arrow {
+  fill: var(--seg-border);
+}
+
+.session-message-tree-edge-arrow.is-active-path {
+  fill: var(--mix-seg-accent-34-seg-border-66);
+}
+
+.session-message-tree-graph-node {
+  width: 136px;
+  min-height: 56px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--seg-text-2);
+  cursor: pointer;
+  display: grid;
+  grid-template-rows: 14px minmax(18px, auto);
+  justify-items: center;
+  align-content: start;
+  gap: 3px;
+  position: absolute;
+  text-align: center;
+  transform: translate(-50%, -8px);
+}
+
+.session-message-tree-graph-node:focus-visible {
+  outline: 2px solid var(--focus-outline-color);
+  outline-offset: 3px;
+}
+
+.session-message-tree-graph-node[aria-disabled="true"] {
+  cursor: default;
+}
+
+.session-message-tree-dot {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--seg-panel);
+  border-radius: 999px;
+  background: #5f6368;
+  box-shadow: 0 0 0 1px rgba(30, 35, 42, 0.18);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.session-message-tree-graph-node:hover .session-message-tree-dot,
+.session-message-tree-graph-node:focus-visible .session-message-tree-dot {
+  transform: scale(1.14);
+  box-shadow: 0 0 0 5px var(--seg-panel-muted), 0 0 0 1px rgba(30, 35, 42, 0.2);
+}
+
+.session-message-tree-graph-node.is-user .session-message-tree-dot {
+  background: var(--seg-accent);
+}
+
+.session-message-tree-graph-node.is-assistant .session-message-tree-dot {
+  background: #606368;
+}
+
+.session-message-tree-graph-node.is-active-path .session-message-tree-dot {
+  box-shadow: 0 0 0 4px var(--mix-seg-accent-soft-72-transparent-28), 0 0 0 1px var(--seg-accent);
+}
+
+.session-message-tree-graph-node.is-active .session-message-tree-dot {
+  background: var(--seg-accent-strong);
+  box-shadow: 0 0 0 5px var(--mix-seg-accent-soft-68-seg-panel-32), 0 0 0 1px var(--seg-accent);
+}
+
+.session-message-tree-node-preview {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--seg-text-2);
+  display: -webkit-box;
+  font-size: 12px;
+  font-weight: 600;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  letter-spacing: 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.session-message-tree-graph-node.is-active .session-message-tree-node-preview,
+.session-message-tree-graph-node.is-active-path .session-message-tree-node-preview {
+  color: var(--seg-text-1);
+}
+
+.session-message-tree-empty {
+  margin: 12px;
 }
 
 .right-sidebar-changes-panel {

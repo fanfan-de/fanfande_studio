@@ -2596,6 +2596,7 @@ describe("ThreadView message actions", () => {
       },
       childIDsByParentID: {},
       nodesByID: {},
+      rootMessageIDs: ["user-1"],
       sessionID: "session-1",
     }
     const reasoningTurn: AssistantTurn = {

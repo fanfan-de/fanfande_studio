@@ -423,15 +423,19 @@ export function useProjectComposer({
         }
         setModels(payload.items)
         setDefaultModel(payload.effectiveModel ?? null)
-        if (isSessionModelRequest || !requestSessionID || !getSessionModels) {
+        if (isSessionModelRequest && requestSessionID) {
           setSelectedModel(payload.selection?.model ?? null)
           setSmallModel(payload.selection?.small_model ?? null)
-          if (isSessionModelRequest && requestSessionID) {
-            onSessionModelSelectionChange?.(requestSessionID, {
-              ...(payload.selection?.model ? { model: payload.selection.model } : {}),
-              ...(payload.selection?.small_model ? { small_model: payload.selection.small_model } : {}),
-            })
-          }
+          onSessionModelSelectionChange?.(requestSessionID, {
+            ...(payload.selection?.model ? { model: payload.selection.model } : {}),
+            ...(payload.selection?.small_model ? { small_model: payload.selection.small_model } : {}),
+          })
+        } else if (requestSessionID) {
+          setSelectedModel(sessionSelectionModel)
+          setSmallModel(sessionSelectionSmallModel)
+        } else {
+          setSelectedModel(payload.selection?.model ?? null)
+          setSmallModel(payload.selection?.small_model ?? null)
         }
       })
       .catch((error) => {

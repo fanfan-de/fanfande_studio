@@ -57,6 +57,8 @@ function getTabTargetKey(input: RightSidebarOpenTabInput) {
         normalizeTargetSegment(input.parentSessionID),
         normalizeTargetSegment(input.anchorMessageID),
       ].join(":")
+    case "message-tree":
+      return ["message-tree", normalizeTargetSegment(input.sessionID)].join(":")
   }
 }
 
@@ -113,6 +115,12 @@ function createRightSidebarTab(input: RightSidebarOpenTabInput, index: number): 
         kind: "side-chat",
         anchorMessageID: input.anchorMessageID,
         parentSessionID: input.parentSessionID,
+        sessionID: input.sessionID,
+      }
+    case "message-tree":
+      return {
+        ...base,
+        kind: "message-tree",
         sessionID: input.sessionID,
       }
   }
@@ -186,6 +194,13 @@ function applyTabUpdate(tab: RightSidebarTab, update: RightSidebarTabUpdate): Ri
         targetKey,
         anchorMessageID: update.anchorMessageID ?? tab.anchorMessageID,
         parentSessionID: update.parentSessionID ?? tab.parentSessionID,
+        sessionID: update.sessionID ?? tab.sessionID,
+      }
+    case "message-tree":
+      return {
+        ...tab,
+        title,
+        targetKey,
         sessionID: update.sessionID ?? tab.sessionID,
       }
   }

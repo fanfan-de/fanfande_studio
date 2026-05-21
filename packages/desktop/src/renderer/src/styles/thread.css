@@ -2664,6 +2664,11 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
   min-height: 0;
 }
 
+.inline-side-chat-thread.is-sidebar .composer {
+  grid-row: 2;
+  align-self: end;
+}
+
 .inline-side-chat-thread .thread-shell {
   padding: 0;
   min-width: 0;

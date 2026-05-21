@@ -133,6 +133,8 @@ function getRightSidebarTabTargetKey(input: RightSidebarOpenTabInput) {
       return ["review", normalizeRightSidebarTargetSegment(input.sessionID)].join(":")
     case "terminal":
       return ["terminal", normalizeRightSidebarTargetSegment(input.sessionID)].join(":")
+    case "message-tree":
+      return ["message-tree", normalizeRightSidebarTargetSegment(input.sessionID)].join(":")
     case "side-chat":
       return [
         "side-chat",
@@ -154,6 +156,8 @@ function getRightSidebarTabTitle(input: RightSidebarOpenTabInput) {
       return "Review"
     case "terminal":
       return "Terminal"
+    case "message-tree":
+      return "Tree"
     case "side-chat":
       return "Side chat"
   }
@@ -196,6 +200,12 @@ function createRightSidebarTab(input: RightSidebarOpenTabInput): RightSidebarTab
       return {
         ...base,
         kind: "terminal",
+        sessionID: input.sessionID,
+      }
+    case "message-tree":
+      return {
+        ...base,
+        kind: "message-tree",
         sessionID: input.sessionID,
       }
     case "side-chat":
@@ -247,6 +257,14 @@ function updateRightSidebarTab(
       return {
         ...tab,
         kind: "terminal",
+        title,
+        targetKey,
+        sessionID: update.sessionID ?? tab.sessionID,
+      }
+    case "message-tree":
+      return {
+        ...tab,
+        kind: "message-tree",
         title,
         targetKey,
         sessionID: update.sessionID ?? tab.sessionID,

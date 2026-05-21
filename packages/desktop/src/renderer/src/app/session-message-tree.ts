@@ -28,6 +28,7 @@ export interface SessionMessageTree {
   branchOptionsByParentID: Record<string, SessionMessageBranchOption[]>
   childIDsByParentID: Record<string, string[]>
   nodesByID: Record<string, SessionMessageTreeNode>
+  rootMessageIDs: string[]
   sessionID: string
 }
 
@@ -42,6 +43,10 @@ function readString(value: unknown) {
 
 function readNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+function readBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : false
 }
 
 function compactPreview(value: string, maxLength = 72) {
@@ -64,6 +69,18 @@ function getMessagePreview(message: LoadedSessionHistoryMessage) {
 
   if (message.info.role === "user") return "User message"
   return "Assistant response"
+}
+
+function hasAssistantResponseText(message: LoadedSessionHistoryMessage) {
+  if (readString(message.info.displayText).trim()) return true
+  return message.parts.some((part) => readTextPartPreview(part).trim())
+}
+
+function shouldIncludeMessageTreeNode(message: LoadedSessionHistoryMessage) {
+  if (readBoolean(message.info.internal)) return false
+  if (message.info.role === "user") return true
+  if (message.info.role !== "assistant") return false
+  return hasAssistantResponseText(message)
 }
 
 function getParentKey(parentMessageID: string | null) {
@@ -119,8 +136,17 @@ export function buildSessionMessageTree(
   messages: LoadedSessionHistoryMessage[],
   activeMessageID?: string | null,
 ): SessionMessageTree | null {
+  const parentIDByMessageID = new Map<string, string | null>()
+  for (const message of messages) {
+    if (!message.info.id) continue
+    parentIDByMessageID.set(
+      message.info.id,
+      typeof message.info.parentMessageID === "string" ? message.info.parentMessageID : null,
+    )
+  }
+
   const nodes = messages
-    .filter((message) => message.info.role === "user" || message.info.role === "assistant")
+    .filter(shouldIncludeMessageTreeNode)
     .map((message): SessionMessageTreeNode => ({
       id: message.info.id,
       sessionID: message.info.sessionID,
@@ -143,7 +169,19 @@ export function buildSessionMessageTree(
   }
 
   for (const node of nodes) {
-    const parentKey = getParentKey(node.parentMessageID)
+    let parentMessageID = node.parentMessageID
+    const seenParentIDs = new Set<string>()
+    while (parentMessageID && !nodesByID[parentMessageID]) {
+      if (seenParentIDs.has(parentMessageID)) {
+        parentMessageID = null
+        break
+      }
+      seenParentIDs.add(parentMessageID)
+      parentMessageID = parentIDByMessageID.get(parentMessageID) ?? null
+    }
+
+    node.parentMessageID = parentMessageID
+    const parentKey = getParentKey(parentMessageID)
     childIDsByParentID[parentKey] = [...(childIDsByParentID[parentKey] ?? []), node.id]
   }
 
@@ -153,6 +191,7 @@ export function buildSessionMessageTree(
     )
   }
 
+  const rootMessageIDs = childIDsByParentID[ROOT_PARENT_ID] ?? []
   const resolvedActiveMessageID =
     activeMessageID && nodesByID[activeMessageID]
       ? activeMessageID
@@ -189,6 +228,7 @@ export function buildSessionMessageTree(
     branchOptionsByParentID,
     childIDsByParentID,
     nodesByID,
+    rootMessageIDs,
     sessionID: firstNode.sessionID,
   }
 }

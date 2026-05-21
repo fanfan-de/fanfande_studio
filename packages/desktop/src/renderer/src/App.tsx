@@ -12,6 +12,7 @@ import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
 import {
   useWorkspaceStoreSelector,
 } from "./app/agent-workspace/workspace-store"
+import { useConversationTurns } from "./app/agent-workspace/conversation-store"
 import { WorkspaceStoreProvider } from "./app/agent-workspace/workspace-store-context"
 import { resolveWorkspaceRelativePath } from "./app/agent-workspace/workspace-loading-hooks"
 import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "./app/thread-markdown"
@@ -822,6 +823,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     isCreatingProject,
     isResolvingPermissionRequest,
     leftSidebarView,
+    messageTreeBySession,
     permissionRequestActionError,
     permissionRequestActionRequestID,
     pinnedWorkspaceIDs,
@@ -1188,6 +1190,20 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     },
     rightSidebarSideChatPanelStatesAreEqual,
   )
+  const conversationStore = useWorkspaceStoreSelector(workspaceStore, (state) => state.agentStream.conversationStore)
+  const liveRightSidebarSideChatTurns = useConversationTurns(
+    conversationStore,
+    rightSidebarSideChatPanelState?.session.id ?? null,
+  )
+  const liveRightSidebarSideChatPanelState = useMemo(() => {
+    if (!rightSidebarSideChatPanelState) return null
+    return {
+      ...rightSidebarSideChatPanelState,
+      turns: liveRightSidebarSideChatTurns.length > 0
+        ? liveRightSidebarSideChatTurns
+        : rightSidebarSideChatPanelState.turns,
+    }
+  }, [liveRightSidebarSideChatTurns, rightSidebarSideChatPanelState])
   const rightSidebarProfiler = useMemo(
     () => createRendererProfilerOnRender("RightSidebar commit", () => ({
       activeTabID: activeRightSidebarTab?.id ?? null,
@@ -1234,6 +1250,26 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
       sessionID: terminalSessionID,
       title: "Terminal",
     })
+  }
+
+  function handleOpenRightSidebarMessageTreeTab() {
+    if (!activeSession?.id) return
+    openOrFocusRightSidebarTab({
+      kind: "message-tree",
+      sessionID: activeSession.id,
+      title: "Tree",
+    })
+  }
+
+  async function handleMessageTreeNodeSelect(sessionID: string, messageID: string) {
+    if (!messageID.trim()) return
+
+    const sessionSelection = findSession(workspaces, sessionID)
+    if (sessionSelection.workspace && activeSession?.id !== sessionID) {
+      handleSessionSelect(sessionSelection.workspace.id, sessionID)
+    }
+
+    await handleSessionBranchSelect({ sessionID, messageID })
   }
 
   async function handleOpenSideChatInRightSidebar(
@@ -1990,7 +2026,8 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 selectedDiffFileBySession={selectedDiffFileBySession}
                 sessionDiffBySession={sessionDiffBySession}
                 sessionDiffStateBySession={sessionDiffStateBySession}
-                sideChatPanelState={rightSidebarSideChatPanelState}
+                messageTreeBySession={messageTreeBySession}
+                sideChatPanelState={liveRightSidebarSideChatPanelState}
                 workspaces={workspaces}
                 onActivateTab={handleActivateRightSidebarTab}
                 onCloseTab={closeRightSidebarTab}
@@ -2031,8 +2068,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onWorkspaceFileSelect={handleWorkspaceFileSelect}
                 onOpenBrowserTab={handleOpenRightSidebarBrowserTab}
                 onOpenFilesTab={handleOpenRightSidebarFilesTab}
+                onOpenMessageTreeTab={handleOpenRightSidebarMessageTreeTab}
                 onOpenReviewTab={handleOpenRightSidebarReviewTab}
                 onOpenTerminalTab={handleOpenRightSidebarTerminalTab}
+                onMessageTreeNodeSelect={handleMessageTreeNodeSelect}
                 onSideChatCancelSend={() => handleCancelSend({
                   sessionID: rightSidebarSideChatPanelState?.session.id,
                   tabKey: rightSidebarSideChatPanelState?.tabKey,
