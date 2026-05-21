@@ -1902,6 +1902,7 @@
 }
 
 .session-message-tree-node-preview {
+  box-sizing: border-box;
   max-width: 100%;
   overflow: hidden;
   color: var(--seg-text-2);
@@ -1915,9 +1916,43 @@
   overflow-wrap: anywhere;
 }
 
+.session-message-tree-graph-node.is-assistant .session-message-tree-node-preview {
+  width: 128px;
+  max-width: 128px;
+  min-height: 36px;
+  padding: 5px 7px;
+  border: 1px solid var(--mix-seg-border-84-transparent-16);
+  border-radius: 6px;
+  background: var(--mix-seg-panel-92-transparent-8);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  text-align: left;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    color 120ms ease;
+}
+
+.session-message-tree-graph-node.is-assistant:hover .session-message-tree-node-preview,
+.session-message-tree-graph-node.is-assistant:focus-visible .session-message-tree-node-preview {
+  border-color: var(--mix-seg-border-72-seg-panel-28);
+  background: var(--seg-panel-muted);
+}
+
 .session-message-tree-graph-node.is-active .session-message-tree-node-preview,
 .session-message-tree-graph-node.is-active-path .session-message-tree-node-preview {
   color: var(--seg-text-1);
+}
+
+.session-message-tree-graph-node.is-assistant.is-active-path .session-message-tree-node-preview {
+  border-color: var(--mix-seg-accent-34-seg-border-66);
+  background: var(--mix-seg-accent-soft-84-transparent-16);
+}
+
+.session-message-tree-graph-node.is-assistant.is-active .session-message-tree-node-preview {
+  border-color: var(--mix-seg-accent-42-seg-border-58);
+  background: var(--mix-seg-accent-soft-76-seg-panel-24);
+  box-shadow: 0 0 0 3px var(--mix-seg-accent-12-transparent-88);
 }
 
 .session-message-tree-empty {
