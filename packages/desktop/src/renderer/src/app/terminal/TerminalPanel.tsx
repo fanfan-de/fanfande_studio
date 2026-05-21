@@ -12,6 +12,7 @@ interface TerminalPanelProps {
   creationError?: string | null
   isOpen: boolean
   isCreatingTerminal?: boolean
+  layout?: "panel" | "fill"
   panelHeight: number
   pendingCreateRequestID?: number | null
   showToggleButton?: boolean
@@ -47,6 +48,7 @@ export const TerminalPanel = memo(function TerminalPanel({
   creationError,
   isOpen,
   isCreatingTerminal = false,
+  layout = "panel",
   panelHeight,
   pendingCreateRequestID = null,
   showToggleButton = true,
@@ -138,6 +140,7 @@ export const TerminalPanel = memo(function TerminalPanel({
   if (!isOpen) return null
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (layout === "fill") return
     if (event.button !== 0) return
     previewHeightRef.current = panelHeight
     setPreviewHeight(panelHeight)
@@ -150,16 +153,25 @@ export const TerminalPanel = memo(function TerminalPanel({
 
   const renderedHeight = isResizing ? previewHeight : panelHeight
   const canCreateTerminal = sessions.length === 0
+  const isFillLayout = layout === "fill"
+  const panelClassName = [
+    "terminal-panel",
+    isResizing ? "is-resizing" : "",
+    isFillLayout ? "is-fill" : "",
+  ].filter(Boolean).join(" ")
+  const panelStyle = isFillLayout ? undefined : { height: `${String(renderedHeight)}px` }
 
   return (
-    <section className={isResizing ? "terminal-panel is-resizing" : "terminal-panel"} style={{ height: `${String(renderedHeight)}px` }}>
-      <div
-        className={isResizing ? "terminal-panel-resizer is-active" : "terminal-panel-resizer"}
-        onPointerDown={handlePointerDown}
-        role="separator"
-        aria-label="Resize terminal panel"
-        aria-orientation="horizontal"
-      />
+    <section className={panelClassName} style={panelStyle}>
+      {isFillLayout ? null : (
+        <div
+          className={isResizing ? "terminal-panel-resizer is-active" : "terminal-panel-resizer"}
+          onPointerDown={handlePointerDown}
+          role="separator"
+          aria-label="Resize terminal panel"
+          aria-orientation="horizontal"
+        />
+      )}
 
       <TerminalTabs
         activePtyID={activeSession?.ptyID ?? null}

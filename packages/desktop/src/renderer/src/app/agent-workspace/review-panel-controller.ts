@@ -25,7 +25,9 @@ import type {
   PreviewInteractionCommitInput,
   PreviewInteractionPluginID,
   PreviewInteractionRecord,
-  RightSidebarView,
+  RightSidebarOpenTabInput,
+  RightSidebarTab,
+  RightSidebarTabUpdate,
   SessionDiffFile,
   WorkspaceFileComment,
   WorkspaceFileLineRange,
@@ -36,9 +38,9 @@ import type {
 import { createID } from "../utils"
 import { useWorkspaceFileReviewSearchEffects } from "./review-diff-runtime-hooks"
 import {
+  DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
   DEFAULT_WORKSPACE_PREVIEW_STATE,
   getWorkspaceFileCommentKey,
-  resolvePreviewScopeID,
   resolveWorkspaceFileReviewStatus,
 } from "./review-preview-state"
 import type { WorkspaceStateUpdater } from "./workspace-store"
@@ -58,27 +60,32 @@ function formatReverseApplyFailureMessage(result: {
 interface WorkspaceFileSelectOptions {
   linkedLineRange?: WorkspaceFileLineRange | null
   scopeDirectory?: string | null
+  scopeName?: string | null
+  tabID?: string | null
 }
 
 interface UseReviewPanelControllerOptions {
   activeSessionDirectory: string | null
   activeSessionID: string | null
   activeTabKey: string | null
+  activeRightSidebarTab: RightSidebarTab | null
   activeWorkspaceFileScopeDirectory: string | null
+  activeWorkspaceFileScopeName: string | null
   loadSessionDiffForSession: (sessionID: string) => Promise<void>
   loadSessionRuntimeDebugForSession: (sessionID: string) => Promise<void>
+  openOrFocusRightSidebarTab: (input: RightSidebarOpenTabInput) => string
   platform: string
-  previewByWorkspaceID: Record<string, WorkspacePreviewState>
+  resolveSessionDirectory: (sessionID: string | null | undefined) => string | null
+  rightSidebarTabs: RightSidebarTab[]
   selectedWorkspace: WorkspaceGroup | null
   setComposerDraftStateByTabKey: StateSetter<Record<string, ComposerDraftState>>
-  setPreviewByWorkspaceID: StateSetter<Record<string, WorkspacePreviewState>>
-  setRightSidebarView: StateSetter<RightSidebarView>
+  setRightSidebarFileState: (tabID: string, update: WorkspaceStateUpdater<WorkspaceFileReviewState>) => void
+  setRightSidebarPreviewState: (tabID: string, update: WorkspaceStateUpdater<WorkspacePreviewState>) => void
   setSelectedDiffFileBySession: StateSetter<Record<string, string | null>>
   setWorkspaceFileCommentsByTarget: StateSetter<Record<string, WorkspaceFileComment[]>>
-  setWorkspaceFileReviewState: StateSetter<WorkspaceFileReviewState>
+  updateRightSidebarTab: (tabID: string, update: RightSidebarTabUpdate) => void
   workspaceFileCommentsByTarget: Record<string, WorkspaceFileComment[]>
   workspaceFileReadRequestRef: MutableRefObject<number>
-  workspaceFileReviewState: WorkspaceFileReviewState
   workspaceFileSearchRequestRef: MutableRefObject<number>
 }
 
@@ -86,25 +93,113 @@ export function useReviewPanelController({
   activeSessionDirectory,
   activeSessionID,
   activeTabKey,
+  activeRightSidebarTab,
   activeWorkspaceFileScopeDirectory,
+  activeWorkspaceFileScopeName,
   loadSessionDiffForSession,
   loadSessionRuntimeDebugForSession,
+  openOrFocusRightSidebarTab,
   platform,
-  previewByWorkspaceID,
+  resolveSessionDirectory,
+  rightSidebarTabs,
   selectedWorkspace,
   setComposerDraftStateByTabKey,
-  setPreviewByWorkspaceID,
-  setRightSidebarView,
+  setRightSidebarFileState,
+  setRightSidebarPreviewState,
   setSelectedDiffFileBySession,
   setWorkspaceFileCommentsByTarget,
-  setWorkspaceFileReviewState,
+  updateRightSidebarTab,
   workspaceFileCommentsByTarget,
   workspaceFileReadRequestRef,
-  workspaceFileReviewState,
   workspaceFileSearchRequestRef,
 }: UseReviewPanelControllerOptions) {
-  const deferredWorkspaceFileQuery = useDeferredValue(workspaceFileReviewState.query)
+  const activeFileTab = activeRightSidebarTab?.kind === "files" ? activeRightSidebarTab : null
+  const activeBrowserTab = activeRightSidebarTab?.kind === "browser" ? activeRightSidebarTab : null
+  const activeWorkspaceFileState = activeFileTab?.state ?? DEFAULT_WORKSPACE_FILE_REVIEW_STATE
+  const deferredWorkspaceFileQuery = useDeferredValue(activeWorkspaceFileState.query)
   const previewResolveRequestRef = useRef(0)
+  const workspaceFileReadRequestByTabRef = useRef<Record<string, number>>({})
+
+  function normalizeTargetSegment(value: string | null | undefined) {
+    return value?.trim().replace(/\\/g, "/").toLowerCase() || "__none__"
+  }
+
+  function getPathName(path: string | null | undefined) {
+    const normalized = path?.trim().replace(/\\/g, "/") ?? ""
+    return normalized.split("/").filter(Boolean).pop() || null
+  }
+
+  function getBrowserTabTargetKey(workspaceID: string | null | undefined, target: string | null | undefined) {
+    return ["browser", normalizeTargetSegment(workspaceID), normalizeTargetSegment(target)].join(":")
+  }
+
+  function getFilesTabTargetKey(scopeDirectory: string | null | undefined, path: string | null | undefined) {
+    return ["files", normalizeTargetSegment(scopeDirectory), normalizeTargetSegment(path)].join(":")
+  }
+
+  function getBrowserTabTitle(value: string | null | undefined) {
+    const trimmed = value?.trim() ?? ""
+    if (!trimmed) return "Browser"
+    try {
+      const parsed = new URL(trimmed)
+      return parsed.host || trimmed
+    } catch {
+      return getPathName(trimmed) ?? trimmed
+    }
+  }
+
+  function getTabByID(tabID: string | null | undefined) {
+    if (!tabID) return null
+    return rightSidebarTabs.find((tab) => tab.id === tabID) ?? null
+  }
+
+  function getBrowserState(tabID: string | null | undefined) {
+    const tab = getTabByID(tabID)
+    return tab?.kind === "browser" ? tab.state : DEFAULT_WORKSPACE_PREVIEW_STATE
+  }
+
+  function openFilesTab(input: {
+    path?: string | null
+    scopeDirectory?: string | null
+    scopeName?: string | null
+    title?: string
+  }) {
+    const scopeDirectory = input.scopeDirectory ?? activeWorkspaceFileScopeDirectory
+    return openOrFocusRightSidebarTab({
+      kind: "files",
+      filePath: input.path ?? null,
+      scopeDirectory,
+      scopeName: input.scopeName ?? activeWorkspaceFileScopeName,
+      targetKey: getFilesTabTargetKey(scopeDirectory, input.path ?? null),
+      title: input.title ?? getPathName(input.path) ?? "Files",
+    })
+  }
+
+  function openBrowserTab(input: {
+    target?: string | null
+    title?: string
+    workspaceID?: string | null
+    workspaceRoot?: string | null
+  }) {
+    const workspaceID = input.workspaceID ?? selectedWorkspace?.id ?? null
+    const target = input.target ?? null
+    return openOrFocusRightSidebarTab({
+      kind: "browser",
+      target,
+      targetKey: getBrowserTabTargetKey(workspaceID, target),
+      title: input.title ?? getBrowserTabTitle(target),
+      workspaceID,
+      workspaceRoot: input.workspaceRoot ?? selectedWorkspace?.directory ?? activeSessionDirectory ?? null,
+    })
+  }
+
+  function openReviewTab(sessionID = activeSessionID) {
+    return openOrFocusRightSidebarTab({
+      kind: "review",
+      sessionID,
+      title: "Review",
+    })
+  }
 
   function getPreviewNavigationState(current: WorkspacePreviewState) {
     const history = Array.isArray(current.navigationHistory)
@@ -120,23 +215,16 @@ export function useReviewPanelController({
   }
 
   function updatePreviewState(
+    tabID: string,
     updater: (current: WorkspacePreviewState) => WorkspacePreviewState,
-    workspaceID = selectedWorkspace?.id ?? null,
   ) {
-    const scopeID = resolvePreviewScopeID(workspaceID)
-    setPreviewByWorkspaceID((current) => {
-      const previousState = current[scopeID] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
-      const nextState = updater(previousState)
-      if (nextState === previousState) return current
-      return {
-        ...current,
-        [scopeID]: nextState,
-      }
-    })
+    setRightSidebarPreviewState(tabID, updater)
   }
 
-  function handlePreviewDraftUrlChange(value: string, workspaceID = selectedWorkspace?.id ?? null) {
+  function handlePreviewDraftUrlChange(value: string) {
+    const tabID = activeBrowserTab?.id ?? openBrowserTab({ target: null })
     updatePreviewState(
+      tabID,
       (current) => ({
         ...current,
         draftUrl: value,
@@ -144,16 +232,15 @@ export function useReviewPanelController({
         errorKind: null,
         errorMessage: null,
       }),
-      workspaceID,
     )
   }
 
-  async function handlePreviewOpenTarget(
+  async function resolvePreviewTargetInTab(
+    tabID: string,
     value: string,
     workspaceID = selectedWorkspace?.id ?? null,
     workspaceRootOverride?: string | null,
   ) {
-    setRightSidebarView("preview")
     const trimmedValue = value.trim()
     const workspaceRoot = workspaceRootOverride ?? selectedWorkspace?.directory ?? activeSessionDirectory ?? null
     const resolvePreviewTarget = window.desktop?.resolvePreviewTarget
@@ -162,6 +249,7 @@ export function useReviewPanelController({
 
     if (!trimmedValue) {
       updatePreviewState(
+        tabID,
         (current) => ({
           ...current,
           activeInteractionID: null,
@@ -173,13 +261,13 @@ export function useReviewPanelController({
           resolvedTarget: null,
           status: "error",
         }),
-        workspaceID,
       )
       return
     }
 
     if (!resolvePreviewTarget) {
       updatePreviewState(
+        tabID,
         (current) => ({
           ...current,
           activeInteractionID: null,
@@ -191,12 +279,12 @@ export function useReviewPanelController({
           resolvedTarget: null,
           status: "error",
         }),
-        workspaceID,
       )
       return
     }
 
     updatePreviewState(
+      tabID,
       (current) => ({
         ...current,
         activeInteractionID: null,
@@ -207,7 +295,6 @@ export function useReviewPanelController({
         errorMessage: null,
         status: "resolving",
       }),
-      workspaceID,
     )
 
     try {
@@ -218,6 +305,7 @@ export function useReviewPanelController({
       if (previewResolveRequestRef.current !== requestID) return
 
       updatePreviewState(
+        tabID,
         (current) => ({
           ...current,
           activeInteractionID: null,
@@ -231,12 +319,18 @@ export function useReviewPanelController({
           resolvedTarget,
           status: "ready",
         }),
-        workspaceID,
       )
+      updateRightSidebarTab(tabID, {
+        targetKey: getBrowserTabTargetKey(workspaceID, resolvedTarget.normalizedInput || trimmedValue),
+        title: getBrowserTabTitle(resolvedTarget.normalizedInput || trimmedValue),
+        workspaceID,
+        workspaceRoot,
+      })
     } catch (error) {
       if (previewResolveRequestRef.current !== requestID) return
       const message = error instanceof Error ? error.message : String(error)
       updatePreviewState(
+        tabID,
         (current) => ({
           ...current,
           activeInteractionID: null,
@@ -246,33 +340,46 @@ export function useReviewPanelController({
           resolvedTarget: null,
           status: "error",
         }),
-        workspaceID,
       )
     }
   }
 
+  async function handlePreviewOpenTarget(
+    value: string,
+    workspaceID = selectedWorkspace?.id ?? null,
+    workspaceRootOverride?: string | null,
+  ) {
+    const tabID = openBrowserTab({
+      target: value,
+      workspaceID,
+      workspaceRoot: workspaceRootOverride ?? selectedWorkspace?.directory ?? activeSessionDirectory ?? null,
+    })
+    await resolvePreviewTargetInTab(tabID, value, workspaceID, workspaceRootOverride)
+  }
+
   function handlePreviewOpenUrl(url: string, workspaceID = selectedWorkspace?.id ?? null) {
-    void handlePreviewOpenTarget(url, workspaceID)
+    const tabID = activeBrowserTab?.id ?? openBrowserTab({ target: url, workspaceID })
+    void resolvePreviewTargetInTab(tabID, url, workspaceID)
   }
 
   function handlePreviewOpen(workspaceID = selectedWorkspace?.id ?? null) {
-    setRightSidebarView("preview")
-    const previewState = previewByWorkspaceID[resolvePreviewScopeID(workspaceID)] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
-    void handlePreviewOpenTarget(previewState.draftTarget || previewState.draftUrl || previewState.committedUrl || "", workspaceID)
+    const tabID = activeBrowserTab?.id ?? openBrowserTab({ target: null, workspaceID })
+    const previewState = activeBrowserTab?.id === tabID ? activeBrowserTab.state : getBrowserState(tabID)
+    void resolvePreviewTargetInTab(tabID, previewState.draftTarget || previewState.draftUrl || previewState.committedUrl || "", workspaceID)
   }
 
   function handlePreviewReload(workspaceID = selectedWorkspace?.id ?? null) {
-    setRightSidebarView("preview")
-    const previewState = previewByWorkspaceID[resolvePreviewScopeID(workspaceID)] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
+    if (!activeBrowserTab) return
+    const previewState = activeBrowserTab.state
     const target = previewState.activeTargetInput ?? previewState.resolvedTarget?.normalizedInput ?? previewState.draftTarget
     if (target) {
-      void handlePreviewOpenTarget(target, workspaceID, previewState.resolvedTarget?.workspaceRoot ?? undefined)
+      void resolvePreviewTargetInTab(activeBrowserTab.id, target, workspaceID, previewState.resolvedTarget?.workspaceRoot ?? undefined)
     }
   }
 
-  function handlePreviewBack(workspaceID = selectedWorkspace?.id ?? null) {
-    setRightSidebarView("preview")
-    updatePreviewState((current) => {
+  function handlePreviewBack() {
+    if (!activeBrowserTab) return
+    updatePreviewState(activeBrowserTab.id, (current) => {
       const { history, index } = getPreviewNavigationState(current)
       if (index <= 0) return current
       const nextUrl = history[index - 1]
@@ -287,12 +394,12 @@ export function useReviewPanelController({
         navigationHistory: history,
         navigationIndex: index - 1,
       }
-    }, workspaceID)
+    })
   }
 
-  function handlePreviewForward(workspaceID = selectedWorkspace?.id ?? null) {
-    setRightSidebarView("preview")
-    updatePreviewState((current) => {
+  function handlePreviewForward() {
+    if (!activeBrowserTab) return
+    updatePreviewState(activeBrowserTab.id, (current) => {
       const { history, index } = getPreviewNavigationState(current)
       if (index < 0 || index >= history.length - 1) return current
       const nextUrl = history[index + 1]
@@ -307,20 +414,17 @@ export function useReviewPanelController({
         navigationHistory: history,
         navigationIndex: index + 1,
       }
-    }, workspaceID)
+    })
   }
 
-  function handlePreviewActiveInteractionChange(
-    pluginID: PreviewInteractionPluginID | null,
-    workspaceID = selectedWorkspace?.id ?? null,
-  ) {
-    setRightSidebarView("preview")
+  function handlePreviewActiveInteractionChange(pluginID: PreviewInteractionPluginID | null) {
+    if (!activeBrowserTab) return
     updatePreviewState(
+      activeBrowserTab.id,
       (current) => ({
         ...current,
         activeInteractionID: pluginID,
       }),
-      workspaceID,
     )
   }
 
@@ -342,12 +446,10 @@ export function useReviewPanelController({
 
   function handlePreviewCommitInteraction(
     input: PreviewInteractionCommitInput,
-    workspaceID = selectedWorkspace?.id ?? null,
   ) {
-    const scopeID = resolvePreviewScopeID(workspaceID)
-    const previewState = previewByWorkspaceID[scopeID] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
+    if (!activeBrowserTab) return
+    const previewState = activeBrowserTab.state
 
-    setRightSidebarView("preview")
     if (!previewState.resolvedTarget) return
 
     const nextInteraction: PreviewInteractionRecord = {
@@ -359,7 +461,7 @@ export function useReviewPanelController({
       interaction.pluginID === nextInteraction.pluginID && interaction.targetKey === nextInteraction.targetKey
     ).length + 1
 
-    updatePreviewState((current) => {
+    updatePreviewState(activeBrowserTab.id, (current) => {
       if (current.resolvedTarget?.normalizedInput !== previewState.resolvedTarget?.normalizedInput) return current
 
       return {
@@ -368,7 +470,7 @@ export function useReviewPanelController({
         interactions: [...current.interactions, nextInteraction],
         errorMessage: null,
       }
-    }, workspaceID)
+    })
 
     if (activeTabKey) {
       const nextReference = createPreviewInteractionReference(nextInteraction, interactionIndex)
@@ -383,20 +485,21 @@ export function useReviewPanelController({
     }
   }
 
-  function handlePreviewDeleteInteraction(interactionID: string, workspaceID = selectedWorkspace?.id ?? null) {
+  function handlePreviewDeleteInteraction(interactionID: string) {
+    if (!activeBrowserTab) return
     updatePreviewState(
+      activeBrowserTab.id,
       (current) => ({
         ...current,
         interactions: current.interactions.filter((interaction) => interaction.id !== interactionID),
       }),
-      workspaceID,
     )
   }
 
-  function handlePreviewInsertInteractionsIntoDraft(workspaceID = selectedWorkspace?.id ?? null) {
-    if (!activeTabKey) return
+  function handlePreviewInsertInteractionsIntoDraft() {
+    if (!activeTabKey || !activeBrowserTab) return
 
-    const previewState = previewByWorkspaceID[resolvePreviewScopeID(workspaceID)] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
+    const previewState = activeBrowserTab.state
     const target = previewState.resolvedTarget
     if (!target) return
 
@@ -418,34 +521,34 @@ export function useReviewPanelController({
     })
   }
 
-  async function handlePreviewOpenExternal(workspaceID = selectedWorkspace?.id ?? null) {
+  async function handlePreviewOpenExternal() {
+    if (!activeBrowserTab) return
     const openExternalUrl = window.desktop?.openExternalUrl
     const openPath = window.desktop?.openPath
 
-    const scopeID = resolvePreviewScopeID(workspaceID)
-    const previewState = previewByWorkspaceID[scopeID] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
+    const previewState = activeBrowserTab.state
     const externalTarget = previewState.resolvedTarget?.externalOpenTarget
 
     if (externalTarget?.kind === "path" && openPath) {
       try {
         await openPath({ targetPath: externalTarget.value })
         updatePreviewState(
+          activeBrowserTab.id,
           (current) => ({
             ...current,
             errorKind: null,
             errorMessage: null,
           }),
-          workspaceID,
         )
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         updatePreviewState(
+          activeBrowserTab.id,
           (current) => ({
             ...current,
             errorKind: "unknown",
             errorMessage: message,
           }),
-          workspaceID,
         )
       }
       return
@@ -457,22 +560,22 @@ export function useReviewPanelController({
       try {
         await openExternalUrl({ url: externalTarget.value })
         updatePreviewState(
+          activeBrowserTab.id,
           (current) => ({
             ...current,
             errorKind: null,
             errorMessage: null,
           }),
-          workspaceID,
         )
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         updatePreviewState(
+          activeBrowserTab.id,
           (current) => ({
             ...current,
             errorKind: "unknown",
             errorMessage: message,
           }),
-          workspaceID,
         )
       }
       return
@@ -482,12 +585,12 @@ export function useReviewPanelController({
 
     if (!normalizedUrl) {
       updatePreviewState(
+        activeBrowserTab.id,
         (current) => ({
           ...current,
           errorKind,
           errorMessage,
         }),
-        workspaceID,
       )
       return
     }
@@ -495,30 +598,30 @@ export function useReviewPanelController({
     try {
       await openExternalUrl({ url: normalizedUrl })
       updatePreviewState(
+        activeBrowserTab.id,
         (current) => ({
           ...current,
           draftUrl: normalizedUrl,
           errorKind: null,
           errorMessage: null,
         }),
-        workspaceID,
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       updatePreviewState(
+        activeBrowserTab.id,
         (current) => ({
           ...current,
           errorKind: "unknown",
           errorMessage: message,
         }),
-        workspaceID,
       )
     }
   }
 
   function handleWorkspaceFileQueryChange(value: string) {
-    setRightSidebarView("files")
-    setWorkspaceFileReviewState((current) => {
+    const tabID = activeFileTab?.id ?? openFilesTab({})
+    setRightSidebarFileState(tabID, (current) => {
       const nextErrorMessage = current.selectedFileKind === "unsupported" ? current.errorMessage : null
       const nextState = {
         ...current,
@@ -538,15 +641,28 @@ export function useReviewPanelController({
 
   async function handleWorkspaceFileSelect(path: string, options: WorkspaceFileSelectOptions = {}) {
     const readWorkspaceFile = window.desktop?.readWorkspaceFile
-    const scopeDirectory = options.scopeDirectory ?? activeWorkspaceFileScopeDirectory
+    const scopeDirectory = options.scopeDirectory ?? activeFileTab?.scopeDirectory ?? activeWorkspaceFileScopeDirectory
     const trimmedPath = path.trim()
     if (!readWorkspaceFile || !scopeDirectory || !trimmedPath) return
 
+    const shouldOpenTargetTab = Boolean(options.scopeDirectory || options.tabID)
+    const tabID = options.tabID ?? (
+      shouldOpenTargetTab
+        ? openFilesTab({
+            path: trimmedPath,
+            scopeDirectory,
+            scopeName: options.scopeName,
+          })
+        : activeFileTab?.id ?? openFilesTab({
+            path: trimmedPath,
+            scopeDirectory,
+            scopeName: options.scopeName,
+          })
+    )
     const linkedLineRange = options.linkedLineRange ?? null
-    const requestID = workspaceFileReadRequestRef.current + 1
-    workspaceFileReadRequestRef.current = requestID
-    setRightSidebarView("files")
-    setWorkspaceFileReviewState((current) => ({
+    const requestID = (workspaceFileReadRequestByTabRef.current[tabID] ?? 0) + 1
+    workspaceFileReadRequestByTabRef.current[tabID] = requestID
+    setRightSidebarFileState(tabID, (current) => ({
       ...current,
       scopeDirectory,
       selectedFilePath: trimmedPath,
@@ -559,19 +675,25 @@ export function useReviewPanelController({
       errorMessage: null,
       status: "reading",
     }))
+    updateRightSidebarTab(tabID, {
+      scopeDirectory,
+      scopeName: options.scopeName ?? activeFileTab?.scopeName ?? activeWorkspaceFileScopeName,
+      targetKey: getFilesTabTargetKey(scopeDirectory, trimmedPath),
+      title: getPathName(trimmedPath) ?? "Files",
+    })
 
     try {
       const nextFile = await readWorkspaceFile({
         directory: scopeDirectory,
         path: trimmedPath,
       })
-      if (workspaceFileReadRequestRef.current !== requestID) return
+      if (workspaceFileReadRequestByTabRef.current[tabID] !== requestID) return
 
       const commentKey = getWorkspaceFileCommentKey(scopeDirectory, nextFile.path, platform)
       const nextComments = commentKey ? workspaceFileCommentsByTarget[commentKey] ?? [] : []
       const nextErrorMessage = nextFile.kind === "unsupported" ? nextFile.unsupportedReason ?? null : null
 
-      setWorkspaceFileReviewState((current) => ({
+      setRightSidebarFileState(tabID, (current) => ({
         ...current,
         selectedFilePath: nextFile.path,
         selectedFileContent: nextFile.kind === "text" ? nextFile.content ?? "" : null,
@@ -583,11 +705,15 @@ export function useReviewPanelController({
         errorMessage: nextErrorMessage,
         status: nextFile.kind === "text" ? "ready" : "unsupported",
       }))
+      updateRightSidebarTab(tabID, {
+        targetKey: getFilesTabTargetKey(scopeDirectory, nextFile.path),
+        title: getPathName(nextFile.path) ?? "Files",
+      })
     } catch (error) {
-      if (workspaceFileReadRequestRef.current !== requestID) return
+      if (workspaceFileReadRequestByTabRef.current[tabID] !== requestID) return
       const message = error instanceof Error ? error.message : String(error)
 
-      setWorkspaceFileReviewState((current) => ({
+      setRightSidebarFileState(tabID, (current) => ({
         ...current,
         selectedFilePath: trimmedPath,
         selectedFileContent: null,
@@ -604,10 +730,9 @@ export function useReviewPanelController({
   }
 
   function handleWorkspaceFileCommentStart(startLineNumber: number, endLineNumber = startLineNumber) {
-    if (!workspaceFileReviewState.selectedFilePath) return
+    if (!activeFileTab?.state.selectedFilePath) return
     const nextRange = normalizeWorkspaceFileLineRange(startLineNumber, endLineNumber)
-    setRightSidebarView("files")
-    setWorkspaceFileReviewState((current) => ({
+    setRightSidebarFileState(activeFileTab.id, (current) => ({
       ...current,
       linkedLineRange: null,
       pendingComment: {
@@ -623,7 +748,8 @@ export function useReviewPanelController({
   }
 
   function handleWorkspaceFileCommentChange(text: string) {
-    setWorkspaceFileReviewState((current) =>
+    if (!activeFileTab) return
+    setRightSidebarFileState(activeFileTab.id, (current) =>
       current.pendingComment
         ? {
             ...current,
@@ -637,18 +763,20 @@ export function useReviewPanelController({
   }
 
   function handleWorkspaceFileCommentCancel() {
-    setWorkspaceFileReviewState((current) => ({
+    if (!activeFileTab) return
+    setRightSidebarFileState(activeFileTab.id, (current) => ({
       ...current,
       pendingComment: null,
     }))
   }
 
   function commitWorkspaceFileComment(insertIntoComposer: boolean) {
-    const scopeDirectory = activeWorkspaceFileScopeDirectory
-    const selectedFilePath = workspaceFileReviewState.selectedFilePath
-    const selectedFileContent = workspaceFileReviewState.selectedFileContent
-    const selectedFileExtension = workspaceFileReviewState.selectedFileExtension
-    const pendingComment = workspaceFileReviewState.pendingComment
+    if (!activeFileTab) return
+    const scopeDirectory = activeFileTab.scopeDirectory
+    const selectedFilePath = activeFileTab.state.selectedFilePath
+    const selectedFileContent = activeFileTab.state.selectedFileContent
+    const selectedFileExtension = activeFileTab.state.selectedFileExtension
+    const pendingComment = activeFileTab.state.pendingComment
     if (!scopeDirectory || !selectedFilePath || !pendingComment) return
 
     const trimmedText = pendingComment.text.trim()
@@ -668,7 +796,7 @@ export function useReviewPanelController({
       ...current,
       [commentKey]: [...(current[commentKey] ?? []), nextComment],
     }))
-    setWorkspaceFileReviewState((current) => ({
+    setRightSidebarFileState(activeFileTab.id, (current) => ({
       ...current,
       comments: [...current.comments, nextComment],
       pendingComment: null,
@@ -720,7 +848,7 @@ export function useReviewPanelController({
   function handleActiveSessionDiffFileSelect(file: string | null, sessionID = activeSessionID) {
     if (!sessionID) return
 
-    setRightSidebarView("changes")
+    openReviewTab(sessionID)
     setSelectedDiffFileBySession((prev) => ({
       ...prev,
       [sessionID]: file,
@@ -740,13 +868,14 @@ export function useReviewPanelController({
     if (!restoreWorkspaceDiffFile) {
       throw new Error("Workspace diff restore bridge is unavailable.")
     }
-    if (!sessionID || !activeSessionDirectory) {
+    const sessionDirectory = resolveSessionDirectory(sessionID) ?? activeSessionDirectory
+    if (!sessionID || !sessionDirectory) {
       throw new Error("Select a session before restoring a file.")
     }
 
     for (const file of uniqueFiles) {
       await restoreWorkspaceDiffFile({
-        directory: activeSessionDirectory,
+        directory: sessionDirectory,
         file,
       })
     }
@@ -774,14 +903,15 @@ export function useReviewPanelController({
     if (!reverseApplyWorkspaceDiffPatches) {
       throw new Error("Workspace diff reverse-apply bridge is unavailable.")
     }
-    if (!sessionID || !activeSessionDirectory) {
+    const sessionDirectory = resolveSessionDirectory(sessionID) ?? activeSessionDirectory
+    if (!sessionID || !sessionDirectory) {
       throw new Error("Select a session before restoring a file.")
     }
 
     let result: Awaited<ReturnType<typeof reverseApplyWorkspaceDiffPatches>> | null = null
     try {
       result = await reverseApplyWorkspaceDiffPatches({
-        directory: activeSessionDirectory,
+        directory: sessionDirectory,
         diffs: patchDiffs,
       })
     } finally {
@@ -803,12 +933,15 @@ export function useReviewPanelController({
   }
 
   useWorkspaceFileReviewSearchEffects({
-    activeWorkspaceFileScopeDirectory,
+    activeWorkspaceFileScopeDirectory: activeFileTab?.scopeDirectory ?? null,
     deferredWorkspaceFileQuery,
     platform,
-    setWorkspaceFileReviewState,
+    setWorkspaceFileReviewState: (update) => {
+      if (!activeFileTab) return
+      setRightSidebarFileState(activeFileTab.id, update)
+    },
     workspaceFileReadRequestRef,
-    workspaceFileReviewState,
+    workspaceFileReviewState: activeWorkspaceFileState,
     workspaceFileSearchRequestRef,
   })
 

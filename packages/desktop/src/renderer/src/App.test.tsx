@@ -1234,17 +1234,20 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Chat" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Overview" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Artifacts" })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Changes" })).toBeInTheDocument()
+    expect(within(inspector).getByRole("button", { name: /^Review/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Runtime" })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Files" })).toBeInTheDocument()
+    expect(within(inspector).getByRole("button", { name: /^Browser/ })).toBeInTheDocument()
+    expect(within(inspector).getByRole("button", { name: /^Files/ })).toBeInTheDocument()
+    expect(within(inspector).getByRole("button", { name: /^Terminal/ })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Changes" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Preview" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Console" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument()
     expect(inspector).toBeInTheDocument()
     expect(within(topMenu).getByRole("group", { name: "Open current project" })).toBeInTheDocument()
     expect(within(inspector).queryByText("Workspace diff")).not.toBeInTheDocument()
-    expect(await within(inspector).findByText("No changes in this session.")).toBeInTheDocument()
-    expect(inspector.querySelector(".right-sidebar-view-host")).toHaveClass("is-changes")
+    expect(within(inspector).queryByText("No changes in this session.")).not.toBeInTheDocument()
+    expect(inspector.querySelector(".right-sidebar-view-host")).toHaveClass("is-launcher")
     expect(window.desktop?.getSessionRuntimeDebug).not.toHaveBeenCalled()
     expect(within(inspector).queryByText("Active Session")).not.toBeInTheDocument()
     expect(within(inspector).queryByText("Workspace")).not.toBeInTheDocument()
@@ -1377,12 +1380,13 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Code" })).not.toBeInTheDocument()
     expect(screen.getByLabelText("Session canvas top menu")).toBeInTheDocument()
     expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Changes" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Toggle terminal panel" })).toBeInTheDocument()
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    expect(within(inspector).getByRole("button", { name: /^Review/ })).toBeInTheDocument()
+    expect(within(inspector).getByRole("button", { name: /^Terminal/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "app" })).toBeInTheDocument()
   })
 
-  it("shows the runtime inspector when the runtime tab is selected", async () => {
+  it("does not expose the removed runtime inspector even when runtime debug is enabled", async () => {
     window.localStorage.setItem("desktop.agentDebugTrace", "true")
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
@@ -1409,22 +1413,12 @@ describe("App", () => {
       },
     ])
     render(<App />)
-    expect(await screen.findByRole("button", { name: "Runtime" })).toBeInTheDocument()
-    await waitFor(() => {
-      expect(window.desktop?.getSessionRuntimeDebug).toHaveBeenCalled()
-    })
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
 
-    fireEvent.click(screen.getByRole("button", { name: "Runtime" }))
-
-    expect(await screen.findByText("Agent Runtime")).toBeInTheDocument()
-    expect(screen.getByText("Current execution state")).toBeInTheDocument()
-    expect(screen.getByText("Busy")).toBeInTheDocument()
-    expect(screen.getAllByText("Running Tool").length).toBeGreaterThan(0)
-    expect(screen.getByText("Latest tool calls")).toBeInTheDocument()
-    expect(screen.getAllByText("Inspect repo").length).toBeGreaterThan(0)
-    expect(screen.getByText("Execution timeline")).toBeInTheDocument()
-    expect(screen.getByText("LLM request completed")).toBeInTheDocument()
-    expect(window.desktop?.getSessionRuntimeDebug).toHaveBeenCalled()
+    expect(await within(inspector).findByRole("button", { name: /^Review/ })).toBeInTheDocument()
+    expect(within(inspector).queryByRole("button", { name: "Runtime" })).not.toBeInTheDocument()
+    expect(within(inspector).queryByText("Agent Runtime")).not.toBeInTheDocument()
+    expect(within(inspector).queryByText("Current execution state")).not.toBeInTheDocument()
   })
 
   it("opens side chat inline under the assistant response without replacing the current session tab", async () => {
@@ -1761,7 +1755,7 @@ describe("App", () => {
     render(<App />)
 
     const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
-    fireEvent.click(within(inspector).getByRole("button", { name: "Preview" }))
+    fireEvent.click(within(inspector).getByRole("button", { name: /^Browser/ }))
 
     const previewTargetInput = within(inspector).getByRole("textbox", { name: "Preview target" })
     fireEvent.change(previewTargetInput, {
@@ -1854,7 +1848,7 @@ describe("App", () => {
     render(<App />)
 
     const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
-    fireEvent.click(within(inspector).getByRole("button", { name: "Preview" }))
+    fireEvent.click(within(inspector).getByRole("button", { name: /^Browser/ }))
 
     const previewTargetInput = within(inspector).getByRole("textbox", { name: "Preview target" })
     fireEvent.change(previewTargetInput, {
@@ -1889,9 +1883,10 @@ describe("App", () => {
 
     render(<App />)
 
-    expect(await screen.findByRole("button", { name: "Files" })).toBeInTheDocument()
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    expect(await within(inspector).findByRole("button", { name: /^Files/ })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Files" }))
+    fireEvent.click(within(inspector).getByRole("button", { name: /^Files/ }))
     fireEvent.change(screen.getByLabelText("Search workspace files"), {
       target: { value: "focus" },
     })
@@ -2206,7 +2201,8 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "Files" }))
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    fireEvent.click(await within(inspector).findByRole("button", { name: /^Files/ }))
     fireEvent.change(screen.getByLabelText("Search workspace files"), {
       target: { value: "focus" },
     })
@@ -2261,7 +2257,8 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "Files" }))
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    fireEvent.click(await within(inspector).findByRole("button", { name: /^Files/ }))
     fireEvent.change(screen.getByLabelText("Search workspace files"), {
       target: { value: "focus" },
     })
@@ -2387,7 +2384,8 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "Files" }))
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    fireEvent.click(await within(inspector).findByRole("button", { name: /^Files/ }))
     fireEvent.change(screen.getByLabelText("Search workspace files"), {
       target: { value: "focus" },
     })
@@ -2444,7 +2442,7 @@ describe("App", () => {
     expect(screen.queryByText("File feedback for src/focus-files.tsx (Lines 2-3)")).not.toBeInTheDocument()
   })
 
-  it("resets file review state when the focused workspace changes", async () => {
+  it("keeps file review state isolated when the focused workspace changes", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
     window.desktop!.searchWorkspaceFiles = vi.fn().mockResolvedValue([
       {
@@ -2463,7 +2461,8 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "Files" }))
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    fireEvent.click(await within(inspector).findByRole("button", { name: /^Files/ }))
     fireEvent.change(screen.getByLabelText("Search workspace files"), {
       target: { value: "focus" },
     })
@@ -2472,11 +2471,9 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "backend" }))
 
-    await waitFor(() => {
-      expect(screen.queryByText("export const focusValue = 1")).not.toBeInTheDocument()
-    })
-    expect(screen.queryByRole("button", { name: /focus-files\.tsx/i })).not.toBeInTheDocument()
-    expect(screen.getByLabelText("Search workspace files")).toHaveValue("")
+    expect(await screen.findByText("export const focusValue = 1")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /focus-files\.tsx/i })).toBeInTheDocument()
+    expect(screen.getByLabelText("Search workspace files")).toHaveValue("focus")
   })
 
   it("renders planning state only below the composer", async () => {
@@ -4166,12 +4163,14 @@ describe("App", () => {
     render(<App />)
 
     await screen.findByRole("button", { name: "Atlas review" })
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    fireEvent.click(within(inspector).getByRole("button", { name: /^Review/ }))
     await waitFor(() => {
       expect(window.desktop!.getSessionDiff).toHaveBeenCalledWith({
         sessionID: "session-atlas-review",
       })
     })
-    expect(screen.getByText("No changes in this session.")).toBeInTheDocument()
+    expect(within(inspector).getByText("No changes in this session.")).toBeInTheDocument()
 
     vi.useFakeTimers()
     try {
@@ -5154,6 +5153,8 @@ describe("App", () => {
     expect(within(inspector).queryByRole("button", { name: "Modified" })).not.toBeInTheDocument()
     expect(within(inspector).queryByRole("button", { name: "Deleted" })).not.toBeInTheDocument()
     expect(within(inspector).queryByRole("button", { name: "Renamed" })).not.toBeInTheDocument()
+
+    fireEvent.click(within(inspector).getByRole("button", { name: /^Review/ }))
     expect(screen.getAllByText("src/App.tsx").length).toBeGreaterThan(0)
     expect(screen.getAllByText("src/styles.css").length).toBeGreaterThan(0)
     expect(within(inspector).getByText("+5")).toBeInTheDocument()
@@ -8223,7 +8224,7 @@ describe("App", () => {
     expect(screen.queryByText("Pick a project first")).not.toBeInTheDocument()
     expect(await screen.findByText("Global tool availability")).toBeInTheDocument()
     expect(screen.getByText("1 of 2 built-in tools enabled.")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Shell tools, 1 of 1 enabled" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Shell tools, 1 of 1 enabled" })).toBeInTheDocument()
     expect(screen.getByText("Git Bash")).toBeInTheDocument()
     expect(screen.queryByText("Read File")).not.toBeInTheDocument()
 
@@ -11155,14 +11156,27 @@ describe("App", () => {
     expect(document.querySelectorAll(".project-row.is-active")).toHaveLength(1)
   })
 
-  it("toggles the terminal panel from the right sidebar menu without changing the active inspector view", async () => {
+  it("opens a terminal tab from the right sidebar launcher and keeps PTY close semantics internal", async () => {
     render(<App />)
 
     const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
-    const collapsedToggle = within(inspector).getByRole("button", { name: "Toggle terminal panel" })
-    expect(collapsedToggle.closest(".right-sidebar-top-menu")).not.toBeNull()
+    const terminalLauncher = within(inspector).getByRole("button", { name: /^Terminal/ })
+    expect(terminalLauncher.closest(".right-sidebar-launcher")).not.toBeNull()
 
-    fireEvent.click(collapsedToggle)
+    fireEvent.click(terminalLauncher)
+
+    expect(within(inspector).getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true")
+    const viewHost = inspector.querySelector(".right-sidebar-view-host")
+    const terminalPanel = inspector.querySelector(".terminal-panel")
+    expect(viewHost).not.toBeNull()
+    expect(terminalPanel).not.toBeNull()
+    expect(viewHost).toHaveClass("is-terminal")
+    expect(terminalPanel).toHaveClass("is-fill")
+    expect(inspector.querySelector(".terminal-panel-resizer")).toBeNull()
+    expect(within(inspector).getByText("No terminal session is open.")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Toggle terminal panel" })).not.toBeInTheDocument()
+
+    fireEvent.click(within(inspector).getByRole("button", { name: "Create terminal" }))
 
     await waitFor(() => {
       expect(window.desktop!.createPtySession).toHaveBeenCalledTimes(1)
@@ -11172,31 +11186,17 @@ describe("App", () => {
       })
     })
 
-    expect(screen.getByRole("button", { name: /^Terminal 1,/ })).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "New terminal" })).not.toBeInTheDocument()
-    expect(within(inspector).getByRole("button", { name: "Toggle terminal panel" }).closest(".right-sidebar-top-menu")).not.toBeNull()
-    expect(within(inspector).getByRole("button", { name: "Toggle terminal panel" })).toHaveTextContent("")
+    expect(within(inspector).getByRole("button", { name: /^Terminal 1,/ })).toBeInTheDocument()
     expect(screen.queryByText("New terminal")).not.toBeInTheDocument()
     expect(document.querySelector(".terminal-view-meta")).toBeNull()
 
-    const viewHost = inspector.querySelector(".right-sidebar-view-host")
-    const terminalPanel = inspector.querySelector(".terminal-panel")
-    expect(viewHost).not.toBeNull()
-    expect(terminalPanel).not.toBeNull()
-    expect(viewHost).toHaveClass("is-changes")
-    expect(await within(inspector).findByText("No changes in this session.")).toBeInTheDocument()
-    expect(viewHost!.compareDocumentPosition(terminalPanel!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    fireEvent.click(within(inspector).getByRole("button", { name: "Close Terminal" }))
 
-    fireEvent.click(within(inspector).getByRole("button", { name: "Toggle terminal panel" }))
-
-    await waitFor(() => {
-      expect(screen.queryByRole("button", { name: /^Terminal 1,/ })).not.toBeInTheDocument()
-    })
-
-    expect(within(inspector).getByRole("button", { name: "Toggle terminal panel" }).closest(".right-sidebar-top-menu")).not.toBeNull()
+    expect(within(inspector).getByLabelText("Right sidebar launcher")).toBeInTheDocument()
+    expect(window.desktop!.deletePtySession).not.toHaveBeenCalled()
   })
 
-  it("keeps the terminal toggle in the right sidebar menu when the left rail is hidden", async () => {
+  it("keeps the terminal launcher available when the left rail is hidden", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
@@ -11205,8 +11205,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Show left rail" }))
 
     const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
-    const collapsedToggle = within(inspector).getByRole("button", { name: "Toggle terminal panel" })
-    expect(collapsedToggle.closest(".right-sidebar-top-menu")).not.toBeNull()
+    const terminalLauncher = within(inspector).getByRole("button", { name: /^Terminal/ })
+    expect(terminalLauncher.closest(".right-sidebar-launcher")).not.toBeNull()
   })
 
   it("shows real context pressure from streamed assistant usage against the selected model context window", async () => {
@@ -11396,7 +11396,9 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Toggle terminal panel" }))
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    fireEvent.click(within(inspector).getByRole("button", { name: /^Terminal/ }))
+    fireEvent.click(await within(inspector).findByRole("button", { name: "Create terminal" }))
 
     await waitFor(() => {
       expect(window.desktop!.attachPtySession).toHaveBeenCalledWith({
@@ -11507,7 +11509,9 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Toggle terminal panel" }))
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    fireEvent.click(within(inspector).getByRole("button", { name: /^Terminal/ }))
+    fireEvent.click(await within(inspector).findByRole("button", { name: "Create terminal" }))
 
     await waitFor(() => {
       expect(window.desktop!.createPtySession).toHaveBeenCalledTimes(1)

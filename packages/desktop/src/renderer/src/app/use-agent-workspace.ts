@@ -20,10 +20,10 @@ import { useWorkspaceSessionStore } from "./agent-workspace/workspace-session-st
 import { createWorkspaceStore, seedWorkspaceIDs, type WorkspaceStoreApi } from "./agent-workspace/workspace-store"
 import { initialSelection } from "./seed-data"
 import { isRendererPerfProfilerEnabled, logRendererPerf, measureRendererPerf } from "./perf-profiler"
-import type { LeftSidebarView, RightSidebarView, SessionDiffSummary, SessionModelSelection, Turn, WorkspaceGroup } from "./types"
+import type { LeftSidebarView, SessionDiffSummary, SessionModelSelection, Turn, WorkspaceGroup } from "./types"
 import type { ThreadScrollSnapshot } from "./thread/ThreadView"
 import { persistUserTurns } from "./user-turn-presentation"
-import { updateSessionModelSelectionInWorkspaces } from "./workspace"
+import { findSession, updateSessionModelSelectionInWorkspaces } from "./workspace"
 import {
   createInitialDockviewLayout,
   writePersistedDockviewLayout,
@@ -180,7 +180,7 @@ export function useAgentWorkspace({
     pinnedWorkspaceIDs,
     preserveLocalWorkspaceStateOnInitialLoadRef,
     projectRowRefs,
-    rightSidebarView,
+    rightSidebar,
     selectedFolderID,
     sessionCanvasUnreadBySession,
     setActiveSideChatSessionIDByParentSessionID,
@@ -193,7 +193,12 @@ export function useAgentWorkspace({
     setIsInitialWorkspaceLoadPending,
     setLeftSidebarView,
     setPinnedWorkspaceIDs,
-    setRightSidebarView,
+    activateRightSidebarTab,
+    closeRightSidebarTab,
+    openOrFocusRightSidebarTab,
+    setRightSidebarFileState,
+    setRightSidebarPreviewState,
+    updateRightSidebarTab,
     setSelectedFolderID,
     setSessionCanvasUnreadBySession,
     setWorkspaces,
@@ -213,14 +218,12 @@ export function useAgentWorkspace({
     sessionDiffStateBySession,
     sessionRuntimeDebugBySession,
     sessionRuntimeDebugStateBySession,
-    setPreviewByWorkspaceID,
     setSelectedDiffFileBySession,
     setSessionDiffBySession,
     setSessionDiffStateBySession,
     setSessionRuntimeDebugBySession,
     setSessionRuntimeDebugStateBySession,
     setWorkspaceFileCommentsByTarget,
-    setWorkspaceFileReviewState,
     workspaceFileCommentsByTarget,
     workspaceFileReadRequestRef,
     workspaceFileReviewState,
@@ -727,6 +730,13 @@ export function useAgentWorkspace({
     workspaces,
   })
 
+  const activeRightSidebarTab = rightSidebar.tabs.find((tab) => tab.id === rightSidebar.activeTabID) ?? null
+  const rightSidebarTabs = rightSidebar.tabs
+  const resolveSessionDirectory = useCallback((sessionID: string | null | undefined) => {
+    if (!sessionID) return null
+    return sessionDirectoryBySession[sessionID] ?? findSession(workspaces, sessionID).workspace?.directory ?? null
+  }, [sessionDirectoryBySession, workspaces])
+
   const {
     handleActiveSessionDiffFileSelect,
     handleActiveSessionDiffRefresh,
@@ -756,30 +766,29 @@ export function useAgentWorkspace({
     activeSessionDirectory,
     activeSessionID,
     activeTabKey,
+    activeRightSidebarTab,
     activeWorkspaceFileScopeDirectory,
+    activeWorkspaceFileScopeName,
     loadSessionDiffForSession,
     loadSessionRuntimeDebugForSession,
+    openOrFocusRightSidebarTab,
     platform,
-    previewByWorkspaceID,
+    resolveSessionDirectory,
+    rightSidebarTabs,
     selectedWorkspace,
     setComposerDraftStateByTabKey,
-    setPreviewByWorkspaceID,
-    setRightSidebarView,
+    setRightSidebarFileState,
+    setRightSidebarPreviewState,
     setSelectedDiffFileBySession,
     setWorkspaceFileCommentsByTarget,
-    setWorkspaceFileReviewState,
+    updateRightSidebarTab,
     workspaceFileCommentsByTarget,
     workspaceFileReadRequestRef,
-    workspaceFileReviewState,
     workspaceFileSearchRequestRef,
   })
 
   function handleLeftSidebarViewChange(nextView: LeftSidebarView) {
     setLeftSidebarView(nextView)
-  }
-
-  function handleRightSidebarViewChange(nextView: RightSidebarView) {
-    setRightSidebarView(nextView)
   }
 
   function handleProjectPin(workspace: WorkspaceGroup) {
@@ -881,6 +890,7 @@ export function useAgentWorkspace({
   return {
     activeCreateSessionTabID,
     activePreviewState,
+    activeRightSidebarTab,
     activeSession,
     activeSessionDirectory,
     activeSessionContextUsage,
@@ -932,6 +942,9 @@ export function useAgentWorkspace({
     handleOpenSideChat,
     handleOpenSideChatInTab,
     handleOpenCreateSessionTab,
+    activateRightSidebarTab,
+    closeRightSidebarTab,
+    openOrFocusRightSidebarTab,
     handleMovePanelIntoSurface,
     handleMovePanelOutOfSurface,
     handlePaneFocus,
@@ -976,7 +989,6 @@ export function useAgentWorkspace({
     handleProjectPin,
     handleProjectRemove,
     handleRemoveComposerAttachment,
-    handleRightSidebarViewChange,
     handleSend,
     handlePlanModeToggle,
     handleSessionDelete,
@@ -1006,7 +1018,8 @@ export function useAgentWorkspace({
     refreshComposerModels,
     refreshComposerSkills,
     refreshWorkspaceFromDirectory,
-    rightSidebarView,
+    rightSidebar,
+    rightSidebarTabs,
     runningSessionIDs,
     selectedProjectID,
     selectedWorkspace,
@@ -1020,6 +1033,9 @@ export function useAgentWorkspace({
     dockviewActiveState,
     visibleCanvasSessionIDs,
     dockviewLayout,
+    selectedDiffFileBySession,
+    sessionDiffBySession,
+    sessionDiffStateBySession,
     workspaceStore,
     workspaces,
   }

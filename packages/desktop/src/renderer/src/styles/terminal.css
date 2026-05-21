@@ -20,6 +20,14 @@
   border-radius: 0;
 }
 
+.terminal-panel.is-fill {
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-top: 0;
+}
+
 .terminal-panel.is-resizing {
   will-change: height;
 }
@@ -47,6 +55,10 @@
 .terminal-panel-resizer.is-active::after,
 .terminal-panel-resizer:hover::after {
   background: var(--seg-accent);
+}
+
+.terminal-panel.is-fill .terminal-panel-resizer {
+  display: none;
 }
 
 .terminal-tabs,
@@ -489,6 +501,13 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
   flex: 0 0 auto;
   margin: 0;
   border-top: 1px solid var(--mix-seg-border-82-transparent-18);
+}
+
+.right-sidebar-view-host.is-terminal .terminal-panel {
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  border-top: 0;
 }
 
 .right-sidebar-main-stack .terminal-tabs {

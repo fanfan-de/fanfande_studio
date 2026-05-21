@@ -9,7 +9,10 @@ import type {
   CreateSessionTab,
   LeftSidebarView,
   PermissionRequest,
-  RightSidebarView,
+  RightSidebarOpenTabInput,
+  RightSidebarState,
+  RightSidebarTab,
+  RightSidebarTabUpdate,
   SessionContextUsage,
   SessionDiffState,
   SessionDiffSummary,
@@ -21,6 +24,7 @@ import type {
   WorkspacePreviewState,
 } from "../types"
 import type { SessionMessageTree } from "../session-message-tree"
+import { createID } from "../utils"
 import {
   createDockviewActiveStateFromLayout,
   dockviewActiveStatesAreEqual,
@@ -29,7 +33,8 @@ import {
 } from "../workbench/dockview-state"
 import { sortWorkspaceGroups } from "../workspace"
 import {
-  DEFAULT_WORKSPACE_FILE_REVIEW_STATE
+  DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+  DEFAULT_WORKSPACE_PREVIEW_STATE,
 } from "./review-preview-state"
 import {
   conversationActivityMapsAreEqual,
@@ -81,6 +86,158 @@ function writePinnedWorkspaceIDs(workspaceIDs: string[]) {
   }
 }
 
+function createDefaultWorkspaceFileReviewState(scopeDirectory: string | null): WorkspaceFileReviewState {
+  return {
+    ...DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+    results: [],
+    comments: [],
+    scopeDirectory,
+  }
+}
+
+function createDefaultWorkspacePreviewState(): WorkspacePreviewState {
+  return {
+    ...DEFAULT_WORKSPACE_PREVIEW_STATE,
+    navigationHistory: [],
+    interactions: [],
+  }
+}
+
+function normalizeRightSidebarTargetSegment(value: string | null | undefined) {
+  return value?.trim().replace(/\\/g, "/").toLowerCase() || "__none__"
+}
+
+function getRightSidebarPathName(path: string | null | undefined) {
+  const normalized = path?.trim().replace(/\\/g, "/") ?? ""
+  const name = normalized.split("/").filter(Boolean).pop()
+  return name || null
+}
+
+function getRightSidebarTabTargetKey(input: RightSidebarOpenTabInput) {
+  if (input.targetKey?.trim()) return input.targetKey.trim()
+
+  switch (input.kind) {
+    case "files":
+      return [
+        "files",
+        normalizeRightSidebarTargetSegment(input.scopeDirectory),
+        normalizeRightSidebarTargetSegment(input.filePath),
+      ].join(":")
+    case "browser":
+      return [
+        "browser",
+        normalizeRightSidebarTargetSegment(input.workspaceID),
+        normalizeRightSidebarTargetSegment(input.target),
+      ].join(":")
+    case "review":
+      return ["review", normalizeRightSidebarTargetSegment(input.sessionID)].join(":")
+    case "terminal":
+      return ["terminal", normalizeRightSidebarTargetSegment(input.sessionID)].join(":")
+  }
+}
+
+function getRightSidebarTabTitle(input: RightSidebarOpenTabInput) {
+  if (input.title?.trim()) return input.title.trim()
+
+  switch (input.kind) {
+    case "files":
+      return getRightSidebarPathName(input.filePath) ?? "Files"
+    case "browser":
+      return input.target?.trim() || "Browser"
+    case "review":
+      return "Review"
+    case "terminal":
+      return "Terminal"
+  }
+}
+
+function createRightSidebarTab(input: RightSidebarOpenTabInput): RightSidebarTab {
+  const targetKey = getRightSidebarTabTargetKey(input)
+  const base = {
+    id: createID("right-tab"),
+    kind: input.kind,
+    title: getRightSidebarTabTitle(input),
+    targetKey,
+    createdAt: Date.now(),
+  }
+
+  switch (input.kind) {
+    case "files":
+      return {
+        ...base,
+        kind: "files",
+        scopeDirectory: input.scopeDirectory,
+        scopeName: input.scopeName,
+        state: createDefaultWorkspaceFileReviewState(input.scopeDirectory),
+      }
+    case "browser":
+      return {
+        ...base,
+        kind: "browser",
+        workspaceID: input.workspaceID,
+        workspaceRoot: input.workspaceRoot,
+        state: createDefaultWorkspacePreviewState(),
+      }
+    case "review":
+      return {
+        ...base,
+        kind: "review",
+        sessionID: input.sessionID,
+      }
+    case "terminal":
+      return {
+        ...base,
+        kind: "terminal",
+        sessionID: input.sessionID,
+      }
+  }
+}
+
+function updateRightSidebarTab(
+  tab: RightSidebarTab,
+  update: RightSidebarTabUpdate,
+): RightSidebarTab {
+  const title = update.title ?? tab.title
+  const targetKey = update.targetKey ?? tab.targetKey
+
+  switch (tab.kind) {
+    case "files":
+      return {
+        ...tab,
+        kind: "files",
+        title,
+        targetKey,
+        scopeDirectory: update.scopeDirectory ?? tab.scopeDirectory,
+        scopeName: update.scopeName ?? tab.scopeName,
+      }
+    case "browser":
+      return {
+        ...tab,
+        kind: "browser",
+        title,
+        targetKey,
+        workspaceID: update.workspaceID ?? tab.workspaceID,
+        workspaceRoot: update.workspaceRoot ?? tab.workspaceRoot,
+      }
+    case "review":
+      return {
+        ...tab,
+        kind: "review",
+        title,
+        targetKey,
+        sessionID: update.sessionID ?? tab.sessionID,
+      }
+    case "terminal":
+      return {
+        ...tab,
+        kind: "terminal",
+        title,
+        targetKey,
+        sessionID: update.sessionID ?? tab.sessionID,
+      }
+  }
+}
+
 export interface WorkbenchSliceState {
   dockviewActiveState: WorkbenchDockviewActiveState
   dockviewLayout: SerializedDockview | null
@@ -97,7 +254,7 @@ export interface SessionsSliceState {
   isInitialWorkspaceLoadPending: boolean
   leftSidebarView: LeftSidebarView
   pinnedWorkspaceIDs: string[]
-  rightSidebarView: RightSidebarView
+  rightSidebar: RightSidebarState
   selectedFolderID: string | null
   sessionCanvasUnreadBySession: Record<string, boolean>
   workspaces: WorkspaceGroup[]
@@ -143,6 +300,12 @@ export interface WorkbenchSliceActions {
 }
 
 export interface SessionsSliceActions {
+  activateRightSidebarTab: (tabID: string | null) => void
+  closeRightSidebarTab: (tabID: string) => void
+  openOrFocusRightSidebarTab: (input: RightSidebarOpenTabInput) => string
+  setRightSidebarFileState: (tabID: string, update: WorkspaceStateUpdater<WorkspaceFileReviewState>) => void
+  setRightSidebarPreviewState: (tabID: string, update: WorkspaceStateUpdater<WorkspacePreviewState>) => void
+  updateRightSidebarTab: (tabID: string, update: RightSidebarTabUpdate) => void
   setActiveSideChatSessionIDByParentSessionID: (
     update: WorkspaceStateUpdater<Record<string, string>>,
   ) => void
@@ -155,7 +318,6 @@ export interface SessionsSliceActions {
   setIsInitialWorkspaceLoadPending: (update: WorkspaceStateUpdater<boolean>) => void
   setLeftSidebarView: (update: WorkspaceStateUpdater<LeftSidebarView>) => void
   setPinnedWorkspaceIDs: (update: WorkspaceStateUpdater<string[]>) => void
-  setRightSidebarView: (update: WorkspaceStateUpdater<RightSidebarView>) => void
   setSelectedFolderID: (update: WorkspaceStateUpdater<string | null>) => void
   setSessionCanvasUnreadBySession: (
     update: WorkspaceStateUpdater<Record<string, boolean>>,
@@ -275,7 +437,10 @@ export function createWorkspaceStore({
       isInitialWorkspaceLoadPending: hasFolderWorkspaceLoader,
       leftSidebarView: "workspace",
       pinnedWorkspaceIDs: initialPinnedWorkspaceIDs,
-      rightSidebarView: "changes",
+      rightSidebar: {
+        tabs: [],
+        activeTabID: null,
+      },
       selectedFolderID: initialWorkspace?.id ?? null,
       sessionCanvasUnreadBySession: {},
       workspaces: shouldUseSeedData ? sortWorkspaceGroups(seedWorkspaces, initialPinnedWorkspaceIDs) : [],
@@ -348,6 +513,156 @@ export function createWorkspaceStore({
         }),
     },
     sessionsActions: {
+      activateRightSidebarTab: (tabID) =>
+        set((state) => {
+          const activeTabID = tabID && state.sessions.rightSidebar.tabs.some((tab) => tab.id === tabID)
+            ? tabID
+            : null
+          if (state.sessions.rightSidebar.activeTabID === activeTabID) return state
+
+          return {
+            sessions: {
+              ...state.sessions,
+              rightSidebar: {
+                ...state.sessions.rightSidebar,
+                activeTabID,
+              },
+            },
+          }
+        }),
+      closeRightSidebarTab: (tabID) =>
+        set((state) => {
+          const tabs = state.sessions.rightSidebar.tabs
+          const tabIndex = tabs.findIndex((tab) => tab.id === tabID)
+          if (tabIndex === -1) return state
+
+          const nextTabs = tabs.filter((tab) => tab.id !== tabID)
+          const currentActiveTabID = state.sessions.rightSidebar.activeTabID
+          let activeTabID = currentActiveTabID
+          if (currentActiveTabID === tabID) {
+            activeTabID = nextTabs[Math.max(0, tabIndex - 1)]?.id ?? nextTabs[0]?.id ?? null
+          } else if (activeTabID && !nextTabs.some((tab) => tab.id === activeTabID)) {
+            activeTabID = nextTabs[0]?.id ?? null
+          }
+
+          return {
+            sessions: {
+              ...state.sessions,
+              rightSidebar: {
+                activeTabID,
+                tabs: nextTabs,
+              },
+            },
+          }
+        }),
+      openOrFocusRightSidebarTab: (input) => {
+        let resolvedTabID = ""
+        set((state) => {
+          const targetKey = getRightSidebarTabTargetKey(input)
+          const existingTab = state.sessions.rightSidebar.tabs.find(
+            (tab) => tab.kind === input.kind && tab.targetKey === targetKey,
+          )
+          if (existingTab) {
+            resolvedTabID = existingTab.id
+            if (state.sessions.rightSidebar.activeTabID === existingTab.id) return state
+
+            return {
+              sessions: {
+                ...state.sessions,
+                rightSidebar: {
+                  ...state.sessions.rightSidebar,
+                  activeTabID: existingTab.id,
+                },
+              },
+            }
+          }
+
+          const nextTab = createRightSidebarTab(input)
+          resolvedTabID = nextTab.id
+          return {
+            sessions: {
+              ...state.sessions,
+              rightSidebar: {
+                activeTabID: nextTab.id,
+                tabs: [...state.sessions.rightSidebar.tabs, nextTab],
+              },
+            },
+          }
+        })
+        return resolvedTabID
+      },
+      setRightSidebarFileState: (tabID, update) =>
+        set((state) => {
+          let changed = false
+          const tabs = state.sessions.rightSidebar.tabs.map((tab) => {
+            if (tab.id !== tabID || tab.kind !== "files") return tab
+            const nextState = resolveStateUpdate(tab.state, update)
+            if (nextState === tab.state) return tab
+            changed = true
+            return {
+              ...tab,
+              state: nextState,
+            }
+          })
+          if (!changed) return state
+
+          return {
+            sessions: {
+              ...state.sessions,
+              rightSidebar: {
+                ...state.sessions.rightSidebar,
+                tabs,
+              },
+            },
+          }
+        }),
+      setRightSidebarPreviewState: (tabID, update) =>
+        set((state) => {
+          let changed = false
+          const tabs = state.sessions.rightSidebar.tabs.map((tab) => {
+            if (tab.id !== tabID || tab.kind !== "browser") return tab
+            const nextState = resolveStateUpdate(tab.state, update)
+            if (nextState === tab.state) return tab
+            changed = true
+            return {
+              ...tab,
+              state: nextState,
+            }
+          })
+          if (!changed) return state
+
+          return {
+            sessions: {
+              ...state.sessions,
+              rightSidebar: {
+                ...state.sessions.rightSidebar,
+                tabs,
+              },
+            },
+          }
+        }),
+      updateRightSidebarTab: (tabID, update) =>
+        set((state) => {
+          let changed = false
+          const tabs = state.sessions.rightSidebar.tabs.map((tab) => {
+            if (tab.id !== tabID) return tab
+            const nextTab = updateRightSidebarTab(tab, update)
+            if (nextTab === tab) return tab
+            changed = true
+            return nextTab
+          })
+          if (!changed) return state
+
+          return {
+            sessions: {
+              ...state.sessions,
+              rightSidebar: {
+                ...state.sessions.rightSidebar,
+                tabs,
+              },
+            },
+          }
+        }),
       setActiveSideChatSessionIDByParentSessionID: (update) =>
         set((state) => ({
           sessions: {
@@ -433,13 +748,6 @@ export function createWorkspaceStore({
             },
           }
         }),
-      setRightSidebarView: (update) =>
-        set((state) => ({
-          sessions: {
-            ...state.sessions,
-            rightSidebarView: resolveStateUpdate(state.sessions.rightSidebarView, update),
-          },
-        })),
       setSelectedFolderID: (update) =>
         set((state) => {
           const selectedFolderID = resolveStateUpdate(state.sessions.selectedFolderID, update)

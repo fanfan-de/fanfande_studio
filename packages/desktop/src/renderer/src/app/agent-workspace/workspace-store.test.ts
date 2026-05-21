@@ -79,6 +79,61 @@ describe("workspace store", () => {
     expect(store.getState().sessions.selectedFolderID).toBe("workspace-1")
   })
 
+  it("opens, focuses, updates, and closes dynamic right sidebar tabs", () => {
+    const store = createTestStore()
+
+    const filesTabID = store.getState().sessionsActions.openOrFocusRightSidebarTab({
+      kind: "files",
+      filePath: "src/App.tsx",
+      scopeDirectory: "C:/work/project",
+      scopeName: "Project",
+      title: "App.tsx",
+    })
+    const browserTabID = store.getState().sessionsActions.openOrFocusRightSidebarTab({
+      kind: "browser",
+      target: "http://localhost:3000",
+      workspaceID: "workspace-1",
+      workspaceRoot: "C:/work/project",
+      title: "localhost:3000",
+    })
+
+    expect(store.getState().sessions.rightSidebar.tabs).toHaveLength(2)
+    expect(store.getState().sessions.rightSidebar.activeTabID).toBe(browserTabID)
+
+    const focusedFilesTabID = store.getState().sessionsActions.openOrFocusRightSidebarTab({
+      kind: "files",
+      filePath: "src/App.tsx",
+      scopeDirectory: "C:/work/project",
+      scopeName: "Project",
+    })
+
+    expect(focusedFilesTabID).toBe(filesTabID)
+    expect(store.getState().sessions.rightSidebar.tabs).toHaveLength(2)
+    expect(store.getState().sessions.rightSidebar.activeTabID).toBe(filesTabID)
+
+    store.getState().sessionsActions.setRightSidebarFileState(filesTabID, (current) => ({
+      ...current,
+      query: "App",
+    }))
+    store.getState().sessionsActions.updateRightSidebarTab(filesTabID, {
+      title: "Renamed",
+    })
+
+    const filesTab = store.getState().sessions.rightSidebar.tabs.find((tab) => tab.id === filesTabID)
+    expect(filesTab?.title).toBe("Renamed")
+    expect(filesTab?.kind === "files" ? filesTab.state.query : "").toBe("App")
+
+    store.getState().sessionsActions.closeRightSidebarTab(filesTabID)
+
+    expect(store.getState().sessions.rightSidebar.tabs.map((tab) => tab.id)).toEqual([browserTabID])
+    expect(store.getState().sessions.rightSidebar.activeTabID).toBe(browserTabID)
+
+    store.getState().sessionsActions.closeRightSidebarTab(browserTabID)
+
+    expect(store.getState().sessions.rightSidebar.tabs).toEqual([])
+    expect(store.getState().sessions.rightSidebar.activeTabID).toBeNull()
+  })
+
   it("starts without seed workspaces while the desktop workspace loader is available", () => {
     const store = createWorkspaceStore({
       hasFolderWorkspaceLoader: true,

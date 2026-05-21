@@ -9,6 +9,7 @@ interface TerminalAreaHostProps {
   collapsedTogglePortalTarget?: Element | null
   colorMode: "system" | "light" | "dark"
   currentSessionID: string | null
+  layout?: "panel" | "fill"
   storageKey?: string
   togglePortalTarget?: Element | null
 }
@@ -19,6 +20,7 @@ export const TerminalAreaHost = memo(function TerminalAreaHost(props: TerminalAr
     collapsedTogglePortalTarget,
     colorMode,
     currentSessionID,
+    layout = "panel",
     storageKey,
     togglePortalTarget,
   } = props
@@ -52,16 +54,18 @@ export const TerminalAreaHost = memo(function TerminalAreaHost(props: TerminalAr
 
   if (!currentSessionID) return null
 
-  const hasPersistentTogglePortal = Object.prototype.hasOwnProperty.call(props, "togglePortalTarget")
+  const isFillLayout = layout === "fill"
+  const effectiveIsOpen = isFillLayout ? true : isOpen
+  const hasPersistentTogglePortal = !isFillLayout && Object.prototype.hasOwnProperty.call(props, "togglePortalTarget")
   const toggleButton = <TerminalPanelToggleButton isOpen={isOpen} onToggle={() => void handleTogglePanel()} />
 
   return (
     <>
-      {hasPersistentTogglePortal
+      {!isFillLayout && hasPersistentTogglePortal
         ? togglePortalTarget
           ? createPortal(toggleButton, togglePortalTarget)
           : null
-        : !isOpen
+        : !isFillLayout && !isOpen
         ? collapsedTogglePortalTarget
           ? createPortal(toggleButton, collapsedTogglePortalTarget)
           : (
@@ -75,11 +79,12 @@ export const TerminalAreaHost = memo(function TerminalAreaHost(props: TerminalAr
         brandTheme={brandTheme}
         colorMode={colorMode}
         creationError={creationError}
-        isOpen={isOpen}
+        isOpen={effectiveIsOpen}
         isCreatingTerminal={isCreatingTerminal}
+        layout={layout}
         panelHeight={panelHeight}
         pendingCreateRequestID={pendingCreateRequestID}
-        showToggleButton={!hasPersistentTogglePortal}
+        showToggleButton={!isFillLayout && !hasPersistentTogglePortal}
         sessions={sessions}
         onCloseTerminal={handleCloseTerminal}
         onCreateTerminal={handleCreateTerminal}

@@ -31,7 +31,6 @@ export type SessionStatus = "Live" | "Review" | "Ready"
 export type SidebarActionKey = "project" | "sort" | "new"
 export type LeftSidebarView = "workspace" | "skills" | "prompts" | "connections" | "tools"
 export type ConnectionsTab = "plugins" | "connectors" | "mcp"
-export type RightSidebarView = "changes" | "runtime" | "preview" | "files"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
 export type PreviewLoadStatus = "idle" | "resolving" | "ready" | "error"
@@ -476,6 +475,91 @@ export interface WorkspaceFileReviewState {
   comments: WorkspaceFileComment[]
   linkedLineRange: WorkspaceFileLineRange | null
   pendingComment: WorkspaceFilePendingComment | null
+}
+
+export type RightSidebarTabKind = "files" | "browser" | "review" | "terminal"
+
+interface RightSidebarBaseTab {
+  id: string
+  kind: RightSidebarTabKind
+  title: string
+  targetKey: string
+  createdAt: number
+}
+
+export interface RightSidebarFilesTab extends RightSidebarBaseTab {
+  kind: "files"
+  scopeDirectory: string | null
+  scopeName: string | null
+  state: WorkspaceFileReviewState
+}
+
+export interface RightSidebarBrowserTab extends RightSidebarBaseTab {
+  kind: "browser"
+  workspaceID: string | null
+  workspaceRoot: string | null
+  state: WorkspacePreviewState
+}
+
+export interface RightSidebarReviewTab extends RightSidebarBaseTab {
+  kind: "review"
+  sessionID: string | null
+}
+
+export interface RightSidebarTerminalTab extends RightSidebarBaseTab {
+  kind: "terminal"
+  sessionID: string | null
+}
+
+export type RightSidebarTab =
+  | RightSidebarFilesTab
+  | RightSidebarBrowserTab
+  | RightSidebarReviewTab
+  | RightSidebarTerminalTab
+
+export interface RightSidebarState {
+  tabs: RightSidebarTab[]
+  activeTabID: string | null
+}
+
+export type RightSidebarOpenTabInput =
+  | {
+      kind: "files"
+      filePath?: string | null
+      scopeDirectory: string | null
+      scopeName: string | null
+      targetKey?: string
+      title?: string
+    }
+  | {
+      kind: "browser"
+      target?: string | null
+      targetKey?: string
+      title?: string
+      workspaceID: string | null
+      workspaceRoot: string | null
+    }
+  | {
+      kind: "review"
+      sessionID: string | null
+      targetKey?: string
+      title?: string
+    }
+  | {
+      kind: "terminal"
+      sessionID: string | null
+      targetKey?: string
+      title?: string
+    }
+
+export interface RightSidebarTabUpdate {
+  scopeDirectory?: string | null
+  scopeName?: string | null
+  sessionID?: string | null
+  targetKey?: string
+  title?: string
+  workspaceID?: string | null
+  workspaceRoot?: string | null
 }
 
 export type RuntimeDebugLoadStatus = "idle" | "loading" | "refreshing" | "ready" | "error"

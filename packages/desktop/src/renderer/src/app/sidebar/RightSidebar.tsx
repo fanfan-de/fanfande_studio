@@ -1,53 +1,51 @@
-import { useState, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { ChangesPanel } from "../changes/ChangesPanel"
 import { WorkspaceFilesPanel } from "../files/WorkspaceFilesPanel"
 import {
   ChangesIcon,
-  ConnectedStatusIcon,
+  CloseIcon,
   FileSearchIcon,
-  PreviewIcon
+  PlusIcon,
+  PreviewIcon,
+  TerminalIcon,
 } from "../icons"
 import { UnifiedPreviewPanel } from "../preview/UnifiedPreviewPanel"
-import { buildRuntimeStatusDescription, formatRuntimeBusyStateLabel, formatRuntimeDuration, formatRuntimeLoadStateLabel, formatRuntimePhaseLabel, formatRuntimeTurnStatusLabel } from "../runtime-debug"
-import { ShellTopMenu, TopMenuViewButton } from "../shared-ui"
+import { ShellTopMenu } from "../shared-ui"
 import type {
   PreviewInteractionCommitInput,
   PreviewInteractionPluginID,
-  RightSidebarView,
+  RightSidebarState,
+  RightSidebarTab,
   SessionDiffState,
   SessionDiffSummary,
-  SessionRuntimeDebugSnapshot,
-  SessionRuntimeDebugState,
-  SessionTaskListView,
-  SessionTaskSummary,
   SessionSummary,
-  WorkspaceFileReviewState,
-  WorkspacePreviewState
+  WorkspaceGroup,
 } from "../types"
-import { formatTime } from "../utils"
 
 interface RightSidebarProps {
+  activeSession: SessionSummary | null
+  activeSessionDirectory: string | null
   activeWorkspaceFileScopeDirectory: string | null
   activeWorkspaceFileScopeName: string | null
-  activeWorkspaceFileState: WorkspaceFileReviewState
-  activeSessionDirectory: string | null
-  activeSession: SessionSummary | null
-  activeSessionDiff: SessionDiffSummary | null
-  activeSessionDiffState?: SessionDiffState
-  activeSessionRuntimeDebug?: SessionRuntimeDebugSnapshot | null
-  activeSessionRuntimeDebugState?: SessionRuntimeDebugState
-  activePreviewState: WorkspacePreviewState
   canInsertWorkspaceFileCommentsIntoDraft: boolean
-  selectedDiffFile: string | null
-  activeView: RightSidebarView
-  isRuntimeViewVisible: boolean
-  onDiffFileSelect: (file: string | null) => void
-  onDiffFileRestore: (file: string) => void | Promise<void>
+  canOpenReview: boolean
+  canOpenTerminal: boolean
+  rightSidebar: RightSidebarState
+  selectedDiffFileBySession: Record<string, string | null>
+  sessionDiffBySession: Record<string, SessionDiffSummary>
+  sessionDiffStateBySession: Record<string, SessionDiffState>
+  workspaces: WorkspaceGroup[]
+  onActivateTab: (tabID: string) => void
+  onCloseTab: (tabID: string) => void
+  onDiffFileRestore: (file: string, sessionID?: string | null) => void | Promise<void>
+  onDiffFileSelect: (file: string | null, sessionID?: string | null) => void
+  onOpenBrowserTab: () => void
+  onOpenFilesTab: () => void
+  onOpenReviewTab: () => void
+  onOpenTerminalTab: () => void
   onPreviewActiveInteractionChange: (pluginID: PreviewInteractionPluginID | null) => void
   onPreviewCommitInteraction: (input: PreviewInteractionCommitInput) => void
-  onPreviewBack: () => void
   onPreviewDraftUrlChange: (value: string) => void
-  onPreviewForward: () => void
   onPreviewOpen: () => void
   onPreviewOpenExternal: () => void | Promise<void>
   onPreviewOpenUrl: (url: string) => void
@@ -58,183 +56,81 @@ interface RightSidebarProps {
   onWorkspaceFileCommentStart: (startLineNumber: number, endLineNumber?: number) => void
   onWorkspaceFileQueryChange: (value: string) => void
   onWorkspaceFileSelect: (path: string) => void
-  onRuntimeRefresh: () => void | Promise<void>
-  onViewChange: (view: RightSidebarView) => void
-  renderTerminalArea?: (togglePortalTarget: Element | null) => ReactNode
+  renderTerminalTab: (sessionID: string | null) => ReactNode
   windowControls?: ReactNode
 }
 
-const RIGHT_SIDEBAR_RUNTIME_IDLE_STATE: SessionRuntimeDebugState = {
-  status: "idle",
-  errorMessage: null,
-  updatedAt: null,
-  isStale: false,
+interface LauncherCard {
+  description: string
+  disabled?: boolean
+  icon: ReactNode
+  key: RightSidebarTab["kind"]
+  title: string
 }
 
-function formatTaskStatus(status: SessionTaskSummary["status"]) {
-  return status === "in_progress" ? "in progress" : status
+function findSessionByID(workspaces: WorkspaceGroup[], sessionID: string | null | undefined) {
+  if (!sessionID) return null
+
+  for (const workspace of workspaces) {
+    const session = workspace.sessions.find((candidate) => candidate.id === sessionID)
+    if (session) return session
+  }
+
+  return null
 }
 
-function taskStatusClassName(status: SessionTaskSummary["status"]) {
-  return status === "in_progress" ? "running" : status
-}
-
-function emptyTaskListView(sessionID: string): SessionTaskListView {
-  return {
-    sessionID,
-    generatedAt: Date.now(),
-    tasks: [],
-    current: [],
-    next: [],
-    blocked: [],
-    owners: [],
-    teammateActivity: [],
-    summary: {
-      total: 0,
-      completed: 0,
-      pending: 0,
-      inProgress: 0,
-      blocked: 0,
-    },
+function getTabIcon(kind: RightSidebarTab["kind"]) {
+  switch (kind) {
+    case "files":
+      return <FileSearchIcon />
+    case "browser":
+      return <PreviewIcon />
+    case "review":
+      return <ChangesIcon />
+    case "terminal":
+      return <TerminalIcon />
   }
 }
 
-function renderTaskDependencyLabel(task: SessionTaskSummary) {
-  if (task.blockingTasks.length > 0) {
-    return `Blocked by ${task.blockingTasks.map((item) => item.subject || item.id).join(", ")}`
+function getViewHostClassName(tab: RightSidebarTab | null, isLauncherVisible: boolean) {
+  if (isLauncherVisible || !tab) return "right-sidebar-view-host is-launcher"
+
+  switch (tab.kind) {
+    case "browser":
+      return "right-sidebar-view-host is-preview"
+    case "files":
+      return "right-sidebar-view-host is-files"
+    case "review":
+      return "right-sidebar-view-host is-changes"
+    case "terminal":
+      return "right-sidebar-view-host is-terminal"
   }
-  if (task.blocks.length > 0) {
-    return `Unblocks ${task.blocks.join(", ")}`
-  }
-  return task.activeForm
-}
-
-function RuntimeTaskRows({
-  empty,
-  tasks,
-}: {
-  empty: string
-  tasks: SessionTaskSummary[]
-}) {
-  if (tasks.length === 0) {
-    return <p className="right-sidebar-runtime-note">{empty}</p>
-  }
-
-  return (
-    <div className="right-sidebar-runtime-list">
-      {tasks.slice(0, 6).map((task) => (
-        <div key={task.id} className="right-sidebar-runtime-list-row">
-          <div className="right-sidebar-runtime-list-copy">
-            <strong>{task.subject}</strong>
-            <span>
-              {task.owner}
-              {" - "}
-              {renderTaskDependencyLabel(task)}
-            </span>
-          </div>
-          <span className={`settings-badge right-sidebar-runtime-pill is-${taskStatusClassName(task.status)}`}>
-            {formatTaskStatus(task.status)}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function RuntimeTasksPanel({ snapshot }: { snapshot: SessionRuntimeDebugSnapshot }) {
-  const tasks = snapshot.tasks ?? emptyTaskListView(snapshot.session.id)
-  const owners = tasks.owners.filter((owner) => owner.current || owner.next)
-  const activeTasks = owners.flatMap((owner) => owner.current ? [owner.current] : [])
-  const nextTasks = owners.flatMap((owner) => owner.next ? [owner.next] : [])
-
-  return (
-    <section className="right-sidebar-runtime-card">
-      <div className="right-sidebar-runtime-card-header">
-        <div>
-          <span className="label">Tasks</span>
-          <h4>Session task state</h4>
-        </div>
-        <span className="settings-badge right-sidebar-runtime-pill is-ready">
-          {tasks.summary.completed}/{tasks.summary.total}
-        </span>
-      </div>
-
-      <div className="right-sidebar-runtime-card-grid">
-        <div className="right-sidebar-runtime-field">
-          <span>Completed</span>
-          <strong>{`${tasks.summary.completed}/${tasks.summary.total}`}</strong>
-        </div>
-        <div className="right-sidebar-runtime-field">
-          <span>Active Owners</span>
-          <strong>{String(activeTasks.length)}</strong>
-        </div>
-        <div className="right-sidebar-runtime-field">
-          <span>Blocked</span>
-          <strong>{String(tasks.summary.blocked)}</strong>
-        </div>
-      </div>
-
-      <div className="right-sidebar-runtime-task-block">
-        <span className="right-sidebar-runtime-subheading">Current</span>
-        <RuntimeTaskRows empty="No task is currently in progress." tasks={activeTasks} />
-      </div>
-
-      <div className="right-sidebar-runtime-task-block">
-        <span className="right-sidebar-runtime-subheading">Next</span>
-        <RuntimeTaskRows empty="No unblocked pending task is queued." tasks={nextTasks} />
-      </div>
-
-      {tasks.blocked.length > 0 ? (
-        <div className="right-sidebar-runtime-task-block">
-          <span className="right-sidebar-runtime-subheading">Blocked</span>
-          <RuntimeTaskRows empty="No blocked tasks." tasks={tasks.blocked} />
-        </div>
-      ) : null}
-
-      {tasks.teammateActivity.length > 0 ? (
-        <div className="right-sidebar-runtime-task-block">
-          <span className="right-sidebar-runtime-subheading">Teammates</span>
-          <div className="right-sidebar-runtime-list">
-            {tasks.teammateActivity.slice(0, 5).map((item) => (
-              <div key={item.id} className="right-sidebar-runtime-list-row">
-                <div className="right-sidebar-runtime-list-copy">
-                  <strong>{item.title}</strong>
-                  <span>{`${item.owner}${item.active ? " - active" : ""}`}</span>
-                </div>
-                <span className={`settings-badge right-sidebar-runtime-pill is-${item.status}`}>
-                  {item.status}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </section>
-  )
 }
 
 export function RightSidebar({
+  activeSession,
+  activeSessionDirectory,
   activeWorkspaceFileScopeDirectory,
   activeWorkspaceFileScopeName,
-  activeWorkspaceFileState,
-  activeSessionDirectory,
-  activeSession,
-  activeSessionDiff,
-  activeSessionDiffState,
-  activeSessionRuntimeDebug,
-  activeSessionRuntimeDebugState,
-  activePreviewState,
   canInsertWorkspaceFileCommentsIntoDraft,
-  selectedDiffFile,
-  activeView,
-  isRuntimeViewVisible,
-  onDiffFileSelect,
+  canOpenReview,
+  canOpenTerminal,
+  rightSidebar,
+  selectedDiffFileBySession,
+  sessionDiffBySession,
+  sessionDiffStateBySession,
+  workspaces,
+  onActivateTab,
+  onCloseTab,
   onDiffFileRestore,
+  onDiffFileSelect,
+  onOpenBrowserTab,
+  onOpenFilesTab,
+  onOpenReviewTab,
+  onOpenTerminalTab,
   onPreviewActiveInteractionChange,
   onPreviewCommitInteraction,
-  onPreviewBack,
   onPreviewDraftUrlChange,
-  onPreviewForward,
   onPreviewOpen,
   onPreviewOpenExternal,
   onPreviewOpenUrl,
@@ -245,52 +141,207 @@ export function RightSidebar({
   onWorkspaceFileCommentStart,
   onWorkspaceFileQueryChange,
   onWorkspaceFileSelect,
-  onRuntimeRefresh,
-  onViewChange,
-  renderTerminalArea,
+  renderTerminalTab,
   windowControls,
 }: RightSidebarProps) {
-  const [terminalToggleSlot, setTerminalToggleSlot] = useState<Element | null>(null)
-  const runtimeState = activeSessionRuntimeDebugState ?? RIGHT_SIDEBAR_RUNTIME_IDLE_STATE
-  const latestRuntimeTurn = activeSessionRuntimeDebug?.latestTurn ?? null
-  const latestRuntimePhase = activeSessionRuntimeDebug?.status.phase ?? latestRuntimeTurn?.phase
-  const viewHostClassName = activeView === "preview"
-    ? "right-sidebar-view-host is-preview"
-    : activeView === "files"
-      ? "right-sidebar-view-host is-files"
-      : activeView === "changes"
-        ? "right-sidebar-view-host is-changes"
-        : "right-sidebar-view-host"
-  const runtimeStatusDescription = buildRuntimeStatusDescription({
-    activeSession,
-    runtimeState,
-    runtimeSnapshot: activeSessionRuntimeDebug ?? null,
-  })
+  const [isLauncherVisible, setIsLauncherVisible] = useState(() => !rightSidebar.activeTabID)
+  const lastActiveTabIDRef = useRef<string | null>(null)
+  const activeTab = rightSidebar.tabs.find((tab) => tab.id === rightSidebar.activeTabID) ?? null
+  const viewHostClassName = getViewHostClassName(activeTab, isLauncherVisible)
+  const launcherCards = useMemo<LauncherCard[]>(() => [
+    {
+      key: "files",
+      title: "Files",
+      description: "Browse project files",
+      icon: <FileSearchIcon />,
+    },
+    {
+      key: "browser",
+      title: "Browser",
+      description: "Open a website",
+      icon: <PreviewIcon />,
+    },
+    {
+      key: "review",
+      title: "Review",
+      description: "Inspect code changes",
+      disabled: !canOpenReview,
+      icon: <ChangesIcon />,
+    },
+    {
+      key: "terminal",
+      title: "Terminal",
+      description: "Start an interactive shell",
+      disabled: !canOpenTerminal,
+      icon: <TerminalIcon />,
+    },
+  ], [canOpenReview, canOpenTerminal])
+
+  useEffect(() => {
+    if (rightSidebar.tabs.length === 0) {
+      setIsLauncherVisible(true)
+    }
+  }, [rightSidebar.tabs.length])
+
+  useEffect(() => {
+    const previousActiveTabID = lastActiveTabIDRef.current
+    lastActiveTabIDRef.current = rightSidebar.activeTabID
+    if (rightSidebar.activeTabID && rightSidebar.activeTabID !== previousActiveTabID) {
+      setIsLauncherVisible(false)
+    }
+  }, [rightSidebar.activeTabID])
+
+  function handleActivateTab(tabID: string) {
+    setIsLauncherVisible(false)
+    onActivateTab(tabID)
+  }
+
+  function handleCloseTab(tabID: string) {
+    if (rightSidebar.tabs.length <= 1) {
+      setIsLauncherVisible(true)
+    }
+    onCloseTab(tabID)
+  }
+
+  function handleOpenLauncherCard(kind: RightSidebarTab["kind"]) {
+    switch (kind) {
+      case "files":
+        onOpenFilesTab()
+        break
+      case "browser":
+        onOpenBrowserTab()
+        break
+      case "review":
+        if (!canOpenReview) return
+        onOpenReviewTab()
+        break
+      case "terminal":
+        if (!canOpenTerminal) return
+        onOpenTerminalTab()
+        break
+    }
+    setIsLauncherVisible(false)
+  }
+
+  function renderLauncher() {
+    return (
+      <div className="right-sidebar-launcher" aria-label="Right sidebar launcher">
+        {launcherCards.map((card) => (
+          <button
+            key={card.key}
+            type="button"
+            className="right-sidebar-launcher-card"
+            disabled={card.disabled}
+            onClick={() => handleOpenLauncherCard(card.key)}
+          >
+            <span className="right-sidebar-launcher-card-icon">{card.icon}</span>
+            <span className="right-sidebar-launcher-card-title">{card.title}</span>
+            <span className="right-sidebar-launcher-card-description">{card.description}</span>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  function renderActiveTab() {
+    if (!activeTab) return renderLauncher()
+
+    switch (activeTab.kind) {
+      case "files":
+        return (
+          <WorkspaceFilesPanel
+            canInsertCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
+            scopeDirectory={activeTab.scopeDirectory ?? activeWorkspaceFileScopeDirectory}
+            scopeName={activeTab.scopeName ?? activeWorkspaceFileScopeName}
+            state={activeTab.state}
+            onPendingCommentCancel={onWorkspaceFileCommentCancel}
+            onPendingCommentChange={onWorkspaceFileCommentChange}
+            onPendingCommentConfirm={onWorkspaceFileCommentConfirm}
+            onPendingCommentStart={onWorkspaceFileCommentStart}
+            onQueryChange={onWorkspaceFileQueryChange}
+            onSelectFile={onWorkspaceFileSelect}
+          />
+        )
+      case "browser":
+        return (
+          <UnifiedPreviewPanel
+            state={activeTab.state}
+            onDraftUrlChange={onPreviewDraftUrlChange}
+            onActiveInteractionChange={onPreviewActiveInteractionChange}
+            onCommitInteraction={onPreviewCommitInteraction}
+            onOpen={onPreviewOpen}
+            onOpenExternal={onPreviewOpenExternal}
+            onOpenUrl={onPreviewOpenUrl}
+            onReload={onPreviewReload}
+            workspaceRoot={activeTab.workspaceRoot ?? activeWorkspaceFileScopeDirectory ?? activeSessionDirectory}
+          />
+        )
+      case "review": {
+        const reviewSessionID = activeTab.sessionID ?? activeSession?.id ?? null
+        const reviewSession = reviewSessionID ? findSessionByID(workspaces, reviewSessionID) : activeSession
+        return (
+          <ChangesPanel
+            activeSession={reviewSession}
+            activeSessionDiff={reviewSessionID ? sessionDiffBySession[reviewSessionID] ?? null : null}
+            activeSessionDiffState={reviewSessionID ? sessionDiffStateBySession[reviewSessionID] : undefined}
+            selectedDiffFile={reviewSessionID ? selectedDiffFileBySession[reviewSessionID] ?? null : null}
+            onDiffFileSelect={(file) => onDiffFileSelect(file, reviewSessionID)}
+            onDiffFileRestore={(file) => onDiffFileRestore(file, reviewSessionID)}
+          />
+        )
+      }
+      case "terminal":
+        return renderTerminalTab(activeTab.sessionID)
+    }
+  }
 
   return (
     <aside id="app-sidebar-right" className="sidebar is-right" aria-label="Inspector sidebar">
       <ShellTopMenu
         as="header"
         ariaLabel="Right sidebar top menu"
-        className="right-sidebar-top-menu"
-        contentClassName="right-sidebar-top-menu-tabs"
+        className="right-sidebar-top-menu right-sidebar-tab-menu"
+        contentClassName="right-sidebar-top-menu-tabs right-sidebar-dynamic-tabs"
         content={(
           <>
-            <TopMenuViewButton active={activeView === "changes"} label="Changes" onClick={() => onViewChange("changes")}>
-              <ChangesIcon />
-            </TopMenuViewButton>
-            {isRuntimeViewVisible ? (
-              <TopMenuViewButton active={activeView === "runtime"} label="Runtime" onClick={() => onViewChange("runtime")}>
-                <ConnectedStatusIcon />
-              </TopMenuViewButton>
-            ) : null}
-            <TopMenuViewButton active={activeView === "preview"} label="Preview" onClick={() => onViewChange("preview")}>
-              <PreviewIcon />
-            </TopMenuViewButton>
-            <TopMenuViewButton active={activeView === "files"} label="Files" onClick={() => onViewChange("files")}>
-              <FileSearchIcon />
-            </TopMenuViewButton>
-            {renderTerminalArea ? <span ref={setTerminalToggleSlot} className="right-sidebar-terminal-toggle-slot" /> : null}
+            <div className="right-sidebar-tab-strip" role="tablist" aria-label="Right sidebar tabs">
+              {rightSidebar.tabs.map((tab) => {
+                const isActive = !isLauncherVisible && activeTab?.id === tab.id
+
+                return (
+                  <div key={tab.id} className={isActive ? "right-sidebar-tab is-active" : "right-sidebar-tab"}>
+                    <button
+                      type="button"
+                      className="right-sidebar-tab-trigger"
+                      role="tab"
+                      aria-selected={isActive}
+                      title={tab.title}
+                      onClick={() => handleActivateTab(tab.id)}
+                    >
+                      {getTabIcon(tab.kind)}
+                      <span>{tab.title}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="right-sidebar-tab-close"
+                      aria-label={`Close ${tab.title}`}
+                      onClick={() => handleCloseTab(tab.id)}
+                    >
+                      <CloseIcon />
+                    </button>
+                  </div>
+                )
+              })}
+              <button
+                type="button"
+                className={isLauncherVisible ? "right-sidebar-add-tab-button is-active" : "right-sidebar-add-tab-button"}
+                aria-label="Open right sidebar launcher"
+                aria-pressed={isLauncherVisible}
+                onClick={() => setIsLauncherVisible(true)}
+              >
+                <PlusIcon />
+              </button>
+            </div>
           </>
         )}
         dragRegion
@@ -300,264 +351,8 @@ export function RightSidebar({
 
       <div className="right-sidebar-main-stack">
         <div className={viewHostClassName}>
-          {activeView === "changes" ? (
-            <ChangesPanel
-              activeSession={activeSession}
-              activeSessionDiff={activeSessionDiff}
-              activeSessionDiffState={activeSessionDiffState}
-              selectedDiffFile={selectedDiffFile}
-              onDiffFileSelect={onDiffFileSelect}
-              onDiffFileRestore={onDiffFileRestore}
-            />
-          ) : null}
-
-          {isRuntimeViewVisible && activeView === "runtime" ? (
-            <section className="right-sidebar-section">
-            <div className="right-sidebar-panel-header">
-              <div className="right-sidebar-panel-copy">
-                <span className="label">Agent Runtime</span>
-                <h3>Current execution state</h3>
-                {activeSessionDirectory ? (
-                  <p className="right-sidebar-scope">
-                    Scope:
-                    {" "}
-                    <code>{activeSessionDirectory}</code>
-                  </p>
-                ) : null}
-              </div>
-              <div className="right-sidebar-panel-actions">
-                <button
-                  type="button"
-                  className="secondary-button right-sidebar-refresh-button"
-                  aria-label="Refresh runtime state"
-                  disabled={!activeSession || runtimeState.status === "loading" || runtimeState.status === "refreshing"}
-                  onClick={() => void onRuntimeRefresh()}
-                >
-                  {runtimeState.status === "loading" || runtimeState.status === "refreshing" ? "Refreshing..." : "Refresh"}
-                </button>
-              </div>
-            </div>
-
-            <div className="right-sidebar-status-row">
-              <span className={`settings-badge right-sidebar-status-badge is-${runtimeState.status}`}>
-                {formatRuntimeLoadStateLabel(runtimeState.status)}
-              </span>
-              {activeSessionRuntimeDebug ? (
-                <span className="settings-badge">
-                  {formatRuntimeBusyStateLabel(activeSessionRuntimeDebug.status.type)}
-                </span>
-              ) : null}
-              {latestRuntimePhase ? (
-                <span className="settings-badge">{formatRuntimePhaseLabel(latestRuntimePhase)}</span>
-              ) : null}
-              {activeSessionRuntimeDebug?.diagnostics.blockedOnApproval ? (
-                <span className="settings-badge is-warning">Approval blocked</span>
-              ) : null}
-            </div>
-
-            <p className="right-sidebar-status-copy">{runtimeStatusDescription}</p>
-            {runtimeState.errorMessage ? (
-              <p className="right-sidebar-status-error" role="alert">{runtimeState.errorMessage}</p>
-            ) : null}
-
-            {activeSession ? (
-              activeSessionRuntimeDebug ? (
-                <>
-                  <div className="right-sidebar-meta-grid">
-                    <div className="right-sidebar-metric">
-                      <span className="right-sidebar-metric-label">Turns</span>
-                      <strong>{String(activeSessionRuntimeDebug.turns.length)}</strong>
-                    </div>
-                    <div className="right-sidebar-metric">
-                      <span className="right-sidebar-metric-label">Tools</span>
-                      <strong>{String(activeSessionRuntimeDebug.diagnostics.activeToolCount)}</strong>
-                    </div>
-                    <div className="right-sidebar-metric">
-                      <span className="right-sidebar-metric-label">LLM Failures</span>
-                      <strong>{String(activeSessionRuntimeDebug.diagnostics.llmFailureCount)}</strong>
-                    </div>
-                    <div className="right-sidebar-metric">
-                      <span className="right-sidebar-metric-label">Active For</span>
-                      <strong>{formatRuntimeDuration(activeSessionRuntimeDebug.running.activeForMs)}</strong>
-                    </div>
-                  </div>
-
-                  {latestRuntimeTurn || (activeSessionRuntimeDebug.tasks?.summary.total ?? 0) > 0 ? (
-                    <div className="right-sidebar-runtime-stack">
-                      <RuntimeTasksPanel snapshot={activeSessionRuntimeDebug} />
-
-                      {latestRuntimeTurn ? (
-                        <section className="right-sidebar-runtime-card">
-                        <div className="right-sidebar-runtime-card-header">
-                          <div>
-                            <span className="label">Latest Turn</span>
-                            <h4>{latestRuntimeTurn.turnID}</h4>
-                          </div>
-                          <span className={`settings-badge right-sidebar-runtime-pill is-${latestRuntimeTurn.status}`}>
-                            {formatRuntimeTurnStatusLabel(latestRuntimeTurn.status)}
-                          </span>
-                        </div>
-
-                        <div className="right-sidebar-runtime-card-grid">
-                          <div className="right-sidebar-runtime-field">
-                            <span>Phase</span>
-                            <strong>{latestRuntimeTurn.phase ? formatRuntimePhaseLabel(latestRuntimeTurn.phase) : "—"}</strong>
-                          </div>
-                          <div className="right-sidebar-runtime-field">
-                            <span>Duration</span>
-                            <strong>{formatRuntimeDuration(latestRuntimeTurn.durationMs)}</strong>
-                          </div>
-                          <div className="right-sidebar-runtime-field">
-                            <span>Agent</span>
-                            <strong>{latestRuntimeTurn.agent ?? "—"}</strong>
-                          </div>
-                          <div className="right-sidebar-runtime-field">
-                            <span>Model</span>
-                            <strong>{latestRuntimeTurn.model ?? "—"}</strong>
-                          </div>
-                        </div>
-
-                        {latestRuntimeTurn.finishReason ? (
-                          <p className="right-sidebar-runtime-note">Finish reason: {latestRuntimeTurn.finishReason}</p>
-                        ) : null}
-                        {latestRuntimeTurn.errorContext?.error.message || latestRuntimeTurn.error?.message ? (
-                          <p className="right-sidebar-status-error" role="alert">
-                            {latestRuntimeTurn.errorContext?.error.message ?? latestRuntimeTurn.error?.message}
-                          </p>
-                        ) : null}
-                        </section>
-                      ) : null}
-
-                      {latestRuntimeTurn && latestRuntimeTurn.tools.length > 0 ? (
-                        <section className="right-sidebar-runtime-card">
-                          <div className="right-sidebar-runtime-card-header">
-                            <div>
-                              <span className="label">Recent Tools</span>
-                              <h4>Latest tool calls</h4>
-                            </div>
-                          </div>
-                          <div className="right-sidebar-runtime-list">
-                            {latestRuntimeTurn.tools.slice(0, 5).map((tool) => (
-                              <div key={tool.callID} className="right-sidebar-runtime-list-row">
-                                <div className="right-sidebar-runtime-list-copy">
-                                  <strong>{tool.tool}</strong>
-                                  <span>{tool.title ?? tool.inputPreview ?? tool.outputPreview ?? tool.callID}</span>
-                                </div>
-                                <span className={`settings-badge right-sidebar-runtime-pill is-${tool.status}`}>
-                                  {tool.status}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </section>
-                      ) : null}
-
-                      {latestRuntimeTurn && latestRuntimeTurn.llmCalls.length > 0 ? (
-                        <section className="right-sidebar-runtime-card">
-                          <div className="right-sidebar-runtime-card-header">
-                            <div>
-                              <span className="label">Recent LLM Calls</span>
-                              <h4>Latest model requests</h4>
-                            </div>
-                          </div>
-                          <div className="right-sidebar-runtime-list">
-                            {latestRuntimeTurn.llmCalls.slice(0, 4).map((call) => (
-                              <div key={call.id} className="right-sidebar-runtime-list-row">
-                                <div className="right-sidebar-runtime-list-copy">
-                                  <strong>{`${call.providerID}/${call.modelID}`}</strong>
-                                  <span>
-                                    {call.finishReason ?? `messages=${call.messageCount}`}
-                                    {call.durationMs ? ` • ${formatRuntimeDuration(call.durationMs)}` : ""}
-                                  </span>
-                                </div>
-                                <span className={`settings-badge right-sidebar-runtime-pill is-${call.status}`}>
-                                  {call.status}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </section>
-                      ) : null}
-
-                      {activeSessionRuntimeDebug.recentEvents.length > 0 ? (
-                        <section className="right-sidebar-runtime-card">
-                          <div className="right-sidebar-runtime-card-header">
-                            <div>
-                              <span className="label">Recent Events</span>
-                              <h4>Execution timeline</h4>
-                            </div>
-                          </div>
-                          <div className="right-sidebar-runtime-event-list">
-                            {activeSessionRuntimeDebug.recentEvents.slice().reverse().map((event) => (
-                              <article key={event.eventID} className={`right-sidebar-runtime-event is-${event.tone}`}>
-                                <div className="right-sidebar-runtime-event-meta">
-                                  <span>{event.title}</span>
-                                  <time>{formatTime(event.timestamp)}</time>
-                                </div>
-                                {event.detail ? <p>{event.detail}</p> : null}
-                              </article>
-                            ))}
-                          </div>
-                        </section>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="right-sidebar-empty">
-                      <p>No runtime events were captured for this session yet.</p>
-                    </div>
-                  )}
-                </>
-              ) : runtimeState.status === "loading" ? (
-                <div className="right-sidebar-empty">
-                  <p>Loading runtime state for this session.</p>
-                </div>
-              ) : runtimeState.status === "error" ? (
-                <div className="right-sidebar-empty">
-                  <p>Couldn't refresh the current runtime snapshot.</p>
-                </div>
-              ) : (
-                <div className="right-sidebar-empty">
-                  <p>No runtime snapshot is available for this session yet.</p>
-                </div>
-              )
-            ) : (
-              <div className="right-sidebar-empty">
-                <p>Select a session to inspect its runtime state.</p>
-              </div>
-            )}
-            </section>
-          ) : null}
-
-          {activeView === "preview" ? (
-            <UnifiedPreviewPanel
-              state={activePreviewState}
-              onDraftUrlChange={onPreviewDraftUrlChange}
-              onActiveInteractionChange={onPreviewActiveInteractionChange}
-              onCommitInteraction={onPreviewCommitInteraction}
-              onOpen={onPreviewOpen}
-              onOpenExternal={onPreviewOpenExternal}
-              onOpenUrl={onPreviewOpenUrl}
-              onReload={onPreviewReload}
-              workspaceRoot={activeWorkspaceFileScopeDirectory ?? activeSessionDirectory}
-            />
-          ) : null}
-
-          {activeView === "files" ? (
-            <WorkspaceFilesPanel
-              canInsertCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
-              scopeDirectory={activeWorkspaceFileScopeDirectory}
-              scopeName={activeWorkspaceFileScopeName}
-              state={activeWorkspaceFileState}
-              onPendingCommentCancel={onWorkspaceFileCommentCancel}
-              onPendingCommentChange={onWorkspaceFileCommentChange}
-              onPendingCommentConfirm={onWorkspaceFileCommentConfirm}
-              onPendingCommentStart={onWorkspaceFileCommentStart}
-              onQueryChange={onWorkspaceFileQueryChange}
-              onSelectFile={onWorkspaceFileSelect}
-            />
-          ) : null}
+          {isLauncherVisible ? renderLauncher() : renderActiveTab()}
         </div>
-        {renderTerminalArea?.(terminalToggleSlot)}
       </div>
     </aside>
   )

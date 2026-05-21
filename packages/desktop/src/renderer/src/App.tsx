@@ -15,7 +15,7 @@ import {
 import { WorkspaceStoreProvider } from "./app/agent-workspace/workspace-store-context"
 import { resolveWorkspaceRelativePath } from "./app/agent-workspace/workspace-loading-hooks"
 import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "./app/thread-markdown"
-import type { ConnectionsTab, RightSidebarView, SessionDiffFile, ToolPermissionMode } from "./app/types"
+import type { ConnectionsTab, SessionDiffFile, ToolPermissionMode } from "./app/types"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
@@ -685,17 +685,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
   } = useDesktopShell()
 
   const {
-    activePreviewState,
     activeSession,
     activeSessionDirectory,
-    activeSessionDiff,
-    activeSessionDiffState,
     activeWorkspaceFileScopeDirectory,
     activeWorkspaceFileScopeName,
-    activeWorkspaceFileState,
-    activeSessionRuntimeDebug,
-    activeSessionRuntimeDebugState,
-    activeSessionSelectedDiffFile,
     canInsertWorkspaceFileCommentsIntoDraft,
     composerRefreshVersion,
     deletingSessionID,
@@ -709,7 +702,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handleActiveSessionDiffFileRestore,
     handleActiveSessionDiffPatchesReverseApply,
     handleActiveSessionDiffRefresh,
-    handleActiveSessionRuntimeDebugRefresh,
     handleCloseCreateSessionTab,
     handleCreateSessionSubmit,
     handleCreateSideChatTab,
@@ -719,6 +711,9 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handleOpenSideChat,
     handleClearComposerParentMessage,
     handleOpenCreateSessionTab,
+    activateRightSidebarTab,
+    closeRightSidebarTab,
+    openOrFocusRightSidebarTab,
     handleDockviewActiveChange,
     handleForkFromMessage,
     handleMovePanelIntoSurface,
@@ -729,10 +724,8 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handlePickComposerAttachments,
     handlePasteComposerImageAttachments,
     handlePreviewActiveInteractionChange,
-    handlePreviewBack,
     handlePreviewCommitInteraction,
     handlePreviewDraftUrlChange,
-    handlePreviewForward,
     handlePreviewOpen,
     handlePreviewOpenExternal,
     handlePreviewOpenTarget,
@@ -751,7 +744,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handleProjectPin,
     handleProjectRemove,
     handleRemoveComposerAttachment,
-    handleRightSidebarViewChange,
     handleSend,
     handlePlanModeToggle,
     handleSessionBranchSelect,
@@ -774,9 +766,13 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     refreshComposerModels,
     refreshComposerSkills,
     refreshWorkspaceFromDirectory,
-    rightSidebarView,
+    rightSidebar,
     runningSessionIDs,
+    selectedDiffFileBySession,
     selectedFolderID,
+    selectedWorkspace,
+    sessionDiffBySession,
+    sessionDiffStateBySession,
     sessionCanvasUnreadBySession,
     setDraftForTab,
     saveThreadScrollSnapshot,
@@ -1062,16 +1058,54 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     const { session } = findSession(state.sessions.workspaces, reference.sessionID)
     return session && !isSideChatSession(session) ? session.id : null
   })
-  const activeRightSidebarView: RightSidebarView =
-    rightSidebarView === "runtime" && !isAgentDebugTraceEnabled ? "changes" : rightSidebarView
+  const activeRightSidebarTab = rightSidebar.tabs.find((tab) => tab.id === rightSidebar.activeTabID) ?? null
   const rightSidebarProfiler = useMemo(
     () => createRendererProfilerOnRender("RightSidebar commit", () => ({
-      activeView: activeRightSidebarView,
+      activeTabID: activeRightSidebarTab?.id ?? null,
+      activeTabKind: activeRightSidebarTab?.kind ?? null,
       activeSessionID: activeSession?.id ?? null,
-      isRuntimeViewVisible: isAgentDebugTraceEnabled,
+      tabCount: rightSidebar.tabs.length,
     })),
-    [activeRightSidebarView, activeSession?.id, isAgentDebugTraceEnabled],
+    [activeRightSidebarTab?.id, activeRightSidebarTab?.kind, activeSession?.id, rightSidebar.tabs.length],
   )
+
+  function handleOpenRightSidebarFilesTab() {
+    openOrFocusRightSidebarTab({
+      kind: "files",
+      filePath: null,
+      scopeDirectory: activeWorkspaceFileScopeDirectory,
+      scopeName: activeWorkspaceFileScopeName,
+      title: "Files",
+    })
+  }
+
+  function handleOpenRightSidebarBrowserTab() {
+    openOrFocusRightSidebarTab({
+      kind: "browser",
+      target: null,
+      title: "Browser",
+      workspaceID: selectedWorkspace?.id ?? null,
+      workspaceRoot: selectedWorkspace?.directory ?? activeSessionDirectory ?? activeWorkspaceFileScopeDirectory,
+    })
+  }
+
+  function handleOpenRightSidebarReviewTab() {
+    if (!activeSession?.id) return
+    openOrFocusRightSidebarTab({
+      kind: "review",
+      sessionID: activeSession.id,
+      title: "Review",
+    })
+  }
+
+  function handleOpenRightSidebarTerminalTab() {
+    if (!terminalSessionID) return
+    openOrFocusRightSidebarTab({
+      kind: "terminal",
+      sessionID: terminalSessionID,
+      title: "Terminal",
+    })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -1094,11 +1128,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
       cancelled = true
     }
   }, [])
-
-  useEffect(() => {
-    if (rightSidebarView !== "runtime" || isAgentDebugTraceEnabled) return
-    handleRightSidebarViewChange("changes")
-  }, [handleRightSidebarViewChange, isAgentDebugTraceEnabled, rightSidebarView])
 
   async function handleToolPermissionModeChange(mode: ToolPermissionMode) {
     if (mode === toolPermissionMode || isSavingToolPermissionMode) return
@@ -1296,11 +1325,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     workbenchContext.kind,
     workbenchContext.windowID,
   ])
-
-  function handleInspectorViewChange(view: RightSidebarView) {
-    if (view === "runtime" && !isAgentDebugTraceEnabled) return
-    handleRightSidebarViewChange(view)
-  }
 
   function handleConnectionSearchQueryChange(value: string) {
     setConnectionSearchQueries((current) => ({
@@ -1790,25 +1814,23 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               <RightSidebar
                 activeWorkspaceFileScopeDirectory={activeWorkspaceFileScopeDirectory}
                 activeWorkspaceFileScopeName={activeWorkspaceFileScopeName}
-                activeWorkspaceFileState={activeWorkspaceFileState}
                 activeSessionDirectory={activeSessionDirectory}
-                activePreviewState={activePreviewState}
                 activeSession={activeSession}
-                activeSessionDiff={activeSessionDiff}
-                activeSessionDiffState={activeSessionDiffState}
-                activeSessionRuntimeDebug={activeSessionRuntimeDebug}
-                activeSessionRuntimeDebugState={activeSessionRuntimeDebugState}
+                canOpenReview={Boolean(activeSession)}
+                canOpenTerminal={Boolean(terminalSessionID)}
                 canInsertWorkspaceFileCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
-                selectedDiffFile={activeSessionSelectedDiffFile}
-                activeView={activeRightSidebarView}
-                isRuntimeViewVisible={isAgentDebugTraceEnabled}
+                rightSidebar={rightSidebar}
+                selectedDiffFileBySession={selectedDiffFileBySession}
+                sessionDiffBySession={sessionDiffBySession}
+                sessionDiffStateBySession={sessionDiffStateBySession}
+                workspaces={workspaces}
+                onActivateTab={activateRightSidebarTab}
+                onCloseTab={closeRightSidebarTab}
                 onDiffFileSelect={handleActiveSessionDiffFileSelect}
                 onDiffFileRestore={handleActiveSessionDiffFileRestore}
                 onPreviewActiveInteractionChange={handlePreviewActiveInteractionChange}
                 onPreviewCommitInteraction={handlePreviewCommitInteraction}
-                onPreviewBack={handlePreviewBack}
                 onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
-                onPreviewForward={handlePreviewForward}
                 onPreviewOpen={handlePreviewOpen}
                 onPreviewOpenExternal={handlePreviewOpenExternal}
                 onPreviewOpenUrl={handlePreviewOpenUrl}
@@ -1819,15 +1841,17 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onWorkspaceFileCommentStart={handleWorkspaceFileCommentStart}
                 onWorkspaceFileQueryChange={handleWorkspaceFileQueryChange}
                 onWorkspaceFileSelect={handleWorkspaceFileSelect}
-                onRuntimeRefresh={handleActiveSessionRuntimeDebugRefresh}
-                onViewChange={handleInspectorViewChange}
-                renderTerminalArea={(togglePortalTarget) => (
+                onOpenBrowserTab={handleOpenRightSidebarBrowserTab}
+                onOpenFilesTab={handleOpenRightSidebarFilesTab}
+                onOpenReviewTab={handleOpenRightSidebarReviewTab}
+                onOpenTerminalTab={handleOpenRightSidebarTerminalTab}
+                renderTerminalTab={(sessionID) => (
                   <TerminalAreaHost
                     brandTheme={brandTheme}
                     colorMode={colorMode}
-                    currentSessionID={terminalSessionID}
+                    currentSessionID={sessionID}
+                    layout="fill"
                     storageKey={WORKBENCH_TERMINAL_STORAGE_KEY}
-                    togglePortalTarget={togglePortalTarget}
                   />
                 )}
                 windowControls={windowControls}

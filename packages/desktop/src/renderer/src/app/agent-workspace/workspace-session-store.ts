@@ -33,7 +33,7 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
   )
   const leftSidebarView = useWorkspaceStoreSelector(store, (state) => state.sessions.leftSidebarView)
   const pinnedWorkspaceIDs = useWorkspaceStoreSelector(store, (state) => state.sessions.pinnedWorkspaceIDs)
-  const rightSidebarView = useWorkspaceStoreSelector(store, (state) => state.sessions.rightSidebarView)
+  const rightSidebar = useWorkspaceStoreSelector(store, (state) => state.sessions.rightSidebar)
   const selectedFolderID = useWorkspaceStoreSelector(store, (state) => state.sessions.selectedFolderID)
   const sessionCanvasUnreadBySession = useWorkspaceStoreSelector(
     store,
@@ -59,7 +59,27 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
   )
   const setLeftSidebarView = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setLeftSidebarView)
   const setPinnedWorkspaceIDs = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setPinnedWorkspaceIDs)
-  const setRightSidebarView = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setRightSidebarView)
+  const activateRightSidebarTab = useWorkspaceStoreSelector(
+    store,
+    (state) => state.sessionsActions.activateRightSidebarTab,
+  )
+  const closeRightSidebarTab = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.closeRightSidebarTab)
+  const openOrFocusRightSidebarTab = useWorkspaceStoreSelector(
+    store,
+    (state) => state.sessionsActions.openOrFocusRightSidebarTab,
+  )
+  const setRightSidebarFileState = useWorkspaceStoreSelector(
+    store,
+    (state) => state.sessionsActions.setRightSidebarFileState,
+  )
+  const setRightSidebarPreviewState = useWorkspaceStoreSelector(
+    store,
+    (state) => state.sessionsActions.setRightSidebarPreviewState,
+  )
+  const updateRightSidebarTab = useWorkspaceStoreSelector(
+    store,
+    (state) => state.sessionsActions.updateRightSidebarTab,
+  )
   const setSelectedFolderID = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setSelectedFolderID)
   const setSessionCanvasUnreadBySession = useWorkspaceStoreSelector(
     store,
@@ -79,10 +99,13 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
     isCreatingProject,
     isInitialWorkspaceLoadPending,
     leftSidebarView,
+    activateRightSidebarTab,
+    closeRightSidebarTab,
+    openOrFocusRightSidebarTab,
     pinnedWorkspaceIDs,
     preserveLocalWorkspaceStateOnInitialLoadRef,
     projectRowRefs,
-    rightSidebarView,
+    rightSidebar,
     selectedFolderID,
     setActiveSideChatSessionIDByParentSessionID,
     setCanLoadSessionHistory,
@@ -94,7 +117,9 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
     setIsInitialWorkspaceLoadPending,
     setLeftSidebarView,
     setPinnedWorkspaceIDs,
-    setRightSidebarView,
+    setRightSidebarFileState,
+    setRightSidebarPreviewState,
+    updateRightSidebarTab,
     setSelectedFolderID,
     setSessionCanvasUnreadBySession,
     setWorkspaces,
