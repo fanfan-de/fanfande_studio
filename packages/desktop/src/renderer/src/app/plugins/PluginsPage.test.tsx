@@ -336,6 +336,23 @@ describe("PluginsPage", () => {
     expect(onPluginSelect).toHaveBeenCalledWith("docs")
   })
 
+  it("can be embedded with an external search field", () => {
+    render(
+      <PluginsPage
+        {...createProps({
+          hideTopMenu: true,
+          pluginCatalog: [createPlugin(), createDocsPlugin()],
+          searchQuery: "docs",
+        })}
+      />,
+    )
+
+    expect(screen.queryByLabelText("Plugins top menu")).not.toBeInTheDocument()
+    expect(screen.queryByRole("searchbox", { name: "Search" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Docs not installed" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Filesystem not installed" })).not.toBeInTheDocument()
+  })
+
   it("renders rich marketplace metadata in plugin details", () => {
     const imageUrl = "https://cdn.example.test/filesystem.png"
     render(

@@ -29,7 +29,8 @@ export type {
 
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type SidebarActionKey = "project" | "sort" | "new"
-export type LeftSidebarView = "workspace" | "skills" | "prompts" | "mcp" | "plugins" | "connectors" | "tools"
+export type LeftSidebarView = "workspace" | "skills" | "prompts" | "connections" | "tools"
+export type ConnectionsTab = "plugins" | "connectors" | "mcp"
 export type RightSidebarView = "changes" | "runtime" | "preview" | "files"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"

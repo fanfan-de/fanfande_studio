@@ -4568,6 +4568,177 @@ body.is-dragging-settings-page {
   padding: 0 2px;
 }
 
+/* Connections hub */
+
+.connections-page,
+.connections-page-main {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.connections-page {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--seg-shell);
+}
+
+.connections-top-menu-content {
+  min-width: 0;
+  width: 100%;
+}
+
+.connections-top-menu-inner {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.connections-tab-list {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-app-region: no-drag;
+}
+
+.connections-tab-list::-webkit-scrollbar {
+  display: none;
+}
+
+.connections-tab {
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--seg-text-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.connections-tab small {
+  color: var(--seg-text-3);
+  font-size: 12px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+}
+
+.connections-tab:hover,
+.connections-tab:focus-visible {
+  background: var(--semantic-sidebar-tree-row-surface-hover);
+  color: var(--seg-text-1);
+  outline: none;
+}
+
+.connections-tab.is-active {
+  background: var(--semantic-sidebar-tree-row-surface-active);
+  color: var(--seg-text-1);
+}
+
+.connections-tab.is-active small {
+  color: var(--seg-text-2);
+}
+
+.connections-search-control {
+  min-width: 180px;
+  width: min(280px, 34vw);
+  min-height: 30px;
+  margin-left: auto;
+  padding: 0 9px;
+  border: 1px solid var(--seg-border);
+  border-radius: 8px;
+  background: var(--seg-panel-muted);
+  color: var(--seg-text-2);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  -webkit-app-region: no-drag;
+}
+
+.connections-search-control svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.connections-search-control input {
+  min-width: 0;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--seg-text-1);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.connections-search-control input::placeholder {
+  color: var(--seg-text-3);
+}
+
+.connections-search-control button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--seg-text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.connections-search-control button:hover,
+.connections-search-control button:focus-visible {
+  background: var(--semantic-sidebar-tree-row-surface-hover);
+  color: var(--seg-text-1);
+  outline: none;
+}
+
+.connections-page-main {
+  overflow: hidden;
+}
+
+.connections-page-main > .plugins-page,
+.connections-page-main > .connectors-page,
+.connections-page-main > .mcp-servers-page {
+  height: 100%;
+  background: transparent;
+}
+
+.plugins-page.is-embedded,
+.mcp-servers-page.is-embedded {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.connectors-sidebar.is-search-external {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.sidebar-view-mcp.is-search-external .skills-tree-root {
+  flex: 1 1 auto;
+}
+
 /* Platform connectors */
 
 .connectors-page,

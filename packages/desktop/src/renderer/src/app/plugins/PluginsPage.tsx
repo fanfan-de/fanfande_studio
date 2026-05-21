@@ -44,6 +44,8 @@ interface PluginsPageProps {
   pluginDiagnostics: Record<string, McpServerDiagnostic>
   pluginDraft: PluginDraftState
   savingPluginConnectorID: string | null
+  hideTopMenu?: boolean
+  searchQuery?: string
   updatingPluginID: string | null
   windowControls?: ReactNode
   onDeleteInstalledPlugin: (pluginID: string) => boolean | Promise<boolean>
@@ -60,6 +62,7 @@ interface PluginsPageProps {
   onPluginSelect: (pluginID: string) => void
   onSaveInstalledPluginConnectorApiKey: (pluginID: string, appID: string) => boolean | Promise<boolean>
   onSaveInstalledPluginConfig: (pluginID: string) => boolean | Promise<boolean>
+  onSearchQueryChange?: (value: string) => void
   onSetInstalledPluginEnabled: (pluginID: string, enabled: boolean) => boolean | Promise<boolean>
   onStartInstalledPluginConnectorAuthFlow: (pluginID: string, appID: string) => boolean | Promise<boolean>
 }
@@ -359,11 +362,13 @@ export function PluginsPage({
   diagnosingPluginID,
   installingPluginID,
   installedPlugins,
+  hideTopMenu = false,
   isLoading,
   loadError,
   message,
   pluginCatalog,
   pluginConnectorStatuses,
+  searchQuery,
   updatingPluginID,
   windowControls,
   diagnosingPluginConnectorID,
@@ -382,12 +387,15 @@ export function PluginsPage({
   onPluginSelect,
   onSaveInstalledPluginConnectorApiKey,
   onSaveInstalledPluginConfig,
+  onSearchQueryChange,
   onStartInstalledPluginConnectorAuthFlow,
 }: PluginsPageProps) {
-  const [searchQuery, setSearchQuery] = useState("")
+  const [localSearchQuery, setLocalSearchQuery] = useState("")
   const [categoryFilter, setCategoryFilter] = useState<PluginCategory | "All">("All")
   const [publisherFilter, setPublisherFilter] = useState(PUBLISHER_FILTER_ALL)
   const [expandedIncludedItemID, setExpandedIncludedItemID] = useState<string | null>(null)
+  const hasExternalSearch = searchQuery !== undefined
+  const effectiveSearchQuery = searchQuery ?? localSearchQuery
 
   const installedByPluginID = useMemo(
     () => new Map(installedPlugins.map((plugin) => [plugin.pluginID, plugin])),
@@ -398,7 +406,7 @@ export function PluginsPage({
     [pluginCatalog],
   )
   const filteredPlugins = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase()
+    const normalizedQuery = effectiveSearchQuery.trim().toLowerCase()
     return pluginCatalog.filter((plugin) => {
       if (categoryFilter !== "All" && plugin.category !== categoryFilter) return false
       if (publisherFilter !== PUBLISHER_FILTER_ALL && plugin.publisher !== publisherFilter) return false
@@ -420,7 +428,7 @@ export function PluginsPage({
         .toLowerCase()
         .includes(normalizedQuery)
     })
-  }, [categoryFilter, pluginCatalog, publisherFilter, searchQuery])
+  }, [categoryFilter, pluginCatalog, publisherFilter, effectiveSearchQuery])
 
   const activePlugin = activePluginID ? pluginCatalog.find((plugin) => plugin.id === activePluginID) ?? null : null
   const activeInstalledPlugin = activePlugin ? installedByPluginID.get(activePlugin.id) ?? null : null
@@ -458,7 +466,7 @@ export function PluginsPage({
     ? "Uninstalling..."
     : "Uninstall"
   const hasDirectoryFilters =
-    searchQuery.trim().length > 0 ||
+    effectiveSearchQuery.trim().length > 0 ||
     categoryFilter !== "All" ||
     publisherFilter !== PUBLISHER_FILTER_ALL
   const featuredPlugins = useMemo(() => {
@@ -504,33 +512,42 @@ export function PluginsPage({
     setExpandedIncludedItemID((currentItemID) => currentItemID === itemID ? null : itemID)
   }
 
+  function handleSearchQueryChange(value: string) {
+    if (!hasExternalSearch) {
+      setLocalSearchQuery(value)
+    }
+    onSearchQueryChange?.(value)
+  }
+
   useEffect(() => {
     setExpandedIncludedItemID(defaultIncludedItemID)
   }, [defaultIncludedItemID])
 
   return (
-    <section className="plugins-page" aria-label="Plugins">
-      <ShellTopMenu
-        as="header"
-        ariaLabel="Plugins top menu"
-        className="canvas-region-top-menu plugins-top-menu"
-        contentClassName="plugins-top-menu-actions-shell"
-        content={(
-          <div className="plugins-top-menu-actions">
-            {activePlugin ? (
-              null
-            ) : (
-              <button className="plugins-top-menu-button" type="button" disabled>
-                <SettingsIcon />
-                <span>管理</span>
-              </button>
-            )}
-          </div>
-        )}
-        dragRegion
-        trailing={windowControls}
-        trailingClassName="prompt-presets-top-menu-window-controls"
-      />
+    <section className={hideTopMenu ? "plugins-page is-embedded" : "plugins-page"} aria-label="Plugins">
+      {!hideTopMenu ? (
+        <ShellTopMenu
+          as="header"
+          ariaLabel="Plugins top menu"
+          className="canvas-region-top-menu plugins-top-menu"
+          contentClassName="plugins-top-menu-actions-shell"
+          content={(
+            <div className="plugins-top-menu-actions">
+              {activePlugin ? (
+                null
+              ) : (
+                <button className="plugins-top-menu-button" type="button" disabled>
+                  <SettingsIcon />
+                  <span>管理</span>
+                </button>
+              )}
+            </div>
+          )}
+          dragRegion
+          trailing={windowControls}
+          trailingClassName="prompt-presets-top-menu-window-controls"
+        />
+      ) : null}
 
       <div className="plugins-page-main">
         {pluginDetailBreadcrumb}
@@ -563,83 +580,85 @@ export function PluginsPage({
             {!activePlugin ? (
               <>
                 <header className="plugins-marketplace-header">
-              <h1>让 Anybox 按你的方式工作</h1>
-              <div className="plugins-filter-row" aria-label="Plugin filters">
-                <label className="plugins-search-control">
-                  <SearchIcon />
-                  <input
-                    aria-label="Search"
-                    type="search"
-                    value={searchQuery}
-                    placeholder="搜索插件"
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                  />
-                </label>
-                <label className="plugins-select-control">
-                  <select aria-label="Builder" value={publisherFilter} onChange={(event) => setPublisherFilter(event.target.value)}>
-                    <option value={PUBLISHER_FILTER_ALL}>Built by All</option>
-                    {publisherFilters.map((publisher) => (
-                      <option key={publisher} value={publisher}>
-                        Built by {publisher}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDownIcon />
-                </label>
-                <label className="plugins-select-control is-category">
-                  <select
-                    aria-label="Category"
-                    value={categoryFilter}
-                    onChange={(event) => setCategoryFilter(event.target.value as PluginCategory | "All")}
-                  >
-                    {CATEGORY_FILTERS.map((category) => (
-                      <option key={category} value={category}>
-                        {CATEGORY_LABELS[category]}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDownIcon />
-                </label>
-              </div>
+                  <h1>让 Anybox 按你的方式工作</h1>
+                  <div className="plugins-filter-row" aria-label="Plugin filters">
+                    {!hasExternalSearch ? (
+                      <label className="plugins-search-control">
+                        <SearchIcon />
+                        <input
+                          aria-label="Search"
+                          type="search"
+                          value={effectiveSearchQuery}
+                          placeholder="搜索插件"
+                          onChange={(event) => handleSearchQueryChange(event.target.value)}
+                        />
+                      </label>
+                    ) : null}
+                    <label className="plugins-select-control">
+                      <select aria-label="Builder" value={publisherFilter} onChange={(event) => setPublisherFilter(event.target.value)}>
+                        <option value={PUBLISHER_FILTER_ALL}>Built by All</option>
+                        {publisherFilters.map((publisher) => (
+                          <option key={publisher} value={publisher}>
+                            Built by {publisher}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDownIcon />
+                    </label>
+                    <label className="plugins-select-control is-category">
+                      <select
+                        aria-label="Category"
+                        value={categoryFilter}
+                        onChange={(event) => setCategoryFilter(event.target.value as PluginCategory | "All")}
+                      >
+                        {CATEGORY_FILTERS.map((category) => (
+                          <option key={category} value={category}>
+                            {CATEGORY_LABELS[category]}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDownIcon />
+                    </label>
+                  </div>
                 </header>
 
                 <div className="plugins-directory" role="region" aria-label="Plugin marketplace layout">
-              {hasPluginMatches ? (
-                <>
-                  {shouldShowFeatured ? (
-                    <PluginSection
-                      canInstallPlugin={canInstallPlugin}
-                      installedByPluginID={installedByPluginID}
-                      pluginBusyIDs={pluginBusyIDs}
-                      plugins={featuredPlugins}
-                      selectedPluginID={selectedPluginID}
-                      title="Featured"
-                      onInstallPlugin={onInstallPlugin}
-                      onPluginSelect={onPluginSelect}
-                    />
-                  ) : null}
+                  {hasPluginMatches ? (
+                    <>
+                      {shouldShowFeatured ? (
+                        <PluginSection
+                          canInstallPlugin={canInstallPlugin}
+                          installedByPluginID={installedByPluginID}
+                          pluginBusyIDs={pluginBusyIDs}
+                          plugins={featuredPlugins}
+                          selectedPluginID={selectedPluginID}
+                          title="Featured"
+                          onInstallPlugin={onInstallPlugin}
+                          onPluginSelect={onPluginSelect}
+                        />
+                      ) : null}
 
-                  {directorySections.map(({ category, items }) => (
-                    <PluginSection
-                      key={category}
-                      canInstallPlugin={canInstallPlugin}
-                      installedByPluginID={installedByPluginID}
-                      pluginBusyIDs={pluginBusyIDs}
-                      plugins={items}
-                      selectedPluginID={selectedPluginID}
-                      title={CATEGORY_LABELS[category]}
-                      onInstallPlugin={onInstallPlugin}
-                      onPluginSelect={onPluginSelect}
-                    />
-                  ))}
-                </>
-              ) : (
-                <article className="settings-empty-state plugins-directory-empty-state">
-                  <span className="label">No Matches</span>
-                  <h3>No plugins match the current filters</h3>
-                  <p>Adjust the search text, builder, or category filter.</p>
-                </article>
-              )}
+                      {directorySections.map(({ category, items }) => (
+                        <PluginSection
+                          key={category}
+                          canInstallPlugin={canInstallPlugin}
+                          installedByPluginID={installedByPluginID}
+                          pluginBusyIDs={pluginBusyIDs}
+                          plugins={items}
+                          selectedPluginID={selectedPluginID}
+                          title={CATEGORY_LABELS[category]}
+                          onInstallPlugin={onInstallPlugin}
+                          onPluginSelect={onPluginSelect}
+                        />
+                      ))}
+                    </>
+                  ) : (
+                    <article className="settings-empty-state plugins-directory-empty-state">
+                      <span className="label">No Matches</span>
+                      <h3>No plugins match the current filters</h3>
+                      <p>Adjust the search text, builder, or category filter.</p>
+                    </article>
+                  )}
                 </div>
               </>
             ) : null}

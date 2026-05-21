@@ -4,9 +4,7 @@ import {
   ChevronRightIcon,
   ConnectedStatusIcon,
   FileTextIcon,
-  FolderIcon,
   LayoutSidebarLeftIcon,
-  PluginIcon,
   SettingsIcon,
   SideChatIcon,
   ToolsIcon,
@@ -32,9 +30,7 @@ const primaryLeftRailViews = [
 const configurationLeftRailViews = [
   { view: "skills" as const, label: "Open skills", Icon: FileTextIcon },
   { view: "prompts" as const, label: "Open prompts", Icon: SideChatIcon },
-  { view: "mcp" as const, label: "Open MCP", Icon: FolderIcon },
-  { view: "plugins" as const, label: "Open plugins", Icon: PluginIcon },
-  { view: "connectors" as const, label: "Open connectors", Icon: ConnectedStatusIcon },
+  { view: "connections" as const, label: "Open connections and extensions", Icon: ConnectedStatusIcon },
   { view: "tools" as const, label: "Open tools", Icon: ToolsIcon },
 ]
 

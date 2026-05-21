@@ -391,6 +391,39 @@ describe("McpServersPage tool policies", () => {
     expect(within(list).getByRole("button", { name: "Pencil enabled" })).toBeInTheDocument()
   })
 
+  it("can be embedded with an external search field", () => {
+    render(
+      <McpServersPage
+        {...createProps({
+          hideTopMenu: true,
+          searchQuery: "pencil",
+          mcpServers: [
+            {
+              id: "context7",
+              name: "Context7",
+              transport: "remote",
+              serverUrl: "https://mcp.context7.com/mcp",
+              enabled: true,
+            },
+            {
+              id: "pencil",
+              name: "Pencil",
+              transport: "stdio",
+              command: "pencil-mcp.exe",
+              enabled: true,
+            },
+          ],
+        })}
+      />,
+    )
+
+    const list = screen.getByRole("list", { name: "MCP servers" })
+    expect(screen.queryByLabelText("MCP top menu")).not.toBeInTheDocument()
+    expect(screen.queryByRole("searchbox", { name: "Search MCP servers" })).not.toBeInTheDocument()
+    expect(within(list).queryByRole("button", { name: "Context7 enabled" })).not.toBeInTheDocument()
+    expect(within(list).getByRole("button", { name: "Pencil enabled" })).toBeInTheDocument()
+  })
+
   it("maps legacy remote read-only filters to understandable tool policy defaults", () => {
     render(
       <McpServersPage

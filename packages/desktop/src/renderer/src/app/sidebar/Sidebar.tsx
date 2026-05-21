@@ -15,7 +15,6 @@ import {
   SettingsIcon,
   SortIcon
 } from "../icons"
-import { McpServersSidebarView, type McpServersSidebarViewProps } from "../mcp/McpServersPage"
 import { PromptPresetsSidebarView, type PromptPresetsSidebarViewProps } from "../prompts/PromptPresetsPage"
 import { ShellTopMenu, SidebarToggleButton } from "../shared-ui"
 import { GlobalSkillsNavigator, type GlobalSkillsNavigatorProps } from "../skills/GlobalSkillsPage"
@@ -72,7 +71,6 @@ interface SidebarProps {
   isCreatingProject: boolean
   isCreatingSession: boolean
   isSettingsOpen: boolean
-  mcpServersSidebarProps: McpServersSidebarViewProps
   promptPresetsSidebarProps: PromptPresetsSidebarViewProps
   showSettingsButton?: boolean
   showSidebarToggleButton: boolean
@@ -835,7 +833,6 @@ export function Sidebar({
   isCreatingProject,
   isCreatingSession,
   isSettingsOpen,
-  mcpServersSidebarProps,
   promptPresetsSidebarProps,
   showSettingsButton = true,
   showSidebarToggleButton,
@@ -901,9 +898,6 @@ export function Sidebar({
         ) : null}
         {activeView === "prompts" ? (
           <PromptPresetsSidebarView {...promptPresetsSidebarProps} />
-        ) : null}
-        {activeView === "mcp" ? (
-          <McpServersSidebarView {...mcpServersSidebarProps} />
         ) : null}
         {activeView === "tools" ? (
           <BuiltinToolsSidebarView {...builtinToolsSidebarProps} />

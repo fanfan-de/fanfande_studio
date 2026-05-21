@@ -46,7 +46,9 @@ interface McpServersPageProps {
   pluginCatalog?: PluginCatalogItem[]
   savingMcpServerID: string | null
   hideNavigator?: boolean
+  hideTopMenu?: boolean
   isImportingMcpConfigJson?: boolean
+  searchQuery?: string
   windowControls?: ReactNode
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
   onDismissMessage: () => void
@@ -55,6 +57,7 @@ interface McpServersPageProps {
   onMcpToolPolicyChange: (toolName: string, policy: McpToolPolicyValue) => void
   onMcpServerSelect: (serverID: string) => void
   onSaveMcpServer: () => boolean | Promise<boolean>
+  onSearchQueryChange?: (value: string) => void
   onStartNewMcpServer: () => void
 }
 
@@ -66,7 +69,9 @@ export interface McpServersSidebarViewProps {
   mcpServers: McpServerSummary[]
   pluginCatalog?: PluginCatalogItem[]
   savingMcpServerID: string | null
+  searchQuery?: string
   onMcpServerSelect: (serverID: string) => void
+  onSearchQueryChange?: (value: string) => void
   onStartNewMcpServer: () => void
 }
 
@@ -487,10 +492,14 @@ export function McpServersSidebarView({
   mcpServers,
   pluginCatalog = [],
   savingMcpServerID,
+  searchQuery,
   onMcpServerSelect,
+  onSearchQueryChange,
   onStartNewMcpServer,
 }: McpServersSidebarViewProps) {
-  const [mcpServerSearchQuery, setMcpServerSearchQuery] = useState("")
+  const [localMcpServerSearchQuery, setLocalMcpServerSearchQuery] = useState("")
+  const hasExternalSearch = searchQuery !== undefined
+  const effectiveSearchQuery = searchQuery ?? localMcpServerSearchQuery
   const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
   const pluginSourceMap = useMemo(
     () => buildMcpServerPluginSourceMap(installedPlugins, pluginCatalog),
@@ -499,34 +508,46 @@ export function McpServersSidebarView({
   const filteredMcpServers = useMemo(
     () => mcpServers.filter((server) => doesMcpServerMatchSearch(
       server,
-      mcpServerSearchQuery,
+      effectiveSearchQuery,
       getMcpServerPluginSource(server, pluginSourceMap),
     )),
-    [mcpServerSearchQuery, mcpServers, pluginSourceMap],
+    [effectiveSearchQuery, mcpServers, pluginSourceMap],
   )
 
+  function handleSearchQueryChange(value: string) {
+    if (!hasExternalSearch) {
+      setLocalMcpServerSearchQuery(value)
+    }
+    onSearchQueryChange?.(value)
+  }
+
   return (
-    <section className="sidebar-view sidebar-view-mcp" aria-label="MCP servers sidebar view">
-      <div className="skills-tree-search-row mcp-servers-search-row" role="search">
-        <SearchIcon />
-        <input
-          aria-label="Search MCP servers"
-          type="search"
-          value={mcpServerSearchQuery}
-          placeholder="Search servers"
-          onChange={(event) => setMcpServerSearchQuery(event.target.value)}
-        />
-        {mcpServerSearchQuery ? (
-          <button
-            aria-label="Clear MCP server search"
-            title="Clear search"
-            type="button"
-            onClick={() => setMcpServerSearchQuery("")}
-          >
-            <CloseIcon />
-          </button>
-        ) : null}
-      </div>
+    <section
+      className={hasExternalSearch ? "sidebar-view sidebar-view-mcp is-search-external" : "sidebar-view sidebar-view-mcp"}
+      aria-label="MCP servers sidebar view"
+    >
+      {!hasExternalSearch ? (
+        <div className="skills-tree-search-row mcp-servers-search-row" role="search">
+          <SearchIcon />
+          <input
+            aria-label="Search MCP servers"
+            type="search"
+            value={effectiveSearchQuery}
+            placeholder="Search servers"
+            onChange={(event) => handleSearchQueryChange(event.target.value)}
+          />
+          {effectiveSearchQuery ? (
+            <button
+              aria-label="Clear MCP server search"
+              title="Clear search"
+              type="button"
+              onClick={() => handleSearchQueryChange("")}
+            >
+              <CloseIcon />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="skills-tree-root mcp-servers-list-stack" role="list" aria-label="MCP servers">
         {filteredMcpServers.length > 0 ? (
@@ -594,7 +615,9 @@ export function McpServersPage({
   pluginCatalog = [],
   savingMcpServerID,
   hideNavigator = false,
+  hideTopMenu = false,
   isImportingMcpConfigJson = false,
+  searchQuery,
   windowControls,
   onDeleteMcpServer,
   onDismissMessage,
@@ -603,6 +626,7 @@ export function McpServersPage({
   onMcpToolPolicyChange,
   onMcpServerSelect,
   onSaveMcpServer,
+  onSearchQueryChange,
   onStartNewMcpServer,
 }: McpServersPageProps) {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -650,23 +674,25 @@ export function McpServersPage({
   }
 
   return (
-    <section className="mcp-servers-page" aria-label="MCP servers">
-      <ShellTopMenu
-        as="header"
-        ariaLabel="MCP top menu"
-        className="canvas-region-top-menu mcp-servers-top-menu"
-        contentClassName="canvas-region-top-menu-tabs-shell"
-        content={(
-          <div className="prompt-presets-top-menu-label">
-            <FolderIcon />
-            <span>MCP</span>
-          </div>
-        )}
-        dragRegion
-        layout="three-column"
-        trailing={windowControls}
-        trailingClassName="prompt-presets-top-menu-window-controls"
-      />
+    <section className={hideTopMenu ? "mcp-servers-page is-embedded" : "mcp-servers-page"} aria-label="MCP servers">
+      {!hideTopMenu ? (
+        <ShellTopMenu
+          as="header"
+          ariaLabel="MCP top menu"
+          className="canvas-region-top-menu mcp-servers-top-menu"
+          contentClassName="canvas-region-top-menu-tabs-shell"
+          content={(
+            <div className="prompt-presets-top-menu-label">
+              <FolderIcon />
+              <span>MCP</span>
+            </div>
+          )}
+          dragRegion
+          layout="three-column"
+          trailing={windowControls}
+          trailingClassName="prompt-presets-top-menu-window-controls"
+        />
+      ) : null}
 
       <div className="settings-page-main is-services mcp-servers-page-main">
         {message ? (
@@ -707,7 +733,9 @@ export function McpServersPage({
                   mcpServers={mcpServers}
                   pluginCatalog={pluginCatalog}
                   savingMcpServerID={savingMcpServerID}
+                  searchQuery={searchQuery}
                   onMcpServerSelect={onMcpServerSelect}
+                  onSearchQueryChange={onSearchQueryChange}
                   onStartNewMcpServer={onStartNewMcpServer}
                 />
               </div>

@@ -47,4 +47,18 @@ describe("ActivityRail", () => {
     expect(expandedToggle.querySelector(".lucide-settings")).toBeNull()
     expect(expandedToggle.querySelector(".lucide-chevron-down")).not.toBeNull()
   })
+
+  it("collapses external capability shortcuts into one connections entry", () => {
+    const { props } = renderActivityRail()
+
+    fireEvent.click(screen.getByRole("button", { name: "Show configuration shortcuts" }))
+
+    expect(screen.queryByRole("button", { name: "Open MCP" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Open plugins" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Open connectors" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open connections and extensions" }))
+
+    expect(props.onViewChange).toHaveBeenCalledWith("connections")
+  })
 })

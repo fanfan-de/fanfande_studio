@@ -2,6 +2,7 @@ import { lazy, Profiler, Suspense, useEffect, useMemo, useRef, useState } from "
 import type { SerializedDockview } from "dockview-react"
 import { ActivityRail } from "./app/sidebar/ActivityRail"
 import { BuiltinToolsPage } from "./app/tools/BuiltinToolsPage"
+import { ConnectionsPage } from "./app/connections/ConnectionsPage"
 import { McpServersPage } from "./app/mcp/McpServersPage"
 import { RightSidebar } from "./app/sidebar/RightSidebar"
 import { Sidebar } from "./app/sidebar/Sidebar"
@@ -14,7 +15,7 @@ import {
 import { WorkspaceStoreProvider } from "./app/agent-workspace/workspace-store-context"
 import { resolveWorkspaceRelativePath } from "./app/agent-workspace/workspace-loading-hooks"
 import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "./app/thread-markdown"
-import type { RightSidebarView, SessionDiffFile, ToolPermissionMode } from "./app/types"
+import type { ConnectionsTab, RightSidebarView, SessionDiffFile, ToolPermissionMode } from "./app/types"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
@@ -41,6 +42,11 @@ const PromptPresetsPage = lazy(() => import("./app/prompts/PromptPresetsPage").t
 const SettingsPage = lazy(() => import("./app/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })))
 
 const WORKBENCH_TERMINAL_STORAGE_KEY = "desktop.terminal.workspace.v3:workbench"
+const EMPTY_CONNECTION_SEARCH_QUERIES: Record<ConnectionsTab, string> = {
+  plugins: "",
+  connectors: "",
+  mcp: "",
+}
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
@@ -789,6 +795,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     surfaceID,
     workbenchState: workbenchContext.state,
   })
+  const isConnectionsPageOpen = leftSidebarView === "connections"
   const workbenchPublishSnapshot = useWorkspaceStoreSelector(
     workspaceStore,
     (state) => buildWorkbenchPublishSnapshot({
@@ -1015,9 +1022,9 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     updatingPluginID,
   } = useSettingsPage({
     isBuiltinToolsPageOpen: leftSidebarView === "tools",
-    isConnectorsPageOpen: leftSidebarView === "connectors",
-    isMcpServersPageOpen: leftSidebarView === "mcp",
-    isPluginsPageOpen: leftSidebarView === "plugins",
+    isConnectorsPageOpen: isConnectionsPageOpen,
+    isMcpServersPageOpen: isConnectionsPageOpen,
+    isPluginsPageOpen: isConnectionsPageOpen,
     isPromptPresetEditorOpen: leftSidebarView === "prompts",
     onArchivedSessionRestored: async (session) => {
       await refreshWorkspaceFromDirectory(session.directory)
@@ -1032,6 +1039,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     (state) => Object.values(state.composer.isCreatingSessionByTabKey).some(Boolean),
   )
   const [activeBuiltinToolKind, setActiveBuiltinToolKind] = useState<BuiltinToolKindKey | null>(null)
+  const [activeConnectionsTab, setActiveConnectionsTab] = useState<ConnectionsTab>("plugins")
+  const [connectionSearchQueries, setConnectionSearchQueries] = useState<Record<ConnectionsTab, string>>(
+    EMPTY_CONNECTION_SEARCH_QUERIES,
+  )
   const [toolPermissionMode, setToolPermissionMode] = useState<ToolPermissionMode>("default")
   const [toolPermissionModeError, setToolPermissionModeError] = useState<string | null>(null)
   const [isSavingToolPermissionMode, setIsSavingToolPermissionMode] = useState(false)
@@ -1291,6 +1302,13 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handleRightSidebarViewChange(view)
   }
 
+  function handleConnectionSearchQueryChange(value: string) {
+    setConnectionSearchQueries((current) => ({
+      ...current,
+      [activeConnectionsTab]: value,
+    }))
+  }
+
   const windowShellClassName = [
     "window-shell",
     isDebugLineColorsEnabled ? "debug-line-colors" : "",
@@ -1301,12 +1319,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     .join(" ")
   const isPromptEditorView = leftSidebarView === "prompts"
   const isGlobalSkillsView = leftSidebarView === "skills"
-  const isMcpServersView = leftSidebarView === "mcp"
-  const isPluginsView = leftSidebarView === "plugins"
-  const isConnectorsView = leftSidebarView === "connectors"
+  const isConnectionsView = leftSidebarView === "connections"
   const isBuiltinToolsView = leftSidebarView === "tools"
-  const isShellSidebarManagedView = isPromptEditorView || isGlobalSkillsView || isMcpServersView || isBuiltinToolsView
-  const isFullSurfaceView = isPluginsView || isConnectorsView
+  const isShellSidebarManagedView = isPromptEditorView || isGlobalSkillsView || isBuiltinToolsView
+  const isFullSurfaceView = isConnectionsView
   const windowControls = useMemo(
     () => <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />,
     [handleWindowAction, isWindowMaximized, windowControlsRef],
@@ -1383,17 +1399,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               isCreatingProject={isCreatingProject}
               isCreatingSession={isCreatingSession}
               isSettingsOpen={isOpen}
-              mcpServersSidebarProps={{
-                activeMcpServerID,
-                deletingMcpServerID,
-                isImportingMcpConfigJson,
-                installedPlugins,
-                mcpServers,
-                pluginCatalog,
-                savingMcpServerID,
-                onMcpServerSelect: selectMcpServer,
-                onStartNewMcpServer: startNewMcpServer,
-              }}
               promptPresetsSidebarProps={{
                 deletingPromptPresetID,
                 isCreatingPromptPreset,
@@ -1577,97 +1582,115 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onSave={handleSaveGlobalSkillFile}
               />
             </Suspense>
-          ) : isMcpServersView ? (
-            <McpServersPage
-              activeMcpServerID={activeMcpServerID}
-              activeMcpServerDiagnostic={activeMcpServerDiagnostic}
-              deletingMcpServerID={deletingMcpServerID}
-              hideNavigator
-              isLoading={isLoading}
-              loadError={loadError}
-              installedPlugins={installedPlugins}
-              mcpServerDraft={mcpServerDraft}
-              mcpServers={mcpServers}
-              message={message}
-              pluginCatalog={pluginCatalog}
-              savingMcpServerID={savingMcpServerID}
-              isImportingMcpConfigJson={isImportingMcpConfigJson}
+          ) : isConnectionsView ? (
+            <ConnectionsPage
+              activeTab={activeConnectionsTab}
+              connectorCount={connectorCatalog.length}
+              mcpCount={mcpServers.length}
+              pluginCount={pluginCatalog.length}
+              searchQuery={connectionSearchQueries[activeConnectionsTab]}
               windowControls={windowControls}
-              onDeleteMcpServer={deleteMcpServer}
-              onDismissMessage={dismissMessage}
-              onImportMcpConfigJson={importMcpConfigJson}
-              onMcpServerDraftChange={setMcpServerDraftValue}
-              onMcpToolPolicyChange={setMcpToolPolicy}
-              onMcpServerSelect={selectMcpServer}
-              onSaveMcpServer={saveMcpServer}
-              onStartNewMcpServer={startNewMcpServer}
-            />
-          ) : isConnectorsView ? (
-            <Suspense fallback={null}>
-              <ConnectorsPage
-                activeConnectorID={activeConnectorID}
-                connectorApiKeyDrafts={connectorApiKeyDrafts}
-                connectorCatalog={connectorCatalog}
-                connectorConfigDrafts={connectorConfigDrafts}
-                connectorStatuses={connectorStatuses}
-                connectorsError={connectorsError}
-                diagnosingConnectorID={diagnosingConnectorID}
-                isLoading={isLoadingConnectors}
-                message={message}
-                savingConnectorID={savingConnectorID}
-                windowControls={windowControls}
-                onCancelConnectorAuthFlow={cancelConnectorAuthFlow}
-                onConnectorApiKeyDraftChange={setConnectorApiKeyDraft}
-                onConnectorConfigDraftChange={setConnectorConfigDraft}
-                onConnectorSelect={selectConnector}
-                onDeleteConnectorApiKey={deleteConnectorApiKey}
-                onDeleteConnectorConfig={deleteConnectorConfig}
-                onDeleteConnectorAuthSession={deleteConnectorAuthSession}
-                onDiagnoseConnector={diagnoseConnector}
-                onDismissMessage={dismissMessage}
-                onSaveConnectorApiKey={saveConnectorApiKey}
-                onSaveConnectorConfig={saveConnectorConfig}
-                onStartConnectorAuthFlow={startConnectorAuthFlow}
-              />
-            </Suspense>
-          ) : isPluginsView ? (
-            <Suspense fallback={null}>
-              <PluginsPage
-                activePluginID={activePluginID}
-                connectorStatuses={connectorStatuses}
-                deletingPluginID={deletingPluginID}
-                diagnosingPluginConnectorID={diagnosingPluginConnectorID}
-                diagnosingPluginID={diagnosingPluginID}
-                installingPluginID={installingPluginID}
-                installedPlugins={installedPlugins}
-                isLoading={isLoadingPlugins}
-                loadError={pluginsError}
-                message={message}
-                pluginCatalog={pluginCatalog}
-                pluginConnectorStatuses={pluginConnectorStatuses}
-                pluginDiagnostics={pluginDiagnostics}
-                pluginDraft={pluginDraft}
-                updatingPluginID={updatingPluginID}
-                windowControls={windowControls}
-                onCancelInstalledPluginConnectorAuthFlow={cancelInstalledPluginConnectorAuthFlow}
-                onDeleteInstalledPlugin={deleteInstalledPlugin}
-                onDeleteInstalledPluginConnectorApiKey={deleteInstalledPluginConnectorApiKey}
-                onDeleteInstalledPluginConnectorAuthSession={deleteInstalledPluginConnectorAuthSession}
-                onDiagnoseInstalledPlugin={diagnoseInstalledPlugin}
-                onDiagnoseInstalledPluginConnector={diagnoseInstalledPluginConnector}
-                onDismissMessage={dismissMessage}
-                onInstallPlugin={installPlugin}
-                onPluginDraftAppApiKeyChange={setPluginDraftAppApiKey}
-                onPluginDraftConfigChange={setPluginDraftConfigValue}
-                onPluginDeselect={clearPluginSelection}
-                onPluginSelect={selectPlugin}
-                onSaveInstalledPluginConnectorApiKey={saveInstalledPluginConnectorApiKey}
-                onSaveInstalledPluginConfig={saveInstalledPluginConfig}
-                onSetInstalledPluginEnabled={setInstalledPluginEnabled}
-                onStartInstalledPluginConnectorAuthFlow={startInstalledPluginConnectorAuthFlow}
-                savingPluginConnectorID={savingPluginConnectorID}
-              />
-            </Suspense>
+              onSearchQueryChange={handleConnectionSearchQueryChange}
+              onTabChange={setActiveConnectionsTab}
+            >
+              {activeConnectionsTab === "plugins" ? (
+                <Suspense fallback={null}>
+                  <PluginsPage
+                    activePluginID={activePluginID}
+                    connectorStatuses={connectorStatuses}
+                    deletingPluginID={deletingPluginID}
+                    diagnosingPluginConnectorID={diagnosingPluginConnectorID}
+                    diagnosingPluginID={diagnosingPluginID}
+                    hideTopMenu
+                    installingPluginID={installingPluginID}
+                    installedPlugins={installedPlugins}
+                    isLoading={isLoadingPlugins}
+                    loadError={pluginsError}
+                    message={message}
+                    pluginCatalog={pluginCatalog}
+                    pluginConnectorStatuses={pluginConnectorStatuses}
+                    pluginDiagnostics={pluginDiagnostics}
+                    pluginDraft={pluginDraft}
+                    savingPluginConnectorID={savingPluginConnectorID}
+                    searchQuery={connectionSearchQueries.plugins}
+                    updatingPluginID={updatingPluginID}
+                    onCancelInstalledPluginConnectorAuthFlow={cancelInstalledPluginConnectorAuthFlow}
+                    onDeleteInstalledPlugin={deleteInstalledPlugin}
+                    onDeleteInstalledPluginConnectorApiKey={deleteInstalledPluginConnectorApiKey}
+                    onDeleteInstalledPluginConnectorAuthSession={deleteInstalledPluginConnectorAuthSession}
+                    onDiagnoseInstalledPlugin={diagnoseInstalledPlugin}
+                    onDiagnoseInstalledPluginConnector={diagnoseInstalledPluginConnector}
+                    onDismissMessage={dismissMessage}
+                    onInstallPlugin={installPlugin}
+                    onPluginDraftAppApiKeyChange={setPluginDraftAppApiKey}
+                    onPluginDraftConfigChange={setPluginDraftConfigValue}
+                    onPluginDeselect={clearPluginSelection}
+                    onPluginSelect={selectPlugin}
+                    onSaveInstalledPluginConnectorApiKey={saveInstalledPluginConnectorApiKey}
+                    onSaveInstalledPluginConfig={saveInstalledPluginConfig}
+                    onSearchQueryChange={handleConnectionSearchQueryChange}
+                    onSetInstalledPluginEnabled={setInstalledPluginEnabled}
+                    onStartInstalledPluginConnectorAuthFlow={startInstalledPluginConnectorAuthFlow}
+                  />
+                </Suspense>
+              ) : activeConnectionsTab === "connectors" ? (
+                <Suspense fallback={null}>
+                  <ConnectorsPage
+                    activeConnectorID={activeConnectorID}
+                    connectorApiKeyDrafts={connectorApiKeyDrafts}
+                    connectorCatalog={connectorCatalog}
+                    connectorConfigDrafts={connectorConfigDrafts}
+                    connectorStatuses={connectorStatuses}
+                    connectorsError={connectorsError}
+                    diagnosingConnectorID={diagnosingConnectorID}
+                    hideTopMenu
+                    isLoading={isLoadingConnectors}
+                    message={message}
+                    savingConnectorID={savingConnectorID}
+                    searchQuery={connectionSearchQueries.connectors}
+                    onCancelConnectorAuthFlow={cancelConnectorAuthFlow}
+                    onConnectorApiKeyDraftChange={setConnectorApiKeyDraft}
+                    onConnectorConfigDraftChange={setConnectorConfigDraft}
+                    onConnectorSelect={selectConnector}
+                    onDeleteConnectorApiKey={deleteConnectorApiKey}
+                    onDeleteConnectorConfig={deleteConnectorConfig}
+                    onDeleteConnectorAuthSession={deleteConnectorAuthSession}
+                    onDiagnoseConnector={diagnoseConnector}
+                    onDismissMessage={dismissMessage}
+                    onSaveConnectorApiKey={saveConnectorApiKey}
+                    onSaveConnectorConfig={saveConnectorConfig}
+                    onSearchQueryChange={handleConnectionSearchQueryChange}
+                    onStartConnectorAuthFlow={startConnectorAuthFlow}
+                  />
+                </Suspense>
+              ) : (
+                <McpServersPage
+                  activeMcpServerID={activeMcpServerID}
+                  activeMcpServerDiagnostic={activeMcpServerDiagnostic}
+                  deletingMcpServerID={deletingMcpServerID}
+                  hideTopMenu
+                  isLoading={isLoading}
+                  loadError={loadError}
+                  installedPlugins={installedPlugins}
+                  mcpServerDraft={mcpServerDraft}
+                  mcpServers={mcpServers}
+                  message={message}
+                  pluginCatalog={pluginCatalog}
+                  savingMcpServerID={savingMcpServerID}
+                  isImportingMcpConfigJson={isImportingMcpConfigJson}
+                  searchQuery={connectionSearchQueries.mcp}
+                  onDeleteMcpServer={deleteMcpServer}
+                  onDismissMessage={dismissMessage}
+                  onImportMcpConfigJson={importMcpConfigJson}
+                  onMcpServerDraftChange={setMcpServerDraftValue}
+                  onMcpToolPolicyChange={setMcpToolPolicy}
+                  onMcpServerSelect={selectMcpServer}
+                  onSaveMcpServer={saveMcpServer}
+                  onSearchQueryChange={handleConnectionSearchQueryChange}
+                  onStartNewMcpServer={startNewMcpServer}
+                />
+              )}
+            </ConnectionsPage>
           ) : isBuiltinToolsView ? (
             <BuiltinToolsPage
               activeToolKind={activeBuiltinToolKind}

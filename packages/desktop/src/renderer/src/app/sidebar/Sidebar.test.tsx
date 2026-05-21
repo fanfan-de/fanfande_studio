@@ -79,15 +79,6 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) 
     isCreatingProject: false,
     isCreatingSession: false,
     isSettingsOpen: false,
-    mcpServersSidebarProps: {
-      activeMcpServerID: null,
-      deletingMcpServerID: null,
-      isImportingMcpConfigJson: false,
-      mcpServers: [],
-      savingMcpServerID: null,
-      onMcpServerSelect: vi.fn(),
-      onStartNewMcpServer: vi.fn(),
-    },
     promptPresetsSidebarProps: {
       deletingPromptPresetID: null,
       isCreatingPromptPreset: false,

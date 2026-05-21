@@ -351,6 +351,34 @@ describe("ThreadView trace item renderers", () => {
     expect(screen.getByText("Tool detail")).toBeInTheDocument()
   })
 
+  it("renders expanded tool input and output in fixed-height scroll panes", () => {
+    const toolItem: AssistantTraceItem = {
+      ...toolStatusTraceItem("completed"),
+      toolInputText: "tool input",
+      toolOutputText: "tool output",
+    }
+    const { container } = renderThread(
+      [
+        assistantTraceTurn("assistant-tools", [toolItem], false),
+      ],
+      {
+        assistantTraceVisibility: {
+          ...DEFAULT_ASSISTANT_TRACE_VISIBILITY,
+          toolInputs: true,
+          toolOutputs: true,
+        },
+      },
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /Tool completed/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Tool completed input/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Tool completed output/ }))
+
+    expect(screen.getByRole("region", { name: "Tool completed input content" })).toHaveClass("trace-tool-io-pane")
+    expect(screen.getByRole("region", { name: "Tool completed output content" })).toHaveClass("trace-tool-io-pane")
+    expect(container.querySelectorAll(".trace-kind-tool .trace-tool-io-pane")).toHaveLength(2)
+  })
+
   it("does not mount tool debug entries while disclosure content is collapsed", () => {
     const toolItem: AssistantTraceItem = {
       ...toolStatusTraceItem("completed"),
@@ -929,6 +957,33 @@ describe("ThreadView trace collapse", () => {
     expect(container.textContent).toContain("Then compare the rendering states")
   })
 
+  it("renders expanded reasoning in a fixed-height scroll pane", () => {
+    const { getByRole, getByText } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "reasoning-1",
+            kind: "reasoning",
+            timestamp: 1,
+            label: "Reasoning",
+            text: "Inspect files first\nThen compare the rendering states",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    fireEvent.click(getByText("Inspect files first").closest('[role="button"]')!)
+
+    const reasoningPane = getByRole("region", { name: "Reasoning content" })
+    expect(reasoningPane).toHaveClass("trace-fixed-content-pane", "trace-reasoning-pane")
+
+    fireEvent.click(reasoningPane)
+    expect(reasoningPane).toHaveTextContent("Then compare the rendering states")
+  })
+
   it("keeps streaming reasoning open, then collapses reasoning and tool content when the turn completes", () => {
     const streamingItems: AssistantTraceItem[] = [
       {
@@ -978,6 +1033,107 @@ describe("ThreadView trace collapse", () => {
     expect(container.textContent).toContain("Inspect files first")
     expect(container.textContent).not.toContain("Then compare the rendering states")
     expect(container.textContent).not.toContain("Input")
+  })
+
+  it("collapses process trace before the final assistant response", () => {
+    const { getByRole, getByText, queryByText } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "I will inspect the project first.",
+            status: "completed",
+          },
+          {
+            id: "tool-1",
+            kind: "tool",
+            timestamp: 2,
+            label: "Tool",
+            title: "list-directory",
+            status: "completed",
+          },
+          {
+            id: "response-2",
+            kind: "text",
+            timestamp: 3,
+            label: "Assistant",
+            text: "The project is ready.",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    const processedTrace = getByRole("button", { name: /Processed/ })
+    expect(processedTrace).toHaveAttribute("aria-expanded", "false")
+    expect(queryByText("I will inspect the project first.")).toBeNull()
+    expect(getByText("The project is ready.")).toBeInTheDocument()
+
+    fireEvent.click(processedTrace)
+
+    expect(processedTrace).toHaveAttribute("aria-expanded", "true")
+    expect(getByText("I will inspect the project first.")).toBeInTheDocument()
+    expect(getByText("list-directory")).toBeInTheDocument()
+  })
+
+  it("collapses process trace when a failed tool is followed by a final response", () => {
+    const turn = assistantTraceTurn(
+      "assistant-1",
+      [
+        {
+          id: "response-1",
+          kind: "text",
+          timestamp: 1,
+          label: "Assistant",
+          text: "Let me test the tools first.",
+          status: "completed",
+        },
+        {
+          id: "tool-1",
+          kind: "tool",
+          timestamp: 2,
+          label: "Tool",
+          title: "lsp_workspace_symbols",
+          status: "error",
+        },
+        {
+          id: "response-2",
+          kind: "text",
+          timestamp: 3,
+          label: "Assistant",
+          text: "所有工具测试结果：\n\n| 工具 | 状态 |\n| --- | --- |\n| read-file | ok |",
+          status: "completed",
+        },
+      ],
+      false,
+    )
+
+    const { getByRole, getByText, queryByText } = renderThread([
+      {
+        ...turn,
+        runtime: {
+          ...turn.runtime,
+          phase: "failed",
+        },
+        state: "Backend stream failed",
+      },
+    ])
+
+    const processedTrace = getByRole("button", { name: /Processed/ })
+    expect(processedTrace).toHaveAttribute("aria-expanded", "false")
+    expect(queryByText("Let me test the tools first.")).toBeNull()
+    expect(queryByText("lsp_workspace_symbols")).toBeNull()
+    expect(getByText("所有工具测试结果：")).toBeInTheDocument()
+
+    fireEvent.click(processedTrace)
+
+    expect(getByText("Let me test the tools first.")).toBeInTheDocument()
+    expect(getByText("lsp_workspace_symbols")).toBeInTheDocument()
   })
 })
 
@@ -2137,7 +2293,7 @@ describe("ThreadView message actions", () => {
     })
     const onOpenSideChat = vi.fn()
 
-    const { container, getAllByRole, getByRole, getByText } = renderThread(
+    const { container, getAllByRole, getByRole, getByText, queryByText } = renderThread(
       [
         userTurn("user-with-diff", "Please update the file."),
         {
@@ -2205,13 +2361,18 @@ describe("ThreadView message actions", () => {
     const sideChatButtons = getAllByRole("button", { name: "Open side chat" })
     expect(copyButtons).toHaveLength(1)
     expect(sideChatButtons).toHaveLength(1)
+    const processTraceButton = getByRole("button", { name: /Processed/ })
+    expect(processTraceButton).toHaveAttribute("aria-expanded", "false")
+    expect(queryByText("I will check the directory first.")).toBeNull()
 
     const actionRow = copyButtons[0]?.closest(".assistant-response-side-chat")
     const assistantShell = copyButtons[0]?.closest(".assistant-shell")
-    const firstResponseSection = getByText("I will check the directory first.").closest(".assistant-section")
     const finalResponseSection = getByText("Deleted. The directory is empty now.").closest(".assistant-section")
     const fileChangeSection = getByRole("region", { name: "File Changes" })
     const trailingDiffCard = container.querySelector(".assistant-shell > .user-turn-diff-card")
+    fireEvent.click(processTraceButton)
+    const firstResponseSection = getByText("I will check the directory first.").closest(".assistant-section")
+
     expect(actionRow).not.toBeNull()
     expect(trailingDiffCard).not.toBeNull()
     const actionRowElement = actionRow as HTMLElement
@@ -2230,7 +2391,7 @@ describe("ThreadView message actions", () => {
     expect(onOpenSideChat).toHaveBeenCalledWith("assistant-1")
   })
 
-  it("does not show assistant response actions on intermediate assistant messages", () => {
+  it("folds intermediate assistant messages into the final response trace", () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -2238,7 +2399,7 @@ describe("ThreadView message actions", () => {
     })
     const onOpenSideChat = vi.fn()
 
-    const { getAllByRole, getByText } = renderThread(
+    const { getAllByRole, getByRole, getByText, queryByText } = renderThread(
       [
         userTurn("user-1", "Check the setup."),
         assistantTraceTurn(
@@ -2275,13 +2436,18 @@ describe("ThreadView message actions", () => {
 
     const copyButtons = getAllByRole("button", { name: "Copy assistant response" })
     const sideChatButtons = getAllByRole("button", { name: "Open side chat" })
-    const intermediateShell = getByText("I will inspect the plugin first.").closest(".assistant-shell")
+    const processTraceButton = getByRole("button", { name: /Processed/ })
     const finalShell = getByText("The plugin is available.").closest(".assistant-shell")
 
     expect(copyButtons).toHaveLength(1)
     expect(sideChatButtons).toHaveLength(1)
-    expect(intermediateShell?.querySelector(".assistant-response-actions")).toBeNull()
+    expect(processTraceButton).toHaveAttribute("aria-expanded", "false")
+    expect(queryByText("I will inspect the plugin first.")).toBeNull()
     expect(finalShell?.querySelector(".assistant-response-actions")).not.toBeNull()
+
+    fireEvent.click(processTraceButton)
+    expect(getByText("I will inspect the plugin first.")).toBeInTheDocument()
+    expect(getByText("I will inspect the plugin first.").closest(".assistant-shell")).toBe(finalShell)
 
     fireEvent.click(copyButtons[0]!)
     expect(writeText).toHaveBeenCalledWith("The plugin is available.")

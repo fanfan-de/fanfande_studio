@@ -1732,6 +1732,9 @@ describe("App", () => {
       within(nestedSideChat).queryByText("Focused on this reply only. Messages here stay outside the main thread context."),
     ).not.toBeInTheDocument()
     expect(within(nestedSideChat).getByRole("button", { name: "Hide side chat" })).toBeInTheDocument()
+    const sideChatProcessTrace = within(nestedSideChat).getByRole("button", { name: /Processed/ })
+    expect(sideChatProcessTrace).toHaveAttribute("aria-expanded", "false")
+    fireEvent.click(sideChatProcessTrace)
     expect(within(nestedSideChat).getByRole("region", { name: "Reasoning" })).toBeInTheDocument()
     expect(within(nestedSideChat).getByRole("button", { name: /read-file/i })).toBeInTheDocument()
     expect(within(nestedSideChat).getByRole("region", { name: "File Changes" })).toBeInTheDocument()
@@ -5210,7 +5213,7 @@ describe("App", () => {
     confirmRestore.mockRestore()
   })
 
-  it("renders assistant trace blocks in backend order instead of grouping by type", async () => {
+  it("keeps assistant process trace blocks in backend order", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
         id: "C:\\Projects\\Atlas\\client",
@@ -5321,6 +5324,14 @@ describe("App", () => {
 
     expect(assistantTurn).not.toBeNull()
 
+    const sectionElementsBeforeExpand = Array.from((assistantTurn as HTMLElement).querySelectorAll(".assistant-section"))
+    const sectionTitlesBeforeExpand = sectionElementsBeforeExpand.map((section) => section.getAttribute("aria-label"))
+
+    expect(sectionTitlesBeforeExpand).toEqual(["Response", "File Changes"])
+    const processedTraceButton = within(assistantTurn as HTMLElement).getByRole("button", { name: /Processed/ })
+    expect(processedTraceButton).toHaveAttribute("aria-expanded", "false")
+    fireEvent.click(processedTraceButton)
+
     const sectionElements = Array.from((assistantTurn as HTMLElement).querySelectorAll(".assistant-section"))
     const sectionTitles = sectionElements.map((section) => section.getAttribute("aria-label"))
 
@@ -5354,7 +5365,7 @@ describe("App", () => {
     expect(within(sectionElements[5] as HTMLElement).queryByText("All checks passed.")).not.toBeInTheDocument()
   })
 
-  it("keeps file-change summaries on their own assistant messages in a consecutive assistant cycle", async () => {
+  it("keeps folded file-change summaries scoped to their source assistant message", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
         id: "C:\\Projects\\Atlas\\client",
@@ -5458,16 +5469,21 @@ describe("App", () => {
 
     render(<App />)
 
-    const firstAssistantTurn = (await screen.findByText("Created the first draft of the release notes.")).closest(
-      ".assistant-turn",
-    ) as HTMLElement | null
     const finalAssistantTurn = (await screen.findByText("Finished the cycle.")).closest(".assistant-turn") as HTMLElement | null
 
-    expect(firstAssistantTurn).not.toBeNull()
     expect(finalAssistantTurn).not.toBeNull()
-    expect(firstAssistantTurn).not.toBe(finalAssistantTurn)
+    expect(screen.queryByText("Created the first draft of the release notes.")).not.toBeInTheDocument()
 
-    const firstFileChangeSection = within(firstAssistantTurn as HTMLElement).getByRole("region", { name: "File Changes" })
+    const processTraceButton = within(finalAssistantTurn as HTMLElement).getByRole("button", { name: /Processed/ })
+    expect(processTraceButton).toHaveAttribute("aria-expanded", "false")
+    fireEvent.click(processTraceButton)
+
+    expect(within(finalAssistantTurn as HTMLElement).getByText("Created the first draft of the release notes.")).toBeInTheDocument()
+
+    const fileChangeSections = within(finalAssistantTurn as HTMLElement).getAllByRole("region", { name: "File Changes" })
+    expect(fileChangeSections).toHaveLength(2)
+
+    const firstFileChangeSection = fileChangeSections[0] as HTMLElement
     const firstFileChangeSummary = within(firstFileChangeSection).getByRole("button", { name: "已编辑 1 个文件" })
     expect(firstFileChangeSummary).toHaveAttribute("aria-expanded", "false")
     expect(within(firstFileChangeSection).queryByText("docs/release-notes.md")).not.toBeInTheDocument()
@@ -5476,7 +5492,7 @@ describe("App", () => {
     expect(within(firstFileChangeSection).getByLabelText("4 additions, 0 deletions")).toBeInTheDocument()
     expect(within(firstFileChangeSection).queryByText("docs/release-checklist.md")).not.toBeInTheDocument()
 
-    const finalFileChangeSection = within(finalAssistantTurn as HTMLElement).getByRole("region", { name: "File Changes" })
+    const finalFileChangeSection = fileChangeSections[1] as HTMLElement
     const finalFileChangeSummary = within(finalFileChangeSection).getByRole("button", { name: "已编辑 1 个文件" })
     expect(finalFileChangeSummary).toHaveAttribute("aria-expanded", "false")
     expect(within(finalFileChangeSection).queryByText("docs/release-checklist.md")).not.toBeInTheDocument()
@@ -5484,7 +5500,7 @@ describe("App", () => {
     expect(within(finalFileChangeSection).getAllByText("docs/release-checklist.md").length).toBeGreaterThan(0)
     expect(within(finalFileChangeSection).getByLabelText("2 additions, 1 deletions")).toBeInTheDocument()
     expect(within(finalFileChangeSection).queryByText("docs/release-notes.md")).not.toBeInTheDocument()
-    expect(screen.getAllByRole("region", { name: "File Changes" })).toHaveLength(2)
+    expect(within(finalAssistantTurn as HTMLElement).getAllByRole("region", { name: "File Changes" })).toHaveLength(2)
   })
 
   it("replays detached backend turns from the session event stream", async () => {
@@ -6523,6 +6539,17 @@ describe("App", () => {
       })
       expect(window.desktop!.agentSession!.resumeTurn).toHaveBeenCalledTimes(1)
     })
+
+    const processedTraceButton = screen.queryByRole("button", { name: /Processed/ })
+    if (processedTraceButton?.getAttribute("aria-expanded") === "false") {
+      fireEvent.click(processedTraceButton)
+    }
+
+    const readFileToolRows = await screen.findAllByRole("button", { name: /read-file/i })
+    const readFileToolRow = readFileToolRows.find((button) => button.classList.contains("trace-log-row"))
+    if (readFileToolRow?.getAttribute("aria-expanded") === "false") {
+      fireEvent.click(readFileToolRow)
+    }
 
     fireEvent.click(await screen.findByRole("button", { name: /read-file output/i }))
     expect(await screen.findByText("README loaded")).toBeInTheDocument()
@@ -8161,9 +8188,10 @@ describe("App", () => {
 
     render(<App />)
 
-    openActivityRailConfigurationView("Open connectors")
+    openActivityRailConfigurationView("Open connections and extensions")
 
-    expect(await screen.findByLabelText("Connectors top menu")).toBeInTheDocument()
+    expect(await screen.findByLabelText("连接与扩展顶部菜单")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("tab", { name: "连接器 1" }))
     expect(document.querySelector("#app-sidebar")).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     expect(await screen.findByRole("button", { name: "Gmail Connected" })).toBeInTheDocument()
@@ -8213,10 +8241,11 @@ describe("App", () => {
 
     render(<App />)
 
-    openActivityRailConfigurationView("Open MCP")
+    openActivityRailConfigurationView("Open connections and extensions")
 
-    expect(screen.getByLabelText("MCP top menu")).toBeInTheDocument()
-    expect(document.querySelector("#app-sidebar")).toBeInTheDocument()
+    expect(await screen.findByLabelText("连接与扩展顶部菜单")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("tab", { name: "MCP 1" }))
+    expect(document.querySelector("#app-sidebar")).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     const filesystemButton = await screen.findByRole("button", { name: /Filesystem enabled/ })
     const newServerButton = screen.getByRole("button", { name: "New server" })
@@ -8342,9 +8371,10 @@ describe("App", () => {
     const configurationGroup = within(leftActivityRail!).getByLabelText("Configuration views")
     expect(within(configurationGroup).getByRole("button", { name: "Open skills" })).toBeInTheDocument()
     expect(within(configurationGroup).getByRole("button", { name: "Open prompts" })).toBeInTheDocument()
-    expect(within(configurationGroup).getByRole("button", { name: "Open MCP" })).toBeInTheDocument()
-    expect(within(configurationGroup).getByRole("button", { name: "Open plugins" })).toBeInTheDocument()
-    expect(within(configurationGroup).getByRole("button", { name: "Open connectors" })).toBeInTheDocument()
+    expect(within(configurationGroup).getByRole("button", { name: "Open connections and extensions" })).toBeInTheDocument()
+    expect(within(configurationGroup).queryByRole("button", { name: "Open MCP" })).not.toBeInTheDocument()
+    expect(within(configurationGroup).queryByRole("button", { name: "Open plugins" })).not.toBeInTheDocument()
+    expect(within(configurationGroup).queryByRole("button", { name: "Open connectors" })).not.toBeInTheDocument()
     expect(within(configurationGroup).getByRole("button", { name: "Open tools" })).toBeInTheDocument()
     expect(
       within(leftActivityRail!).getByRole("button", { name: "Hide configuration shortcuts" }),
@@ -8663,6 +8693,12 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Atlas review" })).toBeInTheDocument()
     expect(await screen.findByText("Done.")).toBeInTheDocument()
+    const processedTraceButton = screen.getByRole("button", { name: /Processed/ })
+    expect(processedTraceButton).toHaveAttribute("aria-expanded", "false")
+    expect(screen.queryByText("Permission requested")).not.toBeInTheDocument()
+
+    fireEvent.click(processedTraceButton)
+
     expect(screen.getByText("Permission requested")).toBeInTheDocument()
     expect(screen.queryByText("Model step started")).not.toBeInTheDocument()
     expect(screen.queryByText("approval.id")).not.toBeInTheDocument()
@@ -8672,6 +8708,11 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
     fireEvent.click(screen.getByRole("switch", { name: "Show trace workflow events" }))
     fireEvent.click(screen.getByRole("switch", { name: "Show trace debug metadata" }))
+
+    const updatedProcessedTraceButton = screen.getByRole("button", { name: /Processed/ })
+    if (updatedProcessedTraceButton.getAttribute("aria-expanded") === "false") {
+      fireEvent.click(updatedProcessedTraceButton)
+    }
 
     expect(screen.getByText("Model step started")).toBeInTheDocument()
     expect(screen.getByText("approval.id")).toBeInTheDocument()

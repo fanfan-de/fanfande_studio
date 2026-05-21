@@ -255,4 +255,36 @@ describe("ConnectorsPage", () => {
     expect(onStartConnectorAuthFlow).not.toHaveBeenCalled()
   })
 
+  it("can be embedded with an external search field", () => {
+    const docsConnector = createConnector({
+      id: "docs",
+      name: "Docs API",
+      publisher: "Anybox",
+    })
+
+    render(
+      <ConnectorsPage
+        {...createProps({
+          activeConnectorID: "connector:gmail:default",
+          connectorCatalog: [createConnector(), docsConnector],
+          connectorStatuses: [
+            createStatus(),
+            createStatus({
+              connectorID: "connector:docs:default",
+              definitionID: "docs",
+              name: "Docs API",
+            }),
+          ],
+          hideTopMenu: true,
+          searchQuery: "docs",
+        })}
+      />,
+    )
+
+    expect(screen.queryByLabelText("Connectors top menu")).not.toBeInTheDocument()
+    expect(screen.queryByRole("searchbox", { name: "Search connectors" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Gmail Connected" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Docs API Connected" })).toBeInTheDocument()
+  })
+
 })

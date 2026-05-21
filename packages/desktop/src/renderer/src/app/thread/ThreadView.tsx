@@ -49,6 +49,7 @@ import type {
   AssistantTraceVisibilityKey,
   AssistantTurn,
   AssistantTurnPhase,
+  AssistantTurnRuntime,
   ComposerAttachment,
   ComposerDraftState,
   ComposerPastedImageAttachment,
@@ -213,6 +214,7 @@ type ThreadRenderRow =
       id: string
       insertedUserTurns: UserTurn[]
       kind: "assistant"
+      processPrefixItems: AssistantTraceItem[]
       renderedItems: AssistantTraceItem[]
       turn: AssistantTurn
       turnIndex: number
@@ -427,12 +429,14 @@ function findThreadVirtualRange(layout: ThreadVirtualLayout, viewport: ThreadVir
 function estimateAssistantThreadRowHeight(row: {
   ephemeralHint: string | null
   insertedUserTurns: UserTurn[]
+  processPrefixItems?: AssistantTraceItem[]
   renderedItems: AssistantTraceItem[]
   turn: AssistantTurn
 }) {
   if (row.ephemeralHint) return 96 + row.insertedUserTurns.length * 92
 
-  const itemEstimate = row.renderedItems.reduce((height, item) => {
+  const estimatedItems = [...(row.processPrefixItems ?? []), ...row.renderedItems]
+  const itemEstimate = estimatedItems.reduce((height, item) => {
     const textLength = `${item.title ?? ""}${item.text ?? ""}${item.detail ?? ""}`.length
     const textHeight = Math.min(320, Math.max(42, Math.ceil(textLength / 110) * 22))
     const kindHeight =
@@ -976,6 +980,76 @@ function isAssistantFinalMessageInUserTurn(turns: Turn[], assistantIndex: number
   return true
 }
 
+function isRegularUserRunBoundary(turn: Turn) {
+  return turn.kind === "user" && !turn.streamInsertion
+}
+
+function findAssistantRunStartIndex(turns: Turn[], assistantIndex: number) {
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    if (isRegularUserRunBoundary(turns[index]!)) return index + 1
+  }
+
+  return 0
+}
+
+function findAssistantRunEndIndex(turns: Turn[], assistantIndex: number) {
+  for (let index = assistantIndex + 1; index < turns.length; index += 1) {
+    if (isRegularUserRunBoundary(turns[index]!)) return index
+  }
+
+  return turns.length
+}
+
+function findAssistantRunFinalTurnIndex(turns: Turn[], assistantIndex: number) {
+  const runEndIndex = findAssistantRunEndIndex(turns, assistantIndex)
+  for (let index = runEndIndex - 1; index >= assistantIndex; index -= 1) {
+    if (turns[index]?.kind === "assistant") return index
+  }
+
+  return -1
+}
+
+function assistantTurnHasTextResponse(turn: AssistantTurn) {
+  return turn.items.some(
+    (item) => traceSectionKeyForItem(item) === "response" && item.kind === "text" && Boolean(item.text?.trim()),
+  )
+}
+
+function canCollapseAssistantProcessTrace(turn: AssistantTurn) {
+  return !turn.isStreaming && turn.runtime.phase !== "blocked" && turn.runtime.phase !== "waiting_approval"
+}
+
+function shouldFoldAssistantTurnIntoFinalRunTrace(turns: Turn[], assistantIndex: number, turn: AssistantTurn) {
+  if (!canCollapseAssistantProcessTrace(turn)) return false
+
+  const finalAssistantIndex = findAssistantRunFinalTurnIndex(turns, assistantIndex)
+  if (finalAssistantIndex <= assistantIndex) return false
+
+  const finalTurn = turns[finalAssistantIndex]
+  return (
+    finalTurn?.kind === "assistant" &&
+    canCollapseAssistantProcessTrace(finalTurn) &&
+    assistantTurnHasTextResponse(finalTurn)
+  )
+}
+
+function collectAssistantRunProcessPrefixItems(
+  turns: Turn[],
+  finalAssistantIndex: number,
+  traceVisibility: AssistantTraceVisibility,
+) {
+  const runStartIndex = findAssistantRunStartIndex(turns, finalAssistantIndex)
+  const items: AssistantTraceItem[] = []
+
+  for (let index = runStartIndex; index < finalAssistantIndex; index += 1) {
+    const turn = turns[index]
+    if (turn?.kind !== "assistant") continue
+    items.push(...filterRenderedAssistantTraceItems(turn.items, true, traceVisibility))
+  }
+
+  return items
+}
+
 const primaryPermissionDecisions: PermissionDecision[] = ["deny", "allow"]
 
 function formatPermissionRiskLabel(risk: PermissionRequest["prompt"]["risk"]) {
@@ -1072,14 +1146,14 @@ function traceSectionTitle(sectionKey: AssistantTraceSectionKey) {
   }
 }
 
+interface AssistantTraceBlock {
+  sectionKey: AssistantTraceSectionKey
+  title: string
+  items: AssistantTraceItem[]
+}
+
 function buildAssistantTraceBlocks(items: AssistantTraceItem[]) {
-  return items.reduce<
-    {
-      sectionKey: AssistantTraceSectionKey
-      title: string
-      items: AssistantTraceItem[]
-    }[]
-  >(
+  return items.reduce<AssistantTraceBlock[]>(
     (blocks, item) => {
       const sectionKey = traceSectionKeyForItem(item)
       if (sectionKey === "file-change") {
@@ -1164,6 +1238,58 @@ function getLastAssistantResponseSectionItems(
   }
 
   return []
+}
+
+function findFinalResponseBlockIndex(blocks: AssistantTraceBlock[]) {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index]
+    if (block.sectionKey !== "response") continue
+    if (!block.items.some((item) => item.kind === "text" && Boolean(item.text?.trim()))) continue
+    return index
+  }
+
+  return -1
+}
+
+function formatAssistantTraceDuration(runtime?: AssistantTurnRuntime) {
+  if (!runtime) return null
+
+  const durationMs = Math.max(0, runtime.updatedAt - runtime.startedAt)
+  if (!Number.isFinite(durationMs)) return null
+  if (durationMs < 1000) return "<1s"
+
+  const totalSeconds = Math.round(durationMs / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
+}
+
+function pluralizeTraceUnit(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
+function summarizeProcessTraceBlocks(blocks: AssistantTraceBlock[]) {
+  const items = blocks.flatMap((block) => block.items)
+  const toolCount = items.filter((item) => item.kind === "tool").length
+  const workflowCount = items.filter((item) => traceSectionKeyForItem(item) === "workflow").length
+  const reasoningCount = items.filter((item) => item.kind === "reasoning").length
+  const responseCount = items.filter((item) => item.kind === "text" && traceSectionKeyForItem(item) === "response").length
+  const fileCount = new Set(
+    items.flatMap((item) => [
+      ...(item.filePaths ?? []),
+      ...(item.fileChanges ?? []).map((change) => change.file),
+    ]),
+  ).size
+
+  const parts = [
+    toolCount > 0 ? pluralizeTraceUnit(toolCount, "tool call") : null,
+    workflowCount > 0 ? pluralizeTraceUnit(workflowCount, "workflow event") : null,
+    reasoningCount > 0 ? pluralizeTraceUnit(reasoningCount, "reasoning note") : null,
+    responseCount > 0 ? pluralizeTraceUnit(responseCount, "progress update") : null,
+    fileCount > 0 ? pluralizeTraceUnit(fileCount, "file") : null,
+  ].filter((part): part is string => Boolean(part))
+
+  return parts.length > 0 ? parts.join(" · ") : pluralizeTraceUnit(items.length, "event")
 }
 
 function getAssistantEphemeralHint(turn: AssistantTurn) {
@@ -1267,6 +1393,161 @@ function AssistantTraceSection({
   )
 }
 
+interface AssistantTraceBlockViewProps {
+  answeredQuestionIDs: Set<string>
+  assistantTurnPhase?: AssistantTurnPhase
+  block: AssistantTraceBlock
+  isLatestMessage: boolean
+  isQuestionAnswerDisabled?: boolean
+  onOpenImagePreview?: (payload: ImagePreviewPayload) => void
+  onAskUserQuestionAnswer?: QuestionAnswerHandler
+  onFileChangeSelect: ((file: string) => void) | undefined
+  onArtifactLinkOpen: ((target: MarkdownArtifactLinkTarget) => void) | undefined
+  onLocalFileLinkOpen: ((target: MarkdownLocalFileLinkTarget) => void) | undefined
+  onProposedPlanConfirm?: ProposedPlanConfirmHandler
+  sectionID: string
+  shouldCollapseReasoningAndTools: boolean
+  traceVisibility: AssistantTraceVisibility
+}
+
+function getAssistantTraceBlockStackClassName(sectionKey: AssistantTraceSectionKey) {
+  if (sectionKey === "response") return "assistant-response-stack"
+  if (sectionKey === "file-change") return "assistant-file-change-stack"
+  if (sectionKey === "tools" || sectionKey === "workflow") return "trace-log-list"
+  return "assistant-section-list"
+}
+
+function AssistantTraceBlockView({
+  answeredQuestionIDs,
+  assistantTurnPhase,
+  block,
+  isLatestMessage,
+  isQuestionAnswerDisabled,
+  onOpenImagePreview,
+  onAskUserQuestionAnswer,
+  onFileChangeSelect,
+  onArtifactLinkOpen,
+  onLocalFileLinkOpen,
+  onProposedPlanConfirm,
+  sectionID,
+  shouldCollapseReasoningAndTools,
+  traceVisibility,
+}: AssistantTraceBlockViewProps) {
+  const renderedItems = block.sectionKey === "file-change" ? summarizeFileChangeItems(block.items) : block.items
+
+  return (
+    <AssistantTraceSection
+      key={sectionID}
+      sectionKey={block.sectionKey}
+      title={block.title}
+    >
+      <div className={getAssistantTraceBlockStackClassName(block.sectionKey)}>
+        {renderedItems.map((item) => (
+          <TraceItemView
+            key={item.id}
+            answeredQuestionIDs={answeredQuestionIDs}
+            assistantTurnPhase={assistantTurnPhase}
+            item={item}
+            isQuestionAnswerDisabled={isQuestionAnswerDisabled}
+            onOpenImagePreview={onOpenImagePreview}
+            onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+            onFileChangeSelect={onFileChangeSelect}
+            onArtifactLinkOpen={onArtifactLinkOpen}
+            onLocalFileLinkOpen={onLocalFileLinkOpen}
+            isLatestMessage={isLatestMessage}
+            onProposedPlanConfirm={onProposedPlanConfirm}
+            shouldCollapseAfterTurnCompletion={shouldCollapseReasoningAndTools}
+            traceVisibility={traceVisibility}
+          />
+        ))}
+      </div>
+    </AssistantTraceSection>
+  )
+}
+
+function AssistantProcessTraceDisclosure({
+  answeredQuestionIDs,
+  assistantTurnPhase,
+  blocks,
+  isLatestMessage,
+  isQuestionAnswerDisabled,
+  onOpenImagePreview,
+  onAskUserQuestionAnswer,
+  onFileChangeSelect,
+  onArtifactLinkOpen,
+  onLocalFileLinkOpen,
+  onProposedPlanConfirm,
+  runtime,
+  shouldCollapseReasoningAndTools,
+  traceVisibility,
+}: Omit<AssistantTraceBlockViewProps, "block" | "sectionID"> & {
+  blocks: AssistantTraceBlock[]
+  runtime?: AssistantTurnRuntime
+}) {
+  const [isExpanded, setIsExpanded] = useState(() => !shouldCollapseReasoningAndTools)
+  const processTraceKey = blocks.map((block) => block.items.map((item) => item.id).join(",")).join("|")
+  const duration = formatAssistantTraceDuration(runtime)
+  const summary = summarizeProcessTraceBlocks(blocks)
+  const contentID = `assistant-process-trace-${(processTraceKey || "empty").replace(/[^a-zA-Z0-9_-]/g, "-")}`
+
+  useLayoutEffect(() => {
+    if (shouldCollapseReasoningAndTools) {
+      setIsExpanded(false)
+      return
+    }
+
+    setIsExpanded(true)
+  }, [processTraceKey, shouldCollapseReasoningAndTools])
+
+  return (
+    <section
+      className={joinClassNames("assistant-process-trace", isExpanded ? "is-expanded" : "is-collapsed")}
+      role="region"
+      aria-label="Processed trace"
+    >
+      <button
+        className="assistant-process-trace-header"
+        type="button"
+        aria-label={`Processed ${duration ? `${duration} ` : ""}${summary}`}
+        aria-expanded={isExpanded}
+        aria-controls={contentID}
+        onClick={() => setIsExpanded((current) => !current)}
+      >
+        <span className="assistant-process-trace-chevron" aria-hidden="true">
+          {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+        </span>
+        <span className="assistant-process-trace-title">Processed</span>
+        {duration ? <span className="assistant-process-trace-duration">{duration}</span> : null}
+        <span className="assistant-process-trace-summary">{summary}</span>
+      </button>
+
+      {isExpanded ? (
+        <div id={contentID} className="assistant-process-trace-body">
+          {blocks.map((block, index) => (
+            <AssistantTraceBlockView
+              key={`process-${block.sectionKey}-${index}`}
+              answeredQuestionIDs={answeredQuestionIDs}
+              assistantTurnPhase={assistantTurnPhase}
+              block={block}
+              isQuestionAnswerDisabled={isQuestionAnswerDisabled}
+              isLatestMessage={isLatestMessage}
+              onOpenImagePreview={onOpenImagePreview}
+              onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+              onFileChangeSelect={onFileChangeSelect}
+              onArtifactLinkOpen={onArtifactLinkOpen}
+              onLocalFileLinkOpen={onLocalFileLinkOpen}
+              onProposedPlanConfirm={onProposedPlanConfirm}
+              sectionID={`process-${block.sectionKey}-${index}`}
+              shouldCollapseReasoningAndTools={shouldCollapseReasoningAndTools}
+              traceVisibility={traceVisibility}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function AssistantTurnPlaceholder({ message }: { message: string }) {
   return (
     <section className="assistant-section assistant-ephemeral-state" aria-live="polite" aria-label="Assistant status">
@@ -1287,6 +1568,8 @@ const AssistantTurnSections = memo(function AssistantTurnSections({
   onArtifactLinkOpen,
   onLocalFileLinkOpen,
   onProposedPlanConfirm,
+  processPrefixItems = [],
+  runtime,
   showFileChanges,
   shouldCollapseReasoningAndTools,
   traceVisibility,
@@ -1302,57 +1585,60 @@ const AssistantTurnSections = memo(function AssistantTurnSections({
   onArtifactLinkOpen: ((target: MarkdownArtifactLinkTarget) => void) | undefined
   onLocalFileLinkOpen: ((target: MarkdownLocalFileLinkTarget) => void) | undefined
   onProposedPlanConfirm?: ProposedPlanConfirmHandler
+  processPrefixItems?: AssistantTraceItem[]
+  runtime?: AssistantTurnRuntime
   showFileChanges: boolean
   shouldCollapseReasoningAndTools: boolean
   traceVisibility: AssistantTraceVisibility
 }) {
   const blocks = buildAssistantTraceBlocks(filterRenderedAssistantTraceItems(items, showFileChanges, traceVisibility))
+  const finalResponseBlockIndex = shouldCollapseReasoningAndTools ? findFinalResponseBlockIndex(blocks) : -1
+  const processPrefixBlocks = processPrefixItems.length > 0 ? buildAssistantTraceBlocks(processPrefixItems) : []
+  const shouldRenderProcessTrace = finalResponseBlockIndex >= 0 && (finalResponseBlockIndex > 0 || processPrefixBlocks.length > 0)
+  const processBlocks = shouldRenderProcessTrace
+    ? [...processPrefixBlocks, ...blocks.slice(0, finalResponseBlockIndex)]
+    : []
+  const mainBlocks = shouldRenderProcessTrace ? blocks.slice(finalResponseBlockIndex) : blocks
 
   return (
     <>
-      {blocks.map((block, index) => {
-        const renderedItems = block.sectionKey === "file-change" ? summarizeFileChangeItems(block.items) : block.items
-        const sectionID = `${block.sectionKey}-${index}`
-
-        return (
-          <AssistantTraceSection
-            key={sectionID}
-            sectionKey={block.sectionKey}
-            title={block.title}
-          >
-            <div
-              className={
-                block.sectionKey === "response"
-                  ? "assistant-response-stack"
-                  : block.sectionKey === "file-change"
-                    ? "assistant-file-change-stack"
-                    : block.sectionKey === "tools" || block.sectionKey === "workflow"
-                      ? "trace-log-list"
-                      : "assistant-section-list"
-              }
-            >
-              {renderedItems.map((item) => (
-                <TraceItemView
-                  key={item.id}
-                  answeredQuestionIDs={answeredQuestionIDs}
-                  assistantTurnPhase={assistantTurnPhase}
-                  item={item}
-                  isQuestionAnswerDisabled={isQuestionAnswerDisabled}
-                  onOpenImagePreview={onOpenImagePreview}
-                  onAskUserQuestionAnswer={onAskUserQuestionAnswer}
-                  onFileChangeSelect={onFileChangeSelect}
-                  onArtifactLinkOpen={onArtifactLinkOpen}
-                  onLocalFileLinkOpen={onLocalFileLinkOpen}
-                  isLatestMessage={isLatestMessage}
-                  onProposedPlanConfirm={onProposedPlanConfirm}
-                  shouldCollapseAfterTurnCompletion={shouldCollapseReasoningAndTools}
-                  traceVisibility={traceVisibility}
-                />
-              ))}
-            </div>
-          </AssistantTraceSection>
-        )
-      })}
+      {shouldRenderProcessTrace ? (
+        <AssistantProcessTraceDisclosure
+          answeredQuestionIDs={answeredQuestionIDs}
+          assistantTurnPhase={assistantTurnPhase}
+          blocks={processBlocks}
+          isQuestionAnswerDisabled={isQuestionAnswerDisabled}
+          isLatestMessage={isLatestMessage}
+          onOpenImagePreview={onOpenImagePreview}
+          onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+          onFileChangeSelect={onFileChangeSelect}
+          onArtifactLinkOpen={onArtifactLinkOpen}
+          onLocalFileLinkOpen={onLocalFileLinkOpen}
+          onProposedPlanConfirm={onProposedPlanConfirm}
+          runtime={runtime}
+          shouldCollapseReasoningAndTools={shouldCollapseReasoningAndTools}
+          traceVisibility={traceVisibility}
+        />
+      ) : null}
+      {mainBlocks.map((block, index) => (
+        <AssistantTraceBlockView
+          key={`${block.sectionKey}-${index}`}
+          answeredQuestionIDs={answeredQuestionIDs}
+          assistantTurnPhase={assistantTurnPhase}
+          block={block}
+          isQuestionAnswerDisabled={isQuestionAnswerDisabled}
+          isLatestMessage={isLatestMessage}
+          onOpenImagePreview={onOpenImagePreview}
+          onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+          onFileChangeSelect={onFileChangeSelect}
+          onArtifactLinkOpen={onArtifactLinkOpen}
+          onLocalFileLinkOpen={onLocalFileLinkOpen}
+          onProposedPlanConfirm={onProposedPlanConfirm}
+          sectionID={`${block.sectionKey}-${index}`}
+          shouldCollapseReasoningAndTools={shouldCollapseReasoningAndTools}
+          traceVisibility={traceVisibility}
+        />
+      ))}
     </>
   )
 })
@@ -1373,6 +1659,8 @@ const AssistantTurnSectionsWithStreamInsertions = memo(function AssistantTurnSec
   onArtifactLinkOpen,
   onLocalFileLinkOpen,
   onProposedPlanConfirm,
+  processPrefixItems = [],
+  runtime,
   showFileChanges,
   shouldCollapseReasoningAndTools,
   traceVisibility,
@@ -1392,6 +1680,8 @@ const AssistantTurnSectionsWithStreamInsertions = memo(function AssistantTurnSec
   onArtifactLinkOpen: ((target: MarkdownArtifactLinkTarget) => void) | undefined
   onLocalFileLinkOpen: ((target: MarkdownLocalFileLinkTarget) => void) | undefined
   onProposedPlanConfirm?: ProposedPlanConfirmHandler
+  processPrefixItems?: AssistantTraceItem[]
+  runtime?: AssistantTurnRuntime
   showFileChanges: boolean
   shouldCollapseReasoningAndTools: boolean
   traceVisibility: AssistantTraceVisibility
@@ -1410,6 +1700,8 @@ const AssistantTurnSectionsWithStreamInsertions = memo(function AssistantTurnSec
         onArtifactLinkOpen={onArtifactLinkOpen}
         onLocalFileLinkOpen={onLocalFileLinkOpen}
         onProposedPlanConfirm={onProposedPlanConfirm}
+        processPrefixItems={processPrefixItems}
+        runtime={runtime}
         showFileChanges={showFileChanges}
         shouldCollapseReasoningAndTools={shouldCollapseReasoningAndTools}
         traceVisibility={traceVisibility}
@@ -1418,9 +1710,12 @@ const AssistantTurnSectionsWithStreamInsertions = memo(function AssistantTurnSec
   }
 
   let cursor = 0
+  let didRenderProcessPrefix = false
   const nodes: ReactNode[] = []
   const renderSegment = (segmentItems: AssistantTraceItem[], key: string) => {
     if (segmentItems.length === 0) return
+    const segmentProcessPrefixItems = didRenderProcessPrefix ? [] : processPrefixItems
+    didRenderProcessPrefix = true
 
     nodes.push(
       <AssistantTurnSections
@@ -1436,6 +1731,8 @@ const AssistantTurnSectionsWithStreamInsertions = memo(function AssistantTurnSec
         onArtifactLinkOpen={onArtifactLinkOpen}
         onLocalFileLinkOpen={onLocalFileLinkOpen}
         onProposedPlanConfirm={onProposedPlanConfirm}
+        processPrefixItems={segmentProcessPrefixItems}
+        runtime={runtime}
         showFileChanges={showFileChanges}
         shouldCollapseReasoningAndTools={shouldCollapseReasoningAndTools}
         traceVisibility={traceVisibility}
@@ -2827,6 +3124,7 @@ function ReasoningTraceItemView({
   const [isExpanded, setIsExpanded] = useState(() => !shouldCollapseTraceItem)
   const contentID = `trace-item-reasoning-${item.id}`
   const collapsedLine = getCollapsedReasoningLine(item)
+  const reasoningLabel = item.title || item.label || "Reasoning"
 
   useLayoutEffect(() => {
     if (!shouldCollapseTraceItem) return
@@ -2855,15 +3153,19 @@ function ReasoningTraceItemView({
         tabIndex={0}
         aria-expanded={isExpanded}
         aria-controls={contentID}
+        aria-label={isExpanded ? `Collapse ${reasoningLabel}` : undefined}
         onClick={handleReasoningToggle}
         onKeyDown={handleReasoningKeyDown}
       >
         {isExpanded ? (
-          <div id={contentID} className="trace-item-reasoning-body">
-            {item.text ? <ThreadRichText className="trace-item-text trace-item-plain-text" text={item.text} /> : null}
-            {item.detail ? <ThreadRichText className="trace-item-detail trace-item-plain-detail" text={item.detail} /> : null}
-            <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
-          </div>
+          <>
+            <span className="trace-item-subsection-toggle-icon" aria-hidden="true">
+              <ChevronDownIcon />
+            </span>
+            <span className="trace-item-subsection-toggle-line">
+              <span className="trace-item-subsection-label">{reasoningLabel}</span>
+            </span>
+          </>
         ) : (
           <ThreadRichText
             as="div"
@@ -2872,6 +3174,19 @@ function ReasoningTraceItemView({
           />
         )}
       </div>
+      {isExpanded ? (
+        <div
+          id={contentID}
+          className="trace-item-reasoning-body trace-fixed-content-pane trace-reasoning-pane"
+          role="region"
+          aria-label={`${reasoningLabel} content`}
+          tabIndex={0}
+        >
+          {item.text ? <ThreadRichText className="trace-item-text trace-item-plain-text" text={item.text} /> : null}
+          {item.detail ? <ThreadRichText className="trace-item-detail trace-item-plain-detail" text={item.detail} /> : null}
+          <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+        </div>
+      ) : null}
     </article>
   )
 }
@@ -3259,7 +3574,13 @@ function ToolTraceItemView({
                 </span>
               </button>
               {isInputExpanded ? (
-                <div id={inputDisclosureID} className="trace-item-subsection-body">
+                <div
+                  id={inputDisclosureID}
+                  className="trace-item-subsection-body trace-fixed-content-pane trace-tool-io-pane"
+                  role="region"
+                  aria-label={`${summaryTitle} input content`}
+                  tabIndex={0}
+                >
                   {visibleToolInputText ? <ThreadRichText className="trace-item-text" text={visibleToolInputText} /> : null}
                   {inputSectionDetail ? <ThreadRichText className="trace-item-detail" text={inputSectionDetail} /> : null}
                 </div>
@@ -3284,7 +3605,13 @@ function ToolTraceItemView({
                 </span>
               </button>
               {isOutputExpanded ? (
-                <div id={outputDisclosureID} className="trace-item-subsection-body">
+                <div
+                  id={outputDisclosureID}
+                  className="trace-item-subsection-body trace-fixed-content-pane trace-tool-io-pane"
+                  role="region"
+                  aria-label={`${summaryTitle} output content`}
+                  tabIndex={0}
+                >
                   {visibleToolOutputText ? <ThreadRichText className="trace-item-text" text={visibleToolOutputText} /> : null}
                   {outputSectionDetail ? <ThreadRichText className="trace-item-detail" text={outputSectionDetail} /> : null}
                 </div>
@@ -3865,6 +4192,13 @@ function VisibleThreadView({
         return
       }
 
+      if (shouldFoldAssistantTurnIntoFinalRunTrace(activeTurns, turnIndex, turn)) return
+
+      const processPrefixItems = collectAssistantRunProcessPrefixItems(
+        activeTurns,
+        turnIndex,
+        assistantTraceVisibility,
+      )
       const insertedUserTurns = getAssistantStreamInsertionUserTurns(activeTurns, turn)
       const renderedItems = filterRenderedAssistantTraceItems(
         turn.items,
@@ -3879,12 +4213,14 @@ function VisibleThreadView({
         estimatedHeight: estimateAssistantThreadRowHeight({
           ephemeralHint,
           insertedUserTurns,
+          processPrefixItems,
           renderedItems,
           turn,
         }),
         id: turn.id,
         insertedUserTurns,
         kind: "assistant",
+        processPrefixItems,
         renderedItems,
         turn,
         turnIndex,
@@ -4654,7 +4990,7 @@ function VisibleThreadView({
       )
     }
 
-    const { ephemeralHint, insertedUserTurns, turn, turnIndex } = row
+    const { ephemeralHint, insertedUserTurns, processPrefixItems, turn, turnIndex } = row
     const traceItems = turn.items
     const sideChatAnchorMessageID = turn.messageID ?? turn.id
     const turnMessageID = getSessionMessageIDForTurn(turn)
@@ -4724,8 +5060,10 @@ function VisibleThreadView({
               onArtifactLinkOpen={onArtifactLinkOpen}
               onLocalFileLinkOpen={onLocalFileLinkOpen}
               onProposedPlanConfirm={onProposedPlanConfirm}
+              processPrefixItems={processPrefixItems}
+              runtime={turn.runtime}
               showFileChanges={!turn.isStreaming}
-              shouldCollapseReasoningAndTools={!turn.isStreaming}
+              shouldCollapseReasoningAndTools={canCollapseAssistantProcessTrace(turn)}
               traceVisibility={assistantTraceVisibility}
             />
           )}
@@ -4970,7 +5308,14 @@ function VisibleThreadView({
                 )
               }
 
+              if (shouldFoldAssistantTurnIntoFinalRunTrace(activeTurns, turnIndex, turn)) return null
+
               const traceItems = turn.items
+              const processPrefixItems = collectAssistantRunProcessPrefixItems(
+                activeTurns,
+                turnIndex,
+                assistantTraceVisibility,
+              )
               const insertedUserTurns = getAssistantStreamInsertionUserTurns(activeTurns, turn)
               const renderedItems = filterRenderedAssistantTraceItems(
                 traceItems,
@@ -5047,8 +5392,10 @@ function VisibleThreadView({
                         onArtifactLinkOpen={onArtifactLinkOpen}
                         onLocalFileLinkOpen={onLocalFileLinkOpen}
                         onProposedPlanConfirm={onProposedPlanConfirm}
+                        processPrefixItems={processPrefixItems}
+                        runtime={turn.runtime}
                         showFileChanges={!turn.isStreaming}
-                        shouldCollapseReasoningAndTools={!turn.isStreaming}
+                        shouldCollapseReasoningAndTools={canCollapseAssistantProcessTrace(turn)}
                         traceVisibility={assistantTraceVisibility}
                       />
                     )}

@@ -30,6 +30,8 @@ interface ConnectorsPageProps {
   isLoading: boolean
   message: ConnectorsMessage | null
   savingConnectorID: string | null
+  hideTopMenu?: boolean
+  searchQuery?: string
   windowControls?: ReactNode
   onCancelConnectorAuthFlow: (connectorID: string) => boolean | Promise<boolean>
   onConnectorApiKeyDraftChange: (connectorID: string, value: string) => void
@@ -43,6 +45,7 @@ interface ConnectorsPageProps {
   onSaveConnectorApiKey: (connectorID: string) => boolean | Promise<boolean>
   onSaveConnectorConfig: (connectorID: string) => boolean | Promise<boolean>
   onStartConnectorAuthFlow: (connectorID: string) => boolean | Promise<boolean>
+  onSearchQueryChange?: (value: string) => void
 }
 
 function fallbackConnectorID(definitionID: string) {
@@ -144,9 +147,11 @@ export function ConnectorsPage({
   connectorStatuses,
   connectorsError,
   diagnosingConnectorID,
+  hideTopMenu = false,
   isLoading,
   message,
   savingConnectorID,
+  searchQuery,
   windowControls,
   onCancelConnectorAuthFlow,
   onConnectorApiKeyDraftChange,
@@ -159,13 +164,16 @@ export function ConnectorsPage({
   onDismissMessage,
   onSaveConnectorApiKey,
   onSaveConnectorConfig,
+  onSearchQueryChange,
   onStartConnectorAuthFlow,
 }: ConnectorsPageProps) {
-  const [searchQuery, setSearchQuery] = useState("")
+  const [localSearchQuery, setLocalSearchQuery] = useState("")
   const [copiedCallbackURL, setCopiedCallbackURL] = useState(false)
+  const hasExternalSearch = searchQuery !== undefined
+  const effectiveSearchQuery = searchQuery ?? localSearchQuery
   const filteredConnectors = useMemo(
-    () => connectorCatalog.filter((definition) => doesConnectorMatchSearch(definition, searchQuery)),
-    [connectorCatalog, searchQuery],
+    () => connectorCatalog.filter((definition) => doesConnectorMatchSearch(definition, effectiveSearchQuery)),
+    [connectorCatalog, effectiveSearchQuery],
   )
   const activeDefinition = activeConnectorID
     ? connectorCatalog.find((definition) => connectorIDForDefinition(definition, connectorStatuses) === activeConnectorID) ?? null
@@ -190,24 +198,33 @@ export function ConnectorsPage({
     window.setTimeout(() => setCopiedCallbackURL(false), 1600)
   }
 
+  function handleSearchQueryChange(value: string) {
+    if (!hasExternalSearch) {
+      setLocalSearchQuery(value)
+    }
+    onSearchQueryChange?.(value)
+  }
+
   return (
-    <section className="connectors-page" aria-label="Connectors">
-      <ShellTopMenu
-        as="header"
-        ariaLabel="Connectors top menu"
-        className="canvas-region-top-menu connectors-top-menu"
-        contentClassName="canvas-region-top-menu-tabs-shell"
-        content={(
-          <div className="prompt-presets-top-menu-label">
-            <ConnectedStatusIcon />
-            <span>Connectors</span>
-          </div>
-        )}
-        dragRegion
-        layout="three-column"
-        trailing={windowControls}
-        trailingClassName="prompt-presets-top-menu-window-controls"
-      />
+    <section className={hideTopMenu ? "connectors-page is-embedded" : "connectors-page"} aria-label="Connectors">
+      {!hideTopMenu ? (
+        <ShellTopMenu
+          as="header"
+          ariaLabel="Connectors top menu"
+          className="canvas-region-top-menu connectors-top-menu"
+          contentClassName="canvas-region-top-menu-tabs-shell"
+          content={(
+            <div className="prompt-presets-top-menu-label">
+              <ConnectedStatusIcon />
+              <span>Connectors</span>
+            </div>
+          )}
+          dragRegion
+          layout="three-column"
+          trailing={windowControls}
+          trailingClassName="prompt-presets-top-menu-window-controls"
+        />
+      ) : null}
 
       <div className="settings-page-main is-services connectors-page-main">
         {message ? (
@@ -236,27 +253,32 @@ export function ConnectorsPage({
         ) : (
           <section className="settings-services-layout connectors-page-layout" aria-label="Connector management layout">
             <div className="settings-service-list-panel connectors-list-panel">
-              <section className="sidebar-view connectors-sidebar" aria-label="Connectors sidebar view">
-                <div className="skills-tree-search-row connectors-search-row" role="search">
-                  <SearchIcon />
-                  <input
-                    aria-label="Search connectors"
-                    type="search"
-                    value={searchQuery}
-                    placeholder="Search connectors"
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                  />
-                  {searchQuery ? (
-                    <button
-                      aria-label="Clear connector search"
-                      title="Clear search"
-                      type="button"
-                      onClick={() => setSearchQuery("")}
-                    >
-                      <CloseIcon />
-                    </button>
-                  ) : null}
-                </div>
+              <section
+                className={hasExternalSearch ? "sidebar-view connectors-sidebar is-search-external" : "sidebar-view connectors-sidebar"}
+                aria-label="Connectors sidebar view"
+              >
+                {!hasExternalSearch ? (
+                  <div className="skills-tree-search-row connectors-search-row" role="search">
+                    <SearchIcon />
+                    <input
+                      aria-label="Search connectors"
+                      type="search"
+                      value={effectiveSearchQuery}
+                      placeholder="Search connectors"
+                      onChange={(event) => handleSearchQueryChange(event.target.value)}
+                    />
+                    {effectiveSearchQuery ? (
+                      <button
+                        aria-label="Clear connector search"
+                        title="Clear search"
+                        type="button"
+                        onClick={() => handleSearchQueryChange("")}
+                      >
+                        <CloseIcon />
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 <div className="skills-tree-root connectors-list-stack" role="list" aria-label="Connectors">
                   {filteredConnectors.length > 0 ? (
