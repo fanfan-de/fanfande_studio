@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ComponentProps } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { DEFAULT_WORKSPACE_PREVIEW_STATE } from "../agent-workspace/review-preview-state"
-import type { WorkspacePreviewState } from "../types"
+import type { PreviewInteractionRecord, WorkspacePreviewState } from "../types"
 import { UnifiedPreviewPanel } from "./UnifiedPreviewPanel"
 
 const workspaceRoot = "C:\\Projects\\Project 2"
@@ -29,6 +29,32 @@ function renderUnifiedPreviewPanel(overrides: Partial<ComponentProps<typeof Unif
       {...overrides}
     />,
   )
+}
+
+function createWebCommentRecord(
+  overrides: Partial<PreviewInteractionRecord> & {
+    id: string
+    text: string
+    x: number
+    y: number
+  },
+): PreviewInteractionRecord {
+  const { id, text, x, y, ...recordOverrides } = overrides
+  return {
+    createdAt: 1,
+    id,
+    pluginID: "web.comment",
+    renderer: "url-webview",
+    targetKey: "http://localhost:5173/",
+    payload: {
+      kind: "web-comment",
+      pageUrl: "http://localhost:5173/",
+      text,
+      x,
+      y,
+    },
+    ...recordOverrides,
+  }
 }
 
 describe("UnifiedPreviewPanel", () => {
@@ -128,6 +154,44 @@ describe("UnifiedPreviewPanel", () => {
     const frame = await screen.findByTitle("Preview of index.html")
     expect(frame).toHaveAttribute("sandbox", "allow-forms allow-popups allow-same-origin allow-scripts")
     expect(frame).toHaveAttribute("src", "anybox-preview://preview/token/index.html")
+    expect(screen.getByRole("button", { name: "Comment" })).toBeInTheDocument()
+  })
+
+  it("uses the Electron webview preload for HTML targets when available", () => {
+    vi.spyOn(globalThis.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 Electron/39")
+    window.desktop!.previewGuestPreloadPath = "file:///C:/Projects/fanfande_studio/packages/desktop/out/preload/preview-webview.mjs"
+
+    const { container } = renderUnifiedPreviewPanel({
+      state: createPreviewState({
+        activeTargetInput: "agent://artifact/html-1",
+        draftTarget: "agent://artifact/html-1",
+        resolvedTarget: {
+          artifactID: "html-1",
+          entry: `${workspaceRoot}\\artifacts\\html-1\\index.html`,
+          externalOpenTarget: {
+            kind: "path",
+            value: `${workspaceRoot}\\artifacts\\html-1\\index.html`,
+          },
+          input: "agent://artifact/html-1",
+          kind: "artifact",
+          mime: "text/html; charset=utf-8",
+          normalizedInput: "agent://artifact/html-1",
+          path: `${workspaceRoot}\\artifacts\\html-1\\index.html`,
+          renderer: "html-preview",
+          safePreviewUrl: "anybox-preview://preview/token/index.html",
+          textReadable: false,
+          title: "index.html",
+          workspaceRoot,
+        },
+        status: "ready",
+      }),
+    })
+
+    const webview = container.querySelector("webview.preview-webview")
+    expect(webview).toBeInTheDocument()
+    expect(webview).toHaveAttribute("preload", window.desktop!.previewGuestPreloadPath)
+    expect(webview).toHaveAttribute("src", "anybox-preview://preview/token/index.html")
+    expect(screen.queryByTitle("Preview of index.html")).toBeNull()
     expect(screen.getByRole("button", { name: "Comment" })).toBeInTheDocument()
   })
 
@@ -239,6 +303,62 @@ describe("UnifiedPreviewPanel", () => {
         }),
       }))
     })
+  })
+
+  it("renders saved web comment markers for the current preview target", () => {
+    const { container } = renderUnifiedPreviewPanel({
+      state: createPreviewState({
+        activeInteractionID: null,
+        activeTargetInput: "http://localhost:5173",
+        committedUrl: "http://localhost:5173/",
+        draftTarget: "http://localhost:5173/",
+        interactions: [
+          createWebCommentRecord({
+            id: "comment-1",
+            text: "Tighten the hero spacing.",
+            x: 18,
+            y: 21,
+          }),
+          createWebCommentRecord({
+            id: "comment-2",
+            text: "Make the card label clearer.",
+            x: 47,
+            y: 36,
+          }),
+          createWebCommentRecord({
+            id: "comment-other-target",
+            targetKey: "http://localhost:3000/",
+            text: "This marker belongs to another page.",
+            x: 80,
+            y: 80,
+          }),
+        ],
+        resolvedTarget: {
+          externalOpenTarget: {
+            kind: "url",
+            value: "http://localhost:5173/",
+          },
+          input: "http://localhost:5173",
+          kind: "url",
+          mime: "text/html",
+          normalizedInput: "http://localhost:5173/",
+          renderer: "url-webview",
+          safePreviewUrl: "http://localhost:5173/",
+          textReadable: false,
+          title: "localhost:5173",
+        },
+        status: "ready",
+      }),
+    })
+
+    const markers = container.querySelectorAll(".preview-comment-marker")
+    expect(markers).toHaveLength(2)
+    expect(markers[0]).toHaveTextContent("1")
+    expect(markers[0]).toHaveStyle({ left: "18%", top: "21%" })
+    expect(markers[0]).toHaveAttribute("aria-label", "Comment 1: Tighten the hero spacing.")
+    expect(markers[1]).toHaveTextContent("2")
+    expect(markers[1]).toHaveStyle({ left: "47%", top: "36%" })
+    expect(screen.queryByText("3")).toBeNull()
   })
 
   it("keeps file preview identity on one non-duplicated header line", () => {

@@ -5,14 +5,35 @@ type PreviewMode = "browse" | "comment"
 const HIGHLIGHT_ID = "__desktop-preview-highlight__"
 const INSPECTOR_TOOLTIP_ID = "__desktop-preview-inspector-tooltip__"
 const FIT_STYLE_ID = "__desktop-preview-fit__"
+const MARKERS_LAYER_ID = "__desktop-preview-markers__"
 const MIN_SCALE = 0.04
 const SCALE_EPSILON = 0.001
+
+type PreviewMarkerAnchor = {
+  offsetX?: number
+  offsetY?: number
+  path?: string
+  selector?: string
+  type?: string
+}
+
+interface PreviewMarker {
+  anchor?: PreviewMarkerAnchor
+  documentX?: number
+  documentY?: number
+  id: string
+  label: string
+  text?: string
+  x: number
+  y: number
+}
 
 let currentMode: PreviewMode = "browse"
 let currentScale = 1
 let fitFrame = 0
 let isApplyingFit = false
 let fitResizeObserver: ResizeObserver | null = null
+let currentMarkers: PreviewMarker[] = []
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), maximum)
@@ -100,6 +121,106 @@ function getInspectorTooltipElement() {
   })
   document.documentElement.appendChild(tooltipElement)
   return tooltipElement
+}
+
+function getMarkersLayerElement() {
+  let markersLayer = document.getElementById(MARKERS_LAYER_ID)
+  if (markersLayer) return markersLayer
+
+  markersLayer = document.createElement("div")
+  markersLayer.id = MARKERS_LAYER_ID
+  markersLayer.setAttribute("aria-label", "Saved preview comments")
+  Object.assign(markersLayer.style, {
+    display: "none",
+    height: "0",
+    left: "0",
+    pointerEvents: "none",
+    position: "absolute",
+    top: "0",
+    width: "0",
+    zIndex: "2147483646",
+  })
+  const parent = document.body ?? document.documentElement
+  parent.appendChild(markersLayer)
+  return markersLayer
+}
+
+function queryMarkerAnchor(anchor: PreviewMarkerAnchor | undefined) {
+  if (anchor?.type !== "element") return null
+
+  for (const selector of [anchor.selector, anchor.path]) {
+    if (!selector) continue
+    try {
+      const element = document.querySelector(selector)
+      if (element) return element
+    } catch {
+      // Generated selectors can contain user-authored class names that are not valid CSS selectors.
+    }
+  }
+
+  return null
+}
+
+function resolveMarkerDocumentPoint(marker: PreviewMarker) {
+  const anchorElement = queryMarkerAnchor(marker.anchor)
+  if (anchorElement) {
+    const rect = anchorElement.getBoundingClientRect()
+    const offsetX = typeof marker.anchor?.offsetX === "number" ? clamp(marker.anchor.offsetX, 0, 1) : 0.5
+    const offsetY = typeof marker.anchor?.offsetY === "number" ? clamp(marker.anchor.offsetY, 0, 1) : 0.5
+    return {
+      x: window.scrollX + rect.left + rect.width * offsetX,
+      y: window.scrollY + rect.top + rect.height * offsetY,
+    }
+  }
+
+  if (typeof marker.documentX === "number" && typeof marker.documentY === "number") {
+    return {
+      x: marker.documentX,
+      y: marker.documentY,
+    }
+  }
+
+  return {
+    x: window.scrollX + clamp(marker.x, 0, 100) / 100 * Math.max(window.innerWidth, 1),
+    y: window.scrollY + clamp(marker.y, 0, 100) / 100 * Math.max(window.innerHeight, 1),
+  }
+}
+
+function createMarkerElement(marker: PreviewMarker) {
+  const markerElement = document.createElement("span")
+  const point = resolveMarkerDocumentPoint(marker)
+  markerElement.textContent = marker.label
+  markerElement.title = marker.text ?? ""
+  markerElement.setAttribute("aria-label", `Comment ${marker.label}${marker.text ? `: ${marker.text}` : ""}`)
+  Object.assign(markerElement.style, {
+    alignItems: "center",
+    background: "#0a84ff",
+    border: "2px solid #ffffff",
+    borderRadius: "999px",
+    boxShadow: "0 8px 20px rgba(10, 132, 255, 0.32)",
+    boxSizing: "border-box",
+    color: "#ffffff",
+    display: "inline-flex",
+    font: "600 12px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    height: "23px",
+    justifyContent: "center",
+    left: `${point.x}px`,
+    minWidth: "23px",
+    padding: "0 6px",
+    position: "absolute",
+    top: `${point.y}px`,
+    transform: "translate(-50%, -50%)",
+    userSelect: "none",
+  })
+  return markerElement
+}
+
+function renderPreviewMarkers() {
+  if (!document.documentElement) return
+
+  const markersLayer = getMarkersLayerElement()
+  markersLayer.replaceChildren(...currentMarkers.map(createMarkerElement))
+  markersLayer.style.display = currentMarkers.length > 0 ? "block" : "none"
 }
 
 function hideHighlight() {
@@ -427,6 +548,8 @@ function sendCoordinateCommentTarget(clientX: number, clientY: number) {
     anchor: {
       type: "coordinate",
     },
+    documentX: window.scrollX + clientX,
+    documentY: window.scrollY + clientY,
     x,
     y,
   })
@@ -466,6 +589,8 @@ function handleDocumentClick(event: MouseEvent) {
       anchor: {
         type: "element",
         label: formatElementLabel(element),
+        offsetX: rect.width > 0 ? clamp((event.clientX - rect.left) / rect.width, 0, 1) : 0.5,
+        offsetY: rect.height > 0 ? clamp((event.clientY - rect.top) / rect.height, 0, 1) : 0.5,
         path: buildElementPath(element),
         rect: {
           bottom: rect.bottom,
@@ -479,6 +604,8 @@ function handleDocumentClick(event: MouseEvent) {
         tagName: element.tagName.toLowerCase(),
         text: getElementText(element),
       },
+      documentX: window.scrollX + event.clientX,
+      documentY: window.scrollY + event.clientY,
       x,
       y,
     })
@@ -531,20 +658,31 @@ window.addEventListener("DOMContentLoaded", () => {
   scheduleAutoFit()
   window.setTimeout(scheduleAutoFit, 120)
   window.setTimeout(scheduleAutoFit, 360)
+  renderPreviewMarkers()
   sendPageMeta()
   ipcRenderer.sendToHost("preview:ready")
 })
 
 window.addEventListener("load", () => {
   scheduleAutoFit()
+  renderPreviewMarkers()
   sendPageMeta()
 })
 
-window.addEventListener("resize", scheduleAutoFit)
+window.addEventListener("resize", () => {
+  scheduleAutoFit()
+  renderPreviewMarkers()
+})
+document.addEventListener("scroll", renderPreviewMarkers, true)
 
 ipcRenderer.on("preview:set-mode", (_event, payload: { mode?: PreviewMode } | undefined) => {
   currentMode = payload?.mode === "comment" ? "comment" : "browse"
   if (currentMode !== "comment") {
     hideHighlight()
   }
+})
+
+ipcRenderer.on("preview:set-markers", (_event, payload: { markers?: PreviewMarker[] } | undefined) => {
+  currentMarkers = Array.isArray(payload?.markers) ? payload.markers : []
+  renderPreviewMarkers()
 })

@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { SideChatIcon } from "../../icons"
-import type { PreviewInteractionCommitInput, PreviewInteractionPluginID, ResolvedPreviewTarget } from "../../types"
+import type {
+  PreviewInteractionCommitInput,
+  PreviewInteractionPluginID,
+  PreviewInteractionRecord,
+  ResolvedPreviewTarget,
+  WebCommentInteractionPayload,
+} from "../../types"
+import { clamp } from "../../utils"
 import { getPreviewInteractionPlugins } from "./registry"
 import type {
   PreviewInteractionHostProps,
@@ -12,6 +19,17 @@ import type {
 type WebviewIpcMessageEvent = Event & {
   args: unknown[]
   channel: string
+}
+
+interface PreviewGuestMarker {
+  anchor?: WebCommentInteractionPayload["anchor"]
+  documentX?: number
+  documentY?: number
+  id: string
+  label: string
+  text: string
+  x: number
+  y: number
 }
 
 function getPendingComposerPlacement(x: number) {
@@ -47,6 +65,46 @@ function getPendingCommentStyle(target: PreviewInteractionHoverTarget | null) {
     "--preview-comment-x": `${target.x}%`,
     "--preview-comment-y": `${target.y}%`,
   } as CSSProperties
+}
+
+function isWebCommentPayload(payload: PreviewInteractionRecord["payload"]): payload is WebCommentInteractionPayload {
+  return payload.kind === "web-comment" && typeof payload.x === "number" && typeof payload.y === "number"
+}
+
+function getVisibleCommentMarkerRecords(
+  interactions: PreviewInteractionRecord[],
+  plugins: PreviewInteractionPlugin[],
+  target: ResolvedPreviewTarget,
+) {
+  return interactions.filter((record) => {
+    if (!isWebCommentPayload(record.payload)) return false
+    const plugin = plugins.find((candidate) => candidate.id === record.pluginID)
+    return Boolean(plugin && record.targetKey === plugin.resolveTargetKey(target))
+  })
+}
+
+function getCommentMarkerStyle(payload: WebCommentInteractionPayload) {
+  return {
+    left: `${clamp(payload.x, 0, 100)}%`,
+    top: `${clamp(payload.y, 0, 100)}%`,
+  } as CSSProperties
+}
+
+function toPreviewGuestMarkers(records: PreviewInteractionRecord[]): PreviewGuestMarker[] {
+  return records
+    .filter((record): record is PreviewInteractionRecord & { payload: WebCommentInteractionPayload } =>
+      isWebCommentPayload(record.payload),
+    )
+    .map((record, index) => ({
+      anchor: record.payload.anchor,
+      documentX: record.payload.documentX,
+      documentY: record.payload.documentY,
+      id: record.id,
+      label: String(index + 1),
+      text: record.payload.text,
+      x: record.payload.x,
+      y: record.payload.y,
+    }))
 }
 
 async function capturePreviewScreenshotPath(target: ResolvedPreviewTarget, overlayElement: HTMLElement | null) {
@@ -135,6 +193,7 @@ export function PreviewInteractionHost({
   const currentRecords = activePlugin
     ? interactions.filter((record) => record.pluginID === activePlugin.id && record.targetKey === activePlugin.resolveTargetKey(target))
     : []
+  const visibleCommentMarkerRecords = getVisibleCommentMarkerRecords(interactions, plugins, target)
   const hoverTargetStyle = getHoverTargetStyle(hoverTarget)
   const pendingCommentStyle = getPendingCommentStyle(pendingTarget)
 
@@ -174,6 +233,8 @@ export function PreviewInteractionHost({
         anchor: payload?.anchor as PreviewInteractionHoverTarget["anchor"] | undefined,
         className: "is-coordinate",
         dimensions: "coordinate",
+        documentX: typeof payload?.documentX === "number" ? payload.documentX : undefined,
+        documentY: typeof payload?.documentY === "number" ? payload.documentY : undefined,
         height: "20px",
         label: "Preview target",
         left: `${typeof payload?.x === "number" ? payload.x : 50}%`,
@@ -193,6 +254,19 @@ export function PreviewInteractionHost({
       webview.removeEventListener("ipc-message", handleIpcMessage as EventListener)
     }
   }, [activePlugin?.id, frameKind, frameRefs.webviewRef])
+
+  useEffect(() => {
+    const webview = frameRefs.webviewRef.current
+    if (frameKind !== "webview" || !webview?.send || !webviewReady) return
+
+    try {
+      webview.send("preview:set-markers", {
+        markers: toPreviewGuestMarkers(visibleCommentMarkerRecords),
+      })
+    } catch (error) {
+      console.error("[preview] failed to sync comment markers", error)
+    }
+  }, [frameKind, frameRefs.webviewRef, visibleCommentMarkerRecords, webviewReady])
 
   async function resolveTargetFromEvent(event: PreviewInteractionOverlayMouseEvent) {
     if (!activePlugin) return null
@@ -336,6 +410,26 @@ export function PreviewInteractionHost({
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {frameKind !== "webview" && visibleCommentMarkerRecords.length > 0 ? (
+        <div className="preview-markers-layer" aria-label="Saved preview comments">
+          {visibleCommentMarkerRecords.map((record, index) => {
+            const payload = record.payload as WebCommentInteractionPayload
+            const markerNumber = index + 1
+            return (
+              <span
+                key={record.id}
+                className="preview-comment-marker"
+                style={getCommentMarkerStyle(payload)}
+                aria-label={`Comment ${markerNumber}: ${payload.text}`}
+                title={payload.text}
+              >
+                {markerNumber}
+              </span>
+            )
+          })}
         </div>
       ) : null}
     </>

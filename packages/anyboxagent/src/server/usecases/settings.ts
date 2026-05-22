@@ -8,6 +8,7 @@ import * as ModelsDev from "#provider/modelsdev.ts"
 import * as AnyboxHTTP from "#provider/anybox-http.ts"
 import * as Provider from "#provider/provider.ts"
 import { ApiError } from "#server/error.ts"
+import { clearProjectModelListCache } from "#server/usecases/model-list-cache.ts"
 import * as PromptPresets from "#session/support/prompt-presets.ts"
 import * as PromptUrlInstall from "#session/support/prompt-url-install.ts"
 import * as SkillGitInstall from "#skill/git-install.ts"
@@ -293,6 +294,7 @@ export async function refreshProviderCatalog() {
     )
   }
 
+  clearProjectModelListCache()
   return Provider.catalog()
 }
 
@@ -327,6 +329,7 @@ export async function updateProvider(
   }
 
   const providerConfig = await Config.setProvider(Config.GLOBAL_CONFIG_ID, providerID, input)
+  clearProjectModelListCache()
   const provider = await Provider.getPublicProvider(providerID)
   if (!provider) {
     throw new ApiError(404, "PROVIDER_NOT_FOUND", `Provider '${providerID}' not found in the catalog`)
@@ -345,6 +348,7 @@ export async function updateProvider(
 
 export async function removeProvider(providerID: string) {
   const providerConfig = await Config.removeProvider(Config.GLOBAL_CONFIG_ID, providerID)
+  clearProjectModelListCache()
 
   return {
     providerID,
@@ -647,6 +651,10 @@ export async function getProviderAuthFlow(providerID: string, flowID: string) {
     throw new ApiError(404, "PROVIDER_AUTH_FLOW_NOT_FOUND", `Auth flow '${flowID}' was not found`)
   }
 
+  if (flow.status === "connected") {
+    clearProjectModelListCache()
+  }
+
   return flow
 }
 
@@ -664,6 +672,9 @@ export async function completeProviderAuthCallback(providerID: string, url: URL)
     providerID,
     url,
   })
+  if (result.ok) {
+    clearProjectModelListCache()
+  }
 
   return {
     html: ProviderAuth.renderProviderAuthCallbackPage({
@@ -680,11 +691,13 @@ export async function saveProviderApiKey(
   input: z.infer<typeof ProviderAuthApiKeyBody>,
 ) {
   await ProviderAuth.saveProviderApiKey(providerID, input.apiKey)
+  clearProjectModelListCache()
   return readProviderAuthState(providerID)
 }
 
 export async function deleteProviderSession(providerID: string) {
   await ProviderAuth.deleteProviderSession(providerID)
+  clearProjectModelListCache()
   return readProviderAuthState(providerID)
 }
 

@@ -192,6 +192,10 @@ function getPreviewTitleLabel(target: ResolvedPreviewTarget, draftValue: string)
   return title
 }
 
+function shouldRenderTargetInWebview(target: ResolvedPreviewTarget | null) {
+  return target?.renderer === "url-webview" || target?.renderer === "html-preview"
+}
+
 function PreviewTargetSummary({
   draftValue,
   target,
@@ -301,7 +305,7 @@ export function UnifiedPreviewPanel({
   const draftValue = state.draftTarget || state.draftUrl
   const targetPath = getTargetPath(target)
   const shouldRenderText = Boolean(target && TEXT_RENDERERS.has(target.renderer) && target.textReadable && targetPath)
-  const shouldUseWebview = target?.renderer === "url-webview" && canUseWebview && !forceIframeFallback
+  const shouldUseWebview = shouldRenderTargetInWebview(target) && canUseWebview && !forceIframeFallback
   const canOpenExternal = Boolean(target?.externalOpenTarget || state.committedUrl || draftValue.trim())
   const interactionPlugins = useMemo(() => getPreviewInteractionPlugins(target), [target])
 
@@ -405,7 +409,7 @@ export function UnifiedPreviewPanel({
   }, [shouldUseWebview, state.reloadToken, target?.safePreviewUrl])
 
   useEffect(() => {
-    if (!canUseWebview || !target?.safePreviewUrl || target.renderer !== "url-webview" || forceIframeFallback || !frameIsLoading) return
+    if (!shouldUseWebview || !target?.safePreviewUrl || !frameIsLoading) return
 
     const timer = globalThis.setTimeout(() => {
       setForceIframeFallback(true)
@@ -416,7 +420,7 @@ export function UnifiedPreviewPanel({
     return () => {
       globalThis.clearTimeout(timer)
     }
-  }, [canUseWebview, forceIframeFallback, frameIsLoading, state.reloadToken, target?.renderer, target?.safePreviewUrl])
+  }, [frameIsLoading, shouldUseWebview, state.reloadToken, target?.safePreviewUrl])
 
   useEffect(() => {
     const readPreviewText = window.desktop?.readPreviewText

@@ -23,6 +23,8 @@ export interface PreviewInteractionHoverTarget {
   className: string
   color?: string
   dimensions: string
+  documentX?: number
+  documentY?: number
   fontFamily?: string
   fontSize?: string
   height: string

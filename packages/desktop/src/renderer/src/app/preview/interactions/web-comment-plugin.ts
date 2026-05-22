@@ -15,6 +15,8 @@ type PreviewGuestInspectionResult = {
   anchor?: PreviewInteractionAnchor
   color?: string
   dimensions?: string
+  documentX?: number
+  documentY?: number
   fontFamily?: string
   fontSize?: string
   rect?: {
@@ -339,6 +341,8 @@ function createWebviewInspectionScript(clientX: number, clientY: number) {
         anchor: {
           type: "element",
           label: labelFor(element),
+          offsetX: rect.width > 0 ? Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1) : 0.5,
+          offsetY: rect.height > 0 ? Math.min(Math.max((clientY - rect.top) / rect.height, 0), 1) : 0.5,
           path: pathFor(element),
           rect: {
             bottom: rect.bottom,
@@ -354,6 +358,8 @@ function createWebviewInspectionScript(clientX: number, clientY: number) {
         },
         color: formatColor(style.color),
         dimensions: Math.round(rect.width) + "x" + Math.round(rect.height),
+        documentX: window.scrollX + clientX,
+        documentY: window.scrollY + clientY,
         fontFamily: formatFamily(style.fontFamily),
         fontSize: style.fontSize,
         rect: {
@@ -404,6 +410,8 @@ function createHoverTargetFromGuestInspection(
     className: "is-element",
     color: guestResult.color,
     dimensions: guestResult.dimensions ?? `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+    documentX: guestResult.documentX,
+    documentY: guestResult.documentY,
     fontFamily: guestResult.fontFamily,
     fontSize: guestResult.fontSize,
     height: `${(rect.height / overlayHeight) * 100}%`,
@@ -456,6 +464,7 @@ function resolveIframeHoverTarget(input: PreviewInteractionPointerInput): Previe
     const frameLocalX = clamp(input.clientX - frameBounds.left, 0, frameWidth)
     const frameLocalY = clamp(input.clientY - frameBounds.top, 0, frameHeight)
     const frameDocument = iframe?.contentDocument
+    const frameWindow = frameDocument?.defaultView
     const element = frameDocument?.elementFromPoint(frameLocalX, frameLocalY)
     if (!isElement(element)) return fallbackTarget
 
@@ -468,6 +477,8 @@ function resolveIframeHoverTarget(input: PreviewInteractionPointerInput): Previe
     const anchor: PreviewInteractionAnchor = {
       type: "element",
       label: formatElementLabel(element),
+      offsetX: elementBounds.width > 0 ? clamp((frameLocalX - elementBounds.left) / elementBounds.width, 0, 1) : 0.5,
+      offsetY: elementBounds.height > 0 ? clamp((frameLocalY - elementBounds.top) / elementBounds.height, 0, 1) : 0.5,
       path: buildElementPath(element),
       rect: {
         bottom: elementBounds.bottom,
@@ -489,6 +500,8 @@ function resolveIframeHoverTarget(input: PreviewInteractionPointerInput): Previe
       className: "is-element",
       color: computedStyle ? formatCssColor(computedStyle.color) : undefined,
       dimensions: `${Math.round(elementBounds.width)}x${Math.round(elementBounds.height)}`,
+      documentX: (frameWindow?.scrollX ?? 0) + frameLocalX,
+      documentY: (frameWindow?.scrollY ?? 0) + frameLocalY,
       fontFamily: computedStyle ? formatFontFamily(computedStyle.fontFamily) : undefined,
       fontSize: computedStyle?.fontSize,
       height: `${(elementBounds.height / overlayHeight) * 100}%`,
@@ -529,10 +542,14 @@ export const webCommentPlugin: PreviewInteractionPlugin = {
     const payload: WebCommentInteractionPayload = {
       kind: "web-comment",
       anchor: pendingTarget.anchor,
+      documentX: pendingTarget.documentX,
+      documentY: pendingTarget.documentY,
       frame: frameKind,
       nodePosition: formatNodePosition({
         kind: "web-comment",
         anchor: pendingTarget.anchor,
+        documentX: pendingTarget.documentX,
+        documentY: pendingTarget.documentY,
         pageUrl: getTargetPageUrl(target),
         text,
         x: pendingTarget.x,

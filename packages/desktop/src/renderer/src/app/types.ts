@@ -394,6 +394,8 @@ export type PreviewInteractionAnchor =
   | {
       type: "element"
       label?: string
+      offsetX?: number
+      offsetY?: number
       path?: string
       rect?: PreviewInteractionRect
       selector?: string
@@ -404,6 +406,8 @@ export type PreviewInteractionAnchor =
 export interface WebCommentInteractionPayload {
   kind: "web-comment"
   anchor?: PreviewInteractionAnchor
+  documentX?: number
+  documentY?: number
   frame?: string
   nodePosition?: string
   pageUrl: string

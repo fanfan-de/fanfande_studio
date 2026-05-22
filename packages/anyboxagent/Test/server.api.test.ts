@@ -2600,6 +2600,77 @@ describe("server api", () => {
     }
   })
 
+  test("global provider auth changes should invalidate project model caches", async () => {
+    const restoreFetch = mockModelsDevFetch()
+    const app = createServerApp()
+    const repositoryRoot = await createTempDirectory("anybox-provider-cache-")
+
+    try {
+      await withTemporaryEnv(
+        {
+          OPENAI_API_KEY: undefined,
+          DEEPSEEK_API_KEY: undefined,
+        },
+        async () => {
+          await createGitRepo(repositoryRoot, "provider-cache")
+          await resetGlobalProviderState(app)
+
+          const projectResponse = await app.request("http://localhost/api/projects", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ directory: repositoryRoot }),
+          })
+          const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+          const projectID = projectBody.data?.id
+
+          expect(projectResponse.status).toBe(201)
+          expect(projectID).toBeString()
+
+          const beforeResponse = await app.request(`http://localhost/api/projects/${projectID}/models`)
+          const beforeBody = (await beforeResponse.json()) as ProjectModelsEnvelope
+
+          expect(beforeResponse.status).toBe(200)
+          expect(beforeBody.data?.items).not.toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                providerID: "openai",
+                id: "gpt-4o-mini",
+              }),
+            ]),
+          )
+
+          const saveResponse = await app.request("http://localhost/api/providers/openai/auth/api-key", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              apiKey: "sk-openai-cache-test",
+            }),
+          })
+
+          expect(saveResponse.status).toBe(200)
+
+          const afterResponse = await app.request(`http://localhost/api/projects/${projectID}/models`)
+          const afterBody = (await afterResponse.json()) as ProjectModelsEnvelope
+
+          expect(afterResponse.status).toBe(200)
+          expect(afterBody.data?.items).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                providerID: "openai",
+                id: "gpt-4o-mini",
+                available: true,
+              }),
+            ]),
+          )
+        },
+      )
+    } finally {
+      await resetGlobalProviderState(app)
+      restoreFetch()
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
   test("GET /api/providers/:providerID/auth should surface shared Codex ChatGPT cache for OpenAI", async () => {
     const app = createServerApp()
     const codexHome = await createTempDirectory("anybox-codex-home-")

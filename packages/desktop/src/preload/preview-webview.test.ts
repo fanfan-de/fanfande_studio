@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const electronMock = vi.hoisted(() => ({
+  markerListener: null as null | ((_event: unknown, payload?: { markers?: Array<Record<string, unknown>> }) => void),
   modeListener: null as null | ((_event: unknown, payload?: { mode?: "browse" | "comment" }) => void),
-  on: vi.fn((channel: string, listener: (_event: unknown, payload?: { mode?: "browse" | "comment" }) => void) => {
+  on: vi.fn((channel: string, listener: (_event: unknown, payload?: never) => void) => {
     if (channel === "preview:set-mode") {
-      electronMock.modeListener = listener
+      electronMock.modeListener = listener as typeof electronMock.modeListener
+    }
+    if (channel === "preview:set-markers") {
+      electronMock.markerListener = listener as typeof electronMock.markerListener
     }
   }),
   sendToHost: vi.fn(),
@@ -36,6 +40,7 @@ function initializePreviewGuest() {
   })
   window.dispatchEvent(new Event("DOMContentLoaded"))
   electronMock.modeListener?.({}, { mode: "comment" })
+  electronMock.markerListener?.({}, { markers: [] })
   electronMock.sendToHost.mockClear()
 }
 
@@ -60,6 +65,8 @@ describe("preview webview preload", () => {
       anchor: {
         type: "coordinate",
       },
+      documentX: 125,
+      documentY: 100,
       x: 25,
       y: 25,
     })
@@ -130,5 +137,80 @@ describe("preview webview preload", () => {
     expect(tooltip?.textContent).toContain("p")
     expect(tooltip?.textContent).toContain("435x25")
     expect(tooltip?.textContent).toContain("#112233")
+  })
+
+  it("renders saved comment markers inside the preview document", () => {
+    electronMock.markerListener?.({}, {
+      markers: [
+        {
+          documentX: 160,
+          documentY: 220,
+          id: "comment-1",
+          label: "1",
+          text: "Tighten the spacing.",
+          x: 32,
+          y: 55,
+        },
+      ],
+    })
+
+    const markerLayer = document.getElementById("__desktop-preview-markers__")
+    const marker = markerLayer?.querySelector("span")
+
+    expect(markerLayer).toHaveStyle({ display: "block", position: "absolute" })
+    expect(marker).toHaveTextContent("1")
+    expect(marker).toHaveStyle({
+      left: "160px",
+      position: "absolute",
+      top: "220px",
+    })
+    expect(marker).toHaveAttribute("aria-label", "Comment 1: Tighten the spacing.")
+  })
+
+  it("repositions element-anchored markers when the page scrolls", () => {
+    document.body.innerHTML = `<div id="target">Card title</div>`
+    const target = document.getElementById("target")!
+    let targetTop = 200
+    Object.defineProperty(target, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        bottom: targetTop + 40,
+        height: 40,
+        left: 100,
+        right: 180,
+        top: targetTop,
+        width: 80,
+        x: 100,
+        y: targetTop,
+        toJSON: () => ({}),
+      }),
+    })
+
+    electronMock.markerListener?.({}, {
+      markers: [
+        {
+          anchor: {
+            offsetX: 0.25,
+            offsetY: 0.5,
+            selector: "#target",
+            type: "element",
+          },
+          id: "comment-1",
+          label: "1",
+          text: "Pin this title.",
+          x: 24,
+          y: 48,
+        },
+      ],
+    })
+
+    const markerLayer = document.getElementById("__desktop-preview-markers__")
+    const marker = markerLayer?.querySelector("span")
+    expect(marker).toHaveStyle({ left: "120px", top: "220px" })
+
+    targetTop = 120
+    document.dispatchEvent(new Event("scroll"))
+
+    expect(markerLayer?.querySelector("span")).toHaveStyle({ left: "120px", top: "140px" })
   })
 })

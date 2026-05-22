@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, protocol } from "electron"
+import { app, BrowserWindow, Menu, protocol, session } from "electron"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { registerIpcHandlers } from "./ipc"
@@ -14,6 +14,7 @@ import { createWindow, resolvePopoutWindowOptions, resolveRendererEntryUrl } fro
 import { WorkbenchWindowManager } from "./workbench-window-manager"
 
 const mainDir = path.dirname(fileURLToPath(import.meta.url))
+const PREVIEW_WEBVIEW_PARTITION = "persist:preview"
 
 registerLocalImageProtocolScheme(protocol)
 registerLocalPreviewProtocolScheme(protocol)
@@ -52,6 +53,7 @@ void app.whenReady().then(async () => {
   })
   registerLocalImageProtocolHandler(protocol)
   registerLocalPreviewProtocolHandler(protocol)
+  registerLocalPreviewProtocolHandler(session.fromPartition(PREVIEW_WEBVIEW_PARTITION).protocol)
 
   try {
     await createWindow(mainDir, { workbenchWindowManager })
