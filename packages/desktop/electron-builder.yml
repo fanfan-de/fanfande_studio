@@ -7,7 +7,7 @@ afterPack: ./scripts/after-pack-icon.cjs
 publish:
   provider: github
   owner: fanfan-de
-  repo: anybox_studio
+  repo: fanfande_studio
 directories:
   buildResources: build
   output: dist
