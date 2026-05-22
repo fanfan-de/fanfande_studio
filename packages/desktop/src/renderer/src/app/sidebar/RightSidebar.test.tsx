@@ -126,6 +126,134 @@ function createMessageTree(input?: {
   }
 }
 
+function createNestedResponseMessageTree(input?: {
+  activeMessageID?: string
+  activePathMessageIDs?: string[]
+}): SessionMessageTree {
+  return {
+    activeMessageID: input?.activeMessageID ?? "assistant-parent",
+    activePathMessageIDs: input?.activePathMessageIDs ?? ["user-1", "assistant-parent"],
+    branchOptionsByParentID: {
+      "assistant-parent": [
+        {
+          childMessageID: "user-child-1",
+          index: 0,
+          isActive: false,
+          label: "Branch 1",
+          leafMessageID: "assistant-child-1",
+          parentMessageID: "assistant-parent",
+          preview: "First follow up",
+          total: 3,
+        },
+        {
+          childMessageID: "user-child-2",
+          index: 1,
+          isActive: input?.activeMessageID === "assistant-child-2",
+          label: "Branch 2",
+          leafMessageID: "assistant-child-2",
+          parentMessageID: "assistant-parent",
+          preview: "Second follow up",
+          total: 3,
+        },
+        {
+          childMessageID: "user-child-3",
+          index: 2,
+          isActive: false,
+          label: "Branch 3",
+          leafMessageID: "assistant-child-3",
+          parentMessageID: "assistant-parent",
+          preview: "Third follow up",
+          total: 3,
+        },
+      ],
+    },
+    childIDsByParentID: {
+      "__root__": ["user-1"],
+      "user-1": ["assistant-parent"],
+      "assistant-parent": ["user-child-1", "user-child-2", "user-child-3"],
+      "user-child-1": ["assistant-child-1"],
+      "user-child-2": ["assistant-child-2"],
+      "user-child-3": ["assistant-child-3"],
+    },
+    nodesByID: {
+      "user-1": {
+        content: "Root prompt",
+        id: "user-1",
+        sessionID: "session-1",
+        role: "user",
+        created: 1,
+        parentMessageID: null,
+        preview: "Root prompt",
+      },
+      "assistant-parent": {
+        content: "Parent response\n\nA complete parent response with child branches.",
+        id: "assistant-parent",
+        sessionID: "session-1",
+        role: "assistant",
+        created: 2,
+        parentMessageID: "user-1",
+        preview: "Parent response",
+      },
+      "user-child-1": {
+        content: "First follow up",
+        id: "user-child-1",
+        sessionID: "session-1",
+        role: "user",
+        created: 3,
+        parentMessageID: "assistant-parent",
+        preview: "First follow up",
+      },
+      "assistant-child-1": {
+        content: "First child response\n\nExpanded child response one.",
+        id: "assistant-child-1",
+        sessionID: "session-1",
+        role: "assistant",
+        created: 4,
+        parentMessageID: "user-child-1",
+        preview: "First child response",
+      },
+      "user-child-2": {
+        content: "Second follow up",
+        id: "user-child-2",
+        sessionID: "session-1",
+        role: "user",
+        created: 5,
+        parentMessageID: "assistant-parent",
+        preview: "Second follow up",
+      },
+      "assistant-child-2": {
+        content: "Second child response\n\nExpanded child response two.",
+        id: "assistant-child-2",
+        sessionID: "session-1",
+        role: "assistant",
+        created: 6,
+        parentMessageID: "user-child-2",
+        preview: "Second child response",
+      },
+      "user-child-3": {
+        content: "Third follow up",
+        id: "user-child-3",
+        sessionID: "session-1",
+        role: "user",
+        created: 7,
+        parentMessageID: "assistant-parent",
+        preview: "Third follow up",
+      },
+      "assistant-child-3": {
+        content: "Third child response\n\nExpanded child response three.",
+        id: "assistant-child-3",
+        sessionID: "session-1",
+        role: "assistant",
+        created: 8,
+        parentMessageID: "user-child-3",
+        preview: "Third child response",
+      },
+    },
+    rootMessageIDs: ["user-1"],
+    sessionID: "session-1",
+  }
+}
+
 function mockMessageTreeCanvasSize(width: number, height: number) {
   const widthSpy = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
     return this.classList.contains("session-message-tree-canvas") ? width : 0
@@ -138,6 +266,10 @@ function mockMessageTreeCanvasSize(width: number, height: number) {
     widthSpy.mockRestore()
     heightSpy.mockRestore()
   }
+}
+
+function queryMessageTreeNode(messageID: string) {
+  return document.querySelector<HTMLElement>(`[data-message-tree-node-id="${messageID}"]`)
 }
 
 function readMessageTreeGraphTransform() {
@@ -523,6 +655,81 @@ describe("RightSidebar", () => {
       initialTransform,
     )
     restoreCanvasSize()
+  })
+
+  it("expands a focused response together with its child responses on click", () => {
+    render(
+      <SessionMessageTreePanel
+        session={workspace.sessions[0] ?? null}
+        messageTree={createNestedResponseMessageTree()}
+        onSelectMessage={vi.fn()}
+      />,
+    )
+
+    const parentNode = queryMessageTreeNode("assistant-parent")
+    const firstChildResponseNode = queryMessageTreeNode("assistant-child-1")
+    const secondChildResponseNode = queryMessageTreeNode("assistant-child-2")
+    const thirdChildResponseNode = queryMessageTreeNode("assistant-child-3")
+    expect(parentNode).not.toBeNull()
+    expect(firstChildResponseNode).not.toBeNull()
+    expect(secondChildResponseNode).not.toBeNull()
+    expect(thirdChildResponseNode).not.toBeNull()
+    if (!parentNode || !firstChildResponseNode || !secondChildResponseNode || !thirdChildResponseNode) return
+
+    fireEvent.click(parentNode)
+
+    expect(parentNode).toHaveClass("is-expanded-response")
+    expect(firstChildResponseNode).toHaveClass("is-expanded-response")
+    expect(secondChildResponseNode).toHaveClass("is-expanded-response")
+    expect(thirdChildResponseNode).toHaveClass("is-expanded-response")
+    expect(firstChildResponseNode).toHaveClass("is-sibling-wheel-target")
+    expect(firstChildResponseNode.style.left).toBe(parentNode.style.left)
+    expect(screen.getByText(/Expanded child response one/)).toBeInTheDocument()
+    expect(screen.getByText(/Expanded child response two/)).toBeInTheDocument()
+    expect(screen.getByText(/Expanded child response three/)).toBeInTheDocument()
+  })
+
+  it("cycles expanded child responses with the mouse wheel under the focused response", () => {
+    const onSelectMessage = vi.fn()
+    render(
+      <SessionMessageTreePanel
+        session={workspace.sessions[0] ?? null}
+        messageTree={createNestedResponseMessageTree({
+          activeMessageID: "assistant-child-2",
+          activePathMessageIDs: ["user-1", "assistant-parent", "user-child-2", "assistant-child-2"],
+        })}
+        onSelectMessage={onSelectMessage}
+      />,
+    )
+
+    const parentNode = queryMessageTreeNode("assistant-parent")
+    const firstChildResponseNode = queryMessageTreeNode("assistant-child-1")
+    const secondChildResponseNode = queryMessageTreeNode("assistant-child-2")
+    expect(parentNode).not.toBeNull()
+    expect(firstChildResponseNode).not.toBeNull()
+    expect(secondChildResponseNode).not.toBeNull()
+    if (!parentNode || !firstChildResponseNode || !secondChildResponseNode) return
+
+    fireEvent.click(parentNode)
+    expect(secondChildResponseNode).toHaveClass("is-sibling-wheel-target")
+    expect(secondChildResponseNode.style.left).toBe(parentNode.style.left)
+    onSelectMessage.mockClear()
+
+    fireEvent.wheel(secondChildResponseNode, {
+      deltaY: -40,
+    })
+
+    expect(secondChildResponseNode).toHaveClass("is-sibling-wheel-target")
+    expect(onSelectMessage).not.toHaveBeenCalled()
+
+    fireEvent.wheel(secondChildResponseNode, {
+      deltaY: -70,
+    })
+
+    expect(firstChildResponseNode).toHaveClass("is-sibling-wheel-target")
+    expect(firstChildResponseNode.style.left).toBe(parentNode.style.left)
+    expect(secondChildResponseNode).not.toHaveClass("is-sibling-wheel-target")
+    expect(onSelectMessage).toHaveBeenLastCalledWith("session-1", "assistant-child-1")
   })
 
   it("collapses an expanded assistant response when double clicking anywhere in the tree panel", () => {
