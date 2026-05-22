@@ -45,6 +45,7 @@ import type {
   AgentSessionArchiveResult,
   AgentSessionBridgeIPCEvent,
   AgentSessionDeleteResult,
+  AgentSessionDiffScope,
   AgentSessionDiffSummary,
   AgentSessionHistoryMessage,
   AgentSessionQuestionAnswerInput,
@@ -924,10 +925,18 @@ export interface DesktopIpcContract {
     output: DesktopDeleteArchivedSessionResult
   }
   "desktop:get-session-diff": {
-    input: { sessionID: string }
+    input: { sessionID: string; scope?: AgentSessionDiffScope }
     output: AgentSessionDiffSummary
   }
   "desktop:restore-workspace-diff-file": {
+    input: { directory: string; file: string }
+    output: WorkspaceDiffFileRestoreResult
+  }
+  "desktop:stage-workspace-diff-file": {
+    input: { directory: string; file: string }
+    output: WorkspaceDiffFileRestoreResult
+  }
+  "desktop:unstage-workspace-diff-file": {
     input: { directory: string; file: string }
     output: WorkspaceDiffFileRestoreResult
   }
@@ -1487,6 +1496,8 @@ export interface DesktopApiMethods {
   deleteArchivedSession(input: DesktopIpcInput<"desktop:delete-archived-session">): Promise<DesktopIpcOutput<"desktop:delete-archived-session">>
   getSessionDiff(input: DesktopIpcInput<"desktop:get-session-diff">): Promise<DesktopIpcOutput<"desktop:get-session-diff">>
   restoreWorkspaceDiffFile(input: DesktopIpcInput<"desktop:restore-workspace-diff-file">): Promise<DesktopIpcOutput<"desktop:restore-workspace-diff-file">>
+  stageWorkspaceDiffFile(input: DesktopIpcInput<"desktop:stage-workspace-diff-file">): Promise<DesktopIpcOutput<"desktop:stage-workspace-diff-file">>
+  unstageWorkspaceDiffFile(input: DesktopIpcInput<"desktop:unstage-workspace-diff-file">): Promise<DesktopIpcOutput<"desktop:unstage-workspace-diff-file">>
   reverseApplyWorkspaceDiffPatches(input: DesktopIpcInput<"desktop:reverse-apply-workspace-diff-patches">): Promise<DesktopIpcOutput<"desktop:reverse-apply-workspace-diff-patches">>
   getSessionRuntimeDebug(input: DesktopIpcInput<"desktop:get-session-runtime-debug">): Promise<DesktopIpcOutput<"desktop:get-session-runtime-debug">>
   getSessionTraceExport(input: DesktopIpcInput<"desktop:get-session-trace-export">): Promise<DesktopIpcOutput<"desktop:get-session-trace-export">>

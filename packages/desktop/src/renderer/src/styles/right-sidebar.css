@@ -2067,7 +2067,148 @@
   min-height: 30px;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.right-sidebar-diff-scope {
+  position: relative;
+  min-width: 0;
+}
+
+.right-sidebar-diff-scope-button {
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--seg-divider);
+  border-radius: 6px;
+  background: var(--seg-panel-muted);
+  color: var(--seg-text-1);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.right-sidebar-diff-scope-button:hover,
+.right-sidebar-diff-scope-button:focus-visible {
+  background: var(--seg-panel);
+  outline: none;
+}
+
+.right-sidebar-diff-scope-button:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: 1px;
+}
+
+.right-sidebar-diff-scope-button svg {
+  width: 13px;
+  height: 13px;
+  color: var(--seg-text-3);
+}
+
+.right-sidebar-diff-scope-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right-sidebar-diff-scope-count,
+.right-sidebar-diff-scope-option-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--mix-seg-text-1-5-transparent-95);
+  color: var(--seg-text-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.right-sidebar-diff-scope-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: 202px;
+  padding: 6px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--semantic-dropdown-menu-radius, 8px);
+  background: var(--seg-dropdown-menu-surface);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16);
+}
+
+.right-sidebar-diff-scope-option {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--seg-text-1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.right-sidebar-diff-scope-option:hover,
+.right-sidebar-diff-scope-option:focus-visible,
+.right-sidebar-diff-scope-option.is-selected {
+  background: var(--seg-composer-button-surface);
+  color: var(--seg-composer-button-text);
+  outline: none;
+}
+
+.right-sidebar-diff-scope-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.right-sidebar-diff-scope-option-copy {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.right-sidebar-diff-scope-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.right-sidebar-diff-scope-option-mark {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.right-sidebar-diff-scope-option-mark svg {
+  width: 14px;
+  height: 14px;
+}
+
+.right-sidebar-diff-scope-divider {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--seg-divider);
 }
 
 .right-sidebar-diff-view-toggle {
@@ -2232,6 +2373,13 @@
   gap: 4px;
 }
 
+.right-sidebar-change-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
 .right-sidebar-changes-panel .right-sidebar-change-row {
   border: 0;
   background: transparent;
@@ -2300,6 +2448,7 @@
   color: var(--seg-danger);
 }
 
+.right-sidebar-change-action-button,
 .right-sidebar-change-restore-button {
   width: 28px;
   height: 28px;
@@ -2317,6 +2466,8 @@
     color 140ms ease;
 }
 
+.right-sidebar-change-action-button:hover,
+.right-sidebar-change-action-button:focus-visible,
 .right-sidebar-change-restore-button:hover,
 .right-sidebar-change-restore-button:focus-visible {
   border-color: var(--seg-divider);
@@ -2324,11 +2475,13 @@
   color: var(--seg-text-1);
 }
 
+.right-sidebar-change-action-button:disabled,
 .right-sidebar-change-restore-button:disabled {
   cursor: default;
   opacity: 0.55;
 }
 
+.right-sidebar-change-action-button svg,
 .right-sidebar-change-restore-button svg {
   width: 14px;
   height: 14px;

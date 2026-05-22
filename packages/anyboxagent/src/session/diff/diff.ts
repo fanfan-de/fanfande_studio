@@ -129,3 +129,9 @@ export async function computeSessionDetailedDiff(sessionID: string): Promise<Det
     if (!baseline) return null
     return computeDetailedDiffFromSnapshot(baseline)
 }
+
+export async function computeLatestTurnDetailedDiff(sessionID: string): Promise<DetailedDiffSummary | null> {
+    const latestUser = findLatestUserMessageWithSnapshot(sessionID)
+    if (!latestUser) return null
+    return computeDetailedDiffFromSnapshot(latestUser.snapshot)
+}

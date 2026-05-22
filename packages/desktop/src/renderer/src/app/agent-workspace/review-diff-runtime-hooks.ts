@@ -16,6 +16,7 @@ const WORKSPACE_DIFF_REFRESH_DEBOUNCE_MS = 500
 export function buildSessionDiffSummarySignature(diff: SessionDiffSummary | null | undefined) {
   if (!diff) return ""
   return JSON.stringify({
+    availableScopes: diff.availableScopes ?? null,
     body: diff.body ?? "",
     diffs: diff.diffs.map((item) => ({
       additions: item.additions,
@@ -23,6 +24,8 @@ export function buildSessionDiffSummarySignature(diff: SessionDiffSummary | null
       file: item.file,
       patch: item.patch ?? "",
     })),
+    restoreMode: diff.restoreMode ?? "",
+    scope: diff.scope ?? "",
     stats: diff.stats ?? null,
     title: diff.title ?? "",
   })

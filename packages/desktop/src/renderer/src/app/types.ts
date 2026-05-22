@@ -332,6 +332,25 @@ export interface SessionDiffFile {
   additions: number
   deletions: number
   patch?: string
+  gitState?: "clean" | "mixed" | "staged" | "unknown" | "unstaged" | "untracked"
+}
+
+export type SessionDiffScope =
+  | "git:unstaged"
+  | "git:staged"
+  | "git:commit"
+  | "git:branch"
+  | "session:last-turn"
+
+export type SessionDiffRestoreMode = "git-file" | "patch" | "none"
+
+export interface SessionDiffScopeOption {
+  scope: SessionDiffScope
+  label: string
+  enabled: boolean
+  count?: number
+  reason?: string
+  hasChildren?: boolean
 }
 
 export interface SessionDiffSummary {
@@ -342,6 +361,9 @@ export interface SessionDiffSummary {
     deletions: number
     files: number
   }
+  scope?: SessionDiffScope
+  restoreMode?: SessionDiffRestoreMode
+  availableScopes?: SessionDiffScopeOption[]
   diffs: SessionDiffFile[]
 }
 

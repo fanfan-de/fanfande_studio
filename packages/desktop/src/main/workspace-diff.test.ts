@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { getWorkspaceGitDiff, restoreWorkspaceDiffFile, reverseApplyWorkspaceDiffPatches } from "./workspace-diff"
+import {
+  getWorkspaceGitFileStates,
+  getWorkspaceGitDiff,
+  restoreWorkspaceDiffFile,
+  reverseApplyWorkspaceDiffPatches,
+  stageWorkspaceDiffFile,
+  unstageWorkspaceDiffFile,
+} from "./workspace-diff"
 
 describe("workspace git diff", () => {
   it("builds a workspace diff from tracked and untracked changes", async () => {
@@ -89,6 +96,102 @@ describe("workspace git diff", () => {
       },
     })
     expect(result?.diffs.map((diff) => diff.file)).toEqual(["src/App.tsx", "notes.txt"])
+  })
+
+  it("builds scoped staged and unstaged git diffs", async () => {
+    const runner = async (args: string[]) => {
+      const command = args.join(" ")
+
+      if (command.includes("rev-parse --show-toplevel")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "C:\\Projects\\Atlas\n",
+        }
+      }
+
+      if (command.includes("rev-parse --verify HEAD")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "abc123\n",
+        }
+      }
+
+      if (command.includes("rev-parse --abbrev-ref --symbolic-full-name @{upstream}")) {
+        return {
+          exitCode: 128,
+          stderr: "fatal: no upstream configured",
+          stdout: "",
+        }
+      }
+
+      if (command.includes("diff --name-only --relative -- .")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "src/unstaged.ts\n",
+        }
+      }
+
+      if (command.includes("ls-files --others --exclude-standard")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "notes.txt\0",
+        }
+      }
+
+      if (command.includes("diff --cached --name-only --relative -- .")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "src/staged.ts\n",
+        }
+      }
+
+      if (command.includes("diff-tree --no-commit-id")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "src/commit.ts\0",
+        }
+      }
+
+      if (command.includes("diff --cached --no-ext-diff --no-renames --relative -- src/staged.ts")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: [
+            "diff --git a/src/staged.ts b/src/staged.ts",
+            "--- a/src/staged.ts",
+            "+++ b/src/staged.ts",
+            "@@ -1 +1 @@",
+            "-old",
+            "+new",
+          ].join("\n"),
+        }
+      }
+
+      throw new Error(`Unexpected command: ${command}`)
+    }
+
+    const result = await getWorkspaceGitDiff("C:\\Projects\\Atlas", { scope: "git:staged" }, runner)
+
+    expect(result?.scope).toBe("git:staged")
+    expect(result?.restoreMode).toBe("git-file")
+    expect(result?.diffs.map((diff) => diff.file)).toEqual(["src/staged.ts"])
+    expect(result?.stats).toEqual({
+      files: 1,
+      additions: 1,
+      deletions: 1,
+    })
+    expect(result?.availableScopes?.map((option) => [option.scope, option.count, option.enabled])).toEqual([
+      ["git:unstaged", 2, true],
+      ["git:staged", 1, true],
+      ["git:commit", 1, true],
+      ["git:branch", undefined, false],
+    ])
   })
 
   it("treats a repo without HEAD as a workspace diff against an empty tree", async () => {
@@ -273,6 +376,101 @@ describe("workspace git diff", () => {
       runner,
     )
     expect(commands).toContain("-C C:\\Projects\\Atlas\\client clean -f -- notes.txt")
+  })
+
+  it("stages and unstages individual workspace diff files", async () => {
+    const commands: string[] = []
+    const runner = async (args: string[]) => {
+      const command = args.join(" ")
+      commands.push(command)
+
+      if (command.includes("rev-parse --show-toplevel")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "C:\\Projects\\Atlas\n",
+        }
+      }
+
+      if (command.includes("rev-parse --verify HEAD")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "abc123\n",
+        }
+      }
+
+      if (command.includes("add -- src/App.tsx") || command.includes("restore --staged -- src/App.tsx")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "",
+        }
+      }
+
+      throw new Error(`Unexpected command: ${command}`)
+    }
+
+    await stageWorkspaceDiffFile(
+      {
+        directory: "C:\\Projects\\Atlas\\client",
+        file: "src/App.tsx",
+      },
+      runner,
+    )
+    await unstageWorkspaceDiffFile(
+      {
+        directory: "C:\\Projects\\Atlas\\client",
+        file: "src/App.tsx",
+      },
+      runner,
+    )
+
+    expect(commands).toContain("-C C:\\Projects\\Atlas\\client add -- src/App.tsx")
+    expect(commands).toContain("-C C:\\Projects\\Atlas\\client restore --staged -- src/App.tsx")
+  })
+
+  it("reads current git state for latest-turn diff files", async () => {
+    const runner = async (args: string[]) => {
+      const command = args.join(" ")
+
+      if (command.includes("rev-parse --show-toplevel")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "C:\\Projects\\Atlas\n",
+        }
+      }
+
+      if (command.includes("status --porcelain=v1 -z")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: [
+            " M src/App.tsx",
+            "M  src/staged.ts",
+            "MM src/mixed.ts",
+            "?? notes.txt",
+          ].join("\0") + "\0",
+        }
+      }
+
+      throw new Error(`Unexpected command: ${command}`)
+    }
+
+    await expect(
+      getWorkspaceGitFileStates(
+        "C:\\Projects\\Atlas",
+        ["src/App.tsx", "src/staged.ts", "src/mixed.ts", "notes.txt", "clean.txt"],
+        runner,
+      ),
+    ).resolves.toEqual({
+      "src/App.tsx": "unstaged",
+      "src/staged.ts": "staged",
+      "src/mixed.ts": "mixed",
+      "notes.txt": "untracked",
+      "clean.txt": "clean",
+    })
   })
 
   it("removes tracked-in-index files when a repository has no HEAD", async () => {

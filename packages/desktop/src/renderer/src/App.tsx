@@ -22,6 +22,8 @@ import type {
   ConnectionsTab,
   PermissionRequest,
   SessionDiffFile,
+  SessionDiffScope,
+  SessionDiffSummary,
   SessionSummary,
   ToolPermissionMode,
   Turn,
@@ -836,6 +838,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     refreshComposerModels,
     refreshComposerSkills,
     refreshWorkspaceFromDirectory,
+    resolveBackendSessionID,
     rightSidebar,
     runningSessionIDs,
     selectedDiffFileBySession,
@@ -1243,6 +1246,18 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
       kind: "review",
       sessionID: activeSession.id,
       title: "Review",
+    })
+  }
+
+  async function handleSessionDiffScopeLoad(sessionID: string, scope: SessionDiffScope): Promise<SessionDiffSummary> {
+    const getSessionDiff = window.desktop?.getSessionDiff
+    if (!getSessionDiff) {
+      throw new Error("Workspace diff bridge is unavailable.")
+    }
+
+    return getSessionDiff({
+      sessionID: resolveBackendSessionID(sessionID),
+      scope,
     })
   }
 
@@ -2046,6 +2061,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 }
                 onDiffFileSelect={handleActiveSessionDiffFileSelect}
                 onDiffFileRestore={handleActiveSessionDiffFileRestore}
+                onSessionDiffScopeLoad={handleSessionDiffScopeLoad}
                 onLocalFileLinkOpen={(target) =>
                   handleLocalFileLinkOpen({
                     paneID: "right-sidebar",

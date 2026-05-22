@@ -599,11 +599,13 @@ export async function listSessionMessages(sessionID: string, input?: { view?: st
   }))
 }
 
-export async function getSessionDiff(sessionID: string) {
+export async function getSessionDiff(sessionID: string, options?: { scope?: string }) {
   const session = requireSession(sessionID)
   const diff = await Instance.provide({
     directory: session.directory,
-    fn: () => SessionDiff.computeSessionDetailedDiff(sessionID),
+    fn: () => options?.scope === "latest-turn"
+      ? SessionDiff.computeLatestTurnDetailedDiff(sessionID)
+      : SessionDiff.computeSessionDetailedDiff(sessionID),
   })
 
   return diff ?? SessionDiff.buildDetailedDiffSummary([])

@@ -129,7 +129,9 @@ export function SessionRoutes(options: { ptyRegistry: PtyRegistry }) {
     return c.body(result.file.stream())
   })
 
-  app.get("/:id/diff", async (c) => ok(c, await SessionUseCase.getSessionDiff(c.req.param("id"))))
+  app.get("/:id/diff", async (c) => ok(c, await SessionUseCase.getSessionDiff(c.req.param("id"), {
+    scope: c.req.query("scope"),
+  })))
 
   app.post("/:id/cancel", async (c) => {
     const payload = await parseJsonBody(

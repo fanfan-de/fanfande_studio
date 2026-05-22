@@ -28,6 +28,7 @@ import type {
   RightSidebarState,
   RightSidebarTab,
   SessionDiffState,
+  SessionDiffScope,
   SessionDiffSummary,
   SessionSummary,
   Turn,
@@ -87,6 +88,7 @@ interface RightSidebarProps {
   }) => void | Promise<void>
   onDiffFileRestore: (file: string, sessionID?: string | null) => void | Promise<void>
   onDiffFileSelect: (file: string | null, sessionID?: string | null) => void
+  onSessionDiffScopeLoad?: (sessionID: string, scope: SessionDiffScope) => Promise<SessionDiffSummary>
   onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onOpenBrowserTab: () => void
@@ -173,6 +175,18 @@ function findSessionByID(workspaces: WorkspaceGroup[], sessionID: string | null 
   return null
 }
 
+function findSessionDirectoryByID(workspaces: WorkspaceGroup[], sessionID: string | null | undefined) {
+  if (!sessionID) return null
+
+  for (const workspace of workspaces) {
+    if (workspace.sessions.some((candidate) => candidate.id === sessionID)) {
+      return workspace.directory
+    }
+  }
+
+  return null
+}
+
 function getTabIcon(kind: RightSidebarTab["kind"]) {
   switch (kind) {
     case "files":
@@ -235,6 +249,7 @@ export function RightSidebar({
   onAskUserQuestionAnswer,
   onDiffFileRestore,
   onDiffFileSelect,
+  onSessionDiffScopeLoad,
   onArtifactLinkOpen,
   onLocalFileLinkOpen,
   onOpenBrowserTab,
@@ -422,14 +437,21 @@ export function RightSidebar({
       case "review": {
         const reviewSessionID = activeTab.sessionID ?? activeSession?.id ?? null
         const reviewSession = reviewSessionID ? findSessionByID(workspaces, reviewSessionID) : activeSession
+        const reviewSessionDirectory = reviewSessionID
+          ? findSessionDirectoryByID(workspaces, reviewSessionID) ?? (reviewSessionID === activeSession?.id ? activeSessionDirectory : null)
+          : activeSessionDirectory
         return (
           <ChangesPanel
             activeSession={reviewSession}
+            activeSessionDirectory={reviewSessionDirectory}
             activeSessionDiff={reviewSessionID ? sessionDiffBySession[reviewSessionID] ?? null : null}
             activeSessionDiffState={reviewSessionID ? sessionDiffStateBySession[reviewSessionID] : undefined}
             selectedDiffFile={reviewSessionID ? selectedDiffFileBySession[reviewSessionID] ?? null : null}
             onDiffFileSelect={(file) => onDiffFileSelect(file, reviewSessionID)}
             onDiffFileRestore={(file) => onDiffFileRestore(file, reviewSessionID)}
+            onDiffScopeLoad={reviewSessionID && onSessionDiffScopeLoad
+              ? (scope) => onSessionDiffScopeLoad(reviewSessionID, scope)
+              : undefined}
           />
         )
       }

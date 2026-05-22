@@ -438,6 +438,25 @@ export interface AgentSessionDiffFile {
   additions: number
   deletions: number
   patch?: string
+  gitState?: "clean" | "mixed" | "staged" | "unknown" | "unstaged" | "untracked"
+}
+
+export type AgentSessionDiffScope =
+  | "git:unstaged"
+  | "git:staged"
+  | "git:commit"
+  | "git:branch"
+  | "session:last-turn"
+
+export type AgentSessionDiffRestoreMode = "git-file" | "patch" | "none"
+
+export interface AgentSessionDiffScopeOption {
+  scope: AgentSessionDiffScope
+  label: string
+  enabled: boolean
+  count?: number
+  reason?: string
+  hasChildren?: boolean
 }
 
 export interface AgentSessionDiffSummary {
@@ -448,6 +467,9 @@ export interface AgentSessionDiffSummary {
     deletions: number
     files: number
   }
+  scope?: AgentSessionDiffScope
+  restoreMode?: AgentSessionDiffRestoreMode
+  availableScopes?: AgentSessionDiffScopeOption[]
   diffs: AgentSessionDiffFile[]
 }
 

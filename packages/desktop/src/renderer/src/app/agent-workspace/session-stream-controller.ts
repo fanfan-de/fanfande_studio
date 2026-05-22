@@ -802,6 +802,7 @@ interface UseSessionStreamControllerOptions {
   historyRequestRef: MutableRefObject<Record<string, number>>
   isRuntimeDebugEnabled: boolean
   openCanvasSessionIDs: string[]
+  visibleCanvasSessionIDs: string[]
   onSessionCanvasActivity: (sessionID: string) => void
   pendingStreamsRef: MutableRefObject<Record<string, PendingAgentStream>>
   permissionRequestsRequestRef: MutableRefObject<Record<string, number>>
@@ -845,6 +846,7 @@ export function useSessionStreamController({
   historyRequestRef,
   isRuntimeDebugEnabled,
   openCanvasSessionIDs,
+  visibleCanvasSessionIDs,
   onSessionCanvasActivity,
   pendingStreamsRef,
   permissionRequestsRequestRef,
@@ -1628,11 +1630,11 @@ export function useSessionStreamController({
     onSessionEvent: handleAgentSessionBridgeEventEffect,
   })
 
-  const openCanvasSessionKey = openCanvasSessionIDs.join("\u0000")
+  const visibleCanvasSessionKey = visibleCanvasSessionIDs.join("\u0000")
   useEffect(() => {
     if (!canLoadSessionHistory) return
 
-    for (const sessionID of openCanvasSessionIDs) {
+    for (const sessionID of visibleCanvasSessionIDs) {
       if (skipNextHistoryLoadRef.current[sessionID]) {
         delete skipNextHistoryLoadRef.current[sessionID]
         continue
@@ -1645,10 +1647,10 @@ export function useSessionStreamController({
         console.error("[desktop] open session history preload failed:", error)
       })
     }
-  }, [openCanvasSessionKey, canLoadSessionHistory, agentSessions])
+  }, [visibleCanvasSessionKey, canLoadSessionHistory, agentSessions])
 
   useOpenSessionReviewPreloadEffects({
-    openSessionIDs: openCanvasSessionIDs,
+    openSessionIDs: visibleCanvasSessionIDs,
     agentSessions,
     canLoadSessionHistory,
     ensurePendingPermissionRequestsLoaded,

@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ArrowUp,
   ArrowUpRight,
+  Check,
   ChevronDown,
   ChevronRight,
   CircleCheck,
@@ -69,6 +70,7 @@ export const PaperclipIcon = createIcon(Paperclip)
 export const PinIcon = createIcon(Pin)
 export const CopyIcon = createIcon(Copy)
 export const DownloadIcon = createIcon(Download)
+export const CheckIcon = createIcon(Check)
 export const ChevronDownIcon = createIcon(ChevronDown)
 export const ChevronRightIcon = createIcon(ChevronRight)
 export const ExpandIcon = createIcon(Expand)

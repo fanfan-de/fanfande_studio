@@ -312,24 +312,14 @@ try {
         sessionID: string
         requestId?: string
       }>,
-    getSessionDiff: (input: { sessionID: string }) =>
-      invokeDesktop("desktop:get-session-diff", input) as Promise<{
-        title?: string
-        body?: string
-        stats?: {
-          additions: number
-          deletions: number
-          files: number
-        }
-        diffs: Array<{
-          file: string
-          additions: number
-          deletions: number
-          patch?: string
-        }>
-      }>,
+    getSessionDiff: (input: DesktopIpcInput<"desktop:get-session-diff">) =>
+      invokeDesktop("desktop:get-session-diff", input) as Promise<DesktopIpcOutput<"desktop:get-session-diff">>,
     restoreWorkspaceDiffFile: (input: { directory: string; file: string }) =>
       invokeDesktop("desktop:restore-workspace-diff-file", input) as Promise<WorkspaceDiffFileRestoreResult>,
+    stageWorkspaceDiffFile: (input: { directory: string; file: string }) =>
+      invokeDesktop("desktop:stage-workspace-diff-file", input) as Promise<WorkspaceDiffFileRestoreResult>,
+    unstageWorkspaceDiffFile: (input: { directory: string; file: string }) =>
+      invokeDesktop("desktop:unstage-workspace-diff-file", input) as Promise<WorkspaceDiffFileRestoreResult>,
     reverseApplyWorkspaceDiffPatches: (input: {
       directory: string
       diffs: Array<{

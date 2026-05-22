@@ -88,6 +88,7 @@ import type {
   AgentSessionArchiveResult,
   AgentSessionBridgeIPCEvent,
   AgentSessionDeleteResult,
+  AgentSessionDiffScope,
   AgentSessionDiffSummary,
   AgentSessionHistoryMessage,
   AgentSessionInfo,
@@ -107,12 +108,105 @@ import type {
   WindowAction,
 } from "./types"
 import { isWindowMaximized, maximizeFramelessWindow, restoreFramelessWindow, sendWindowState } from "./window-state"
-import { getWorkspaceGitDiff, restoreWorkspaceDiffFile, reverseApplyWorkspaceDiffPatches } from "./workspace-diff"
+import {
+  getWorkspaceGitFileStates,
+  getWorkspaceGitDiff,
+  restoreWorkspaceDiffFile,
+  reverseApplyWorkspaceDiffPatches,
+  stageWorkspaceDiffFile,
+  unstageWorkspaceDiffFile,
+} from "./workspace-diff"
 import { listWorkspaceDirectory, readWorkspaceFile, searchWorkspaceFiles } from "./workspace-files"
 import { WorkspaceWatchManager } from "./workspace-watch"
 import type { WorkbenchWindowManager } from "./workbench-window-manager"
 
 const AGENT_SESSION_EVENT_CHANNEL = DESKTOP_AGENT_SESSION_EVENT_CHANNEL
+
+const GIT_DIFF_SCOPES = new Set<AgentSessionDiffScope>([
+  "git:unstaged",
+  "git:staged",
+  "git:commit",
+  "git:branch",
+])
+
+const GIT_DISABLED_DIFF_SCOPES = [
+  "git:unstaged",
+  "git:staged",
+  "git:commit",
+  "git:branch",
+] satisfies AgentSessionDiffScope[]
+
+function createNonGitScopeOptions(diff: AgentSessionDiffSummary): AgentSessionDiffSummary["availableScopes"] {
+  return [
+    ...GIT_DISABLED_DIFF_SCOPES.map((scope) => ({
+      scope,
+      label: scope === "git:unstaged"
+        ? "未暂存"
+        : scope === "git:staged"
+          ? "已暂存"
+          : scope === "git:commit"
+            ? "提交"
+            : "分支",
+      enabled: false,
+      reason: "Current project is not managed by Git.",
+      ...(scope === "git:commit" ? { hasChildren: true } : {}),
+    })),
+    {
+      scope: "session:last-turn",
+      label: "上轮对话",
+      enabled: true,
+      count: diff.stats?.files ?? diff.diffs.length,
+    },
+  ]
+}
+
+function appendLastTurnScopeOption(
+  gitDiff: AgentSessionDiffSummary,
+  diff?: AgentSessionDiffSummary,
+): AgentSessionDiffSummary["availableScopes"] {
+  const options = (gitDiff.availableScopes ?? []).filter((option) => option.scope !== "session:last-turn")
+  return [
+    ...options,
+    {
+      scope: "session:last-turn",
+      label: "上轮对话",
+      enabled: true,
+      ...(diff ? { count: diff.stats?.files ?? diff.diffs.length } : {}),
+    },
+  ]
+}
+
+function withLastTurnScope(
+  diff: AgentSessionDiffSummary,
+  availableScopes: AgentSessionDiffSummary["availableScopes"],
+  restoreMode: AgentSessionDiffSummary["restoreMode"] = "none",
+): AgentSessionDiffSummary {
+  return {
+    ...diff,
+    scope: "session:last-turn",
+    restoreMode,
+    availableScopes,
+  }
+}
+
+async function withWorkspaceGitFileStates(directory: string, diff: AgentSessionDiffSummary) {
+  const states = await getWorkspaceGitFileStates(
+    directory,
+    diff.diffs.map((item) => item.file),
+  ).catch((error) => {
+    safeWarn("[desktop] getWorkspaceGitFileStates failed:", error)
+    return null
+  })
+  if (!states) return diff
+
+  return {
+    ...diff,
+    diffs: diff.diffs.map((item) => ({
+      ...item,
+      gitState: states[item.file] ?? "unknown",
+    })),
+  } satisfies AgentSessionDiffSummary
+}
 
 type Awaitable<T> = T | Promise<T>
 type DesktopIpcHandler<Channel extends DesktopIpcChannel> =
@@ -1429,22 +1523,48 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     }
   })
 
-  handleDesktopIpc("desktop:get-session-diff", async (_event, input: { sessionID: string }) => {
+  handleDesktopIpc("desktop:get-session-diff", async (_event, input: { sessionID: string; scope?: AgentSessionDiffScope }) => {
     const sessionID = input.sessionID.trim()
     const sessionResult = await requestAgentJSON<AgentSessionInfo>(`/api/sessions/${encodeURIComponent(sessionID)}`)
-    const workspaceDiff = await getWorkspaceGitDiff(sessionResult.data.directory).catch((error) => {
+    const requestedScope = input.scope
+    const gitScope = requestedScope && GIT_DIFF_SCOPES.has(requestedScope) ? requestedScope as Extract<AgentSessionDiffScope, `git:${string}`> : "git:unstaged"
+    const workspaceDiff = await getWorkspaceGitDiff(sessionResult.data.directory, { scope: gitScope }).catch((error) => {
       safeWarn("[desktop] getWorkspaceGitDiff failed:", error)
       return null
     })
-    if (workspaceDiff) return workspaceDiff
+    if (workspaceDiff && requestedScope !== "session:last-turn") {
+      return {
+        ...workspaceDiff,
+        availableScopes: appendLastTurnScopeOption(workspaceDiff),
+      }
+    }
 
-    const result = await requestAgentJSON<AgentSessionDiffSummary>(`/api/sessions/${encodeURIComponent(sessionID)}/diff`)
-    return result.data
+    const result = await requestAgentJSON<AgentSessionDiffSummary>(
+      `/api/sessions/${encodeURIComponent(sessionID)}/diff?scope=latest-turn`,
+    )
+    const lastTurnDiff = workspaceDiff
+      ? await withWorkspaceGitFileStates(sessionResult.data.directory, result.data)
+      : result.data
+    return withLastTurnScope(
+      lastTurnDiff,
+      workspaceDiff ? appendLastTurnScopeOption(workspaceDiff, lastTurnDiff) : createNonGitScopeOptions(lastTurnDiff),
+      workspaceDiff ? "patch" : "none",
+    )
   })
 
   handleDesktopIpc(
     "desktop:restore-workspace-diff-file",
     async (_event, input: { directory: string; file: string }) => restoreWorkspaceDiffFile(input),
+  )
+
+  handleDesktopIpc(
+    "desktop:stage-workspace-diff-file",
+    async (_event, input: { directory: string; file: string }) => stageWorkspaceDiffFile(input),
+  )
+
+  handleDesktopIpc(
+    "desktop:unstage-workspace-diff-file",
+    async (_event, input: { directory: string; file: string }) => unstageWorkspaceDiffFile(input),
   )
 
   handleDesktopIpc(
