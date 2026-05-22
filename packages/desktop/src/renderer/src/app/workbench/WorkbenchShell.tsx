@@ -451,6 +451,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       const appliedSignature = getSerializedDockviewSignature(appliedLayout)
       lastAppliedSerializedSignatureRef.current = appliedSignature
       lastEmittedSerializedSignatureRef.current = appliedSignature
+      if (appliedSignature !== serializedSignature) {
+        latestPropsRef.current.onLayoutChange(appliedLayout)
+      }
       emitActiveDockviewChangeFromLayout(appliedLayout)
     } catch (error) {
       console.warn("[desktop] Failed to apply Dockview workbench layout; using an empty layout.", error)
@@ -458,6 +461,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       const emptySignature = getSerializedDockviewSignature(null)
       lastAppliedSerializedSignatureRef.current = emptySignature
       lastEmittedSerializedSignatureRef.current = emptySignature
+      if (serializedSignature !== emptySignature) {
+        latestPropsRef.current.onLayoutChange(null)
+      }
       emitActiveDockviewChangeFromLayout(null)
     } finally {
       isApplyingLayoutRef.current = false
@@ -540,6 +546,25 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     if (!api) return
     syncDockviewFromLayout(api, dockviewLayout)
   }, [api, dockviewLayout, syncDockviewFromLayout])
+
+  useEffect(() => {
+    if (!api || !dockviewLayout || api.totalPanels > 0) return
+
+    const frameID = window.requestAnimationFrame(() => {
+      if (api.totalPanels > 0) return
+
+      const currentLayout = latestPropsRef.current.store.getState().workbench.dockviewLayout
+      if (!currentLayout) return
+
+      const emptySignature = getSerializedDockviewSignature(null)
+      lastAppliedSerializedSignatureRef.current = emptySignature
+      lastEmittedSerializedSignatureRef.current = emptySignature
+      latestPropsRef.current.onLayoutChange(null)
+      emitActiveDockviewChangeFromLayout(null)
+    })
+
+    return () => window.cancelAnimationFrame(frameID)
+  }, [api, dockviewLayout, emitActiveDockviewChangeFromLayout])
 
   useEffect(() => {
     if (!api) return

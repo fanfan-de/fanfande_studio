@@ -180,6 +180,7 @@ const dockviewMock = vi.hoisted(() => {
       api.onDidLayoutChange.mockClear()
       api.onWillDragPanel.mockClear()
       api.toJSON.mockClear()
+      api.totalPanels = 1
       headerPanelApi.close.mockClear()
       headerPanelApi.isActive = false
       headerPanelApi.onDidActiveChange.mockClear()
@@ -316,6 +317,113 @@ function createProps(overrides: Partial<WorkbenchShellProps> = {}): WorkbenchShe
 describe("WorkbenchShell detach", () => {
   afterEach(() => {
     vi.clearAllMocks()
+  })
+
+  it("clears stale store layout when Dockview rejects the restored layout", async () => {
+    dockviewMock.reset()
+    const staleLayout = {
+      activeGroup: "group-1",
+      grid: {
+        height: 800,
+        orientation: "HORIZONTAL",
+        root: {
+          data: [
+            {
+              data: {
+                activeView: "session:session-1",
+                id: "group-1",
+                views: ["session:session-1"],
+              },
+              size: 1000,
+              type: "leaf",
+            },
+          ],
+          type: "branch",
+        },
+        width: 1200,
+      },
+      panels: {
+        "session:session-1": {
+          contentComponent: "workbench-panel",
+          id: "session:session-1",
+          params: {
+            kind: "session",
+            sessionID: "session-1",
+          },
+          tabComponent: "workbench-tab",
+          title: "Session 1",
+        },
+      },
+    } as unknown as SerializedDockview
+    const store = createWorkspaceStore({
+      hasFolderWorkspaceLoader: true,
+      initialComposerTabKey: null,
+      initialCreateSessionTab: null,
+      initialDockviewLayout: staleLayout,
+    })
+    const onLayoutChange = vi.fn()
+    dockviewMock.api.fromJSON.mockImplementationOnce(() => {
+      throw new Error("Cannot apply layout")
+    })
+
+    render(<WorkbenchShell {...createProps({ onLayoutChange, store })} />)
+
+    await waitFor(() => {
+      expect(dockviewMock.api.clear).toHaveBeenCalledTimes(1)
+      expect(onLayoutChange).toHaveBeenCalledWith(null)
+    })
+  })
+
+  it("clears stale store layout when restored panels are not mounted", async () => {
+    dockviewMock.reset()
+    dockviewMock.api.totalPanels = 0
+    const staleLayout = {
+      activeGroup: "group-1",
+      grid: {
+        height: 800,
+        orientation: "HORIZONTAL",
+        root: {
+          data: [
+            {
+              data: {
+                activeView: "session:session-1",
+                id: "group-1",
+                views: ["session:session-1"],
+              },
+              size: 1000,
+              type: "leaf",
+            },
+          ],
+          type: "branch",
+        },
+        width: 1200,
+      },
+      panels: {
+        "session:session-1": {
+          contentComponent: "workbench-panel",
+          id: "session:session-1",
+          params: {
+            kind: "session",
+            sessionID: "session-1",
+          },
+          tabComponent: "workbench-tab",
+          title: "Session 1",
+        },
+      },
+    } as unknown as SerializedDockview
+    const store = createWorkspaceStore({
+      hasFolderWorkspaceLoader: true,
+      initialComposerTabKey: null,
+      initialCreateSessionTab: null,
+      initialDockviewLayout: staleLayout,
+    })
+    const onLayoutChange = vi.fn()
+
+    render(<WorkbenchShell {...createProps({ onLayoutChange, store })} />)
+
+    await waitFor(() => {
+      expect(onLayoutChange).toHaveBeenCalledWith(null)
+    })
   })
 
   it("emits active panel changes without serializing the Dockview layout", async () => {
