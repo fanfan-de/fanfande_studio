@@ -35,7 +35,9 @@ function normalizeGitHubRemote(remoteUrl) {
     return `https://github.com/${sshMatch[1]}/${sshMatch[2]}`
   }
 
-  const httpsMatch = remoteUrl.match(/^https:\/\/github\.com\/(.+?)\/(.+?)(?:\.git)?$/)
+  const httpsMatch = remoteUrl.match(
+    /^https:\/\/(?:[^/@]+@)?github\.com\/(.+?)\/(.+?)(?:\.git)?$/,
+  )
   if (httpsMatch) {
     return `https://github.com/${httpsMatch[1]}/${httpsMatch[2]}`
   }
