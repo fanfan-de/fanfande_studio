@@ -170,18 +170,21 @@ export function useReviewPanelController({
   }
 
   function collectDirectoryCacheKeysForChangedPaths(scopeDirectory: string, changedPaths: string[]) {
-    const keys = new Set<string>([""])
+    const keys = new Set<string>()
     for (const changedPath of changedPaths) {
       const relativePath = resolveRelativeWorkspaceEventPath(scopeDirectory, changedPath)
       if (relativePath === null) continue
+      if (!relativePath) {
+        keys.add("")
+        continue
+      }
+
       const segments = relativePath.split("/").filter(Boolean)
       if (segments.length === 0) continue
 
-      let current = ""
-      for (let index = 0; index < segments.length; index += 1) {
-        current = current ? `${current}/${segments[index]}` : segments[index]!
-        keys.add(current)
-      }
+      const parentDirectory = segments.slice(0, -1).join("/")
+      keys.add(parentDirectory)
+      keys.add(relativePath)
     }
     return keys
   }
@@ -785,16 +788,26 @@ export function useReviewPanelController({
     if (!tabID || !scopeDirectory) return
 
     const invalidatedKeys = collectDirectoryCacheKeysForChangedPaths(scopeDirectory, paths)
-    setRightSidebarFileState(tabID, (current) => ({
-      ...current,
-      treeEntriesByDirectoryPath: Object.fromEntries(
-        Object.entries(current.treeEntriesByDirectoryPath).filter(([key]) => !invalidatedKeys.has(key)),
-      ),
-      treeErrorByDirectoryPath: Object.fromEntries(
-        Object.entries(current.treeErrorByDirectoryPath).filter(([key]) => !invalidatedKeys.has(key)),
-      ),
-      treeLoadingDirectoryPaths: current.treeLoadingDirectoryPaths.filter((item) => !invalidatedKeys.has(item)),
-    }))
+    if (invalidatedKeys.size === 0) return
+
+    setRightSidebarFileState(tabID, (current) => {
+      const hasInvalidatedTreeState =
+        Object.keys(current.treeEntriesByDirectoryPath).some((key) => invalidatedKeys.has(key)) ||
+        Object.keys(current.treeErrorByDirectoryPath).some((key) => invalidatedKeys.has(key)) ||
+        current.treeLoadingDirectoryPaths.some((item) => invalidatedKeys.has(item))
+      if (!hasInvalidatedTreeState) return current
+
+      return {
+        ...current,
+        treeEntriesByDirectoryPath: Object.fromEntries(
+          Object.entries(current.treeEntriesByDirectoryPath).filter(([key]) => !invalidatedKeys.has(key)),
+        ),
+        treeErrorByDirectoryPath: Object.fromEntries(
+          Object.entries(current.treeErrorByDirectoryPath).filter(([key]) => !invalidatedKeys.has(key)),
+        ),
+        treeLoadingDirectoryPaths: current.treeLoadingDirectoryPaths.filter((item) => !invalidatedKeys.has(item)),
+      }
+    })
   }
 
   async function handleWorkspaceFileSelect(path: string, options: WorkspaceFileSelectOptions = {}) {

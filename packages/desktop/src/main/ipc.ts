@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type WebContents } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type SaveDialogOptions, type SaveDialogReturnValue, type WebContents } from "electron"
 import { createPlatformAdapter } from "@anybox/platform"
 import { DesktopIpcSchemas } from "@anybox/shared"
 import { mkdir, writeFile } from "node:fs/promises"
@@ -92,6 +92,7 @@ import type {
   AgentSessionHistoryMessage,
   AgentSessionInfo,
   AgentSessionRuntimeDebugSnapshot,
+  AgentSessionTraceExport,
   AgentSessionTurnRequestInput,
   AgentSessionWorkflowUpdateInput,
   AgentSideChatLink,
@@ -328,6 +329,89 @@ async function updateToolPermissionMode(input: AgentToolPermissionModePayload) {
   })
 
   return result.data
+}
+
+type SessionTraceExportInput = DesktopIpcInput<"desktop:get-session-trace-export">
+type SaveSessionTraceExportInput = DesktopIpcInput<"desktop:save-session-trace-export">
+
+interface SaveSessionTraceExportOptions {
+  downloadsPath?: string
+  now?: Date
+  showSaveDialog?: (options: SaveDialogOptions) => Promise<SaveDialogReturnValue>
+  writeTraceFile?: (filePath: string, data: string, encoding: BufferEncoding) => Promise<unknown>
+}
+
+function sanitizeSessionTraceFileSegment(value: string) {
+  return (
+    value
+      .trim()
+      .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
+      .replace(/[^a-z0-9._-]+/gi, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "session"
+  )
+}
+
+function formatSessionTraceTimestamp(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, "0")
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    "-",
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join("")
+}
+
+async function getSessionTraceExport(input: SessionTraceExportInput) {
+  const sessionID = input.sessionID.trim()
+  const result = await requestAgentJSON<AgentSessionTraceExport>(
+    `/api/debug/sessions/${encodeURIComponent(sessionID)}/trace-export`,
+  )
+
+  return result.data
+}
+
+async function saveSessionTraceExport(
+  input: SaveSessionTraceExportInput,
+  options: SaveSessionTraceExportOptions = {},
+) {
+  const trace = await getSessionTraceExport(input)
+  const sessionID = input.sessionID.trim()
+  const safeSessionID = sanitizeSessionTraceFileSegment(sessionID)
+  const timestamp = formatSessionTraceTimestamp(options.now ?? new Date())
+  const defaultPath = path.join(
+    options.downloadsPath ?? app.getPath("downloads"),
+    `anybox-trace-${safeSessionID}-${timestamp}.json`,
+  )
+  const showSaveDialog = options.showSaveDialog ?? ((dialogOptions: SaveDialogOptions) =>
+    dialog.showSaveDialog(dialogOptions))
+  const selection = await showSaveDialog({
+    defaultPath,
+    filters: [
+      {
+        name: "JSON",
+        extensions: ["json"],
+      },
+    ],
+    properties: ["createDirectory", "showOverwriteConfirmation"],
+    title: "Save session trace JSON",
+  })
+
+  if (selection.canceled || !selection.filePath) {
+    return { canceled: true }
+  }
+
+  const writeTraceFile = options.writeTraceFile ?? ((filePath: string, data: string, encoding: BufferEncoding) =>
+    writeFile(filePath, data, encoding))
+  await writeTraceFile(selection.filePath, `${JSON.stringify(trace, null, 2)}\n`, "utf8")
+
+  return {
+    canceled: false,
+    path: selection.filePath,
+  }
 }
 
 type SessionStreamSubscription = {
@@ -1388,6 +1472,16 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
 
       return result.data
     },
+  )
+
+  handleDesktopIpc(
+    "desktop:get-session-trace-export",
+    async (_event, input: SessionTraceExportInput) => getSessionTraceExport(input),
+  )
+
+  handleDesktopIpc(
+    "desktop:save-session-trace-export",
+    async (_event, input: SaveSessionTraceExportInput) => saveSessionTraceExport(input),
   )
 
   handleDesktopIpc(
@@ -3106,10 +3200,12 @@ export const internal = {
   abortActiveAgentSessionRequestsInMap,
   capturePreviewScreenshotFromWindow,
   disposeSessionStreamSubscriptionsForWebContents,
+  getSessionTraceExport,
   getToolPermissionMode,
   isSessionStreamSubscriptionKeyForWebContents,
   readPreviewText,
   resolvePreviewTarget,
   saveComposerPastedImages,
+  saveSessionTraceExport,
   updateToolPermissionMode,
 }

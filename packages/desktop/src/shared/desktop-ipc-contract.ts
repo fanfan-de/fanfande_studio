@@ -50,6 +50,7 @@ import type {
   AgentSessionQuestionAnswerInput,
   AgentSessionQuestionAnswerResult,
   AgentSessionRuntimeDebugSnapshot,
+  AgentSessionTraceExport,
   AgentSessionTurnRequestInput,
   AgentSessionWorkflowUpdateInput,
   AgentSideChatLink,
@@ -138,6 +139,7 @@ export type {
   AgentSessionQuestionAnswerInput,
   AgentSessionQuestionAnswerResult,
   AgentSessionRuntimeDebugSnapshot,
+  AgentSessionTraceExport,
   AgentSessionTurnRequestInput,
   AgentSessionWorkflowUpdateInput,
   AgentSideChatLink,
@@ -636,6 +638,11 @@ export interface DesktopAgentSessionUnsubscribeResult {
   removed: boolean
 }
 
+export interface DesktopSaveSessionTraceExportResult {
+  canceled: boolean
+  path?: string
+}
+
 export interface DesktopIpcContract {
   "desktop:get-info": {
     input: void
@@ -931,6 +938,14 @@ export interface DesktopIpcContract {
   "desktop:get-session-runtime-debug": {
     input: { sessionID: string; limit?: number; turns?: number }
     output: AgentSessionRuntimeDebugSnapshot
+  }
+  "desktop:get-session-trace-export": {
+    input: { sessionID: string }
+    output: AgentSessionTraceExport
+  }
+  "desktop:save-session-trace-export": {
+    input: { sessionID: string }
+    output: DesktopSaveSessionTraceExportResult
   }
   "desktop:update-session-workflow": {
     input: { sessionID: string } & AgentSessionWorkflowUpdateInput
@@ -1474,6 +1489,8 @@ export interface DesktopApiMethods {
   restoreWorkspaceDiffFile(input: DesktopIpcInput<"desktop:restore-workspace-diff-file">): Promise<DesktopIpcOutput<"desktop:restore-workspace-diff-file">>
   reverseApplyWorkspaceDiffPatches(input: DesktopIpcInput<"desktop:reverse-apply-workspace-diff-patches">): Promise<DesktopIpcOutput<"desktop:reverse-apply-workspace-diff-patches">>
   getSessionRuntimeDebug(input: DesktopIpcInput<"desktop:get-session-runtime-debug">): Promise<DesktopIpcOutput<"desktop:get-session-runtime-debug">>
+  getSessionTraceExport(input: DesktopIpcInput<"desktop:get-session-trace-export">): Promise<DesktopIpcOutput<"desktop:get-session-trace-export">>
+  saveSessionTraceExport(input: DesktopIpcInput<"desktop:save-session-trace-export">): Promise<DesktopIpcOutput<"desktop:save-session-trace-export">>
   agentSession: DesktopAgentSessionApi
   getGlobalProviderCatalog(): Promise<DesktopIpcOutput<"desktop:get-global-provider-catalog">>
   refreshGlobalProviderCatalog(): Promise<DesktopIpcOutput<"desktop:refresh-global-provider-catalog">>

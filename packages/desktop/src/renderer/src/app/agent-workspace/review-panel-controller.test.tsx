@@ -458,6 +458,94 @@ describe("review panel controller", () => {
     })
   })
 
+  it("keeps the root file tree cache when a nested workspace file changes", () => {
+    const workspace = createWorkspace()
+    const fileState: WorkspaceFileReviewState = {
+      ...DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+      scopeDirectory: workspace.directory,
+      treeEntriesByDirectoryPath: {
+        "": [
+          {
+            path: "src",
+            name: "src",
+            kind: "directory",
+            extension: null,
+            hasChildren: true,
+          },
+          {
+            path: "README.md",
+            name: "README.md",
+            kind: "file",
+            extension: "md",
+            hasChildren: false,
+          },
+        ],
+        src: [
+          {
+            path: "src/App.tsx",
+            name: "App.tsx",
+            kind: "file",
+            extension: "tsx",
+            hasChildren: false,
+          },
+        ],
+      },
+      treeExpandedDirectoryPaths: ["src"],
+    }
+
+    const { result } = renderHook(() => useControllerHarness({
+      activeTabID: "files-tab",
+      initialTabs: [createFilesTab(fileState, workspace)],
+      workspace,
+    }))
+
+    act(() => {
+      result.current.controller.handleWorkspaceFileTreeInvalidate([
+        "C:\\work\\workspace-1\\src\\App.tsx",
+      ])
+    })
+
+    const filesTab = result.current.rightSidebarTabs.find((tab) => tab.id === "files-tab")
+    const nextState = filesTab?.kind === "files" ? filesTab.state : null
+    expect(nextState?.treeEntriesByDirectoryPath[""]).toEqual(fileState.treeEntriesByDirectoryPath[""])
+    expect(nextState?.treeEntriesByDirectoryPath.src).toBeUndefined()
+  })
+
+  it("invalidates the root file tree cache when a top-level workspace entry changes", () => {
+    const workspace = createWorkspace()
+    const fileState: WorkspaceFileReviewState = {
+      ...DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+      scopeDirectory: workspace.directory,
+      treeEntriesByDirectoryPath: {
+        "": [
+          {
+            path: "README.md",
+            name: "README.md",
+            kind: "file",
+            extension: "md",
+            hasChildren: false,
+          },
+        ],
+      },
+    }
+
+    const { result } = renderHook(() => useControllerHarness({
+      activeTabID: "files-tab",
+      initialTabs: [createFilesTab(fileState, workspace)],
+      workspace,
+    }))
+
+    act(() => {
+      result.current.controller.handleWorkspaceFileTreeInvalidate([
+        "C:\\work\\workspace-1\\README.md",
+      ])
+    })
+
+    const filesTab = result.current.rightSidebarTabs.find((tab) => tab.id === "files-tab")
+    const nextState = filesTab?.kind === "files" ? filesTab.state : null
+    expect(nextState?.treeEntriesByDirectoryPath[""]).toBeUndefined()
+  })
+
   it("restores multiple active session diff files and refreshes once", async () => {
     const workspace = createWorkspace()
     const previousDesktop = window.desktop

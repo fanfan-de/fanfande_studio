@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { ExternalEditorMenuButton } from "../external-editor/ExternalEditorMenuButton"
 import { GitQuickMenuButton } from "../git/GitQuickMenuButton"
-import { ChevronDownIcon } from "../icons"
-import { ShellTopMenu, SideChatBadge } from "../shared-ui"
+import { ChevronDownIcon, CopyIcon, DownloadIcon } from "../icons"
+import { ShellTopMenu, SideChatBadge, writeTextToClipboard } from "../shared-ui"
 import type {
   ComposerMcpOption,
   ComposerPluginOption,
@@ -467,6 +467,153 @@ function ProjectSkillsMenuButton({
   )
 }
 
+function SessionTraceExportMenuButton({ sessionID }: { sessionID: string }) {
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [busyAction, setBusyAction] = useState<"copy" | "save" | null>(null)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isMenuOpen) return
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return
+      setIsMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false)
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [isMenuOpen])
+
+  function resetStatus() {
+    setStatusMessage(null)
+    setErrorMessage(null)
+  }
+
+  function readErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error)
+  }
+
+  async function loadTraceJSON() {
+    if (!window.desktop?.getSessionTraceExport) {
+      throw new Error("Trace export is unavailable.")
+    }
+
+    const trace = await window.desktop.getSessionTraceExport({ sessionID })
+    return JSON.stringify(trace, null, 2)
+  }
+
+  async function handleCopyClick() {
+    resetStatus()
+    setBusyAction("copy")
+
+    try {
+      await writeTextToClipboard(await loadTraceJSON())
+      setStatusMessage("Trace JSON copied.")
+    } catch (error) {
+      setErrorMessage(readErrorMessage(error))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleSaveClick() {
+    resetStatus()
+    setBusyAction("save")
+
+    try {
+      if (!window.desktop?.saveSessionTraceExport) {
+        throw new Error("Trace export save is unavailable.")
+      }
+
+      const result = await window.desktop.saveSessionTraceExport({ sessionID })
+      if (!result.canceled) {
+        setStatusMessage("Trace JSON saved.")
+      }
+    } catch (error) {
+      setErrorMessage(readErrorMessage(error))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  return (
+    <div className="canvas-top-menu-selector-anchor">
+      <button
+        ref={buttonRef}
+        type="button"
+        className={isMenuOpen ? "canvas-top-menu-button canvas-top-menu-trace-trigger is-active" : "canvas-top-menu-button canvas-top-menu-trace-trigger"}
+        aria-controls="canvas-top-menu-trace-menu"
+        aria-expanded={isMenuOpen}
+        aria-haspopup="menu"
+        aria-label="Export session trace"
+        title="Export session trace"
+        disabled={busyAction !== null}
+        onClick={() => {
+          resetStatus()
+          setIsMenuOpen((current) => !current)
+        }}
+      >
+        <DownloadIcon />
+      </button>
+
+      {isMenuOpen ? (
+        <div
+          ref={menuRef}
+          id="canvas-top-menu-trace-menu"
+          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel canvas-top-menu-context-panel canvas-top-menu-trace-panel"
+          role="menu"
+          aria-label="Session trace export"
+        >
+          <button
+            className="canvas-top-menu-context-option canvas-top-menu-trace-option"
+            disabled={busyAction !== null}
+            onClick={() => void handleCopyClick()}
+            role="menuitem"
+            type="button"
+          >
+            <span className="canvas-top-menu-context-option-label">
+              <CopyIcon />
+              <strong>Copy trace JSON</strong>
+            </span>
+            <span className="canvas-top-menu-context-option-status">{busyAction === "copy" ? "Copying" : "Copy"}</span>
+          </button>
+          <button
+            className="canvas-top-menu-context-option canvas-top-menu-trace-option"
+            disabled={busyAction !== null}
+            onClick={() => void handleSaveClick()}
+            role="menuitem"
+            type="button"
+          >
+            <span className="canvas-top-menu-context-option-label">
+              <DownloadIcon />
+              <strong>Save trace JSON</strong>
+            </span>
+            <span className="canvas-top-menu-context-option-status">{busyAction === "save" ? "Saving" : "Save"}</span>
+          </button>
+          {statusMessage ? <p className="canvas-top-menu-quick-status">{statusMessage}</p> : null}
+          {errorMessage ? <p className="canvas-top-menu-quick-status is-error">{errorMessage}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export function SessionCanvasTopMenu({
   activeSession,
   gitProjectID,
@@ -512,6 +659,7 @@ export function SessionCanvasTopMenu({
       trailing={(
         <>
           <ExternalEditorMenuButton directory={gitDirectory} />
+          {activeSession ? <SessionTraceExportMenuButton sessionID={activeSession.id} /> : null}
           {!readOnlySideChat ? (
             <>
               <ToolPermissionModeMenuButton

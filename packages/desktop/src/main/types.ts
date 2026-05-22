@@ -666,6 +666,55 @@ export interface AgentSessionRuntimeDebugSnapshot {
   }
 }
 
+export interface AgentSessionTraceExport {
+  schemaVersion: 1
+  generatedAt: number
+  mode: "safe"
+  session: AgentSessionRuntimeDebugSnapshot["session"]
+  stats: {
+    messageCount: number
+    eventCount: number
+    turnCount: number
+    toolCallCount: number
+    redactedCount: number
+    truncatedCount: number
+  }
+  redaction: {
+    enabled: true
+    maxStringLength: number
+    redactedKeyPattern: string
+  }
+  messages: unknown[]
+  events: Array<{
+    eventID: string
+    sessionID: string
+    turnID: string
+    seq: number
+    timestamp: number
+    type: string
+    payload: unknown
+  }>
+  runtime: AgentSessionRuntimeDebugSnapshot
+  toolCalls: Array<{
+    callID: string
+    tool: string
+    status: string
+    turnID?: string
+    messageID?: string
+    title?: string
+    input?: unknown
+    rawInput?: string
+    output?: unknown
+    modelOutput?: unknown
+    error?: string
+    approvalID?: string
+    startedAt?: number
+    endedAt?: number
+    durationMs?: number
+    eventIDs: string[]
+  }>
+}
+
 export type {
   AgentPermissionDecision,
   AgentPermissionPromptSnapshot,

@@ -6,7 +6,9 @@ import * as LiveStreamHub from "#session/runtime/live-stream-hub.ts"
 import * as RunningState from "#session/runtime/running-state.ts"
 import * as SessionRunner from "#session/runtime/session-runner.ts"
 import { getSessionRuntimeDebugSnapshot } from "#session/runtime/runtime-debug.ts"
+import { buildAgentSessionTraceExport } from "#session/runtime/trace-export.ts"
 import * as Session from "#session/core/session.ts"
+import * as SessionUseCase from "#server/usecases/session.ts"
 import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "server.debug" })
@@ -311,6 +313,41 @@ export function DebugRoutes() {
     return c.json({
       success: true,
       data: detail,
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/sessions/:id/trace-export", async (c) => {
+    const sessionID = c.req.param("id")
+    const session = Session.DataBaseRead("sessions", sessionID) as Session.SessionInfo | null
+    if (!session) {
+      throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
+    }
+
+    const events = EventStore.listSessionEvents({ sessionID })
+    const runtime = getSessionRuntimeDebugSnapshot({
+      sessionID,
+      eventLimit: 100,
+      turnLimit: 20,
+    })
+    const messages = await SessionUseCase.listSessionMessages(sessionID, { view: "all" })
+    const trace = buildAgentSessionTraceExport({
+      events,
+      messages,
+      runtime,
+    })
+
+    log.info("session trace export requested", {
+      requestId: c.get("requestId"),
+      sessionID,
+      eventCount: events.length,
+      messageCount: messages.length,
+      toolCallCount: trace.toolCalls.length,
+    })
+
+    return c.json({
+      success: true,
+      data: trace,
       requestId: c.get("requestId"),
     })
   })

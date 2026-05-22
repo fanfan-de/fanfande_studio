@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { useState } from "react"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { SessionSummary, ToolPermissionMode } from "../types"
 import { SessionCanvasTopMenu } from "./SessionCanvasTopMenu"
 
@@ -52,6 +52,17 @@ function renderTopMenu(
     ...render(<SessionCanvasTopMenu {...props} />),
   }
 }
+
+function setDesktopApi(api: Partial<NonNullable<typeof window.desktop>>) {
+  Object.defineProperty(window, "desktop", {
+    configurable: true,
+    value: api,
+  })
+}
+
+beforeEach(() => {
+  setDesktopApi({})
+})
 
 describe("SessionCanvasTopMenu project skills", () => {
   const skillOptions = [
@@ -185,6 +196,78 @@ describe("SessionCanvasTopMenu project plugins", () => {
     fireEvent.click(within(menu).getByRole("menuitemcheckbox", { name: /Browser/ }))
 
     expect(onPluginToggle).toHaveBeenCalledWith("browser")
+  })
+})
+
+describe("SessionCanvasTopMenu trace export", () => {
+  it("copies safe trace JSON for the active session", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const getSessionTraceExport = vi.fn().mockResolvedValue({
+      schemaVersion: 1,
+      mode: "safe",
+      session: {
+        id: "session-1",
+        missing: false,
+      },
+      messages: [],
+      events: [],
+      runtime: {},
+      toolCalls: [],
+      stats: {
+        messageCount: 0,
+        eventCount: 0,
+        turnCount: 0,
+        toolCallCount: 0,
+        redactedCount: 0,
+        truncatedCount: 0,
+      },
+      redaction: {
+        enabled: true,
+        maxStringLength: 20000,
+        redactedKeyPattern: "token",
+      },
+    })
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText,
+      },
+    })
+    setDesktopApi({ getSessionTraceExport })
+
+    renderTopMenu()
+
+    fireEvent.click(screen.getByRole("button", { name: "Export session trace" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: /Copy trace JSON/ }))
+
+    await waitFor(() => {
+      expect(getSessionTraceExport).toHaveBeenCalledWith({ sessionID: "session-1" })
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining('"schemaVersion": 1'))
+    })
+  })
+
+  it("saves safe trace JSON and displays save status", async () => {
+    const saveSessionTraceExport = vi.fn().mockResolvedValue({
+      canceled: false,
+      path: "C:\\Temp\\trace.json",
+    })
+    setDesktopApi({ saveSessionTraceExport })
+
+    renderTopMenu()
+
+    fireEvent.click(screen.getByRole("button", { name: "Export session trace" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: /Save trace JSON/ }))
+
+    await waitFor(() => {
+      expect(saveSessionTraceExport).toHaveBeenCalledWith({ sessionID: "session-1" })
+      expect(screen.getByText("Trace JSON saved.")).toBeInTheDocument()
+    })
+  })
+
+  it("does not show trace export actions without an active session", () => {
+    renderTopMenu({ activeSession: null })
+
+    expect(screen.queryByRole("button", { name: "Export session trace" })).not.toBeInTheDocument()
   })
 })
 

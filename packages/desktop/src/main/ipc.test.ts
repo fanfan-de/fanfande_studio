@@ -175,6 +175,126 @@ describe("ipc tool permission mode helpers", () => {
   })
 })
 
+describe("ipc session trace export helpers", () => {
+  const traceExport = {
+    schemaVersion: 1 as const,
+    generatedAt: 1,
+    mode: "safe" as const,
+    session: {
+      id: "session-1",
+      missing: false,
+    },
+    stats: {
+      messageCount: 1,
+      eventCount: 1,
+      turnCount: 1,
+      toolCallCount: 1,
+      redactedCount: 0,
+      truncatedCount: 0,
+    },
+    redaction: {
+      enabled: true as const,
+      maxStringLength: 20000,
+      redactedKeyPattern: "token",
+    },
+    messages: [],
+    events: [],
+    runtime: {
+      generatedAt: 1,
+      logging: {},
+      session: {
+        id: "session-1",
+        missing: false,
+      },
+      status: {
+        type: "idle" as const,
+      },
+      running: {
+        sessionID: "session-1",
+        startedAt: null,
+        activeForMs: 0,
+      },
+      activeTurnID: null,
+      latestTurn: null,
+      turns: [],
+      recentEvents: [],
+      diagnostics: {
+        blockedOnApproval: false,
+        activeToolCount: 0,
+        failedToolCount: 0,
+        llmFailureCount: 0,
+      },
+    },
+    toolCalls: [],
+  }
+
+  it("loads a safe session trace export from the agent API", async () => {
+    requestAgentJSONMock.mockResolvedValueOnce({
+      data: traceExport,
+    })
+
+    await expect(internal.getSessionTraceExport({ sessionID: " session-1 " })).resolves.toEqual(traceExport)
+    expect(requestAgentJSONMock).toHaveBeenCalledWith("/api/debug/sessions/session-1/trace-export")
+  })
+
+  it("saves formatted session trace JSON through an injected save dialog", async () => {
+    const showSaveDialog = vi.fn().mockResolvedValue({
+      canceled: false,
+      filePath: "C:\\Temp\\trace.json",
+    })
+    const writeTraceFile = vi.fn().mockResolvedValue(undefined)
+    requestAgentJSONMock.mockResolvedValueOnce({
+      data: traceExport,
+    })
+
+    const result = await internal.saveSessionTraceExport(
+      { sessionID: "session-1" },
+      {
+        downloadsPath: "C:\\Downloads",
+        now: new Date(2026, 4, 22, 9, 8, 7),
+        showSaveDialog,
+        writeTraceFile,
+      },
+    )
+
+    expect(result).toEqual({
+      canceled: false,
+      path: "C:\\Temp\\trace.json",
+    })
+    expect(showSaveDialog).toHaveBeenCalledWith(expect.objectContaining({
+      defaultPath: expect.stringContaining("anybox-trace-session-1-20260522-090807.json"),
+      filters: [{ name: "JSON", extensions: ["json"] }],
+      title: "Save session trace JSON",
+    }))
+    expect(writeTraceFile).toHaveBeenCalledWith(
+      "C:\\Temp\\trace.json",
+      `${JSON.stringify(traceExport, null, 2)}\n`,
+      "utf8",
+    )
+  })
+
+  it("does not write a trace file when the save dialog is canceled", async () => {
+    const showSaveDialog = vi.fn().mockResolvedValue({
+      canceled: true,
+    })
+    const writeTraceFile = vi.fn().mockResolvedValue(undefined)
+    requestAgentJSONMock.mockResolvedValueOnce({
+      data: traceExport,
+    })
+
+    await expect(internal.saveSessionTraceExport(
+      { sessionID: "session-1" },
+      {
+        downloadsPath: "C:\\Downloads",
+        showSaveDialog,
+        writeTraceFile,
+      },
+    )).resolves.toEqual({ canceled: true })
+
+    expect(writeTraceFile).not.toHaveBeenCalled()
+  })
+})
+
 describe("ipc preview screenshot helpers", () => {
   it("captures the requested bounds and writes a marker screenshot under user data", async () => {
     const pngBuffer = Buffer.from("preview-marker")

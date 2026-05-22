@@ -15,6 +15,7 @@ import type {
   AgentSessionBridgeIPCEvent,
   AgentSessionHistoryMessage,
   AgentSessionRuntimeDebugSnapshot,
+  AgentSessionTraceExport,
   AgentSessionSummary,
   AgentSessionTurnRequestInput,
   AgentSideChatLink,
@@ -34,6 +35,7 @@ import type {
   DesktopLocalPreviewService,
   DesktopReadPreviewTextResult,
   DesktopResolvedPreviewTarget,
+  DesktopSaveSessionTraceExportResult,
   DesktopPreloadApi,
   WorkbenchStateEvent,
   WorkbenchSharedState,
@@ -338,6 +340,10 @@ try {
       invokeDesktop("desktop:reverse-apply-workspace-diff-patches", input) as Promise<WorkspaceDiffPatchReverseApplyResult>,
     getSessionRuntimeDebug: (input: { sessionID: string; limit?: number; turns?: number }) =>
       invokeDesktop("desktop:get-session-runtime-debug", input) as Promise<AgentSessionRuntimeDebugSnapshot>,
+    getSessionTraceExport: (input: { sessionID: string }) =>
+      invokeDesktop("desktop:get-session-trace-export", input) as Promise<AgentSessionTraceExport>,
+    saveSessionTraceExport: (input: { sessionID: string }) =>
+      invokeDesktop("desktop:save-session-trace-export", input) as Promise<DesktopSaveSessionTraceExportResult>,
     updateSessionWorkflow: (input: DesktopIpcInput<"desktop:update-session-workflow">) =>
       invokeDesktop("desktop:update-session-workflow", input) as Promise<DesktopIpcOutput<"desktop:update-session-workflow">>,
     updateSessionActiveMessage: (input: DesktopIpcInput<"desktop:update-session-active-message">) =>

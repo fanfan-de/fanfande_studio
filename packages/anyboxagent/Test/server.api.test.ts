@@ -1183,6 +1183,172 @@ describe("server api", () => {
     }
   })
 
+  test("GET /api/debug/sessions/:id/trace-export should export a safe raw session trace", async () => {
+    const app = createServerApp()
+    const session = await Session.createSession({
+      directory: process.cwd(),
+      projectID: "project_debug_trace_export",
+      title: "Debug trace export",
+    })
+    const now = Date.now()
+    const userMessageID = Identifier.ascending("message")
+    const assistantMessageID = Identifier.ascending("message")
+    const longOutput = "x".repeat(20_050)
+    const toolPart: Message.ToolPart = {
+      id: Identifier.ascending("part"),
+      sessionID: session.id,
+      messageID: assistantMessageID,
+      type: "tool",
+      callID: "toolcall_debug_trace_export",
+      tool: "grep",
+      state: {
+        status: "error",
+        input: {
+          apiKey: "direct-api-key-value",
+          path: "README.md",
+          nested: {
+            authorization: "Bearer auth-token-value",
+          },
+        },
+        raw: JSON.stringify({
+          apiKey: "raw-api-key-value",
+          path: "README.md",
+        }),
+        error: "grep failed because the pattern was invalid",
+        metadata: {
+          stdout: longOutput,
+          cookie: "cookie-value",
+          screenshot: "data:image/png;base64,AAAA",
+        },
+        time: {
+          start: now,
+          end: now + 7,
+        },
+      },
+    }
+    const assistantMessage: Message.Assistant = {
+      id: assistantMessageID,
+      sessionID: session.id,
+      turnID: Identifier.ascending("turn"),
+      parentMessageID: userMessageID,
+      role: "assistant",
+      created: now,
+      completed: now + 8,
+      parentID: userMessageID,
+      modelID: "test-model",
+      providerID: "test-provider",
+      agent: "default",
+      path: {
+        cwd: process.cwd(),
+        root: process.cwd(),
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+      finishReason: "tool-calls",
+    }
+    const turn = Orchestrator.startTurn({
+      sessionID: session.id,
+      turnID: assistantMessage.turnID,
+      userMessageID,
+      agent: "default",
+      model: {
+        providerID: "test-provider",
+        modelID: "test-model",
+      },
+    })
+
+    try {
+      Session.upsertMessage(assistantMessage)
+      turn.emit("tool.call.failed", {
+        part: toolPart,
+      })
+
+      const response = await app.request(`http://localhost/api/debug/sessions/${session.id}/trace-export`)
+      const body = (await response.json()) as JsonEnvelope<{
+        schemaVersion: 1
+        messages: unknown[]
+        events: Array<{
+          type: string
+          payload: unknown
+        }>
+        runtime: {
+          turns: unknown[]
+        }
+        stats: {
+          messageCount: number
+          eventCount: number
+          toolCallCount: number
+          redactedCount: number
+          truncatedCount: number
+        }
+        toolCalls: Array<{
+          callID: string
+          tool: string
+          status: string
+          input?: Record<string, unknown>
+          rawInput?: string
+          error?: string
+          durationMs?: number
+          eventIDs: string[]
+        }>
+      }>
+
+      expect(response.status).toBe(200)
+      expect(body.success).toBe(true)
+      expect(body.data?.schemaVersion).toBe(1)
+      expect(body.data?.messages).toHaveLength(1)
+      expect(body.data?.events.some((event) => event.type === "turn.started")).toBe(true)
+      expect(body.data?.events.some((event) => event.type === "tool.call.failed")).toBe(true)
+      expect(body.data?.runtime.turns.length).toBeGreaterThanOrEqual(1)
+      expect(body.data?.stats.messageCount).toBe(1)
+      expect(body.data?.stats.eventCount).toBeGreaterThanOrEqual(2)
+      expect(body.data?.stats.toolCallCount).toBe(1)
+      expect(body.data?.stats.redactedCount).toBeGreaterThanOrEqual(4)
+      expect(body.data?.stats.truncatedCount).toBeGreaterThanOrEqual(1)
+
+      const toolCall = body.data?.toolCalls[0]
+      expect(toolCall?.callID).toBe(toolPart.callID)
+      expect(toolCall?.tool).toBe("grep")
+      expect(toolCall?.status).toBe("error")
+      expect(toolCall?.input?.path).toBe("README.md")
+      expect(toolCall?.input?.apiKey).toBe("[REDACTED]")
+      expect(toolCall?.rawInput).toContain("[REDACTED]")
+      expect(toolCall?.error).toBe("grep failed because the pattern was invalid")
+      expect(toolCall?.durationMs).toBe(7)
+      expect(toolCall?.eventIDs.length).toBeGreaterThanOrEqual(1)
+
+      const serialized = JSON.stringify(body.data)
+      expect(serialized).toContain("grep failed because the pattern was invalid")
+      expect(serialized).toContain("[DATA_URL:image/png;length=26]")
+      expect(serialized).toContain("[TRUNCATED originalLength=20050 maxLength=20000]")
+      expect(serialized).not.toContain("direct-api-key-value")
+      expect(serialized).not.toContain("raw-api-key-value")
+      expect(serialized).not.toContain("auth-token-value")
+      expect(serialized).not.toContain("cookie-value")
+    } finally {
+      Orchestrator.finishTurn(turn)
+      Session.removeSession(session.id)
+    }
+  })
+
+  test("GET /api/debug/sessions/:id/trace-export should return 404 for a missing session", async () => {
+    const app = createServerApp()
+    const response = await app.request("http://localhost/api/debug/sessions/session_missing_trace_export/trace-export")
+    const body = (await response.json()) as JsonEnvelope
+
+    expect(response.status).toBe(404)
+    expect(body.success).toBe(false)
+    expect(body.error?.code).toBe("SESSION_NOT_FOUND")
+  })
+
   test("POST /api/sessions should validate payload", async () => {
     const app = createServerApp()
     const response = await app.request("http://localhost/api/sessions", {
