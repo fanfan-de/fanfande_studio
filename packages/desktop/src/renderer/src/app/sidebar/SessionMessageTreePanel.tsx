@@ -55,6 +55,12 @@ interface MessageTreeGraphPan {
   y: number
 }
 
+interface MessageTreeGraphAnchor {
+  messageID: string
+  screenX: number
+  screenY: number
+}
+
 const COLLAPSED_NODE_HEIGHT = 56
 const COLLAPSED_NODE_WIDTH = 136
 const EXPANDED_RESPONSE_NODE_HEIGHT = 270
@@ -202,7 +208,7 @@ export function SessionMessageTreePanel({
   const canvasPanStateRef = useRef<MessageTreeCanvasPanState | null>(null)
   const graphPanLayoutKeyRef = useRef<string | null>(null)
   const graphPanWasUserControlledRef = useRef(false)
-  const pendingCenterResponseIDRef = useRef<string | null>(null)
+  const pendingGraphAnchorRef = useRef<MessageTreeGraphAnchor | null>(null)
   const [graphPan, setGraphPan] = useState<MessageTreeGraphPan>({ x: 0, y: 0 })
   const graphPanRef = useRef<MessageTreeGraphPan>(graphPan)
   const [graphZoom, setGraphZoom] = useState(1)
@@ -278,32 +284,22 @@ export function SessionMessageTreePanel({
       })
     }
 
-    function centerGraphNode(messageID: string) {
-      const canvasSize = readCanvasSize()
-      if (!canvasSize) return
-
-      const node = layout.nodes.find((layoutNode) => layoutNode.id === messageID)
-      if (!node) {
-        centerGraph()
-        return
-      }
-
-      const zoom = graphZoomRef.current
-      const nodeCenterX = node.x
-      const nodeCenterY = node.y - 8 + node.height / 2
-      setGraphPanPosition({
-        x: Math.round(canvasSize.canvasWidth / 2 - nodeCenterX * zoom),
-        y: Math.round(canvasSize.canvasHeight / 2 - nodeCenterY * zoom),
-      })
-    }
-
     if (graphPanLayoutKeyRef.current !== graphLayoutKey) {
       graphPanLayoutKeyRef.current = graphLayoutKey
-      const pendingCenterResponseID = pendingCenterResponseIDRef.current
-      pendingCenterResponseIDRef.current = null
-      if (pendingCenterResponseID) {
+      const pendingGraphAnchor = pendingGraphAnchorRef.current
+      pendingGraphAnchorRef.current = null
+      if (pendingGraphAnchor) {
+        const anchoredNode = layout.nodes.find((layoutNode) => layoutNode.id === pendingGraphAnchor.messageID)
         graphPanWasUserControlledRef.current = true
-        centerGraphNode(pendingCenterResponseID)
+        if (anchoredNode) {
+          const zoom = graphZoomRef.current
+          setGraphPanPosition({
+            x: Math.round(pendingGraphAnchor.screenX - anchoredNode.x * zoom),
+            y: Math.round(pendingGraphAnchor.screenY - anchoredNode.y * zoom),
+          })
+        } else {
+          centerGraph()
+        }
       } else {
         graphPanWasUserControlledRef.current = false
         centerGraph()
@@ -518,14 +514,34 @@ export function SessionMessageTreePanel({
     })
   }
 
+  function preserveGraphNodeScreenPosition(messageID: string) {
+    const layoutNode = graphLayout?.nodes.find((node) => node.id === messageID)
+    if (!layoutNode) {
+      pendingGraphAnchorRef.current = null
+      return
+    }
+
+    const zoom = graphZoomRef.current
+    const pan = graphPanRef.current
+    pendingGraphAnchorRef.current = {
+      messageID,
+      screenX: pan.x + layoutNode.x * zoom,
+      screenY: pan.y + layoutNode.y * zoom,
+    }
+  }
+
   function toggleExpandedResponse(messageID: string) {
     const shouldExpand = expandedResponseMessageID !== messageID
-    pendingCenterResponseIDRef.current = messageID
+    preserveGraphNodeScreenPosition(messageID)
     setExpandedResponseMessageID(shouldExpand ? messageID : null)
   }
 
   function collapseExpandedResponse(messageID: string | null = expandedResponseMessageID) {
-    pendingCenterResponseIDRef.current = messageID
+    if (messageID) {
+      preserveGraphNodeScreenPosition(messageID)
+    } else {
+      pendingGraphAnchorRef.current = null
+    }
     setExpandedResponseMessageID(null)
   }
 
@@ -551,7 +567,7 @@ export function SessionMessageTreePanel({
           targetMessageID !== expandedResponseMessageID &&
           canExpandMessageTreeNode(targetNode)
         ) {
-          pendingCenterResponseIDRef.current = targetMessageID
+          preserveGraphNodeScreenPosition(targetMessageID)
           setExpandedResponseMessageID(targetMessageID)
           return
         }

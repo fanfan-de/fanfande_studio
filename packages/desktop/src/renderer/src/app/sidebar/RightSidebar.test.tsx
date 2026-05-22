@@ -140,6 +140,31 @@ function mockMessageTreeCanvasSize(width: number, height: number) {
   }
 }
 
+function readMessageTreeGraphTransform() {
+  const graph = document.querySelector<HTMLDivElement>(".session-message-tree-graph")
+  const transform = graph?.style.transform ?? ""
+  const match = transform.match(/^matrix\(([^,]+),\s*[^,]+,\s*[^,]+,\s*([^,]+),\s*([^,]+),\s*([^)]+)\)$/)
+  if (!match) {
+    throw new Error(`Unable to parse message tree graph transform: ${transform}`)
+  }
+
+  return {
+    scaleX: Number.parseFloat(match[1] ?? "1"),
+    scaleY: Number.parseFloat(match[2] ?? "1"),
+    x: Number.parseFloat(match[3] ?? "0"),
+    y: Number.parseFloat(match[4] ?? "0"),
+  }
+}
+
+function readMessageTreeNodeScreenAnchor(node: Element) {
+  const graphNode = node as HTMLElement
+  const transform = readMessageTreeGraphTransform()
+  return {
+    x: transform.x + Number.parseFloat(graphNode.style.left) * transform.scaleX,
+    y: transform.y + Number.parseFloat(graphNode.style.top) * transform.scaleY,
+  }
+}
+
 function renderRightSidebar(input: {
   activeSession?: WorkspaceGroup["sessions"][number] | null
   canOpenReview?: boolean
@@ -462,7 +487,7 @@ describe("RightSidebar", () => {
     restoreCanvasSize()
   })
 
-  it("expands one assistant response node in place on double click and centers it", () => {
+  it("expands one assistant response node in place on double click without recentering it", () => {
     const restoreCanvasSize = mockMessageTreeCanvasSize(900, 680)
     render(
       <SessionMessageTreePanel
@@ -476,12 +501,16 @@ describe("RightSidebar", () => {
     expect(activeNode).not.toBeNull()
     if (!activeNode) return
 
+    const initialAnchor = readMessageTreeNodeScreenAnchor(activeNode)
+    const initialTransform = document.querySelector<HTMLDivElement>(".session-message-tree-graph")?.style.transform
+
     fireEvent.doubleClick(activeNode)
 
     expect(activeNode).toHaveClass("is-expanded-response")
     expect(activeNode).toHaveAttribute("aria-expanded", "true")
     expect(screen.getByText(/complete response content shown/)).toBeInTheDocument()
-    expect(document.querySelector<HTMLDivElement>(".session-message-tree-graph")?.style.transform).toBe(
+    expect(readMessageTreeNodeScreenAnchor(activeNode)).toEqual(initialAnchor)
+    expect(document.querySelector<HTMLDivElement>(".session-message-tree-graph")?.style.transform).not.toBe(
       "matrix(1, 0, 0, 1, 298, 93)",
     )
 
@@ -489,8 +518,9 @@ describe("RightSidebar", () => {
 
     expect(activeNode).not.toHaveClass("is-expanded-response")
     expect(screen.queryByText(/complete response content shown/)).not.toBeInTheDocument()
+    expect(readMessageTreeNodeScreenAnchor(activeNode)).toEqual(initialAnchor)
     expect(document.querySelector<HTMLDivElement>(".session-message-tree-graph")?.style.transform).toBe(
-      "matrix(1, 0, 0, 1, 358, 200)",
+      initialTransform,
     )
     restoreCanvasSize()
   })
@@ -538,12 +568,14 @@ describe("RightSidebar", () => {
     fireEvent.doubleClick(activeNode)
     expect(activeNode).toHaveClass("is-expanded-response")
 
+    const alternativeAnchor = readMessageTreeNodeScreenAnchor(alternativeNode)
     fireEvent.doubleClick(alternativeNode)
 
     expect(activeNode).not.toHaveClass("is-expanded-response")
     expect(alternativeNode).toHaveClass("is-expanded-response")
     expect(screen.queryByText(/complete response content shown/)).not.toBeInTheDocument()
     expect(screen.getByText(/second complete response content/)).toBeInTheDocument()
+    expect(readMessageTreeNodeScreenAnchor(alternativeNode)).toEqual(alternativeAnchor)
     restoreCanvasSize()
   })
 })
