@@ -99,6 +99,7 @@ import type {
   AgentToolPermissionModePayload,
   AgentWorkspaceSession,
   AgentWorkspaceFileDocument,
+  AgentWorkspaceDirectoryEntry,
   AgentWorkspaceFileSearchResult,
   MenuAnchor,
   MenuKey,
@@ -106,7 +107,7 @@ import type {
 } from "./types"
 import { isWindowMaximized, maximizeFramelessWindow, restoreFramelessWindow, sendWindowState } from "./window-state"
 import { getWorkspaceGitDiff, restoreWorkspaceDiffFile, reverseApplyWorkspaceDiffPatches } from "./workspace-diff"
-import { readWorkspaceFile, searchWorkspaceFiles } from "./workspace-files"
+import { listWorkspaceDirectory, readWorkspaceFile, searchWorkspaceFiles } from "./workspace-files"
 import { WorkspaceWatchManager } from "./workspace-watch"
 import type { WorkbenchWindowManager } from "./workbench-window-manager"
 
@@ -2233,6 +2234,12 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     "desktop:search-workspace-files",
     async (_event, input: { directory: string; query: string }): Promise<AgentWorkspaceFileSearchResult[]> =>
       searchWorkspaceFiles(input.directory, input.query),
+  )
+
+  handleDesktopIpc(
+    "desktop:list-workspace-directory",
+    async (_event, input: { directory: string; path?: string | null }): Promise<AgentWorkspaceDirectoryEntry[]> =>
+      listWorkspaceDirectory(input.directory, input.path),
   )
 
   handleDesktopIpc(

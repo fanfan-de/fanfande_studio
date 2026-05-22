@@ -6,7 +6,7 @@ import type {
   SessionRuntimeDebugState,
   WorkspaceFileReviewState,
 } from "../types"
-import { DEFAULT_SESSION_DIFF_STATE, DEFAULT_SESSION_RUNTIME_DEBUG_STATE, DEFAULT_WORKSPACE_FILE_REVIEW_STATE, resolveWorkspaceFileReviewStatus } from "./review-preview-state"
+import { DEFAULT_SESSION_DIFF_STATE, DEFAULT_SESSION_RUNTIME_DEBUG_STATE, DEFAULT_WORKSPACE_FILE_REVIEW_STATE } from "./review-preview-state"
 import type { SessionDataLoadOptions } from "./session-data-load-cache"
 import { normalizeWorkspacePath } from "./workspace-loading-hooks"
 import type { WorkspaceStateUpdater } from "./workspace-store"
@@ -453,21 +453,17 @@ export function useReviewRefreshCleanupEffect({
   }, [])
 }
 
-export function useWorkspaceFileReviewSearchEffects({
+export function useWorkspaceFileReviewScopeEffects({
   activeWorkspaceFileScopeDirectory,
-  deferredWorkspaceFileQuery,
   platform,
   setWorkspaceFileReviewState,
   workspaceFileReadRequestRef,
-  workspaceFileReviewState,
   workspaceFileSearchRequestRef,
 }: {
   activeWorkspaceFileScopeDirectory: string | null
-  deferredWorkspaceFileQuery: string
   platform: string
   setWorkspaceFileReviewState: (update: WorkspaceStateUpdater<WorkspaceFileReviewState>) => void
   workspaceFileReadRequestRef: MutableRefObject<number>
-  workspaceFileReviewState: WorkspaceFileReviewState
   workspaceFileSearchRequestRef: MutableRefObject<number>
 }) {
   useEffect(() => {
@@ -488,68 +484,4 @@ export function useWorkspaceFileReviewSearchEffects({
     })
   }, [activeWorkspaceFileScopeDirectory, platform])
 
-  useEffect(() => {
-    const searchWorkspaceFiles = window.desktop?.searchWorkspaceFiles
-    const scopeDirectory = workspaceFileReviewState.scopeDirectory
-    const query = deferredWorkspaceFileQuery.trim()
-    if (!searchWorkspaceFiles || !scopeDirectory) return
-
-    if (!query) {
-      setWorkspaceFileReviewState((current) => {
-        const nextErrorMessage = current.selectedFileKind === "unsupported" ? current.errorMessage : null
-        const nextState = {
-          ...current,
-          results: [],
-          errorMessage: nextErrorMessage,
-        }
-
-        return {
-          ...nextState,
-          status: resolveWorkspaceFileReviewStatus(nextState),
-        }
-      })
-      return
-    }
-
-    const requestID = workspaceFileSearchRequestRef.current + 1
-    workspaceFileSearchRequestRef.current = requestID
-    setWorkspaceFileReviewState((current) => ({
-      ...current,
-      errorMessage: current.selectedFileKind === "unsupported" ? current.errorMessage : null,
-      status: "searching",
-    }))
-
-    searchWorkspaceFiles({
-      directory: scopeDirectory,
-      query,
-    })
-      .then((results) => {
-        if (workspaceFileSearchRequestRef.current !== requestID) return
-
-        setWorkspaceFileReviewState((current) => {
-          const nextState = {
-            ...current,
-            results,
-            errorMessage: current.selectedFileKind === "unsupported" ? current.errorMessage : null,
-          }
-
-          return {
-            ...nextState,
-            status: resolveWorkspaceFileReviewStatus(nextState),
-          }
-        })
-      })
-      .catch((error) => {
-        if (workspaceFileSearchRequestRef.current !== requestID) return
-        const message = error instanceof Error ? error.message : String(error)
-
-        setWorkspaceFileReviewState((current) => ({
-          ...current,
-          results: [],
-          errorMessage: message,
-          status: "error",
-        }))
-        console.error("[desktop] searchWorkspaceFiles failed:", error)
-      })
-  }, [deferredWorkspaceFileQuery, platform, workspaceFileReviewState.scopeDirectory])
 }

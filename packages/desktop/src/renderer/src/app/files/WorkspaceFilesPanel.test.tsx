@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { describe, expect, it, vi } from "vitest"
@@ -14,6 +14,10 @@ function createFileReviewState(overrides: Partial<WorkspaceFileReviewState> = {}
     query: "",
     results: [],
     scopeDirectory: "C:/workspace",
+    treeEntriesByDirectoryPath: {},
+    treeErrorByDirectoryPath: {},
+    treeExpandedDirectoryPaths: [],
+    treeLoadingDirectoryPaths: [],
     selectedFileContent: null,
     selectedFileExtension: null,
     selectedFileKind: null,
@@ -23,19 +27,31 @@ function createFileReviewState(overrides: Partial<WorkspaceFileReviewState> = {}
   }
 }
 
-function renderWorkspaceFilesPanel(state: WorkspaceFileReviewState) {
+function renderWorkspaceFilesPanel(
+  state: WorkspaceFileReviewState,
+  handlers: Partial<{
+    onDirectoryLoad: (path: string) => void
+    onDirectoryToggle: (path: string) => void
+    onQueryChange: (value: string) => void
+    onSelectFile: (path: string) => void
+    onTreeInvalidate: (paths: string[]) => void
+  }> = {},
+) {
   return render(
     <WorkspaceFilesPanel
       canInsertCommentsIntoDraft={true}
       scopeDirectory="C:/workspace"
       scopeName="Workspace"
       state={state}
+      onDirectoryLoad={handlers.onDirectoryLoad ?? vi.fn()}
+      onDirectoryToggle={handlers.onDirectoryToggle ?? vi.fn()}
       onPendingCommentCancel={vi.fn()}
       onPendingCommentChange={vi.fn()}
       onPendingCommentConfirm={vi.fn()}
       onPendingCommentStart={vi.fn()}
-      onQueryChange={vi.fn()}
-      onSelectFile={vi.fn()}
+      onQueryChange={handlers.onQueryChange ?? vi.fn()}
+      onSelectFile={handlers.onSelectFile ?? vi.fn()}
+      onTreeInvalidate={handlers.onTreeInvalidate ?? vi.fn()}
     />,
   )
 }
@@ -45,6 +61,90 @@ function readRightSidebarStyles() {
 }
 
 describe("WorkspaceFilesPanel", () => {
+  it("renders the Codex-style open-file empty state and requests the root tree", () => {
+    const onDirectoryLoad = vi.fn()
+
+    renderWorkspaceFilesPanel(createFileReviewState(), { onDirectoryLoad })
+
+    expect(screen.getByText("打开文件")).toBeVisible()
+    expect(screen.getByText("从工作区目录树中选择文件")).toBeVisible()
+    expect(screen.getByRole("searchbox", { name: "Filter workspace files" })).toBeVisible()
+    expect(onDirectoryLoad).toHaveBeenCalledWith("")
+  })
+
+  it("renders a persistent file tree and toggles directories lazily", () => {
+    const onDirectoryToggle = vi.fn()
+    const onSelectFile = vi.fn()
+
+    renderWorkspaceFilesPanel(
+      createFileReviewState({
+        treeEntriesByDirectoryPath: {
+          "": [
+            {
+              path: "src",
+              name: "src",
+              kind: "directory",
+              extension: null,
+              hasChildren: true,
+            },
+            {
+              path: "README.md",
+              name: "README.md",
+              kind: "file",
+              extension: "md",
+              hasChildren: false,
+            },
+          ],
+        },
+      }),
+      { onDirectoryToggle, onSelectFile },
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /src/ }))
+    expect(onDirectoryToggle).toHaveBeenCalledWith("src")
+
+    fireEvent.click(screen.getByRole("button", { name: /README\.md/ }))
+    expect(onSelectFile).toHaveBeenCalledWith("README.md")
+  })
+
+  it("filters the loaded tree without rendering a result dropdown", () => {
+    const onQueryChange = vi.fn()
+
+    renderWorkspaceFilesPanel(
+      createFileReviewState({
+        query: "read",
+        treeEntriesByDirectoryPath: {
+          "": [
+            {
+              path: "src",
+              name: "src",
+              kind: "directory",
+              extension: null,
+              hasChildren: true,
+            },
+            {
+              path: "README.md",
+              name: "README.md",
+              kind: "file",
+              extension: "md",
+              hasChildren: false,
+            },
+          ],
+        },
+      }),
+      { onQueryChange },
+    )
+
+    expect(screen.queryByRole("button", { name: /src/ })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /README\.md/ })).toBeVisible()
+    expect(screen.queryByLabelText("Workspace file search results")).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter workspace files" }), {
+      target: { value: "src" },
+    })
+    expect(onQueryChange).toHaveBeenCalledWith("src")
+  })
+
   it("renders selected text file lines in the reader", () => {
     renderWorkspaceFilesPanel(
       createFileReviewState({
@@ -104,17 +204,15 @@ describe("WorkspaceFilesPanel", () => {
       /\.workspace-files-reader\s*\{[^}]*height:\s*100%;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/s,
     )
     expect(styles).toMatch(
-      /\.workspace-files-search-shell\s*\{[^}]*padding:\s*0;[^}]*background:\s*var\(--seg-panel\);/s,
+      /\.workspace-files-split\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) clamp\(320px,\s*44%,\s*520px\);/s,
     )
     expect(styles).toMatch(
-      /\.workspace-files-search-field input\s*\{[^}]*width:\s*100%;[^}]*border-right:\s*0;[^}]*border-left:\s*0;[^}]*border-radius:\s*0;/s,
+      /\.workspace-files-tree-search\s*\{[^}]*height:\s*28px;[^}]*grid-template-columns:\s*16px minmax\(0,\s*1fr\);/s,
     )
     expect(styles).toMatch(
-      /\.workspace-files-results-dropdown\s*\{[^}]*top:\s*100%;[^}]*padding:\s*0;[^}]*border-radius:\s*0;[^}]*box-shadow:\s*none;/s,
+      /\.workspace-files-tree-row\s*\{[^}]*min-height:\s*24px;[^}]*grid-template-columns:\s*14px 18px minmax\(0,\s*1fr\);/s,
     )
-    expect(styles).toMatch(
-      /\.workspace-files-results-dropdown \.workspace-files-result-row\s*\{[^}]*border:\s*0;[^}]*border-bottom:\s*1px solid var\(--seg-border\);[^}]*border-radius:\s*0;/s,
-    )
+    expect(styles).not.toContain(".workspace-files-results-dropdown")
     expect(styles).toMatch(
       /\.workspace-files-code\s*\{[^}]*background:\s*var\(--seg-panel\);[^}]*color:\s*var\(--seg-text-1\);/s,
     )

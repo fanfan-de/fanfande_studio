@@ -143,6 +143,9 @@ interface RightSidebarProps {
   onWorkspaceFileCommentChange: (text: string) => void
   onWorkspaceFileCommentConfirm: () => void
   onWorkspaceFileCommentStart: (startLineNumber: number, endLineNumber?: number) => void
+  onWorkspaceDirectoryLoad: (path: string) => void
+  onWorkspaceDirectoryToggle: (path: string) => void
+  onWorkspaceFileTreeInvalidate: (paths: string[]) => void
   onWorkspaceFileQueryChange: (value: string) => void
   onWorkspaceFileSelect: (path: string) => void
   renderTerminalTab: (sessionID: string | null) => ReactNode
@@ -262,6 +265,9 @@ export function RightSidebar({
   onWorkspaceFileCommentChange,
   onWorkspaceFileCommentConfirm,
   onWorkspaceFileCommentStart,
+  onWorkspaceDirectoryLoad,
+  onWorkspaceDirectoryToggle,
+  onWorkspaceFileTreeInvalidate,
   onWorkspaceFileQueryChange,
   onWorkspaceFileSelect,
   renderTerminalTab,
@@ -392,6 +398,9 @@ export function RightSidebar({
             onPendingCommentChange={onWorkspaceFileCommentChange}
             onPendingCommentConfirm={onWorkspaceFileCommentConfirm}
             onPendingCommentStart={onWorkspaceFileCommentStart}
+            onDirectoryLoad={onWorkspaceDirectoryLoad}
+            onDirectoryToggle={onWorkspaceDirectoryToggle}
+            onTreeInvalidate={onWorkspaceFileTreeInvalidate}
             onQueryChange={onWorkspaceFileQueryChange}
             onSelectFile={onWorkspaceFileSelect}
           />

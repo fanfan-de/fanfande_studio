@@ -210,6 +210,9 @@ function renderRightSidebar(input: {
       onWorkspaceFileCommentChange={vi.fn()}
       onWorkspaceFileCommentConfirm={vi.fn()}
       onWorkspaceFileCommentStart={vi.fn()}
+      onWorkspaceDirectoryLoad={vi.fn()}
+      onWorkspaceDirectoryToggle={vi.fn()}
+      onWorkspaceFileTreeInvalidate={vi.fn()}
       onWorkspaceFileQueryChange={vi.fn()}
       onWorkspaceFileSelect={vi.fn()}
       renderTerminalTab={() => <div role="region" aria-label="Terminal tab" />}

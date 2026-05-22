@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { readWorkspaceFile, searchWorkspaceFiles } from "./workspace-files"
+import { listWorkspaceDirectory, readWorkspaceFile, searchWorkspaceFiles } from "./workspace-files"
 
 const tempDirectories: string[] = []
 
@@ -22,6 +22,7 @@ async function createWorkspaceFixture() {
   await writeFile(join(workspaceRoot, "node_modules", "library", "app.ts"), "export const ignored = true\n")
   await writeFile(join(workspaceRoot, ".git", "app.txt"), "ignored\n")
   await writeFile(join(workspaceRoot, "dist", "app.js"), "console.log('ignored')\n")
+  await writeFile(join(workspaceRoot, "package.json"), "{}\n")
 
   return workspaceRoot
 }
@@ -31,6 +32,82 @@ afterEach(async () => {
 })
 
 describe("workspace files", () => {
+  it("lists root directories and files while hiding git metadata", async () => {
+    const workspaceRoot = await createWorkspaceFixture()
+
+    const entries = await listWorkspaceDirectory(workspaceRoot)
+
+    expect(entries).toEqual([
+      {
+        path: "dist",
+        name: "dist",
+        kind: "directory",
+        extension: null,
+        hasChildren: true,
+      },
+      {
+        path: "docs",
+        name: "docs",
+        kind: "directory",
+        extension: null,
+        hasChildren: true,
+      },
+      {
+        path: "node_modules",
+        name: "node_modules",
+        kind: "directory",
+        extension: null,
+        hasChildren: true,
+      },
+      {
+        path: "src",
+        name: "src",
+        kind: "directory",
+        extension: null,
+        hasChildren: true,
+      },
+      {
+        path: "package.json",
+        name: "package.json",
+        kind: "file",
+        extension: "json",
+        hasChildren: false,
+      },
+    ])
+  })
+
+  it("lists nested directories lazily", async () => {
+    const workspaceRoot = await createWorkspaceFixture()
+
+    const entries = await listWorkspaceDirectory(workspaceRoot, "node_modules")
+
+    expect(entries).toEqual([
+      {
+        path: "node_modules/library",
+        name: "library",
+        kind: "directory",
+        extension: null,
+        hasChildren: true,
+      },
+    ])
+  })
+
+  it("rejects directory listings outside the workspace", async () => {
+    const workspaceRoot = await createWorkspaceFixture()
+
+    await expect(listWorkspaceDirectory(workspaceRoot, "../")).rejects.toThrow(
+      "Workspace directory path must stay within the current project.",
+    )
+  })
+
+  it("rejects file paths when listing workspace directories", async () => {
+    const workspaceRoot = await createWorkspaceFixture()
+
+    await expect(listWorkspaceDirectory(workspaceRoot, "src/App.tsx")).rejects.toThrow(
+      "Requested workspace path is not a directory.",
+    )
+  })
+
   it("searches by file name and skips excluded directories", async () => {
     const workspaceRoot = await createWorkspaceFixture()
     const resolvedWorkspaceRoot = await realpath(workspaceRoot)

@@ -1,4 +1,4 @@
-import { useDeferredValue, useRef, type MutableRefObject } from "react"
+import { useRef, type MutableRefObject } from "react"
 import {
   appendComposerTagToDraftState,
   createComposerCommentTagData,
@@ -30,19 +30,19 @@ import type {
   RightSidebarTabUpdate,
   SessionDiffFile,
   WorkspaceFileComment,
+  WorkspaceDirectoryEntry,
   WorkspaceFileLineRange,
   WorkspaceFileReviewState,
   WorkspaceGroup,
   WorkspacePreviewState,
 } from "../types"
 import { createID } from "../utils"
-import { useWorkspaceFileReviewSearchEffects } from "./review-diff-runtime-hooks"
+import { useWorkspaceFileReviewScopeEffects } from "./review-diff-runtime-hooks"
 import {
-  DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
   DEFAULT_WORKSPACE_PREVIEW_STATE,
   getWorkspaceFileCommentKey,
-  resolveWorkspaceFileReviewStatus,
 } from "./review-preview-state"
+import { normalizeWorkspacePath } from "./workspace-loading-hooks"
 import type { WorkspaceStateUpdater } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
@@ -115,10 +115,9 @@ export function useReviewPanelController({
 }: UseReviewPanelControllerOptions) {
   const activeFileTab = activeRightSidebarTab?.kind === "files" ? activeRightSidebarTab : null
   const activeBrowserTab = activeRightSidebarTab?.kind === "browser" ? activeRightSidebarTab : null
-  const activeWorkspaceFileState = activeFileTab?.state ?? DEFAULT_WORKSPACE_FILE_REVIEW_STATE
-  const deferredWorkspaceFileQuery = useDeferredValue(activeWorkspaceFileState.query)
   const previewResolveRequestRef = useRef(0)
   const workspaceFileReadRequestByTabRef = useRef<Record<string, number>>({})
+  const workspaceDirectoryLoadRequestByTabRef = useRef<Record<string, Record<string, number>>>({})
 
   function normalizeTargetSegment(value: string | null | undefined) {
     return value?.trim().replace(/\\/g, "/").toLowerCase() || "__none__"
@@ -127,6 +126,64 @@ export function useReviewPanelController({
   function getPathName(path: string | null | undefined) {
     const normalized = path?.trim().replace(/\\/g, "/") ?? ""
     return normalized.split("/").filter(Boolean).pop() || null
+  }
+
+  function normalizeWorkspaceFileTreePath(path: string | null | undefined) {
+    const normalized = path?.trim().replace(/\\/g, "/").replace(/\/+/g, "/") ?? ""
+    if (!normalized || normalized === "." || normalized === "/") return ""
+    return normalized.replace(/^\/+/, "").replace(/\/+$/, "")
+  }
+
+  function getWorkspaceFileDirectoryPath(filePath: string | null | undefined) {
+    const normalized = normalizeWorkspaceFileTreePath(filePath)
+    const segments = normalized.split("/").filter(Boolean)
+    segments.pop()
+    return segments.join("/")
+  }
+
+  function getWorkspaceFileAncestorDirectoryPaths(filePath: string | null | undefined) {
+    const directoryPath = getWorkspaceFileDirectoryPath(filePath)
+    if (!directoryPath) return []
+    const ancestors: string[] = []
+    const segments = directoryPath.split("/").filter(Boolean)
+    for (let index = 0; index < segments.length; index += 1) {
+      ancestors.push(segments.slice(0, index + 1).join("/"))
+    }
+    return ancestors
+  }
+
+  function resolveFileReviewStatusForTreeFilter(
+    state: Pick<WorkspaceFileReviewState, "errorMessage" | "selectedFileContent" | "selectedFileKind" | "selectedFilePath">,
+  ): WorkspaceFileReviewState["status"] {
+    if (state.errorMessage) return "error"
+    if (state.selectedFileKind === "unsupported") return "unsupported"
+    if (state.selectedFilePath && state.selectedFileKind === "text" && state.selectedFileContent !== null) return "ready"
+    return "idle"
+  }
+
+  function resolveRelativeWorkspaceEventPath(scopeDirectory: string, changedPath: string) {
+    const normalizedScope = normalizeWorkspacePath(scopeDirectory, platform)
+    const normalizedChangedPath = normalizeWorkspacePath(changedPath, platform)
+    if (normalizedChangedPath === normalizedScope) return ""
+    if (!normalizedChangedPath.startsWith(`${normalizedScope}/`)) return null
+    return normalizeWorkspaceFileTreePath(changedPath.replace(/\\/g, "/").slice(scopeDirectory.replace(/\\/g, "/").length + 1))
+  }
+
+  function collectDirectoryCacheKeysForChangedPaths(scopeDirectory: string, changedPaths: string[]) {
+    const keys = new Set<string>([""])
+    for (const changedPath of changedPaths) {
+      const relativePath = resolveRelativeWorkspaceEventPath(scopeDirectory, changedPath)
+      if (relativePath === null) continue
+      const segments = relativePath.split("/").filter(Boolean)
+      if (segments.length === 0) continue
+
+      let current = ""
+      for (let index = 0; index < segments.length; index += 1) {
+        current = current ? `${current}/${segments[index]}` : segments[index]!
+        keys.add(current)
+      }
+    }
+    return keys
   }
 
   function getBrowserTabTargetKey(workspaceID: string | null | undefined, target: string | null | undefined) {
@@ -626,7 +683,7 @@ export function useReviewPanelController({
       const nextState = {
         ...current,
         query: value,
-        results: value.trim() ? current.results : [],
+        results: [],
         errorMessage: nextErrorMessage,
         linkedLineRange: null,
         pendingComment: null,
@@ -634,9 +691,110 @@ export function useReviewPanelController({
 
       return {
         ...nextState,
-        status: value.trim() ? current.status : resolveWorkspaceFileReviewStatus(nextState),
+        status: resolveFileReviewStatusForTreeFilter(nextState),
       }
     })
+  }
+
+  function handleWorkspaceDirectoryLoad(path: string) {
+    const listWorkspaceDirectory = window.desktop?.listWorkspaceDirectory
+    const tabID = activeFileTab?.id
+    const scopeDirectory = activeFileTab?.scopeDirectory ?? activeWorkspaceFileScopeDirectory
+    const normalizedPath = normalizeWorkspaceFileTreePath(path)
+    if (!listWorkspaceDirectory || !tabID || !scopeDirectory) return
+
+    const currentState = activeFileTab.state
+    if (
+      currentState.treeEntriesByDirectoryPath[normalizedPath] ||
+      currentState.treeLoadingDirectoryPaths.includes(normalizedPath)
+    ) {
+      return
+    }
+
+    const tabRequests = workspaceDirectoryLoadRequestByTabRef.current[tabID] ?? {}
+    const requestID = (tabRequests[normalizedPath] ?? 0) + 1
+    workspaceDirectoryLoadRequestByTabRef.current[tabID] = {
+      ...tabRequests,
+      [normalizedPath]: requestID,
+    }
+
+    setRightSidebarFileState(tabID, (current) => ({
+      ...current,
+      treeErrorByDirectoryPath: Object.fromEntries(
+        Object.entries(current.treeErrorByDirectoryPath).filter(([key]) => key !== normalizedPath),
+      ),
+      treeLoadingDirectoryPaths: Array.from(new Set([...current.treeLoadingDirectoryPaths, normalizedPath])),
+    }))
+
+    listWorkspaceDirectory({
+      directory: scopeDirectory,
+      path: normalizedPath,
+    })
+      .then((entries: WorkspaceDirectoryEntry[]) => {
+        if (workspaceDirectoryLoadRequestByTabRef.current[tabID]?.[normalizedPath] !== requestID) return
+
+        setRightSidebarFileState(tabID, (current) => ({
+          ...current,
+          treeEntriesByDirectoryPath: {
+            ...current.treeEntriesByDirectoryPath,
+            [normalizedPath]: entries,
+          },
+          treeErrorByDirectoryPath: Object.fromEntries(
+            Object.entries(current.treeErrorByDirectoryPath).filter(([key]) => key !== normalizedPath),
+          ),
+          treeLoadingDirectoryPaths: current.treeLoadingDirectoryPaths.filter((item) => item !== normalizedPath),
+        }))
+      })
+      .catch((error) => {
+        if (workspaceDirectoryLoadRequestByTabRef.current[tabID]?.[normalizedPath] !== requestID) return
+        const message = error instanceof Error ? error.message : String(error)
+
+        setRightSidebarFileState(tabID, (current) => ({
+          ...current,
+          treeErrorByDirectoryPath: {
+            ...current.treeErrorByDirectoryPath,
+            [normalizedPath]: message,
+          },
+          treeLoadingDirectoryPaths: current.treeLoadingDirectoryPaths.filter((item) => item !== normalizedPath),
+        }))
+        console.error("[desktop] listWorkspaceDirectory failed:", error)
+      })
+  }
+
+  function handleWorkspaceDirectoryToggle(path: string) {
+    const tabID = activeFileTab?.id
+    if (!tabID) return
+    const normalizedPath = normalizeWorkspaceFileTreePath(path)
+    const isExpanded = activeFileTab.state.treeExpandedDirectoryPaths.includes(normalizedPath)
+
+    setRightSidebarFileState(tabID, (current) => ({
+      ...current,
+      treeExpandedDirectoryPaths: isExpanded
+        ? current.treeExpandedDirectoryPaths.filter((item) => item !== normalizedPath)
+        : [...current.treeExpandedDirectoryPaths, normalizedPath],
+    }))
+
+    if (!isExpanded) {
+      handleWorkspaceDirectoryLoad(normalizedPath)
+    }
+  }
+
+  function handleWorkspaceFileTreeInvalidate(paths: string[]) {
+    const tabID = activeFileTab?.id
+    const scopeDirectory = activeFileTab?.scopeDirectory ?? activeWorkspaceFileScopeDirectory
+    if (!tabID || !scopeDirectory) return
+
+    const invalidatedKeys = collectDirectoryCacheKeysForChangedPaths(scopeDirectory, paths)
+    setRightSidebarFileState(tabID, (current) => ({
+      ...current,
+      treeEntriesByDirectoryPath: Object.fromEntries(
+        Object.entries(current.treeEntriesByDirectoryPath).filter(([key]) => !invalidatedKeys.has(key)),
+      ),
+      treeErrorByDirectoryPath: Object.fromEntries(
+        Object.entries(current.treeErrorByDirectoryPath).filter(([key]) => !invalidatedKeys.has(key)),
+      ),
+      treeLoadingDirectoryPaths: current.treeLoadingDirectoryPaths.filter((item) => !invalidatedKeys.has(item)),
+    }))
   }
 
   async function handleWorkspaceFileSelect(path: string, options: WorkspaceFileSelectOptions = {}) {
@@ -660,6 +818,7 @@ export function useReviewPanelController({
           })
     )
     const linkedLineRange = options.linkedLineRange ?? null
+    const expandedAncestorDirectories = getWorkspaceFileAncestorDirectoryPaths(trimmedPath)
     const requestID = (workspaceFileReadRequestByTabRef.current[tabID] ?? 0) + 1
     workspaceFileReadRequestByTabRef.current[tabID] = requestID
     setRightSidebarFileState(tabID, (current) => ({
@@ -674,6 +833,9 @@ export function useReviewPanelController({
       pendingComment: null,
       errorMessage: null,
       status: "reading",
+      treeExpandedDirectoryPaths: Array.from(
+        new Set([...current.treeExpandedDirectoryPaths, ...expandedAncestorDirectories]),
+      ),
     }))
     updateRightSidebarTab(tabID, {
       scopeDirectory,
@@ -932,16 +1094,14 @@ export function useReviewPanelController({
     await loadSessionRuntimeDebugForSession(sessionID)
   }
 
-  useWorkspaceFileReviewSearchEffects({
+  useWorkspaceFileReviewScopeEffects({
     activeWorkspaceFileScopeDirectory: activeFileTab?.scopeDirectory ?? null,
-    deferredWorkspaceFileQuery,
     platform,
     setWorkspaceFileReviewState: (update) => {
       if (!activeFileTab) return
       setRightSidebarFileState(activeFileTab.id, update)
     },
     workspaceFileReadRequestRef,
-    workspaceFileReviewState: activeWorkspaceFileState,
     workspaceFileSearchRequestRef,
   })
 
@@ -968,6 +1128,9 @@ export function useReviewPanelController({
     handleWorkspaceFileCommentChange,
     handleWorkspaceFileCommentConfirm,
     handleWorkspaceFileCommentStart,
+    handleWorkspaceDirectoryLoad,
+    handleWorkspaceDirectoryToggle,
+    handleWorkspaceFileTreeInvalidate,
     handleWorkspaceFileQueryChange,
     handleWorkspaceFileSelect,
   }

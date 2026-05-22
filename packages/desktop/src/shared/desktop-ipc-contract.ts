@@ -59,6 +59,7 @@ import type {
   AgentSkillGitInstallResult,
   AgentToolPermissionModePayload,
   AgentWorkspaceFileDocument,
+  AgentWorkspaceDirectoryEntry,
   AgentWorkspaceFileSearchResult,
   AgentWorkspaceSession,
   MenuAnchor,
@@ -146,6 +147,7 @@ export type {
   AgentSkillGitInstallResult,
   AgentToolPermissionModePayload,
   AgentWorkspaceFileDocument,
+  AgentWorkspaceDirectoryEntry,
   AgentWorkspaceFileSearchResult,
   AgentWorkspaceSession,
   AppearanceConfigDocument,
@@ -249,6 +251,7 @@ export type WorkspaceFileChangeIPCEvent = {
   paths: string[]
 }
 export type WorkspaceFileDocument = AgentWorkspaceFileDocument
+export type WorkspaceDirectoryEntry = AgentWorkspaceDirectoryEntry
 export type WorkspaceFileSearchResult = AgentWorkspaceFileSearchResult
 export type GlobalSkillFileDocument = AgentGlobalSkillFileDocument
 export type GlobalSkillTree = AgentGlobalSkillTree
@@ -1181,6 +1184,10 @@ export interface DesktopIpcContract {
     input: { directory: string; query: string }
     output: AgentWorkspaceFileSearchResult[]
   }
+  "desktop:list-workspace-directory": {
+    input: { directory: string; path?: string | null }
+    output: AgentWorkspaceDirectoryEntry[]
+  }
   "desktop:read-workspace-file": {
     input: { directory: string; path: string }
     output: AgentWorkspaceFileDocument
@@ -1525,6 +1532,7 @@ export interface DesktopApiMethods {
   getGlobalSkillsTree(): Promise<DesktopIpcOutput<"desktop:get-global-skills-tree">>
   readGlobalSkillFile(input: DesktopIpcInput<"desktop:read-global-skill-file">): Promise<DesktopIpcOutput<"desktop:read-global-skill-file">>
   searchWorkspaceFiles(input: DesktopIpcInput<"desktop:search-workspace-files">): Promise<DesktopIpcOutput<"desktop:search-workspace-files">>
+  listWorkspaceDirectory(input: DesktopIpcInput<"desktop:list-workspace-directory">): Promise<DesktopIpcOutput<"desktop:list-workspace-directory">>
   readWorkspaceFile(input: DesktopIpcInput<"desktop:read-workspace-file">): Promise<DesktopIpcOutput<"desktop:read-workspace-file">>
   updateGlobalSkillFile(input: DesktopIpcInput<"desktop:update-global-skill-file">): Promise<DesktopIpcOutput<"desktop:update-global-skill-file">>
   updatePromptPreset(input: DesktopIpcInput<"desktop:update-prompt-preset">): Promise<DesktopIpcOutput<"desktop:update-prompt-preset">>

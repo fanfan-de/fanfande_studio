@@ -2500,28 +2500,6 @@
   background: var(--seg-panel);
 }
 
-.workspace-files-search-shell {
-  min-width: 0;
-  padding: 0;
-  position: relative;
-  z-index: 4;
-  background: var(--seg-panel);
-}
-
-.workspace-files-search-field {
-  min-width: 100%;
-  gap: 0;
-}
-
-.workspace-files-search-field input {
-  width: 100%;
-  min-height: 40px;
-  border-top: 0;
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-}
-
 .workspace-files-reader {
   min-height: 0;
   height: 100%;
@@ -2531,34 +2509,6 @@
   padding: 0;
   border: 0;
   background: var(--seg-panel);
-}
-
-.workspace-files-results-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  z-index: 8;
-  max-height: min(320px, 42vh);
-  padding: 0;
-  overflow: auto;
-  border: 0;
-  border-top: 1px solid var(--seg-border);
-  border-bottom: 1px solid var(--seg-border);
-  border-radius: 0;
-  background: var(--seg-panel);
-  box-shadow: none;
-}
-
-.workspace-files-results-dropdown .right-sidebar-empty {
-  padding: 8px 10px;
-  border: 0;
-  background: transparent;
-}
-
-.workspace-files-results-dropdown .right-sidebar-empty p {
-  margin: 0;
-  color: #5c7185;
 }
 
 .workspace-files-panel-header {
@@ -2582,71 +2532,6 @@
 
 .workspace-files-reader-title strong {
   word-break: break-word;
-}
-
-.workspace-files-results-list {
-  min-height: 0;
-  display: grid;
-  gap: 0;
-}
-
-.workspace-files-result-row {
-  width: 100%;
-  border: 0;
-  border-bottom: 1px solid var(--seg-border);
-  border-radius: 0;
-  background: var(--seg-panel);
-  color: inherit;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 10px;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    border-color 160ms ease,
-    background 160ms ease,
-    box-shadow 160ms ease;
-}
-
-.workspace-files-result-row:hover,
-.workspace-files-result-row:focus-visible {
-  border-color: rgba(95, 146, 194, 0.45);
-  background: #f7fbff;
-  outline: none;
-}
-
-.workspace-files-result-row.is-active {
-  border-color: rgba(95, 146, 194, 0.62);
-  background: #f2f8ff;
-  box-shadow: inset 0 0 0 1px rgba(95, 146, 194, 0.18);
-}
-
-.workspace-files-result-copy {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.workspace-files-result-copy strong {
-  color: #17232f;
-  word-break: break-word;
-}
-
-.workspace-files-result-copy span {
-  color: #5c7185;
-  font-size: 12px;
-  word-break: break-word;
-}
-
-.workspace-files-result-extension {
-  color: #60778d;
-  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  white-space: nowrap;
 }
 
 .workspace-files-code {
@@ -3071,7 +2956,6 @@
 .preview-empty-state,
 .preview-comments-empty,
 .preview-comment-list-item,
-.workspace-files-result-row,
 .workspace-files-line-comment {
   border: 1px solid var(--seg-border);
   background: var(--seg-panel);
@@ -3103,9 +2987,7 @@
 .preview-comments-empty p,
 .preview-empty-state p,
 .preview-comment-list-item p,
-.preview-comment-list-copy span,
-.workspace-files-result-copy span,
-.workspace-files-result-extension {
+.preview-comment-list-copy span {
   color: var(--seg-text-2);
 }
 
@@ -3128,10 +3010,7 @@
 .right-sidebar-diff-height-toggle:hover,
 .right-sidebar-diff-height-toggle:focus-visible,
 .workspace-files-line-comment-button:hover,
-.workspace-files-line-comment-button:focus-visible,
-.workspace-files-result-row:hover,
-.workspace-files-result-row:focus-visible,
-.workspace-files-result-row.is-active {
+.workspace-files-line-comment-button:focus-visible {
   border-color: var(--mix-seg-accent-36-seg-border-64);
   background: var(--mix-seg-accent-soft-76-seg-panel-24);
   color: var(--seg-accent-strong);
@@ -3343,22 +3222,270 @@
   background: var(--mix-surface-elevated-88-seg-panel-12);
 }
 
-.workspace-files-results-dropdown .workspace-files-result-row {
-  border: 0;
-  border-bottom: 1px solid var(--seg-border);
-  border-radius: 0;
+.workspace-files-panel {
+  grid-template-rows: auto minmax(0, 1fr);
   background: var(--seg-panel);
-  box-shadow: none;
 }
 
-.workspace-files-results-dropdown .workspace-files-result-row:hover,
-.workspace-files-results-dropdown .workspace-files-result-row:focus-visible,
-.workspace-files-results-dropdown .workspace-files-result-row.is-active {
-  border: 0;
+.workspace-files-pathbar {
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--seg-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--seg-panel);
+}
+
+.workspace-files-pathbar-path {
+  min-width: 0;
+  color: var(--seg-text-1);
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-files-pathbar-scope {
+  min-width: 0;
+  color: var(--seg-text-3);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-files-split {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 44%, 520px);
+  background: var(--seg-panel);
+}
+
+.workspace-files-reader {
+  min-width: 0;
+  border-right: 1px solid var(--seg-border);
+}
+
+.workspace-files-panel-header {
+  min-height: 40px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--seg-border);
+}
+
+.workspace-files-reader-title {
+  gap: 2px;
+}
+
+.workspace-files-reader-title strong {
+  color: var(--seg-text-1);
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.workspace-files-code {
+  border: 0;
+}
+
+.workspace-files-open-empty {
+  grid-row: 1 / -1;
+  min-height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 32px;
+  color: var(--seg-text-2);
+  text-align: center;
+}
+
+.workspace-files-open-empty svg {
+  width: 24px;
+  height: 24px;
+  color: var(--seg-text-3);
+}
+
+.workspace-files-open-empty strong {
+  color: var(--seg-text-1);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.workspace-files-open-empty p {
+  max-width: 260px;
+  margin: 0;
+  color: var(--seg-text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.workspace-files-tree {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--seg-panel);
+}
+
+.workspace-files-tree-search {
+  min-width: 0;
+  height: 28px;
+  margin: 8px 8px 4px;
+  padding: 0 8px;
+  border: 1px solid var(--seg-border);
+  border-radius: 8px;
+  background: var(--seg-panel-muted);
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  color: var(--seg-text-3);
+}
+
+.workspace-files-tree-search svg {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-files-tree-search input {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--seg-text-1);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.workspace-files-tree-search input::placeholder {
+  color: var(--seg-text-3);
+}
+
+.workspace-files-tree-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 0 10px;
+}
+
+.workspace-files-tree-list {
+  min-width: max-content;
+}
+
+.workspace-files-tree-row {
+  width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  padding-top: 0;
+  padding-right: 8px;
+  padding-bottom: 0;
+  border: 0;
   border-radius: 0;
+  background: transparent;
+  color: var(--seg-text-1);
+  display: grid;
+  grid-template-columns: 14px 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.workspace-files-tree-row:hover,
+.workspace-files-tree-row:focus-visible {
   background: var(--mix-seg-accent-soft-76-seg-panel-24);
-  box-shadow: none;
+  color: var(--seg-text-1);
+  outline: none;
+}
+
+.workspace-files-tree-row.is-active {
+  background: var(--mix-seg-accent-soft-76-seg-panel-24);
+  color: var(--seg-accent-strong);
+}
+
+.workspace-files-tree-chevron,
+.workspace-files-tree-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--seg-text-3);
+}
+
+.workspace-files-tree-chevron svg,
+.workspace-files-tree-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-files-tree-row.is-directory .workspace-files-tree-icon {
+  color: var(--seg-text-2);
+}
+
+.workspace-files-tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-files-tree-file-badge {
+  min-width: 16px;
+  max-width: 20px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--seg-text-2);
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.workspace-files-tree-file-badge[data-extension="ts"],
+.workspace-files-tree-file-badge[data-extension="tsx"] {
+  color: #4ca3ff;
+}
+
+.workspace-files-tree-file-badge[data-extension="js"],
+.workspace-files-tree-file-badge[data-extension="jsx"],
+.workspace-files-tree-file-badge[data-extension="mjs"],
+.workspace-files-tree-file-badge[data-extension="cjs"] {
+  color: #e8c34a;
+}
+
+.workspace-files-tree-file-badge[data-extension="md"] {
+  color: #66d17f;
+}
+
+.workspace-files-tree-file-badge[data-extension="json"] {
+  color: #d98cff;
+}
+
+.workspace-files-tree-message,
+.workspace-files-tree-empty {
+  padding: 6px 12px;
+  color: var(--seg-text-3);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workspace-files-tree-message {
+  padding-left: 40px;
 }
 
 .right-sidebar-runtime-event.is-error {

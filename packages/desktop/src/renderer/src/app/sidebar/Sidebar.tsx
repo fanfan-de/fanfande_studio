@@ -578,13 +578,6 @@ function SkillsTreeNodeRow({
   const isRenameDraftVisible = depth === 0 && renamingGlobalSkillDraftDirectory === node.path
   const isRenamePending = renamingGlobalSkillDirectory === node.path
 
-  function handleDirectoryDoubleClick(event: MouseEvent<HTMLButtonElement>) {
-    if (depth !== 0) return
-    event.preventDefault()
-    event.stopPropagation()
-    onRenameGlobalSkillDraftStart(node.path)
-  }
-
   function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     void onRenameGlobalSkill()
@@ -631,10 +624,9 @@ function SkillsTreeNodeRow({
           <button
             className={isActiveDirectory ? "skill-tree-row is-active" : "skill-tree-row"}
             aria-expanded={isExpanded}
-            title={depth === 0 ? `${node.path}\nDouble-click to rename` : node.path}
+            title={node.path}
             type="button"
             onClick={() => onDirectoryToggle(node.path)}
-            onDoubleClick={handleDirectoryDoubleClick}
           >
             <span className="skill-tree-leading" aria-hidden="true">
               {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}

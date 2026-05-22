@@ -74,6 +74,7 @@ import type {
   ToolPermissionModePayload,
   WindowAction,
   WorkspaceFileChangeIPCEvent,
+  WorkspaceDirectoryEntry,
   WorkspaceFileDocument,
   WorkspaceFileSearchResult,
   WorkspaceDiffFileRestoreResult,
@@ -576,6 +577,8 @@ try {
       invokeDesktop("desktop:read-global-skill-file", input) as Promise<GlobalSkillFileDocument>,
     searchWorkspaceFiles: (input: { directory: string; query: string }) =>
       invokeDesktop("desktop:search-workspace-files", input) as Promise<WorkspaceFileSearchResult[]>,
+    listWorkspaceDirectory: (input: { directory: string; path?: string | null }) =>
+      invokeDesktop("desktop:list-workspace-directory", input) as Promise<WorkspaceDirectoryEntry[]>,
     readWorkspaceFile: (input: { directory: string; path: string }) =>
       invokeDesktop("desktop:read-workspace-file", input) as Promise<WorkspaceFileDocument>,
     updateGlobalSkillFile: (input: { path: string; content: string }) =>

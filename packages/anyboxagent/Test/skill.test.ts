@@ -314,9 +314,12 @@ describe("global skill folder management", () => {
     })
     await mkdir(join(nested.directory, "scripts"), { recursive: true })
     await writeFile(join(nested.directory, "scripts", "checklist.md"), "Review checklist.\n")
+    await SkillManager.createGlobalSkill({ name: "alpha-skill" })
+    await SkillManager.createGlobalSkillFolder({ name: "utilities" })
     const notes = await SkillManager.createGlobalSkill({ name: "notes" })
 
     const tree = await SkillManager.getGlobalSkillTree()
+    expect(tree.items.map((item) => item.name)).toEqual(["frontend", "utilities", "alpha-skill", "notes"])
     const frontendNode = tree.items.find((item) => item.name === "frontend")
     const notesNode = tree.items.find((item) => item.name === "notes")
     const reviewNode = frontendNode?.children?.find((item) => item.name === "review")

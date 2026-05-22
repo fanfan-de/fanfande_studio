@@ -458,6 +458,14 @@ export interface AgentWorkspaceFileSearchResult {
   extension: string | null
 }
 
+export interface AgentWorkspaceDirectoryEntry {
+  path: string
+  name: string
+  kind: "directory" | "file"
+  extension: string | null
+  hasChildren: boolean
+}
+
 export interface AgentWorkspaceFileDocument {
   path: string
   name: string

@@ -73,14 +73,21 @@ function ensureSafeRelativePath(root: string, input: string) {
 }
 
 function sortTreeEntries(left: GlobalSkillTreeNode, right: GlobalSkillTreeNode) {
-  if (left.kind !== right.kind) {
-    return left.kind === "directory" ? -1 : 1
-  }
+  const leftRank = getTreeEntrySortRank(left)
+  const rightRank = getTreeEntrySortRank(right)
+  if (leftRank !== rightRank) return leftRank - rightRank
 
   if (left.name === SKILL_FILENAME && right.name !== SKILL_FILENAME) return -1
   if (right.name === SKILL_FILENAME && left.name !== SKILL_FILENAME) return 1
 
   return left.name.localeCompare(right.name)
+}
+
+function getTreeEntrySortRank(node: GlobalSkillTreeNode) {
+  if (node.kind === "file") return node.name === SKILL_FILENAME ? 3 : 4
+  if (node.role === "folder") return 0
+  if (node.role === "skill") return 1
+  return 2
 }
 
 function validateSkillDirectoryName(input: string) {

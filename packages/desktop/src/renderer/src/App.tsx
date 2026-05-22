@@ -801,6 +801,9 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handleWorkspaceFileCommentChange,
     handleWorkspaceFileCommentConfirm,
     handleWorkspaceFileCommentStart,
+    handleWorkspaceDirectoryLoad,
+    handleWorkspaceDirectoryToggle,
+    handleWorkspaceFileTreeInvalidate,
     handleWorkspaceFileQueryChange,
     handleWorkspaceFileSelect,
     handleProjectArchiveSessions,
@@ -2064,6 +2067,9 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onWorkspaceFileCommentChange={handleWorkspaceFileCommentChange}
                 onWorkspaceFileCommentConfirm={handleWorkspaceFileCommentConfirm}
                 onWorkspaceFileCommentStart={handleWorkspaceFileCommentStart}
+                onWorkspaceDirectoryLoad={handleWorkspaceDirectoryLoad}
+                onWorkspaceDirectoryToggle={handleWorkspaceDirectoryToggle}
+                onWorkspaceFileTreeInvalidate={handleWorkspaceFileTreeInvalidate}
                 onWorkspaceFileQueryChange={handleWorkspaceFileQueryChange}
                 onWorkspaceFileSelect={handleWorkspaceFileSelect}
                 onOpenBrowserTab={handleOpenRightSidebarBrowserTab}

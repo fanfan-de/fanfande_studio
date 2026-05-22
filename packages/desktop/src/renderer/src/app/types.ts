@@ -444,6 +444,14 @@ export interface WorkspaceFileSearchResult {
   extension: string | null
 }
 
+export interface WorkspaceDirectoryEntry {
+  path: string
+  name: string
+  kind: "directory" | "file"
+  extension: string | null
+  hasChildren: boolean
+}
+
 export interface WorkspaceFileLineRange {
   startLineNumber: number
   endLineNumber: number
@@ -466,6 +474,10 @@ export interface WorkspaceFileReviewState {
   scopeDirectory: string | null
   query: string
   results: WorkspaceFileSearchResult[]
+  treeEntriesByDirectoryPath: Record<string, WorkspaceDirectoryEntry[]>
+  treeErrorByDirectoryPath: Record<string, string>
+  treeExpandedDirectoryPaths: string[]
+  treeLoadingDirectoryPaths: string[]
   selectedFilePath: string | null
   selectedFileContent: string | null
   selectedFileKind: "text" | "unsupported" | null

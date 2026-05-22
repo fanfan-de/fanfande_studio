@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FocusEvent,
@@ -258,6 +259,33 @@ function filterGlobalSkillTree(nodes: GlobalSkillTreeNode[], normalizedSearchTer
   })
 }
 
+function getSkillTreeNodeSortRank(node: GlobalSkillTreeNode) {
+  if (node.kind === "file") return node.name.toLowerCase() === "skill.md" ? 3 : 4
+  const role = getDirectoryRole(node)
+  if (role === "folder") return 0
+  if (role === "skill") return 1
+  return 2
+}
+
+function sortGlobalSkillTree(nodes: GlobalSkillTreeNode[]): GlobalSkillTreeNode[] {
+  const sortedNodes = nodes.map((node) => {
+    if (node.kind !== "directory") return node
+    return {
+      ...node,
+      children: sortGlobalSkillTree(node.children ?? []),
+    }
+  })
+
+  sortedNodes.sort((left, right) => {
+    const leftRank = getSkillTreeNodeSortRank(left)
+    const rightRank = getSkillTreeNodeSortRank(right)
+    if (leftRank !== rightRank) return leftRank - rightRank
+    return left.name.localeCompare(right.name)
+  })
+
+  return sortedNodes
+}
+
 function collectDirectorySkillTreePaths(nodes: GlobalSkillTreeNode[]): string[] {
   return nodes.flatMap((node) => {
     if (node.kind !== "directory") return []
@@ -430,11 +458,11 @@ function GlobalSkillsTreeNodeRow({
   const showCreateInDirectory = isCreateGlobalSkillDraftVisible && creatingGlobalSkillParentDirectory === node.path
   const showChildren = isExpanded && (Boolean(node.children?.length) || showCreateInDirectory)
 
-  function handleDirectoryDoubleClick(event: MouseEvent<HTMLButtonElement>) {
-    if (!isManagedDirectory) return
+  function handleDirectoryContextMenu(event: MouseEvent<HTMLButtonElement>) {
+    if (!isManagedDirectory || isRenameDraftVisible || isRenamePending) return
     event.preventDefault()
     event.stopPropagation()
-    onRenameGlobalSkillDraftStart(node.path)
+    setIsRowMenuOpen(true)
   }
 
   function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
@@ -472,6 +500,11 @@ function GlobalSkillsTreeNodeRow({
   function handleNewFolderHere() {
     setIsRowMenuOpen(false)
     onCreateGlobalSkillDraftStart("folder", node.path)
+  }
+
+  function handleRenameDirectory() {
+    setIsRowMenuOpen(false)
+    onRenameGlobalSkillDraftStart(node.path)
   }
 
   function handleDeleteDirectory() {
@@ -520,10 +553,10 @@ function GlobalSkillsTreeNodeRow({
               .filter(Boolean)
               .join(" ")}
             aria-expanded={isExpanded}
-            title={isManagedDirectory ? `${node.path}\nDouble-click to rename` : node.path}
+            title={node.path}
             type="button"
             onClick={() => onDirectoryToggle(node.path)}
-            onDoubleClick={handleDirectoryDoubleClick}
+            onContextMenu={handleDirectoryContextMenu}
           >
             {showLeadingDisclosure ? (
               <span className="skill-tree-leading" aria-hidden="true">
@@ -564,6 +597,9 @@ function GlobalSkillsTreeNodeRow({
                     </button>
                   </>
                 ) : null}
+                <button className="global-skills-install-menu-item" role="menuitem" type="button" onClick={handleRenameDirectory}>
+                  Rename
+                </button>
                 <button className="global-skills-install-menu-item" role="menuitem" type="button" onClick={handleMoveDirectory}>
                   {role === "folder" ? "Move to..." : "Move to folder..."}
                 </button>
@@ -662,9 +698,10 @@ export function GlobalSkillsNavigator({
   const createMenuRef = useRef<HTMLDivElement | null>(null)
   const normalizedSkillSearchTerm = normalizeSkillSearchTerm(skillSearchTerm)
   const isSkillSearchActive = normalizedSkillSearchTerm.length > 0
+  const sortedGlobalSkillsTree = useMemo(() => sortGlobalSkillTree(globalSkillsTree), [globalSkillsTree])
   const visibleGlobalSkillsTree = isSkillSearchActive
-    ? filterGlobalSkillTree(globalSkillsTree, normalizedSkillSearchTerm)
-    : globalSkillsTree
+    ? filterGlobalSkillTree(sortedGlobalSkillsTree, normalizedSkillSearchTerm)
+    : sortedGlobalSkillsTree
   const effectiveExpandedSkillPaths = isSkillSearchActive
     ? collectDirectorySkillTreePaths(visibleGlobalSkillsTree)
     : expandedSkillPaths
