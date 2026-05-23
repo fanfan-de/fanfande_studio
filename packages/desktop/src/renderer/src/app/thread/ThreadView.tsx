@@ -179,7 +179,6 @@ const PROPOSED_PLAN_CLOSE_TAG = "</proposed_plan>"
 const IMAGE_LIGHTBOX_ZOOM_STEP = 0.1
 const IMAGE_TALL_RATIO_THRESHOLD = 1.8
 const THREAD_BOTTOM_LOCK_THRESHOLD_PX = 32
-const THREAD_LATEST_AGENT_TOP_PADDING_PX = 8
 const THREAD_USER_SCROLL_INTENT_WINDOW_MS = 800
 const THREAD_COMPLETION_SCROLL_SYNC_SUPPRESS_MS = 600
 const THREAD_TOP_RESET_THRESHOLD_PX = 2
@@ -321,46 +320,8 @@ function scrollThreadColumnToBottom(threadColumn: HTMLDivElement) {
   threadColumn.scrollTop = threadColumn.scrollHeight
 }
 
-function getThreadOwnTurnElements(threadColumn: HTMLDivElement, selector: string) {
-  return Array.from(threadColumn.querySelectorAll<HTMLElement>(selector)).filter(
-    (element) => element.closest(".thread-column") === threadColumn,
-  )
-}
-
-function findLatestAgentTurnElement(threadColumn: HTMLDivElement) {
-  const assistantTurns = getThreadOwnTurnElements(threadColumn, ".assistant-turn[data-turn-id]")
-  return assistantTurns[assistantTurns.length - 1] ?? null
-}
-
-function findLatestTurnElement(threadColumn: HTMLDivElement) {
-  const turns = getThreadOwnTurnElements(threadColumn, ".turn[data-turn-id]")
-  return turns[turns.length - 1] ?? null
-}
-
 function scrollThreadColumnToLatestContent(threadColumn: HTMLDivElement) {
-  const latestTurn = findLatestTurnElement(threadColumn)
-  if (latestTurn?.classList.contains("user-turn")) {
-    scrollThreadColumnToBottom(threadColumn)
-    return isThreadColumnPinnedToBottom(threadColumn)
-  }
-
-  const latestAgentTurn = findLatestAgentTurnElement(threadColumn)
-  if (!latestAgentTurn) {
-    scrollThreadColumnToBottom(threadColumn)
-    return isThreadColumnPinnedToBottom(threadColumn)
-  }
-
-  const containerRect = threadColumn.getBoundingClientRect()
-  const turnRect = latestAgentTurn.getBoundingClientRect()
-  const hasUsableLayoutRect = containerRect.height > 0 || turnRect.height > 0 || turnRect.top !== containerRect.top
-  if (!hasUsableLayoutRect) {
-    scrollThreadColumnToBottom(threadColumn)
-    return isThreadColumnPinnedToBottom(threadColumn)
-  }
-
-  const nextScrollTop = threadColumn.scrollTop + turnRect.top - containerRect.top - THREAD_LATEST_AGENT_TOP_PADDING_PX
-  threadColumn.scrollTop = clampThreadScrollTop(threadColumn, nextScrollTop)
-  return isThreadColumnPinnedToBottom(threadColumn)
+  scrollThreadColumnToBottom(threadColumn)
 }
 
 function clampThreadScrollTop(threadColumn: HTMLDivElement, scrollTop: number) {
@@ -4640,44 +4601,13 @@ function VisibleThreadView({
     return Math.max(getThreadScrollMaxTop(threadColumn), virtualScrollHeight - threadColumn.clientHeight)
   }
 
-  function clampThreadVirtualScrollTop(threadColumn: HTMLDivElement, scrollTop: number) {
-    return Math.min(Math.max(0, scrollTop), Math.max(0, getThreadVirtualScrollMaxTop(threadColumn)))
-  }
-
-  function findLatestThreadVirtualContentRow() {
-    for (let index = displayRows.length - 1; index >= 0; index -= 1) {
-      const row = displayRows[index]
-      if (row?.kind === "assistant" || row?.kind === "user-turn") return row
-    }
-
-    return null
-  }
-
   function scrollThreadColumnToLatestThreadContent(threadColumn: HTMLDivElement) {
     if (!shouldVirtualizeThreadRows) {
       scrollThreadColumnToLatestContent(threadColumn)
       return
     }
 
-    const latestRow = findLatestThreadVirtualContentRow()
-    if (!latestRow || latestRow.kind === "user-turn") {
-      threadColumn.scrollTop = getThreadVirtualScrollMaxTop(threadColumn)
-      syncThreadVirtualViewport(threadColumn)
-      return
-    }
-
-    const latestLayoutItem = threadVirtualLayout.items.find((item) => item.row.rowID === latestRow.rowID)
-    if (!latestLayoutItem) {
-      threadColumn.scrollTop = getThreadVirtualScrollMaxTop(threadColumn)
-      syncThreadVirtualViewport(threadColumn)
-      return
-    }
-
-    const nextScrollTop =
-      latestLayoutItem.top +
-      readThreadColumnPaddingTop(threadColumn) -
-      THREAD_LATEST_AGENT_TOP_PADDING_PX
-    threadColumn.scrollTop = clampThreadVirtualScrollTop(threadColumn, nextScrollTop)
+    threadColumn.scrollTop = getThreadVirtualScrollMaxTop(threadColumn)
     syncThreadVirtualViewport(threadColumn)
   }
 
@@ -4799,6 +4729,21 @@ function VisibleThreadView({
     lastKnownScrollTopRef.current = 0
     rememberThreadScrollSnapshot(key, snapshot)
     saveThreadScrollSnapshotValue(key, snapshot)
+  }
+
+  function detachThreadScrollFromFollow(threadColumn: HTMLDivElement, key = effectiveScrollStateKey) {
+    if (!key) return false
+    if (getThreadScrollMaxTop(threadColumn) <= THREAD_TOP_RESET_THRESHOLD_PX) return false
+
+    const snapshot: ThreadScrollSnapshot = {
+      ...readThreadScrollSnapshot(threadColumn),
+      pinnedToBottom: false,
+    }
+    scrollModeRef.current = "detached"
+    lastKnownScrollTopRef.current = threadColumn.scrollTop
+    rememberThreadScrollSnapshot(key, snapshot)
+    saveThreadScrollSnapshotValue(key, snapshot)
+    return true
   }
 
   function setThreadScrollTop(threadColumn: HTMLDivElement, scrollTop: number) {
@@ -5207,9 +5152,21 @@ function VisibleThreadView({
     handleThreadScrollIntent()
   }
 
+  function handleThreadKeyDownIntent(event: KeyboardEvent<HTMLDivElement>) {
+    handleThreadScrollIntent(event)
+
+    if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home") {
+      lastUserScrollIntentDirectionRef.current = "up"
+      detachThreadScrollFromFollow(event.currentTarget)
+    } else if (event.key === "ArrowDown" || event.key === "PageDown" || event.key === "End") {
+      lastUserScrollIntentDirectionRef.current = "down"
+    }
+  }
+
   function handleThreadWheelIntent(event: ReactWheelEvent<HTMLDivElement>) {
     if (event.deltaY < 0) {
       lastUserScrollIntentDirectionRef.current = "up"
+      detachThreadScrollFromFollow(event.currentTarget)
     } else if (event.deltaY > 0) {
       lastUserScrollIntentDirectionRef.current = "down"
     }
@@ -5658,7 +5615,7 @@ function VisibleThreadView({
       <div
         ref={threadColumnRef}
         className={joinClassNames("thread-column", shouldVirtualizeThreadRows && "is-virtualized")}
-        onKeyDownCapture={handleThreadScrollIntent}
+        onKeyDownCapture={handleThreadKeyDownIntent}
         onPointerDownCapture={handleThreadScrollIntent}
         onPointerMoveCapture={handleThreadPointerMoveIntent}
         onScroll={handleThreadScroll}

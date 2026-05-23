@@ -249,6 +249,7 @@ function mapSessionInfo(session: AgentSessionInfo) {
     kind: session.kind,
     policy: session.policy,
     origin: session.origin,
+    subagent: session.subagent,
     modelSelection: session.modelSelection,
     created: session.time.created,
     updated: session.time.updated,

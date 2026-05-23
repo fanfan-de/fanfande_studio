@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type SetStateAction } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type ReactNode, type SetStateAction } from "react"
 import { createPortal } from "react-dom"
 import { sidebarActions } from "../constants"
 import {
@@ -16,7 +16,7 @@ import {
   SortIcon
 } from "../icons"
 import { PromptPresetsSidebarView, type PromptPresetsSidebarViewProps } from "../prompts/PromptPresetsPage"
-import { ShellTopMenu, SidebarToggleButton } from "../shared-ui"
+import { joinClassNames, ShellTopMenu, SidebarToggleButton } from "../shared-ui"
 import { GlobalSkillsNavigator, type GlobalSkillsNavigatorProps } from "../skills/GlobalSkillsPage"
 import { BuiltinToolsSidebarView, type BuiltinToolsSidebarViewProps } from "../tools/BuiltinToolsPage"
 import type {
@@ -187,6 +187,54 @@ type ProjectContextMenuState = {
 
 const PROJECT_CONTEXT_MENU_WIDTH = 240
 const PROJECT_CONTEXT_MENU_HEIGHT = 152
+
+interface WorkspaceSessionTreeNode {
+  children: WorkspaceSessionTreeNode[]
+  session: SessionSummary
+}
+
+function buildWorkspaceSessionTree(sessions: SessionSummary[]): WorkspaceSessionTreeNode[] {
+  const primarySessions = sessions.filter((session) => !isSideChatSession(session))
+  const sessionsByID = new Map(primarySessions.map((session) => [session.id, session]))
+  const childrenByParentID = new Map<string, SessionSummary[]>()
+  const attachedChildIDs = new Set<string>()
+
+  for (const session of primarySessions) {
+    const parentSessionID = session.subagent?.parentSessionID
+    if (!parentSessionID || parentSessionID === session.id || !sessionsByID.has(parentSessionID)) continue
+
+    const children = childrenByParentID.get(parentSessionID) ?? []
+    children.push(session)
+    childrenByParentID.set(parentSessionID, children)
+    attachedChildIDs.add(session.id)
+  }
+
+  const renderedSessionIDs = new Set<string>()
+
+  function materialize(session: SessionSummary, ancestorIDs: Set<string>): WorkspaceSessionTreeNode {
+    renderedSessionIDs.add(session.id)
+    const nextAncestorIDs = new Set(ancestorIDs)
+    nextAncestorIDs.add(session.id)
+
+    return {
+      session,
+      children: (childrenByParentID.get(session.id) ?? [])
+        .filter((child) => !nextAncestorIDs.has(child.id))
+        .map((child) => materialize(child, nextAncestorIDs)),
+    }
+  }
+
+  const roots = primarySessions.filter((session) => !attachedChildIDs.has(session.id))
+  const tree = roots.map((session) => materialize(session, new Set()))
+
+  for (const session of primarySessions) {
+    if (!renderedSessionIDs.has(session.id)) {
+      tree.push(materialize(session, new Set()))
+    }
+  }
+
+  return tree
+}
 
 function clampProjectContextMenuPosition(x: number, y: number) {
   const margin = 8
@@ -362,6 +410,77 @@ function FolderWorkspaceView({
     setProjectContextMenu(null)
   }
 
+  function renderSessionNode(workspace: WorkspaceGroup, node: WorkspaceSessionTreeNode, depth = 0): ReactNode {
+    const { session } = node
+    const active = session.id === activeSessionID
+    const isRunning = runningSessionIDSet.has(session.id)
+    const hasUnreadCanvas =
+      Boolean(sessionCanvasUnreadBySession[session.id]) && !visibleSessionIDSet.has(session.id)
+    const sessionCreatedAt = session.created ?? session.updated
+    const isSubagent = depth > 0
+    const shellStyle: CSSProperties | undefined = isSubagent
+      ? { paddingLeft: `${Math.min(depth, 4) * 18}px` }
+      : undefined
+
+    return (
+      <div key={session.id} className="session-tree-node">
+        <div
+          className={joinClassNames("session-row-shell", isSubagent && "is-subagent")}
+          style={shellStyle}
+        >
+          <button
+            className={joinClassNames("session-row", active && "is-active", isSubagent && "is-subagent")}
+            onClick={() => onSessionSelect(workspace.id, session.id)}
+          >
+            <span
+              className={
+                isRunning
+                  ? "session-row-status-icon is-running"
+                  : hasUnreadCanvas
+                    ? "session-row-status-icon is-unread"
+                    : "session-row-status-icon"
+              }
+              aria-hidden="true"
+            >
+              {isRunning ? (
+                <SessionRunningIcon />
+              ) : hasUnreadCanvas ? (
+                <span className="session-row-status-dot" />
+              ) : null}
+            </span>
+            <span className="session-row-copy">
+              <span className="session-row-label">{session.title}</span>
+            </span>
+          </button>
+          <span className="session-row-trailing">
+            <time
+              className="session-row-created-at"
+              dateTime={new Date(sessionCreatedAt).toISOString()}
+              title={formatSessionCreatedTitle(sessionCreatedAt)}
+            >
+              {formatSessionCreatedAge(sessionCreatedAt, sessionTimeNow)}
+            </time>
+            <button
+              className="row-action"
+              aria-label={`Archive session ${session.title}`}
+              title={`Archive session ${session.title}`}
+              disabled={deletingSessionID === session.id}
+              onClick={(event) => onSessionDelete(workspace, session, event)}
+            >
+              <ArchiveIcon />
+            </button>
+          </span>
+        </div>
+
+        {node.children.length > 0 ? (
+          <div className="session-tree-children">
+            {node.children.map((child) => renderSessionNode(workspace, child, depth + 1))}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <section className="sidebar-view sidebar-view-workspace" aria-label="Workspace sidebar view">
       <div className="sidebar-projects">
@@ -446,59 +565,7 @@ function FolderWorkspaceView({
 
               {isExpanded ? (
                 <div className="session-tree">
-                  {workspace.sessions.filter((session) => !isSideChatSession(session)).map((session) => {
-                    const active = session.id === activeSessionID
-                    const isRunning = runningSessionIDSet.has(session.id)
-                    const hasUnreadCanvas =
-                      Boolean(sessionCanvasUnreadBySession[session.id]) && !visibleSessionIDSet.has(session.id)
-                    const sessionCreatedAt = session.created ?? session.updated
-                    return (
-                      <div key={session.id} className="session-row-shell">
-                        <button
-                          className={active ? "session-row is-active" : "session-row"}
-                          onClick={() => onSessionSelect(workspace.id, session.id)}
-                        >
-                          <span
-                            className={
-                              isRunning
-                                ? "session-row-status-icon is-running"
-                                : hasUnreadCanvas
-                                  ? "session-row-status-icon is-unread"
-                                  : "session-row-status-icon"
-                            }
-                            aria-hidden="true"
-                          >
-                            {isRunning ? (
-                              <SessionRunningIcon />
-                            ) : hasUnreadCanvas ? (
-                              <span className="session-row-status-dot" />
-                            ) : null}
-                          </span>
-                          <span className="session-row-copy">
-                            <span className="session-row-label">{session.title}</span>
-                          </span>
-                        </button>
-                        <span className="session-row-trailing">
-                          <time
-                            className="session-row-created-at"
-                            dateTime={new Date(sessionCreatedAt).toISOString()}
-                            title={formatSessionCreatedTitle(sessionCreatedAt)}
-                          >
-                            {formatSessionCreatedAge(sessionCreatedAt, sessionTimeNow)}
-                          </time>
-                          <button
-                            className="row-action"
-                            aria-label={`Archive session ${session.title}`}
-                            title={`Archive session ${session.title}`}
-                            disabled={deletingSessionID === session.id}
-                            onClick={(event) => onSessionDelete(workspace, session, event)}
-                          >
-                            <ArchiveIcon />
-                          </button>
-                        </span>
-                      </div>
-                    )
-                  })}
+                  {buildWorkspaceSessionTree(workspace.sessions).map((node) => renderSessionNode(workspace, node))}
                 </div>
               ) : null}
             </section>

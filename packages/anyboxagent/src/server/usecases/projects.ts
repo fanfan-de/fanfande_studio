@@ -19,6 +19,7 @@ import {
   resolveProjectModelSelectionWithGlobalFallback,
 } from "#server/usecases/model-list-cache.ts"
 import * as Session from "#session/core/session.ts"
+import * as Subtask from "#session/tasks/subtask.ts"
 import * as Skill from "#skill/skill.ts"
 
 export const CreateProjectBody = z.object({
@@ -188,6 +189,7 @@ function mapSessionSummary(session: Session.SessionInfo) {
   return {
     ...normalized,
     origin: Session.getSessionOrigin(normalized.id),
+    subagent: Subtask.getSubtaskSessionOrigin(normalized.id),
   }
 }
 

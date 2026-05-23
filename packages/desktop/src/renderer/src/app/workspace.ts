@@ -103,6 +103,7 @@ export function mapLoadedSession(session: LoadedSessionSnapshot, sessionIndex: n
     kind: session.kind,
     policy: session.policy,
     origin: session.origin,
+    subagent: session.subagent,
     workflow: session.workflow,
     modelSelection: session.modelSelection,
   }

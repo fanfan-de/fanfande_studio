@@ -19,6 +19,7 @@ import { FormEvent, useEffect, useId, useMemo, useRef, useState } from "react"
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:4096"
 const BASE_URL_STORAGE_KEY = "anybox.monitor.baseURL"
+const BASE_URL_QUERY_KEYS = ["agentBaseURL", "baseURL"]
 const MAX_VISIBLE_LOGS = 300
 const NO_SERVICE_FILTER_VALUE = "__anybox_monitor_no_service__"
 
@@ -147,11 +148,34 @@ function normalizeBaseURL(value: string) {
 }
 
 function readStoredBaseURL() {
+  const queryBaseURL = readQueryBaseURL()
+  if (queryBaseURL) {
+    try {
+      window.localStorage.setItem(BASE_URL_STORAGE_KEY, queryBaseURL)
+    } catch {
+      // Storage is optional; the current URL still configures this monitor session.
+    }
+    return queryBaseURL
+  }
+
   try {
     return window.localStorage.getItem(BASE_URL_STORAGE_KEY) || DEFAULT_BASE_URL
   } catch {
     return DEFAULT_BASE_URL
   }
+}
+
+function readQueryBaseURL() {
+  try {
+    const searchParams = new URLSearchParams(window.location.search)
+    for (const key of BASE_URL_QUERY_KEYS) {
+      const value = searchParams.get(key)?.trim()
+      if (value) return value
+    }
+  } catch {
+    // Ignore invalid window location state and fall back to storage/defaults.
+  }
+  return null
 }
 
 function resolveURL(baseURL: string, pathname: string, query?: Record<string, string | undefined>) {

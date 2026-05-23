@@ -13,6 +13,7 @@ import * as Prompt from "#session/core/prompt.ts"
 import * as RunningState from "#session/runtime/running-state.ts"
 import * as Session from "#session/core/session.ts"
 import * as SessionDiff from "#session/diff/diff.ts"
+import * as Subtask from "#session/tasks/subtask.ts"
 import * as Task from "#session/tasks/task.ts"
 import * as Log from "#util/log.ts"
 import {
@@ -306,6 +307,7 @@ function mapSessionSummary(session: Session.SessionInfo) {
   return {
     ...normalized,
     origin: Session.getSessionOrigin(normalized.id),
+    subagent: Subtask.getSubtaskSessionOrigin(normalized.id),
   }
 }
 

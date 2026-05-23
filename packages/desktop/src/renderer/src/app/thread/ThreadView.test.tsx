@@ -3065,6 +3065,108 @@ describe("ThreadView scroll restoration", () => {
     expect(threadColumn.scrollTop).toBe(1400)
   })
 
+  it("keeps streaming assistant output pinned to the bottom when layout rects are available", () => {
+    const layoutSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("thread-column")) return createElementRect({ top: 0, height: 400 })
+
+      const turnID = this.getAttribute("data-turn-id")
+      if (turnID === "assistant-1") return createElementRect({ top: 64, height: 900 })
+
+      return createElementRect()
+    })
+    const buildStreamingTurn = (text: string) => assistantTraceTurn("assistant-1", [
+      {
+        id: "response-1",
+        kind: "text",
+        timestamp: 1,
+        label: "Assistant",
+        text,
+        status: "running",
+        isStreaming: true,
+      },
+    ], true)
+
+    try {
+      const { rerender, props, threadColumn } = renderThread([
+        userTurn("user-1", "Prompt"),
+        buildStreamingTurn("First chunk"),
+      ], {
+        scrollStateKey: "session:streaming-layout-follow",
+      })
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 800,
+        scrollTop: 400,
+      })
+
+      fireEvent.wheel(threadColumn, { deltaY: 120 })
+      fireEvent.scroll(threadColumn)
+
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 1400,
+        scrollTop: 400,
+      })
+      rerender(
+        <ThreadView
+          {...props}
+          activeTurns={[
+            userTurn("user-1", "Prompt"),
+            buildStreamingTurn("First chunk\nSecond chunk"),
+          ]}
+        />,
+      )
+
+      expect(threadColumn.scrollTop).toBe(1400)
+    } finally {
+      layoutSpy.mockRestore()
+    }
+  })
+
+  it("does not follow new streamed content after an upward wheel intent before the scroll event fires", () => {
+    const buildStreamingTurn = (text: string) => assistantTraceTurn("assistant-1", [
+      {
+        id: "response-1",
+        kind: "text",
+        timestamp: 1,
+        label: "Assistant",
+        text,
+        status: "running",
+        isStreaming: true,
+      },
+    ], true)
+    const { rerender, props, threadColumn } = renderThread([
+      userTurn("user-1", "Prompt"),
+      buildStreamingTurn("First chunk"),
+    ], {
+      scrollStateKey: "session:wheel-detached-race",
+    })
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 800,
+      scrollTop: 400,
+    })
+
+    fireEvent.wheel(threadColumn, { deltaY: -120 })
+
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 1400,
+      scrollTop: 400,
+    })
+    rerender(
+      <ThreadView
+        {...props}
+        activeTurns={[
+          userTurn("user-1", "Prompt"),
+          buildStreamingTurn("First chunk\nSecond chunk"),
+        ]}
+      />,
+    )
+
+    expect(threadColumn.scrollTop).toBe(400)
+  })
+
   it("scrolls to the bottom when a stream-inserted user turn becomes visible", () => {
     const layoutSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       if (this.classList.contains("thread-column")) return createElementRect({ top: 0, height: 400 })

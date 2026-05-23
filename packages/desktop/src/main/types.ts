@@ -124,6 +124,17 @@ export interface AgentSessionOrigin {
   anchorPreview: string
 }
 
+export interface AgentSessionSubagentOrigin {
+  taskID: string
+  parentSessionID: string
+  parentMessageID: string
+  parentToolCallID?: string
+  agent: string
+  status: "running" | "completed" | "blocked" | "stopped" | "failed" | "cancelled"
+  active: boolean
+  updatedAt: number
+}
+
 export interface AgentSessionModelSelection {
   model?: string
   small_model?: string
@@ -138,6 +149,7 @@ export interface AgentSessionInfo {
   kind?: AgentSessionKind
   policy?: AgentSessionPolicy
   origin?: AgentSessionOrigin
+  subagent?: AgentSessionSubagentOrigin
   workflow?: AgentSessionWorkflowSummary
   modelSelection?: AgentSessionModelSelection
   time: {
@@ -154,6 +166,7 @@ export interface AgentWorkspaceSession {
   kind?: AgentSessionKind
   policy?: AgentSessionPolicy
   origin?: AgentSessionOrigin
+  subagent?: AgentSessionSubagentOrigin
   created: number
   updated: number
   workflow?: AgentSessionWorkflowSummary

@@ -3,9 +3,12 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { readTrimmedDesktopEnv } from "./env-compat"
+import { ensureManagedAgentRunning } from "./managed-agent"
+import { safeError } from "./safe-console"
 
 const DEFAULT_MONITOR_DEV_URL = "http://127.0.0.1:4174/"
 const MONITOR_DEV_SERVER_TIMEOUT_MS = 500
+const MONITOR_AGENT_BASE_URL_QUERY_PARAM = "agentBaseURL"
 
 type MonitorWindowTarget =
   | {
@@ -86,6 +89,23 @@ async function resolveMonitorWindowTarget(): Promise<MonitorWindowTarget> {
   throw new Error("Monitor UI was not found. Build packages/monitor or start the monitor dev server.")
 }
 
+function addAgentBaseURLQueryParam(url: string, baseURL: string | undefined) {
+  if (!baseURL) return url
+
+  const nextURL = new URL(url)
+  nextURL.searchParams.set(MONITOR_AGENT_BASE_URL_QUERY_PARAM, baseURL)
+  return nextURL.toString()
+}
+
+async function resolveMonitorAgentBaseURL() {
+  try {
+    return await ensureManagedAgentRunning()
+  } catch (error) {
+    safeError("[desktop][monitor] failed to resolve managed agent URL", error)
+    return undefined
+  }
+}
+
 export async function openMonitorWindow() {
   if (monitorWindow && !monitorWindow.isDestroyed()) {
     if (monitorWindow.isMinimized()) monitorWindow.restore()
@@ -100,6 +120,7 @@ export async function openMonitorWindow() {
   }
 
   const target = await resolveMonitorWindowTarget()
+  const agentBaseURL = await resolveMonitorAgentBaseURL()
   const win = new BrowserWindow({
     width: 1280,
     height: 860,
@@ -131,16 +152,20 @@ export async function openMonitorWindow() {
 
   try {
     if (target.source === "dev-server") {
-      await win.loadURL(target.url)
+      const monitorURL = addAgentBaseURLQueryParam(target.url, agentBaseURL)
+      await win.loadURL(monitorURL)
       return {
         ok: true as const,
         reused: false as const,
         source: target.source,
-        url: target.url,
+        url: monitorURL,
       }
     }
 
-    await win.loadFile(target.filePath)
+    await win.loadFile(
+      target.filePath,
+      agentBaseURL ? { query: { [MONITOR_AGENT_BASE_URL_QUERY_PARAM]: agentBaseURL } } : undefined,
+    )
     return {
       filePath: target.filePath,
       ok: true as const,

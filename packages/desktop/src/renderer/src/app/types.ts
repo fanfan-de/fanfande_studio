@@ -140,6 +140,17 @@ export interface SessionOrigin {
   anchorPreview: string
 }
 
+export interface SessionSubagentOrigin {
+  taskID: string
+  parentSessionID: string
+  parentMessageID: string
+  parentToolCallID?: string
+  agent: string
+  status: "running" | "completed" | "blocked" | "stopped" | "failed" | "cancelled"
+  active: boolean
+  updatedAt: number
+}
+
 export interface SessionModelSelection {
   model?: string
   small_model?: string
@@ -190,6 +201,7 @@ export interface SessionSummary {
   kind?: SessionKind
   policy?: SessionPolicy
   origin?: SessionOrigin
+  subagent?: SessionSubagentOrigin
   workflow?: SessionWorkflowSummary
   modelSelection?: SessionModelSelection
 }
@@ -236,6 +248,7 @@ export interface LoadedSessionSnapshot {
   kind?: SessionKind
   policy?: SessionPolicy
   origin?: SessionOrigin
+  subagent?: SessionSubagentOrigin
   created: number
   updated: number
   workflow?: SessionWorkflowSummary

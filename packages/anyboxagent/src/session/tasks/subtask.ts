@@ -69,6 +69,17 @@ export type SubtaskView = SubtaskRecord & {
   active: boolean
 }
 
+export type SubtaskSessionOrigin = {
+  active: boolean
+  agent: string
+  parentMessageID: string
+  parentSessionID: string
+  parentToolCallID?: string
+  status: SubtaskStatus
+  taskID: string
+  updatedAt: number
+}
+
 export const StartSubtaskInput = z.object({
   parentSessionID: Identifier.schema("session"),
   parentMessageID: Identifier.schema("message"),
@@ -699,6 +710,30 @@ export function readSubtask(id: string): SubtaskView | null {
   const record = readStoredSubtask(id)
   if (!record) return null
   return toView(record)
+}
+
+export function getSubtaskSessionOrigin(childSessionID: string): SubtaskSessionOrigin | undefined {
+  ensureSubtaskTables()
+
+  const [record] = db.findManyWithSchema("subtasks", SubtaskRecord, {
+    where: [{ column: "childSessionID", value: childSessionID }],
+    orderBy: [
+      { column: "updatedAt", direction: "DESC" },
+      { column: "id", direction: "DESC" },
+    ],
+  })
+  if (!record) return undefined
+
+  return {
+    active: RunningState.isRunning(record.childSessionID),
+    agent: record.agent,
+    parentMessageID: record.parentMessageID,
+    parentSessionID: record.parentSessionID,
+    parentToolCallID: record.parentToolCallID,
+    status: record.status,
+    taskID: record.id,
+    updatedAt: record.updatedAt,
+  }
 }
 
 export function listSubtasksByParentSession(parentSessionID: string): SubtaskView[] {
