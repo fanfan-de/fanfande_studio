@@ -10,6 +10,7 @@ import type {
   SessionDiffSummary,
   SessionRuntimeDebugSnapshot,
   SessionRuntimeDebugState,
+  SessionTaskListView,
   SessionSummary,
   Turn,
   WorkbenchTabReference,
@@ -371,6 +372,7 @@ export interface BuildWorkspaceDerivedStateInput {
   sessionDirectoryBySession: Record<string, string>
   sessionRuntimeDebugBySession: Record<string, SessionRuntimeDebugSnapshot>
   sessionRuntimeDebugStateBySession: Record<string, SessionRuntimeDebugState>
+  sessionTasksBySession?: Record<string, SessionTaskListView>
   seedWorkspaceIDs: Set<string>
   dockviewActiveState: WorkbenchDockviewActiveState
   dockviewLayout: SerializedDockview | null
@@ -603,6 +605,7 @@ export function buildWorkbenchSurfaceState(
     activeSessionRuntimeDebugState: currentActiveSessionID
       ? input.sessionRuntimeDebugStateBySession[currentActiveSessionID] ?? DEFAULT_SESSION_RUNTIME_DEBUG_STATE
       : DEFAULT_SESSION_RUNTIME_DEBUG_STATE,
+    activeSessionTasks: currentActiveSessionID ? input.sessionTasksBySession?.[currentActiveSessionID] ?? null : null,
     activeSideChatAttachments: paneActiveSideChatTabKey
       ? input.composerAttachmentsByTabKey[paneActiveSideChatTabKey] ?? EMPTY_COMPOSER_ATTACHMENTS
       : EMPTY_COMPOSER_ATTACHMENTS,
@@ -691,6 +694,7 @@ function createInactiveWorkbenchSurfaceState(surface: Pick<WorkbenchSurfaceState
     activeSessionDiffState: DEFAULT_SESSION_DIFF_STATE,
     activeSessionRuntimeDebug: null,
     activeSessionRuntimeDebugState: DEFAULT_SESSION_RUNTIME_DEBUG_STATE,
+    activeSessionTasks: null,
     activeSideChatAttachments: EMPTY_COMPOSER_ATTACHMENTS,
     activeSideChatDraftState: EMPTY_COMPOSER_DRAFT_STATE,
     activeSideChatIsSending: false,
@@ -824,6 +828,7 @@ export function buildWorkspaceDerivedStateInputFromStore(
     sessionDirectoryBySession: state.agentStream.sessionDirectoryBySession,
     sessionRuntimeDebugBySession: state.review.sessionRuntimeDebugBySession,
     sessionRuntimeDebugStateBySession: state.review.sessionRuntimeDebugStateBySession,
+    sessionTasksBySession: state.review.sessionTasksBySession,
     seedWorkspaceIDs,
     dockviewActiveState: state.workbench.dockviewActiveState,
     dockviewLayout: state.workbench.dockviewLayout,
@@ -1077,6 +1082,7 @@ export function buildWorkspaceDerivedState({
   sessionDirectoryBySession,
   sessionRuntimeDebugBySession,
   sessionRuntimeDebugStateBySession,
+  sessionTasksBySession = {},
   seedWorkspaceIDs,
   dockviewActiveState,
   dockviewLayout,
@@ -1148,6 +1154,7 @@ export function buildWorkspaceDerivedState({
   const activeSessionRuntimeDebugState = activeSession
     ? sessionRuntimeDebugStateBySession[activeSession.id] ?? DEFAULT_SESSION_RUNTIME_DEBUG_STATE
     : DEFAULT_SESSION_RUNTIME_DEBUG_STATE
+  const activeSessionTasks = activeSession ? sessionTasksBySession[activeSession.id] ?? null : null
   const activeSessionDirectory = activeSession
     ? sessionDirectoryBySession[activeSession.id] ?? activeWorkspace?.directory ?? null
     : null
@@ -1243,6 +1250,7 @@ export function buildWorkspaceDerivedState({
     sessionDirectoryBySession,
     sessionRuntimeDebugBySession,
     sessionRuntimeDebugStateBySession,
+    sessionTasksBySession,
     seedWorkspaceIDs,
     dockviewActiveState,
     dockviewLayout,
@@ -1270,6 +1278,7 @@ export function buildWorkspaceDerivedState({
     activeSessionIsSideChat,
     activeSessionRuntimeDebug,
     activeSessionRuntimeDebugState,
+    activeSessionTasks,
     activeSessionSelectedDiffFile,
     activeSideChatAttachments,
     activeSideChatCountsByAnchorMessageID,

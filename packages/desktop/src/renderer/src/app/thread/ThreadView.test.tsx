@@ -1764,7 +1764,7 @@ describe("ThreadView assistant response markdown", () => {
     expect(container.textContent).toContain("## Tool output")
   })
 
-  it("keeps streaming responses on the lightweight rich text path", () => {
+  it("renders streaming responses as Markdown before completion", () => {
     const { container } = renderThread([
       assistantTraceTurn(
         "assistant-1",
@@ -1774,7 +1774,7 @@ describe("ThreadView assistant response markdown", () => {
             kind: "text",
             timestamp: 1,
             label: "Assistant",
-            text: "**Streaming**",
+            text: "## Streaming\n\n**Ready** to ship.",
             status: "running",
             isStreaming: true,
           },
@@ -1787,11 +1787,41 @@ describe("ThreadView assistant response markdown", () => {
     )
 
     expect(streamingResponse).not.toBeNull()
-    expect(streamingResponse).not.toHaveClass("thread-markdown")
-    expect(streamingResponse?.textContent).toContain("**Streaming**")
+    expect(streamingResponse).toHaveClass("thread-markdown")
+    expect(screen.getByRole("heading", { name: "Streaming" })).toBeInTheDocument()
+    expect(container.querySelector(".assistant-section.is-response strong")?.textContent).toBe("Ready")
+    expect(streamingResponse?.textContent).not.toContain("**Ready**")
   })
 
-  it("hides response format markers while keeping streaming responses on the rich text path", () => {
+  it("renders streaming Markdown-marked responses as Markdown without showing the marker", () => {
+    const { container, getByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "<!-- anybox-response-format: markdown -->\n## Streaming Markdown\n\n**Ready**",
+            status: "running",
+            isStreaming: true,
+          },
+        ],
+        true,
+      ),
+    ])
+    const streamingResponse = container.querySelector(
+      ".assistant-section.is-response .trace-item.is-streaming .trace-item-text",
+    )
+
+    expect(streamingResponse).not.toBeNull()
+    expect(streamingResponse).toHaveClass("thread-markdown")
+    expect(getByRole("heading", { name: "Streaming Markdown" })).toBeInTheDocument()
+    expect(container.textContent).not.toContain("anybox-response-format")
+  })
+
+  it("hides response format markers while keeping streaming HTML-marked responses on the rich text path", () => {
     const { container } = renderThread([
       assistantTraceTurn(
         "assistant-1",
@@ -1834,6 +1864,46 @@ describe("ThreadView message actions", () => {
     fireEvent.click(getByRole("button", { name: "Copy user message" }))
 
     expect(writeText).toHaveBeenCalledWith("Hello from user")
+  })
+
+  it("keeps short user messages expanded without a long-message control", () => {
+    const { container, queryByRole } = renderThread([userTurn("user-1", "Short prompt")])
+
+    expect(container.querySelector(".user-bubble-text-frame.is-collapsible")).toBeNull()
+    expect(queryByRole("button", { name: "Show full message" })).toBeNull()
+  })
+
+  it("collapses very long user messages by default and scrolls to the end when expanded", () => {
+    const scrollIntoView = vi.fn()
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    const originalRequestAnimationFrame = window.requestAnimationFrame
+    HTMLElement.prototype.scrollIntoView = scrollIntoView
+    window.requestAnimationFrame = (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    }
+
+    try {
+      const longText = Array.from({ length: 24 }, (_, index) => `Line ${index + 1}: long pasted content`).join("\n")
+      const { container, getByRole } = renderThread([userTurn("user-long", longText)])
+      const textFrame = container.querySelector(".user-bubble-text-frame") as HTMLElement | null
+      const toggleButton = getByRole("button", { name: "Show full message" })
+
+      expect(textFrame).not.toBeNull()
+      expect(textFrame).toHaveClass("is-collapsible")
+      expect(textFrame).toHaveClass("is-collapsed")
+      expect(toggleButton).toHaveAttribute("aria-expanded", "false")
+
+      fireEvent.click(toggleButton)
+
+      expect(textFrame).toHaveClass("is-expanded")
+      expect(textFrame).not.toHaveClass("is-collapsed")
+      expect(getByRole("button", { name: "Collapse message" })).toHaveAttribute("aria-expanded", "true")
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "end", inline: "nearest" })
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView
+      window.requestAnimationFrame = originalRequestAnimationFrame
+    }
   })
 
   it("renders steering submission status on user turns", () => {
@@ -2512,6 +2582,59 @@ describe("ThreadView message actions", () => {
 
     fireEvent.click(sideChatButtons[0]!)
     expect(onOpenSideChat).toHaveBeenCalledWith("assistant-final")
+  })
+
+  it("folds stale streaming intermediate assistant messages into the final response trace", () => {
+    const { container, getByRole, getByText, queryByText } = renderThread([
+      userTurn("user-1", "Build the game."),
+      assistantTraceTurn(
+        "assistant-stale-stream",
+        [
+          {
+            id: "response-stale-stream",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "OK, now let me create the full HTML file.",
+            status: "running",
+            isStreaming: true,
+          },
+        ],
+        true,
+      ),
+      assistantTraceTurn(
+        "assistant-final",
+        [
+          {
+            id: "response-final",
+            kind: "text",
+            timestamp: 2,
+            label: "Assistant",
+            text: "好的，经典横刀立马开局。",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    const processedTraceButton = getByRole("button", { name: /Processed/ })
+    const finalResponse = getByText("好的，经典横刀立马开局。")
+    const processTraceRow = processedTraceButton.closest(".assistant-process-trace-row") as HTMLElement | null
+    const finalAssistantTurn = finalResponse.closest(".assistant-turn") as HTMLElement | null
+
+    expect(processedTraceButton).toHaveAttribute("aria-expanded", "false")
+    expect(queryByText("OK, now let me create the full HTML file.")).toBeNull()
+    expect(container.querySelectorAll(".assistant-turn")).toHaveLength(1)
+    expect(processTraceRow).not.toBeNull()
+    expect(finalAssistantTurn).not.toBeNull()
+    expect(processTraceRow!.compareDocumentPosition(finalAssistantTurn!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    fireEvent.click(processedTraceButton)
+
+    const foldedStreamingText = getByText("OK, now let me create the full HTML file.")
+    expect(foldedStreamingText.closest(".assistant-process-item-row")).not.toBeNull()
+    expect(foldedStreamingText.closest(".assistant-turn")).toBeNull()
   })
 
   it("copies assistant responses without the response format marker", () => {

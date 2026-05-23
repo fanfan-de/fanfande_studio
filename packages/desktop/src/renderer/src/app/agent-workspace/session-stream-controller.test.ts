@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { AssistantTurn, Turn, UserTurn } from "../types"
+import type { AssistantTurn, SessionTaskListView, Turn, UserTurn } from "../types"
 import {
   conversationTurnsAreEquivalent,
   isCompletedStreamEvent,
@@ -12,6 +12,7 @@ import {
   readLatestSessionContextUsageFromHistory,
   readSessionContextUsageFromDoneEventData,
   readSessionContextUsageFromLlmCompletedEventData,
+  readSessionTaskListViewFromStreamEvent,
   reconcileConversationTurns,
   resolveStreamMessageID,
   resolveStreamCursor,
@@ -124,6 +125,51 @@ function createRuntimeEvent(type: string, payload: Record<string, unknown> = {})
   }
 }
 
+function createTaskListView(): SessionTaskListView {
+  const task = {
+    id: "task-1",
+    sessionID: "backend-session-1",
+    subject: "Run checks",
+    description: "",
+    activeForm: "Running checks",
+    owner: "codex",
+    status: "in_progress" as const,
+    sortIndex: 1,
+    blocks: [],
+    blockedBy: [],
+    metadata: {},
+    createdAt: 1,
+    updatedAt: 2,
+    startedAt: 2,
+    isBlocked: false,
+    blockingTasks: [],
+    blockedTasks: [],
+  }
+
+  return {
+    sessionID: "backend-session-1",
+    generatedAt: 3,
+    tasks: [task],
+    current: [task],
+    next: [],
+    blocked: [],
+    owners: [
+      {
+        owner: "codex",
+        current: task,
+      },
+    ],
+    teammateActivity: [],
+    summary: {
+      total: 1,
+      completed: 0,
+      pending: 0,
+      inProgress: 1,
+      blocked: 0,
+    },
+  }
+}
+
 describe("session stream controller helpers", () => {
   it("resolves request/session cursors and backend turn IDs from runtime and legacy events", () => {
     const runtimeData = createRuntimeEvent("turn.completed")
@@ -216,6 +262,33 @@ describe("session stream controller helpers", () => {
         },
       },
     })).toBe(true)
+  })
+
+  it("reads task snapshots directly from runtime and tool part events", () => {
+    const taskList = createTaskListView()
+
+    expect(readSessionTaskListViewFromStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("task.state.updated", {
+        state: taskList,
+      }),
+    })).toBe(taskList)
+
+    expect(readSessionTaskListViewFromStreamEvent({
+      event: "part",
+      data: {
+        part: {
+          type: "tool",
+          state: {
+            status: "completed",
+            metadata: {
+              kind: "task-state",
+              state: taskList,
+            },
+          },
+        },
+      },
+    })).toBe(taskList)
   })
 
   it("skips runtime debug refreshes for high-frequency text deltas", () => {

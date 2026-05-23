@@ -314,6 +314,8 @@ try {
       }>,
     getSessionDiff: (input: DesktopIpcInput<"desktop:get-session-diff">) =>
       invokeDesktop("desktop:get-session-diff", input) as Promise<DesktopIpcOutput<"desktop:get-session-diff">>,
+    getSessionTasks: (input: DesktopIpcInput<"desktop:get-session-tasks">) =>
+      invokeDesktop("desktop:get-session-tasks", input) as Promise<DesktopIpcOutput<"desktop:get-session-tasks">>,
     restoreWorkspaceDiffFile: (input: { directory: string; file: string }) =>
       invokeDesktop("desktop:restore-workspace-diff-file", input) as Promise<WorkspaceDiffFileRestoreResult>,
     stageWorkspaceDiffFile: (input: { directory: string; file: string }) =>

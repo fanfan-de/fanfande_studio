@@ -1,4 +1,4 @@
-import { memo, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
+import { memo, useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
 import { createPortal } from "react-dom"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
@@ -189,6 +189,9 @@ const THREAD_VIRTUAL_OVERSCAN_ROWS = 2
 const THREAD_VIRTUAL_ROW_GAP_PX = 7
 const THREAD_VIRTUAL_ROW_MIN_HEIGHT_PX = 12
 const THREAD_VIRTUAL_ROW_MEASURE_EPSILON_PX = 1
+const LONG_USER_MESSAGE_CHARACTER_THRESHOLD = 1400
+const LONG_USER_MESSAGE_LINE_THRESHOLD = 18
+const COLLAPSED_USER_MESSAGE_ESTIMATED_CHARACTERS = 640
 const threadScrollSnapshots = new Map<string, ThreadScrollSnapshot>()
 
 interface LatestAssistantTurnState {
@@ -480,10 +483,13 @@ function estimateAssistantThreadRowHeight(row: {
 }
 
 function estimateUserThreadRowHeight(turn: UserTurn) {
-  const textLength = getUserTurnBodyText(turn).length
+  const bodyText = getUserTurnBodyText(turn)
+  const isCollapsedByDefault = shouldCollapseUserTurnText(bodyText)
+  const textLength = isCollapsedByDefault ? Math.min(bodyText.length, COLLAPSED_USER_MESSAGE_ESTIMATED_CHARACTERS) : bodyText.length
   const attachmentCount = turn.attachments?.length ?? 0
   const diffHeight = hasUserTurnDiffSummary(turn) ? 220 : 0
-  return 64 + Math.ceil(textLength / 90) * 22 + attachmentCount * 28 + diffHeight
+  const collapseControlHeight = isCollapsedByDefault ? 30 : 0
+  return 64 + Math.ceil(textLength / 90) * 22 + collapseControlHeight + attachmentCount * 28 + diffHeight
 }
 
 function buildThreadDisplayRows({
@@ -663,6 +669,78 @@ function getUserTurnBodyText(turn: UserTurn) {
   return displayText || (references.length > 0 ? references.map((reference) => `@${reference.label}`).join(" ") : turn.text)
 }
 
+function countTextLines(text: string) {
+  if (!text) return 0
+  return text.split(/\r\n|\r|\n/).length
+}
+
+function shouldCollapseUserTurnText(text: string) {
+  return text.length >= LONG_USER_MESSAGE_CHARACTER_THRESHOLD || countTextLines(text) >= LONG_USER_MESSAGE_LINE_THRESHOLD
+}
+
+function CollapsibleUserTurnText({
+  references,
+  text,
+}: {
+  references?: UserTurn["references"]
+  text: string
+}) {
+  const contentID = useId()
+  const contentRef = useRef<HTMLDivElement | null>(null)
+  const isCollapsible = shouldCollapseUserTurnText(text)
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  useEffect(() => {
+    setIsExpanded(false)
+  }, [isCollapsible, text])
+
+  function handleToggle() {
+    const nextExpanded = !isExpanded
+    setIsExpanded(nextExpanded)
+
+    if (nextExpanded) {
+      const scrollExpandedMessageToEnd = () => {
+        contentRef.current?.scrollIntoView?.({ block: "end", inline: "nearest" })
+      }
+      if (typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(scrollExpandedMessageToEnd)
+      } else {
+        window.setTimeout(scrollExpandedMessageToEnd, 0)
+      }
+    }
+  }
+
+  return (
+    <>
+      <div
+        ref={contentRef}
+        id={contentID}
+        className={joinClassNames(
+          "user-bubble-text-frame",
+          isCollapsible && "is-collapsible",
+          isCollapsible && !isExpanded && "is-collapsed",
+          isCollapsible && isExpanded && "is-expanded",
+        )}
+      >
+        <ThreadRichText as="div" className="user-bubble-text" references={references} text={text} />
+      </div>
+      {isCollapsible ? (
+        <button
+          className="user-bubble-collapse-button"
+          type="button"
+          aria-controls={contentID}
+          aria-expanded={isExpanded}
+          title={isExpanded ? "Collapse message" : "Show full message and jump to the end"}
+          onClick={handleToggle}
+        >
+          {isExpanded ? <ChevronRightIcon /> : <ChevronDownIcon />}
+          <span>{isExpanded ? "Collapse message" : "Show full message"}</span>
+        </button>
+      ) : null}
+    </>
+  )
+}
+
 function UserTurnBubble({ turn }: { turn: UserTurn }) {
   const displayText = turn.displayText?.trim() || ""
   const references = turn.references ?? []
@@ -681,7 +759,7 @@ function UserTurnBubble({ turn }: { turn: UserTurn }) {
   if (!hasStructuredContent && !steerNote) {
     return (
       <div className="user-bubble">
-        <ThreadRichText as="div" className="user-bubble-text" text={turn.text} />
+        <CollapsibleUserTurnText text={turn.text} />
       </div>
     )
   }
@@ -689,7 +767,7 @@ function UserTurnBubble({ turn }: { turn: UserTurn }) {
   return (
     <div className="user-bubble">
       <div className="user-bubble-content">
-        <ThreadRichText as="div" className="user-bubble-text" references={references} text={bodyText} />
+        <CollapsibleUserTurnText references={references} text={bodyText} />
         {steerNote}
 
         {attachments.length > 0 ? (
@@ -1186,17 +1264,14 @@ function canCollapseAssistantProcessTrace(turn: AssistantTurn) {
 }
 
 function shouldFoldAssistantTurnIntoFinalRunTrace(turns: Turn[], assistantIndex: number, turn: AssistantTurn) {
-  if (!canCollapseAssistantProcessTrace(turn)) return false
-
   const finalAssistantIndex = findAssistantRunFinalTurnIndex(turns, assistantIndex)
   if (finalAssistantIndex <= assistantIndex) return false
 
   const finalTurn = turns[finalAssistantIndex]
-  return (
-    finalTurn?.kind === "assistant" &&
-    canCollapseAssistantProcessTrace(finalTurn) &&
-    assistantTurnHasTextResponse(finalTurn)
-  )
+  if (finalTurn?.kind !== "assistant") return false
+  if (!canCollapseAssistantProcessTrace(finalTurn) || !assistantTurnHasTextResponse(finalTurn)) return false
+
+  return canCollapseAssistantProcessTrace(turn) || Boolean(turn.isStreaming)
 }
 
 function collectAssistantRunProcessPrefixItems(
@@ -2995,6 +3070,76 @@ function CompletedResponseText({
   )
 }
 
+function StreamingResponseText({
+  className,
+  onArtifactLinkOpen,
+  onLocalFileLinkOpen,
+  text,
+}: {
+  className: string
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
+  onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
+  text: string
+}) {
+  const response = parseAssistantResponseFormat(text)
+  if (response.marker && response.format === "html") {
+    return (
+      <ThreadRichText
+        className={className}
+        text={response.text}
+        onArtifactLinkOpen={onArtifactLinkOpen}
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+      />
+    )
+  }
+
+  const markdownText = response.marker ? response.text : stripStreamingResponseFormatMarker(text)
+  if (!markdownText) return null
+
+  return (
+    <ThreadMarkdown
+      className={joinClassNames(className, "thread-markdown")}
+      text={markdownText}
+      onArtifactLinkOpen={onArtifactLinkOpen}
+      onLocalFileLinkOpen={onLocalFileLinkOpen}
+    />
+  )
+}
+
+function ResponseText({
+  className,
+  isStreaming,
+  onArtifactLinkOpen,
+  onLocalFileLinkOpen,
+  text,
+}: {
+  className: string
+  isStreaming?: boolean
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
+  onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
+  text: string
+}) {
+  if (isStreaming) {
+    return (
+      <StreamingResponseText
+        className={className}
+        text={text}
+        onArtifactLinkOpen={onArtifactLinkOpen}
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+      />
+    )
+  }
+
+  return (
+    <CompletedResponseText
+      className={className}
+      text={text}
+      onArtifactLinkOpen={onArtifactLinkOpen}
+      onLocalFileLinkOpen={onLocalFileLinkOpen}
+    />
+  )
+}
+
 function TraceItemTextBody({
   isResponseItem,
   item,
@@ -3006,42 +3151,37 @@ function TraceItemTextBody({
   onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
 }) {
-  const itemText = isResponseItem && item.isStreaming ? stripStreamingResponseFormatMarker(item.text ?? "") : item.text
-  const itemDetail = isResponseItem && item.isStreaming ? stripStreamingResponseFormatMarker(item.detail ?? "") : item.detail
-
   return (
     <>
-      {itemText ? (
-        isResponseItem && !item.isStreaming ? (
-          <CompletedResponseText
+      {item.text ? (
+        isResponseItem ? (
+          <ResponseText
             className="trace-item-text"
-            text={itemText}
+            text={item.text}
+            isStreaming={item.isStreaming}
             onArtifactLinkOpen={onArtifactLinkOpen}
             onLocalFileLinkOpen={onLocalFileLinkOpen}
           />
         ) : (
           <ThreadRichText
             className="trace-item-text"
-            text={itemText}
-            onArtifactLinkOpen={isResponseItem ? onArtifactLinkOpen : undefined}
-            onLocalFileLinkOpen={isResponseItem ? onLocalFileLinkOpen : undefined}
+            text={item.text}
           />
         )
       ) : null}
-      {itemDetail ? (
-        isResponseItem && !item.isStreaming ? (
-          <CompletedResponseText
+      {item.detail ? (
+        isResponseItem ? (
+          <ResponseText
             className="trace-item-detail"
-            text={itemDetail}
+            text={item.detail}
+            isStreaming={item.isStreaming}
             onArtifactLinkOpen={onArtifactLinkOpen}
             onLocalFileLinkOpen={onLocalFileLinkOpen}
           />
         ) : (
           <ThreadRichText
             className="trace-item-detail"
-            text={itemDetail}
-            onArtifactLinkOpen={isResponseItem ? onArtifactLinkOpen : undefined}
-            onLocalFileLinkOpen={isResponseItem ? onLocalFileLinkOpen : undefined}
+            text={item.detail}
           />
         )
       ) : null}

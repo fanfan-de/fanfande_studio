@@ -23,6 +23,7 @@ import {
   FolderOpen,
   GitFork,
   Globe,
+  Info,
   LayoutPanelLeft,
   ListTree,
   LoaderCircle,
@@ -92,6 +93,7 @@ export const LeftSidebarIcon = createIcon(PanelLeft)
 export const RightSidebarIcon = createIcon(PanelRight)
 export const SideChatIcon = createIcon(MessageSquare)
 export const SessionTreeIcon = createIcon(ListTree)
+export const InfoIcon = createIcon(Info)
 export const CodeModeIcon = createIcon(Code2)
 export const SessionRunningIcon = createIcon(LoaderCircle)
 export const LeftSidebarCollapseIcon = createIcon(PanelLeftClose)

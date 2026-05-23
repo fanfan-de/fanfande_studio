@@ -466,6 +466,79 @@ describe("RightSidebar", () => {
     expect(onMessageTreeNodeSelect).toHaveBeenCalledWith("session-1", "assistant-2")
   })
 
+  it("toggles full expansion from the message tree panel header", () => {
+    renderRightSidebar({
+      messageTreeBySession: {
+        "session-1": createMessageTree(),
+      },
+      rightSidebar: {
+        activeTabID: "message-tree-tab",
+        tabs: [createMessageTreeTab()],
+      },
+    })
+
+    const firstResponseNode = queryMessageTreeNode("assistant-1")
+    const secondResponseNode = queryMessageTreeNode("assistant-2")
+    expect(firstResponseNode).not.toBeNull()
+    expect(secondResponseNode).not.toBeNull()
+    if (!firstResponseNode || !secondResponseNode) return
+
+    expect(firstResponseNode).not.toHaveClass("is-expanded-response")
+    expect(secondResponseNode).not.toHaveClass("is-expanded-response")
+
+    const expandAllButton = screen.getByRole("button", { name: "Expand all tree nodes" })
+    expect(expandAllButton.closest(".session-message-tree-header")).not.toBeNull()
+    expect(expandAllButton.closest(".right-sidebar-tab-strip")).toBeNull()
+
+    fireEvent.click(expandAllButton)
+
+    expect(firstResponseNode).toHaveClass("is-expanded-response")
+    expect(secondResponseNode).toHaveClass("is-expanded-response")
+    expect(screen.getByText(/complete response content shown/)).toBeInTheDocument()
+    expect(screen.getByText(/second complete response content/)).toBeInTheDocument()
+    expect(screen.getByText("Fully expanded")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all tree nodes" }))
+
+    expect(firstResponseNode).not.toHaveClass("is-expanded-response")
+    expect(secondResponseNode).not.toHaveClass("is-expanded-response")
+    expect(screen.queryByText(/complete response content shown/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/second complete response content/)).not.toBeInTheDocument()
+  })
+
+  it("renders expanded message tree responses as markdown", () => {
+    const messageTree = createMessageTree()
+    messageTree.nodesByID["assistant-1"]!.content = [
+      "## Markdown answer",
+      "",
+      "- **Strong** item",
+      "",
+      "| Area | Status |",
+      "| --- | --- |",
+      "| Tree | Rendered |",
+    ].join("\n")
+    messageTree.nodesByID["assistant-1"]!.preview = "Markdown answer"
+
+    const { container } = render(
+      <SessionMessageTreePanel
+        session={workspace.sessions[0] ?? null}
+        messageTree={messageTree}
+        onSelectMessage={vi.fn()}
+      />,
+    )
+
+    const activeNode = screen.getByText("Markdown answer").closest(".session-message-tree-graph-node")
+    expect(activeNode).not.toBeNull()
+    if (!activeNode) return
+
+    fireEvent.doubleClick(activeNode)
+
+    expect(container.querySelector(".session-message-tree-response-card-body.thread-markdown")).not.toBeNull()
+    expect(screen.getByRole("heading", { level: 2, name: "Markdown answer" })).toBeInTheDocument()
+    expect(screen.getByText("Strong").closest("strong")).not.toBeNull()
+    expect(screen.getByRole("table")).toBeInTheDocument()
+  })
+
   it("renders message tree nodes as a directed graph and updates the active path", async () => {
     const restoreCanvasSize = mockMessageTreeCanvasSize(900, 680)
     const session = workspace.sessions[0] ?? null
@@ -657,6 +730,127 @@ describe("RightSidebar", () => {
     restoreCanvasSize()
   })
 
+  it("does not run a position animation on the anchored response while expanding it", async () => {
+    const restoreCanvasSize = mockMessageTreeCanvasSize(900, 680)
+    const originalAnimate = HTMLElement.prototype.animate
+    const animateSpy = vi.fn(function (this: HTMLElement) {
+      return { cancel: vi.fn() } as unknown as Animation
+    })
+    HTMLElement.prototype.animate = animateSpy as Element["animate"]
+
+    try {
+      render(
+        <SessionMessageTreePanel
+          session={workspace.sessions[0] ?? null}
+          messageTree={createMessageTree()}
+          onSelectMessage={vi.fn()}
+        />,
+      )
+
+      const activeNode = screen.getByText("Active answer").closest(".session-message-tree-graph-node")
+      expect(activeNode).not.toBeNull()
+      if (!activeNode) return
+
+      const initialAnchor = readMessageTreeNodeScreenAnchor(activeNode)
+      fireEvent.doubleClick(activeNode)
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+
+      expect(readMessageTreeNodeScreenAnchor(activeNode)).toEqual(initialAnchor)
+      expect(animateSpy).toHaveBeenCalled()
+      expect(
+        animateSpy.mock.contexts.map((context) => (context as HTMLElement).dataset.messageTreeNodeId),
+      ).not.toContain("assistant-1")
+    } finally {
+      if (originalAnimate) {
+        HTMLElement.prototype.animate = originalAnimate
+      } else {
+        delete (HTMLElement.prototype as unknown as { animate?: Element["animate"] }).animate
+      }
+      restoreCanvasSize()
+    }
+  })
+
+  it("sizes expanded response cards to fit long content without an inner scroll area", () => {
+    const messageTree = createMessageTree()
+    messageTree.nodesByID["assistant-1"]!.content = [
+      "Long answer",
+      ...Array.from(
+        { length: 22 },
+        (_, index) => `Expanded response line ${index + 1} with enough detail to wrap inside the response tree card.`,
+      ),
+      "Final line stays visible when the response is fully expanded.",
+    ].join("\n")
+    messageTree.nodesByID["assistant-1"]!.preview = "Long answer"
+
+    render(
+      <SessionMessageTreePanel
+        session={workspace.sessions[0] ?? null}
+        messageTree={messageTree}
+        onSelectMessage={vi.fn()}
+      />,
+    )
+
+    const activeNode = screen.getByText("Long answer").closest(".session-message-tree-graph-node") as HTMLElement | null
+    const childNode = queryMessageTreeNode("user-2")
+    expect(activeNode).not.toBeNull()
+    expect(childNode).not.toBeNull()
+    if (!activeNode || !childNode) return
+
+    fireEvent.doubleClick(activeNode)
+
+    const expandedNodeHeight = Number.parseFloat(
+      activeNode.style.getPropertyValue("--session-message-tree-expanded-node-height"),
+    )
+    const responseCardMinHeight = Number.parseFloat(
+      activeNode.style.getPropertyValue("--session-message-tree-response-card-min-height"),
+    )
+    const activeNodeTop = Number.parseFloat(activeNode.style.top)
+    const childNodeTop = Number.parseFloat(childNode.style.top)
+
+    expect(expandedNodeHeight).toBeGreaterThan(270)
+    expect(responseCardMinHeight).toBeGreaterThan(232)
+    expect(childNodeTop - activeNodeTop).toBeCloseTo(expandedNodeHeight + 36, 5)
+    expect(screen.getByText(/Final line stays visible/)).toBeInTheDocument()
+  })
+
+  it("shrinks expanded response cards when the content does not need the maximum width", () => {
+    const messageTree = createMessageTree()
+    messageTree.nodesByID["assistant-1"]!.content = [
+      "Compact answer",
+      "C# is a strongly typed language on .NET.",
+      "- Clear types",
+      "- Garbage collection",
+      "- Async support",
+      "Summary: concise and practical.",
+    ].join("\n")
+    messageTree.nodesByID["assistant-1"]!.preview = "Compact answer"
+
+    render(
+      <SessionMessageTreePanel
+        session={workspace.sessions[0] ?? null}
+        messageTree={messageTree}
+        onSelectMessage={vi.fn()}
+      />,
+    )
+
+    const activeNode = screen.getByText("Compact answer").closest(".session-message-tree-graph-node") as HTMLElement | null
+    expect(activeNode).not.toBeNull()
+    if (!activeNode) return
+
+    fireEvent.doubleClick(activeNode)
+
+    const expandedNodeWidth = Number.parseFloat(
+      activeNode.style.getPropertyValue("--session-message-tree-expanded-node-width"),
+    )
+    const responseCardWidth = Number.parseFloat(
+      activeNode.style.getPropertyValue("--session-message-tree-response-card-width"),
+    )
+
+    expect(responseCardWidth).toBeGreaterThanOrEqual(360)
+    expect(responseCardWidth).toBeLessThan(560)
+    expect(expandedNodeWidth).toBeCloseTo(responseCardWidth + 16, 5)
+  })
+
   it("expands a focused response together with its child responses on click", () => {
     render(
       <SessionMessageTreePanel
@@ -713,6 +907,9 @@ describe("RightSidebar", () => {
     fireEvent.click(parentNode)
     expect(secondChildResponseNode).toHaveClass("is-sibling-wheel-target")
     expect(secondChildResponseNode.style.left).toBe(parentNode.style.left)
+    const parentNodeLeftAfterExpand = parentNode.style.left
+    const parentNodeTopAfterExpand = parentNode.style.top
+    const graphTransformAfterExpand = document.querySelector<HTMLDivElement>(".session-message-tree-graph")?.style.transform
     onSelectMessage.mockClear()
 
     fireEvent.wheel(secondChildResponseNode, {
@@ -728,8 +925,91 @@ describe("RightSidebar", () => {
 
     expect(firstChildResponseNode).toHaveClass("is-sibling-wheel-target")
     expect(firstChildResponseNode.style.left).toBe(parentNode.style.left)
+    expect(parentNode.style.left).toBe(parentNodeLeftAfterExpand)
+    expect(parentNode.style.top).toBe(parentNodeTopAfterExpand)
+    expect(document.querySelector<HTMLDivElement>(".session-message-tree-graph")?.style.transform).toBe(
+      graphTransformAfterExpand,
+    )
     expect(secondChildResponseNode).not.toHaveClass("is-sibling-wheel-target")
     expect(onSelectMessage).toHaveBeenLastCalledWith("session-1", "assistant-child-1")
+  })
+
+  it("normalizes line-mode wheel deltas when switching child responses", () => {
+    const onSelectMessage = vi.fn()
+    render(
+      <SessionMessageTreePanel
+        session={workspace.sessions[0] ?? null}
+        messageTree={createNestedResponseMessageTree({
+          activeMessageID: "assistant-child-2",
+          activePathMessageIDs: ["user-1", "assistant-parent", "user-child-2", "assistant-child-2"],
+        })}
+        onSelectMessage={onSelectMessage}
+      />,
+    )
+
+    const parentNode = queryMessageTreeNode("assistant-parent")
+    const firstChildResponseNode = queryMessageTreeNode("assistant-child-1")
+    const secondChildResponseNode = queryMessageTreeNode("assistant-child-2")
+    expect(parentNode).not.toBeNull()
+    expect(firstChildResponseNode).not.toBeNull()
+    expect(secondChildResponseNode).not.toBeNull()
+    if (!parentNode || !firstChildResponseNode || !secondChildResponseNode) return
+
+    fireEvent.click(parentNode)
+    expect(secondChildResponseNode).toHaveClass("is-sibling-wheel-target")
+    onSelectMessage.mockClear()
+
+    fireEvent.wheel(secondChildResponseNode, {
+      deltaMode: 1,
+      deltaY: -3,
+    })
+
+    expect(firstChildResponseNode).toHaveClass("is-sibling-wheel-target")
+    expect(onSelectMessage).toHaveBeenCalledTimes(1)
+    expect(onSelectMessage).toHaveBeenLastCalledWith("session-1", "assistant-child-1")
+  })
+
+  it("ignores same-gesture wheel momentum after one child response switch", () => {
+    const onSelectMessage = vi.fn()
+    render(
+      <SessionMessageTreePanel
+        session={workspace.sessions[0] ?? null}
+        messageTree={createNestedResponseMessageTree({
+          activeMessageID: "assistant-child-2",
+          activePathMessageIDs: ["user-1", "assistant-parent", "user-child-2", "assistant-child-2"],
+        })}
+        onSelectMessage={onSelectMessage}
+      />,
+    )
+
+    const parentNode = queryMessageTreeNode("assistant-parent")
+    const firstChildResponseNode = queryMessageTreeNode("assistant-child-1")
+    const secondChildResponseNode = queryMessageTreeNode("assistant-child-2")
+    const thirdChildResponseNode = queryMessageTreeNode("assistant-child-3")
+    expect(parentNode).not.toBeNull()
+    expect(firstChildResponseNode).not.toBeNull()
+    expect(secondChildResponseNode).not.toBeNull()
+    expect(thirdChildResponseNode).not.toBeNull()
+    if (!parentNode || !firstChildResponseNode || !secondChildResponseNode || !thirdChildResponseNode) return
+
+    fireEvent.click(parentNode)
+    expect(secondChildResponseNode).toHaveClass("is-sibling-wheel-target")
+    onSelectMessage.mockClear()
+
+    fireEvent.wheel(secondChildResponseNode, {
+      deltaY: -120,
+    })
+
+    expect(firstChildResponseNode).toHaveClass("is-sibling-wheel-target")
+    expect(onSelectMessage).toHaveBeenCalledTimes(1)
+
+    fireEvent.wheel(firstChildResponseNode, {
+      deltaY: -120,
+    })
+
+    expect(firstChildResponseNode).toHaveClass("is-sibling-wheel-target")
+    expect(thirdChildResponseNode).not.toHaveClass("is-sibling-wheel-target")
+    expect(onSelectMessage).toHaveBeenCalledTimes(1)
   })
 
   it("collapses an expanded assistant response when double clicking anywhere in the tree panel", () => {

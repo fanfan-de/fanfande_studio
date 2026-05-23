@@ -2,7 +2,6 @@ import { memo, Profiler, useLayoutEffect, useMemo, useRef } from "react"
 import { CreateSessionCanvas } from "../canvas/CreateSessionCanvas"
 import { SessionCanvasTopMenu } from "../canvas/SessionCanvasTopMenu"
 import { Composer } from "../composer/Composer"
-import { ComposerTaskProgress } from "../composer/ComposerTaskProgress"
 import { useDeferredComposerDraftSync } from "../composer/use-deferred-composer-draft-sync"
 import { ComposerUtilityBar } from "../ComposerUtilityBar"
 import { getSessionWorkflowBadge, type SessionWorkflowBadge as SessionWorkflowBadgeInfo } from "../session-workflow"
@@ -365,6 +364,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
           <Profiler id="WorkbenchPaneSurface.SessionCanvasTopMenu" onRender={topMenuProfiler}>
             <SessionCanvasTopMenu
               activeSession={pane.activeSession}
+              sessionTasks={pane.activeSessionTasks ?? pane.activeSessionRuntimeDebug?.tasks ?? null}
               gitProjectID={pane.projectID}
               gitDirectory={pane.workspace?.directory ?? null}
               showGitControls={showGitControls}
@@ -398,7 +398,6 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                 />
               </Profiler>
               <div className="composer-stack">
-                <ComposerTaskProgress tasks={pane.activeSessionRuntimeDebug?.tasks ?? null} />
                 <Profiler id="WorkbenchPaneSurface.CreateSessionComposer" onRender={composerProfiler}>
                   <Composer
                     attachments={pane.composerAttachments}
@@ -623,7 +622,6 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                 />
               </Profiler>
               <div className="composer-stack">
-                <ComposerTaskProgress tasks={pane.activeSessionRuntimeDebug?.tasks ?? null} />
                 <ComposerPendingSteerDrawer turns={pendingSteerTurns} />
                 <Profiler id="WorkbenchPaneSurface.Composer" onRender={composerProfiler}>
                   <Composer

@@ -94,6 +94,7 @@ import type {
   AgentSessionInfo,
   AgentSessionRuntimeDebugSnapshot,
   AgentSessionTraceExport,
+  AgentSessionTaskListView,
   AgentSessionTurnRequestInput,
   AgentSessionWorkflowUpdateInput,
   AgentSideChatLink,
@@ -2044,6 +2045,15 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
       {
         method: "DELETE",
       },
+    )
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:get-session-tasks", async (_event, input: { sessionID: string }) => {
+    const sessionID = input.sessionID.trim()
+    const result = await requestAgentJSON<AgentSessionTaskListView>(
+      `/api/sessions/${encodeURIComponent(sessionID)}/tasks`,
     )
 
     return result.data

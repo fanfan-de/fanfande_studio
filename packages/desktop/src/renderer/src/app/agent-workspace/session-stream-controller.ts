@@ -23,6 +23,7 @@ import type {
   SessionDiffSummary,
   SessionRuntimeDebugSnapshot,
   SessionRuntimeDebugState,
+  SessionTaskListView,
   Turn,
   WorkspaceGroup,
 } from "../types"
@@ -35,10 +36,12 @@ import {
 import {
   clearRuntimeDebugRefreshTimer as clearRuntimeDebugRefreshTimerService,
   clearSessionDiffRefreshTimer as clearSessionDiffRefreshTimerService,
+  loadSessionTasksForSession as loadSessionTasksForSessionService,
   loadSessionDiffForSession as loadSessionDiffForSessionService,
   loadSessionRuntimeDebugForSession as loadSessionRuntimeDebugForSessionService,
   scheduleRuntimeDebugRefresh as scheduleRuntimeDebugRefreshService,
   scheduleSessionDiffRefreshForSession as scheduleSessionDiffRefreshForSessionService,
+  sessionTaskListsAreEquivalent as sessionTaskListsAreEquivalentService,
   useOpenSessionReviewPreloadEffects,
   useReviewRefreshCleanupEffect,
 } from "./review-diff-runtime-hooks"
@@ -176,6 +179,36 @@ export function isTaskStateStreamEvent(streamEvent: { event: string; data: unkno
   const state = readRecord(part?.state)
   const metadata = readRecord(state?.metadata)
   return readString(metadata?.kind) === "task-state"
+}
+
+function readSessionTaskListView(value: unknown): SessionTaskListView | null {
+  const state = readRecord(value)
+  const summary = readRecord(state?.summary)
+  if (!state || !summary || !Array.isArray(state.tasks)) return null
+  if (!readString(state.sessionID)) return null
+  if (readStreamNumber(summary.total) === null) return null
+  if (readStreamNumber(summary.completed) === null) return null
+  if (readStreamNumber(summary.pending) === null) return null
+  if (readStreamNumber(summary.inProgress) === null) return null
+  if (readStreamNumber(summary.blocked) === null) return null
+
+  return state as unknown as SessionTaskListView
+}
+
+export function readSessionTaskListViewFromStreamEvent(streamEvent: { event: string; data: unknown }) {
+  const runtimePayload = readRuntimeStreamPayload(streamEvent.data)
+  const runtimeTasks = readSessionTaskListView(runtimePayload?.state)
+  if (runtimeTasks) return runtimeTasks
+
+  if (streamEvent.event !== "part") return null
+  const data = readRecord(streamEvent.data)
+  const part = readRecord(data?.part)
+  if (readString(part?.type) !== "tool") return null
+
+  const state = readRecord(part?.state)
+  const metadata = readRecord(state?.metadata)
+  if (readString(metadata?.kind) !== "task-state") return null
+  return readSessionTaskListView(metadata?.state)
 }
 
 function readStreamString(value: unknown) {
@@ -828,6 +861,7 @@ interface UseSessionStreamControllerOptions {
   setSessionDirectoryBySession: StateSetter<Record<string, string>>
   setSessionRuntimeDebugBySession: StateSetter<Record<string, SessionRuntimeDebugSnapshot>>
   setSessionRuntimeDebugStateBySession: StateSetter<Record<string, SessionRuntimeDebugState>>
+  setSessionTasksBySession: StateSetter<Record<string, SessionTaskListView>>
   setWorkspaces: StateSetter<WorkspaceGroup[]>
   skipNextHistoryLoadRef: MutableRefObject<Record<string, boolean>>
   subscribedSessionStreamsRef: MutableRefObject<Record<string, string>>
@@ -872,6 +906,7 @@ export function useSessionStreamController({
   setSessionDirectoryBySession,
   setSessionRuntimeDebugBySession,
   setSessionRuntimeDebugStateBySession,
+  setSessionTasksBySession,
   setWorkspaces,
   skipNextHistoryLoadRef,
   subscribedSessionStreamsRef,
@@ -956,6 +991,18 @@ export function useSessionStreamController({
 
   function clearRuntimeDebugRefreshTimer(sessionID: string) {
     clearRuntimeDebugRefreshTimerService(sessionID, runtimeDebugRefreshTimerRef)
+  }
+
+  function applySessionTasksSnapshot(sessionID: string, tasks: SessionTaskListView | null) {
+    if (!tasks) return
+    setSessionTasksBySession((prev) => (
+      sessionTaskListsAreEquivalentService(prev[sessionID], tasks)
+        ? prev
+        : {
+            ...prev,
+            [sessionID]: tasks,
+          }
+    ))
   }
 
   useEffect(() => {
@@ -1275,6 +1322,14 @@ export function useSessionStreamController({
 
     if (isTaskStateStreamEvent(streamEvent)) {
       refreshWorkspaceForSession(target.sessionID)
+      applySessionTasksSnapshot(target.sessionID, readSessionTaskListViewFromStreamEvent(streamEvent))
+      void loadSessionTasksForSession(target.sessionID, target.backendSessionID ?? resolveBackendSessionID(target.sessionID), {
+        force: true,
+        mode: "silent",
+        reason: "stream",
+      }).catch((error) => {
+        console.error("[desktop] stream task refresh failed:", error)
+      })
     }
 
     if (shouldRefreshRuntimeDebugForStreamEvent(streamEvent)) {
@@ -1377,6 +1432,14 @@ export function useSessionStreamController({
 
     if (isTaskStateStreamEvent(streamEvent)) {
       refreshWorkspaceForSession(uiSessionID)
+      applySessionTasksSnapshot(uiSessionID, readSessionTaskListViewFromStreamEvent(streamEvent))
+      void loadSessionTasksForSession(uiSessionID, streamEvent.sessionID, {
+        force: true,
+        mode: "silent",
+        reason: "stream",
+      }).catch((error) => {
+        console.error("[desktop] session stream task refresh failed:", error)
+      })
     }
 
     if (shouldRefreshRuntimeDebugForStreamEvent(streamEvent)) {
@@ -1567,6 +1630,33 @@ export function useSessionStreamController({
     })
   }
 
+  async function ensureSessionTasksLoaded(
+    sessionID: string,
+    backendSessionID = resolveBackendSessionID(sessionID),
+    options: SessionDataLoadOptions = { mode: "silent", reason: "open" },
+  ) {
+    await ensureSessionDataLoad(sessionDataLoadCacheRef.current, "tasks", sessionID, backendSessionID, options, async () => {
+      await loadSessionTasksForSessionService({
+        backendSessionID,
+        sessionID,
+        setSessionTasksBySession,
+      })
+    })
+  }
+
+  async function loadSessionTasksForSession(
+    sessionID: string,
+    backendSessionID = resolveBackendSessionID(sessionID),
+    options: SessionDataLoadOptions = {},
+  ) {
+    await ensureSessionTasksLoaded(sessionID, backendSessionID, {
+      force: true,
+      mode: "silent",
+      reason: "manual",
+      ...options,
+    })
+  }
+
   function scheduleRuntimeDebugRefresh(
     sessionID: string,
     backendSessionID = resolveBackendSessionID(sessionID),
@@ -1656,6 +1746,7 @@ export function useSessionStreamController({
     ensurePendingPermissionRequestsLoaded,
     ensureSessionDiffLoaded,
     ensureSessionRuntimeDebugLoaded,
+    ensureSessionTasksLoaded,
     isRuntimeDebugEnabled,
   })
 
@@ -1675,6 +1766,7 @@ export function useSessionStreamController({
     ensureSessionHistoryLoaded,
     loadSessionDiffForSession,
     loadSessionRuntimeDebugForSession,
+    loadSessionTasksForSession,
     refreshWorkspaceForSession,
     refreshWorkspaceFromDirectory,
     reloadSessionHistoryForSession,

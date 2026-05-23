@@ -1740,7 +1740,15 @@
   gap: 8px;
 }
 
+.session-message-tree-heading-row {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .session-message-tree-title-copy {
+  flex: 1 1 auto;
   min-width: 0;
   display: grid;
   gap: 3px;
@@ -1785,6 +1793,45 @@
   font-size: 11px;
   font-weight: 650;
   letter-spacing: 0;
+}
+
+.session-message-tree-expand-toggle {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--semantic-accent-icon);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.session-message-tree-expand-toggle:hover,
+.session-message-tree-expand-toggle:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  color: var(--semantic-accent-icon-hover);
+  outline: none;
+}
+
+.session-message-tree-expand-toggle:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
+}
+
+.session-message-tree-expand-toggle.is-active {
+  color: var(--semantic-accent-icon-active);
+}
+
+.session-message-tree-expand-toggle svg {
+  width: 16px;
+  height: 16px;
 }
 
 .session-message-tree-canvas {
@@ -1870,8 +1917,8 @@
 }
 
 .session-message-tree-graph-node.is-expanded-response {
-  width: 296px;
-  min-height: 270px;
+  width: var(--session-message-tree-expanded-node-width, 576px);
+  min-height: var(--session-message-tree-expanded-node-height, 270px);
   gap: 6px;
   z-index: 3;
 }
@@ -1974,15 +2021,16 @@
 
 .session-message-tree-response-card {
   box-sizing: border-box;
-  width: 280px;
-  height: 232px;
-  overflow: hidden;
+  width: var(--session-message-tree-response-card-width, 560px);
+  min-height: var(--session-message-tree-response-card-min-height, 232px);
+  overflow: visible;
   border: 1px solid var(--mix-seg-border-84-transparent-16);
   border-radius: 7px;
   background: var(--mix-seg-panel-92-transparent-8);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: start;
   text-align: left;
   transform-origin: top center;
   transition:
@@ -2057,7 +2105,7 @@
 .session-message-tree-response-card-body {
   min-height: 0;
   padding: 8px 10px 10px;
-  overflow: auto;
+  overflow: visible;
   color: var(--seg-text-1);
   cursor: text;
   display: block;
@@ -2067,7 +2115,48 @@
   line-height: 1.42;
   overflow-wrap: anywhere;
   user-select: text;
-  white-space: pre-wrap;
+  white-space: normal;
+}
+
+.session-message-tree-response-card-body.thread-markdown {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.session-message-tree-response-card-body.thread-markdown :where(p, blockquote, ul, ol, pre, .thread-markdown-table-scroll, h1, h2, h3, h4, h5, h6) {
+  margin-bottom: 0.62em;
+}
+
+.session-message-tree-response-card-body.thread-markdown :where(h1, h2) {
+  padding-left: 8px;
+}
+
+.session-message-tree-response-card-body.thread-markdown :where(h1, h2)::before {
+  width: 2px;
+}
+
+.session-message-tree-response-card-body.thread-markdown h1 {
+  font-size: 15px;
+}
+
+.session-message-tree-response-card-body.thread-markdown h2 {
+  font-size: 14px;
+}
+
+.session-message-tree-response-card-body.thread-markdown :where(h3, h4, h5, h6) {
+  font-size: 13px;
+}
+
+.session-message-tree-response-card-body.thread-markdown :where(ul, ol) {
+  padding-left: 1.3em;
+}
+
+.session-message-tree-response-card-body.thread-markdown pre {
+  padding: 9px 10px;
+}
+
+.session-message-tree-response-card-body.thread-markdown :where(th, td) {
+  padding: 5px 7px;
 }
 
 @media (prefers-reduced-motion: no-preference) {

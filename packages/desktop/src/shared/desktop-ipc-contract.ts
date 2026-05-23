@@ -51,6 +51,7 @@ import type {
   AgentSessionQuestionAnswerInput,
   AgentSessionQuestionAnswerResult,
   AgentSessionRuntimeDebugSnapshot,
+  AgentSessionTaskListView,
   AgentSessionTraceExport,
   AgentSessionTurnRequestInput,
   AgentSessionWorkflowUpdateInput,
@@ -928,6 +929,10 @@ export interface DesktopIpcContract {
     input: { sessionID: string; scope?: AgentSessionDiffScope }
     output: AgentSessionDiffSummary
   }
+  "desktop:get-session-tasks": {
+    input: { sessionID: string }
+    output: AgentSessionTaskListView
+  }
   "desktop:restore-workspace-diff-file": {
     input: { directory: string; file: string }
     output: WorkspaceDiffFileRestoreResult
@@ -1495,6 +1500,7 @@ export interface DesktopApiMethods {
   restoreArchivedSession(input: DesktopIpcInput<"desktop:restore-archived-session">): Promise<DesktopIpcOutput<"desktop:restore-archived-session">>
   deleteArchivedSession(input: DesktopIpcInput<"desktop:delete-archived-session">): Promise<DesktopIpcOutput<"desktop:delete-archived-session">>
   getSessionDiff(input: DesktopIpcInput<"desktop:get-session-diff">): Promise<DesktopIpcOutput<"desktop:get-session-diff">>
+  getSessionTasks(input: DesktopIpcInput<"desktop:get-session-tasks">): Promise<DesktopIpcOutput<"desktop:get-session-tasks">>
   restoreWorkspaceDiffFile(input: DesktopIpcInput<"desktop:restore-workspace-diff-file">): Promise<DesktopIpcOutput<"desktop:restore-workspace-diff-file">>
   stageWorkspaceDiffFile(input: DesktopIpcInput<"desktop:stage-workspace-diff-file">): Promise<DesktopIpcOutput<"desktop:stage-workspace-diff-file">>
   unstageWorkspaceDiffFile(input: DesktopIpcInput<"desktop:unstage-workspace-diff-file">): Promise<DesktopIpcOutput<"desktop:unstage-workspace-diff-file">>

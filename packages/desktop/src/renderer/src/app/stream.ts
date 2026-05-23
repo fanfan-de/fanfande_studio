@@ -699,13 +699,6 @@ function readTaskState(value: unknown) {
   }
 }
 
-function readTaskStateFromToolState(state: Record<string, unknown> | null) {
-  if (!state || readString(state.status) !== "completed") return null
-  const metadata = readRecord(state.metadata)
-  if (readString(metadata?.kind) !== "task-state") return null
-  return readTaskState(metadata?.state)
-}
-
 function createTaskStateTraceItem(input: {
   sourceID: string
   taskState: NonNullable<ReturnType<typeof readTaskState>>
@@ -1111,15 +1104,6 @@ function buildTraceItemFromPart(
     const toolInputText = createToolTraceInputText(status, state)
     const toolOutputText = createToolTraceOutputText(status, state)
     const questionPrompt = readAskUserQuestionPrompt(state?.metadata)
-    const taskState = readTaskStateFromToolState(state)
-
-    if (taskState) {
-      return [createTaskStateTraceItem({
-        sourceID: `task-state:${readString(readRecord(state?.metadata)?.toolCallID) || sourceID}`,
-        taskState,
-        debugEntries,
-      })]
-    }
 
     if (questionPrompt && !questionPrompt.answered) {
       return [createTraceItem({

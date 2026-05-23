@@ -463,6 +463,8 @@ export function RightSidebar({
           <SessionMessageTreePanel
             session={treeSession}
             messageTree={messageTreeBySession[activeTab.sessionID] ?? null}
+            onArtifactLinkOpen={onArtifactLinkOpen}
+            onLocalFileLinkOpen={onLocalFileLinkOpen}
             onSelectMessage={onMessageTreeNodeSelect}
           />
         )

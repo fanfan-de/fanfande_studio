@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { ExternalEditorMenuButton } from "../external-editor/ExternalEditorMenuButton"
 import { GitQuickMenuButton } from "../git/GitQuickMenuButton"
-import { ChevronDownIcon, CopyIcon, DownloadIcon } from "../icons"
+import { CheckIcon, ChevronDownIcon, CopyIcon, DownloadIcon, InfoIcon, SessionRunningIcon, SessionTreeIcon } from "../icons"
 import { ShellTopMenu, SideChatBadge, writeTextToClipboard } from "../shared-ui"
 import type {
   ComposerMcpOption,
   ComposerPluginOption,
   ComposerSkillOption,
   PermissionRequest,
+  SessionTaskListView,
+  SessionTaskSummary,
   SessionSummary,
   ToolPermissionMode,
 } from "../types"
@@ -30,12 +32,16 @@ const TOOL_PERMISSION_MODE_OPTIONS: Array<{
   },
 ]
 
+const SESSION_INFO_PANEL_WIDTH = 320
+const SESSION_INFO_PANEL_THREAD_MARGIN = 16
+
 function getToolPermissionModeLabel(mode: ToolPermissionMode) {
   return TOOL_PERMISSION_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "默认权限"
 }
 
 interface SessionCanvasTopMenuProps {
   activeSession: SessionSummary | null
+  sessionTasks?: SessionTaskListView | null
   gitProjectID: string | null
   gitDirectory: string | null
   showGitControls?: boolean
@@ -467,6 +473,197 @@ function ProjectSkillsMenuButton({
   )
 }
 
+function getTaskDisplayText(task: SessionTaskSummary) {
+  if (task.status === "in_progress") return task.activeForm || task.subject
+  return task.subject
+}
+
+function getTaskStatusClassName(task: SessionTaskSummary) {
+  if (task.status === "completed") return "is-completed"
+  if (task.status === "in_progress") return "is-running"
+  if (task.isBlocked) return "is-blocked"
+  return "is-pending"
+}
+
+function getTaskButtonLabel(tasks?: SessionTaskListView | null) {
+  if (!tasks) return "task data not loaded"
+  if (tasks.summary.total === 0) return "no tasks"
+
+  const openCount = tasks.summary.inProgress + tasks.summary.pending
+  if (openCount > 0) {
+    return `${openCount} active task${openCount === 1 ? "" : "s"}`
+  }
+  return `${tasks.summary.completed}/${tasks.summary.total} tasks complete`
+}
+
+function TaskStatusIcon({ task }: { task: SessionTaskSummary }) {
+  if (task.status === "in_progress") {
+    return <SessionRunningIcon />
+  }
+  if (task.status === "completed") {
+    return <CheckIcon />
+  }
+  return <span className="task-progress-menu-pending-dot" aria-hidden="true" />
+}
+
+function sessionInfoPanelCanAutoOpen(button: HTMLButtonElement | null) {
+  if (!button) return false
+
+  const pane = button.closest<HTMLElement>(".workbench-pane")
+  const threadColumn = pane?.querySelector<HTMLElement>(".thread-column")
+  if (!pane || !threadColumn) return false
+
+  const buttonRect = button.getBoundingClientRect()
+  const paneRect = pane.getBoundingClientRect()
+  const threadRect = threadColumn.getBoundingClientRect()
+  const panelWidth = Math.min(SESSION_INFO_PANEL_WIDTH, Math.max(0, paneRect.width - 32))
+  const panelLeft = buttonRect.right - panelWidth
+
+  return panelLeft >= threadRect.right + SESSION_INFO_PANEL_THREAD_MARGIN
+}
+
+function SessionInfoMenuButton({ sessionID, tasks }: { sessionID: string; tasks?: SessionTaskListView | null }) {
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const lastSessionIDRef = useRef(sessionID)
+  const userToggledRef = useRef(false)
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+
+  useLayoutEffect(() => {
+    if (lastSessionIDRef.current !== sessionID) {
+      lastSessionIDRef.current = sessionID
+      userToggledRef.current = false
+    }
+    if (userToggledRef.current) return
+
+    const updateAutoOpen = () => {
+      setIsMenuOpen(sessionInfoPanelCanAutoOpen(buttonRef.current))
+    }
+
+    updateAutoOpen()
+    window.addEventListener("resize", updateAutoOpen)
+
+    const pane = buttonRef.current?.closest<HTMLElement>(".workbench-pane")
+    const threadColumn = pane?.querySelector<HTMLElement>(".thread-column")
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateAutoOpen)
+
+    if (resizeObserver) {
+      if (pane) resizeObserver.observe(pane)
+      if (threadColumn) resizeObserver.observe(threadColumn)
+    }
+
+    return () => {
+      window.removeEventListener("resize", updateAutoOpen)
+      resizeObserver?.disconnect()
+    }
+  }, [sessionID, tasks])
+
+  useEffect(() => {
+    if (!isMenuOpen) return
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return
+      userToggledRef.current = true
+      setIsMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        userToggledRef.current = true
+        setIsMenuOpen(false)
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [isMenuOpen])
+
+  const hasTasks = Boolean(tasks && tasks.summary.total > 0)
+  const openCount = tasks ? tasks.summary.inProgress + tasks.summary.pending : 0
+  const hasRunningTasks = Boolean(tasks && tasks.summary.inProgress > 0)
+  const [isProgressOpen, setIsProgressOpen] = useState(hasRunningTasks)
+  const emptyTitle = tasks ? "No tasks yet" : "Task data not loaded"
+  const emptyText = tasks
+    ? "Tasks created by the agent will appear here."
+    : "Task progress will appear here once the session reports it."
+
+  useEffect(() => {
+    setIsProgressOpen(hasRunningTasks)
+  }, [hasRunningTasks, sessionID])
+
+  return (
+    <div className="canvas-top-menu-quick-anchor canvas-top-menu-info-anchor">
+      <button
+        ref={buttonRef}
+        type="button"
+        className={isMenuOpen ? "canvas-top-menu-button canvas-top-menu-info-trigger is-active" : "canvas-top-menu-button canvas-top-menu-info-trigger"}
+        aria-controls="canvas-top-menu-info-menu"
+        aria-expanded={isMenuOpen}
+        aria-haspopup="dialog"
+        aria-label={`Session information: ${getTaskButtonLabel(tasks)}`}
+        title={`Session information: ${getTaskButtonLabel(tasks)}`}
+        onClick={() => {
+          userToggledRef.current = true
+          setIsMenuOpen((current) => !current)
+        }}
+      >
+        <InfoIcon />
+        {openCount > 0 ? <span className="canvas-top-menu-info-badge">{openCount}</span> : null}
+      </button>
+
+      {isMenuOpen ? (
+        <div ref={menuRef} id="canvas-top-menu-info-menu" className="canvas-top-menu-quick-panel session-info-menu-panel" role="dialog" aria-label="Session information">
+          <button
+            type="button"
+            className="task-progress-menu-header"
+            aria-expanded={isProgressOpen}
+            aria-label={isProgressOpen ? "收起进度" : "展开进度"}
+            onClick={() => setIsProgressOpen((current) => !current)}
+          >
+            <span className="task-progress-menu-title-row">
+              <span className="task-progress-menu-icon" aria-hidden="true">
+                <SessionTreeIcon />
+              </span>
+              <span className="task-progress-menu-title">进度</span>
+            </span>
+            <span className={isProgressOpen ? "task-progress-menu-chevron is-open" : "task-progress-menu-chevron"} aria-hidden="true">
+              <ChevronDownIcon />
+            </span>
+          </button>
+
+          {isProgressOpen ? (
+            hasTasks && tasks ? (
+              <ol className="task-progress-menu-list">
+                {tasks.tasks.map((task) => (
+                  <li key={task.id} className={`task-progress-menu-row ${getTaskStatusClassName(task)}`}>
+                    <span className="task-progress-menu-row-icon" aria-hidden="true">
+                      <TaskStatusIcon task={task} />
+                    </span>
+                    <span className="task-progress-menu-task-title" title={getTaskDisplayText(task)}>{getTaskDisplayText(task)}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <div className="task-progress-menu-empty">
+                <strong>{emptyTitle}</strong>
+                <span>{emptyText}</span>
+              </div>
+            )
+          ) : null}
+          <div className="task-progress-menu-divider" />
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function SessionTraceExportMenuButton({ sessionID }: { sessionID: string }) {
   const menuRef = useRef<HTMLDivElement | null>(null)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
@@ -616,6 +813,7 @@ function SessionTraceExportMenuButton({ sessionID }: { sessionID: string }) {
 
 export function SessionCanvasTopMenu({
   activeSession,
+  sessionTasks,
   gitProjectID,
   gitDirectory,
   showGitControls = true,
@@ -689,6 +887,7 @@ export function SessionCanvasTopMenu({
               {showGitControls ? <GitQuickMenuButton projectID={gitProjectID} directory={gitDirectory} /> : null}
             </>
           ) : null}
+          {activeSession ? <SessionInfoMenuButton sessionID={activeSession.id} tasks={sessionTasks} /> : null}
         </>
       )}
       trailingClassName="session-canvas-top-menu-actions"

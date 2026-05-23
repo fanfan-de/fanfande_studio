@@ -20,6 +20,7 @@ import type {
   SessionDiffSummary,
   SessionRuntimeDebugSnapshot,
   SessionRuntimeDebugState,
+  SessionTaskListView,
   SessionSummary,
   SidebarActionKey,
   Turn,
@@ -175,6 +176,7 @@ interface UseSessionLifecycleControllerOptions {
   setSessionDirectoryBySession: StateSetter<Record<string, string>>
   setSessionRuntimeDebugBySession: StateSetter<Record<string, SessionRuntimeDebugSnapshot>>
   setSessionRuntimeDebugStateBySession: StateSetter<Record<string, SessionRuntimeDebugState>>
+  setSessionTasksBySession: StateSetter<Record<string, SessionTaskListView>>
   setDockviewLayout: StateSetter<SerializedDockview | null>
   setWorkspaces: StateSetter<WorkspaceGroup[]>
   updateRightSidebarTab: (tabID: string, update: RightSidebarTabUpdate) => void
@@ -250,6 +252,7 @@ export function useSessionLifecycleController({
   setSessionDirectoryBySession,
   setSessionRuntimeDebugBySession,
   setSessionRuntimeDebugStateBySession,
+  setSessionTasksBySession,
   setDockviewLayout,
   setWorkspaces,
   updateRightSidebarTab,
@@ -320,6 +323,14 @@ export function useSessionLifecycleController({
     })
 
     setSessionRuntimeDebugStateBySession((prev) => {
+      const next = { ...prev }
+      for (const sessionID of sessionIDs) {
+        delete next[sessionID]
+      }
+      return next
+    })
+
+    setSessionTasksBySession((prev) => {
       const next = { ...prev }
       for (const sessionID of sessionIDs) {
         delete next[sessionID]

@@ -1,9 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import type { SessionDiffState, SessionDiffSummary, SessionRuntimeDebugSnapshot } from "../types"
+import type {
+  SessionDiffState,
+  SessionDiffSummary,
+  SessionRuntimeDebugSnapshot,
+  SessionTaskListView,
+  SessionTaskSummary,
+} from "../types"
 import {
   loadSessionDiffForSession,
+  loadSessionTasksForSession,
   sessionDiffSummariesAreEquivalent,
   sessionRuntimeDebugSnapshotsAreEquivalent,
+  sessionTaskListsAreEquivalent,
 } from "./review-diff-runtime-hooks"
 
 function createRuntimeSnapshot(overrides: Partial<SessionRuntimeDebugSnapshot> = {}): SessionRuntimeDebugSnapshot {
@@ -33,6 +41,57 @@ function createRuntimeSnapshot(overrides: Partial<SessionRuntimeDebugSnapshot> =
       type: "idle",
     },
     turns: [],
+    ...overrides,
+  }
+}
+
+function createTask(overrides: Partial<SessionTaskSummary> = {}): SessionTaskSummary {
+  return {
+    id: "task-1",
+    sessionID: "session-1",
+    subject: "Run checks",
+    description: "",
+    activeForm: "Running checks",
+    owner: "codex",
+    status: "in_progress",
+    sortIndex: 1,
+    blocks: [],
+    blockedBy: [],
+    metadata: {},
+    createdAt: 1,
+    updatedAt: 2,
+    startedAt: 2,
+    isBlocked: false,
+    blockingTasks: [],
+    blockedTasks: [],
+    ...overrides,
+  }
+}
+
+function createTaskList(overrides: Partial<SessionTaskListView> = {}): SessionTaskListView {
+  const task = createTask()
+
+  return {
+    sessionID: "session-1",
+    generatedAt: 1,
+    tasks: [task],
+    current: [task],
+    next: [],
+    blocked: [],
+    owners: [
+      {
+        owner: "codex",
+        current: task,
+      },
+    ],
+    teammateActivity: [],
+    summary: {
+      total: 1,
+      completed: 0,
+      pending: 0,
+      inProgress: 1,
+      blocked: 0,
+    },
     ...overrides,
   }
 }
@@ -78,6 +137,35 @@ describe("review data signatures", () => {
     expect(sessionRuntimeDebugSnapshotsAreEquivalent(first, createRuntimeSnapshot({
       activeTurnID: "turn-2",
       generatedAt: 3,
+    }))).toBe(false)
+  })
+
+  it("ignores task list generatedAt when the visible task state is unchanged", () => {
+    const first = createTaskList({ generatedAt: 1 })
+    const second = createTaskList({ generatedAt: 2 })
+    const completedTask = createTask({
+      activeForm: "",
+      completedAt: 3,
+      status: "completed",
+    })
+
+    expect(sessionTaskListsAreEquivalent(first, second)).toBe(true)
+    expect(sessionTaskListsAreEquivalent(first, createTaskList({
+      current: [],
+      generatedAt: 3,
+      owners: [
+        {
+          owner: "codex",
+        },
+      ],
+      summary: {
+        total: 1,
+        completed: 1,
+        pending: 0,
+        inProgress: 0,
+        blocked: 0,
+      },
+      tasks: [completedTask],
     }))).toBe(false)
   })
 
@@ -130,5 +218,29 @@ describe("review data signatures", () => {
 
     expect(currentDiffBySession).toBe(sessionDiffBySession)
     expect(currentDiffStateBySession).toBe(sessionDiffStateBySession)
+  })
+
+  it("keeps task refreshes as no-ops when the task snapshot is unchanged", async () => {
+    const tasks = createTaskList({ generatedAt: 1 })
+    const sessionTasksBySession: Record<string, SessionTaskListView> = {
+      "session-1": tasks,
+    }
+    let currentTasksBySession = sessionTasksBySession
+
+    window.desktop = {
+      ...originalDesktop,
+      getSessionTasks: vi.fn(async () => createTaskList({ generatedAt: 2 })),
+    } as typeof window.desktop
+
+    await loadSessionTasksForSession({
+      backendSessionID: "backend-1",
+      sessionID: "session-1",
+      setSessionTasksBySession: (update) => {
+        currentTasksBySession = typeof update === "function" ? update(currentTasksBySession) : update
+      },
+    })
+
+    expect(window.desktop?.getSessionTasks).toHaveBeenCalledWith({ sessionID: "backend-1" })
+    expect(currentTasksBySession).toBe(sessionTasksBySession)
   })
 })

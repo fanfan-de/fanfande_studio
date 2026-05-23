@@ -4,6 +4,7 @@ import type {
   SessionDiffSummary,
   SessionRuntimeDebugSnapshot,
   SessionRuntimeDebugState,
+  SessionTaskListView,
   WorkspaceFileReviewState,
 } from "../types"
 import { DEFAULT_SESSION_DIFF_STATE, DEFAULT_SESSION_RUNTIME_DEBUG_STATE, DEFAULT_WORKSPACE_FILE_REVIEW_STATE } from "./review-preview-state"
@@ -61,6 +62,69 @@ export function sessionRuntimeDebugSnapshotsAreEquivalent(
   right: SessionRuntimeDebugSnapshot | null | undefined,
 ) {
   return buildSessionRuntimeDebugSignature(left) === buildSessionRuntimeDebugSignature(right)
+}
+
+export function buildSessionTaskListSignature(tasks: SessionTaskListView | null | undefined) {
+  if (!tasks) return ""
+  return JSON.stringify({
+    blocked: tasks.blocked.map((task) => task.id),
+    current: tasks.current.map((task) => task.id),
+    next: tasks.next.map((task) => task.id),
+    owners: tasks.owners.map((owner) => ({
+      owner: owner.owner,
+      current: owner.current?.id,
+      next: owner.next?.id,
+    })),
+    summary: tasks.summary,
+    tasks: tasks.tasks.map((task) => ({
+      activeForm: task.activeForm,
+      blockedBy: task.blockedBy,
+      blocks: task.blocks,
+      completedAt: task.completedAt,
+      description: task.description,
+      id: task.id,
+      isBlocked: task.isBlocked,
+      owner: task.owner,
+      sortIndex: task.sortIndex,
+      startedAt: task.startedAt,
+      status: task.status,
+      subject: task.subject,
+      updatedAt: task.updatedAt,
+    })),
+    teammateActivity: tasks.teammateActivity,
+  })
+}
+
+export function sessionTaskListsAreEquivalent(
+  left: SessionTaskListView | null | undefined,
+  right: SessionTaskListView | null | undefined,
+) {
+  return buildSessionTaskListSignature(left) === buildSessionTaskListSignature(right)
+}
+
+export async function loadSessionTasksForSession({
+  backendSessionID,
+  sessionID,
+  setSessionTasksBySession,
+}: {
+  backendSessionID: string
+  sessionID: string
+  setSessionTasksBySession: (
+    update: WorkspaceStateUpdater<Record<string, SessionTaskListView>>,
+  ) => void
+}) {
+  const getSessionTasks = window.desktop?.getSessionTasks
+  if (!getSessionTasks) return
+
+  const nextTasks = await getSessionTasks({ sessionID: backendSessionID })
+  setSessionTasksBySession((prev) => (
+    sessionTaskListsAreEquivalent(prev[sessionID], nextTasks)
+      ? prev
+      : {
+          ...prev,
+          [sessionID]: nextTasks,
+        }
+  ))
 }
 
 interface SessionDiffRequestStateInput {
@@ -402,6 +466,7 @@ export function useOpenSessionReviewPreloadEffects({
   ensurePendingPermissionRequestsLoaded,
   ensureSessionDiffLoaded,
   ensureSessionRuntimeDebugLoaded,
+  ensureSessionTasksLoaded,
   isRuntimeDebugEnabled,
 }: {
   openSessionIDs: string[]
@@ -410,6 +475,7 @@ export function useOpenSessionReviewPreloadEffects({
   ensurePendingPermissionRequestsLoaded: (sessionID: string) => Promise<void>
   ensureSessionDiffLoaded: (sessionID: string) => Promise<void>
   ensureSessionRuntimeDebugLoaded: (sessionID: string) => Promise<void>
+  ensureSessionTasksLoaded: (sessionID: string) => Promise<void>
   isRuntimeDebugEnabled: boolean
 }) {
   const openSessionKey = openSessionIDs.join("\u0000")
@@ -423,6 +489,9 @@ export function useOpenSessionReviewPreloadEffects({
       })
       void ensurePendingPermissionRequestsLoaded(sessionID).catch((error) => {
         console.error("[desktop] open session permission preload failed:", error)
+      })
+      void ensureSessionTasksLoaded(sessionID).catch((error) => {
+        console.error("[desktop] open session tasks preload failed:", error)
       })
       if (isRuntimeDebugEnabled) {
         void ensureSessionRuntimeDebugLoaded(sessionID).catch((error) => {

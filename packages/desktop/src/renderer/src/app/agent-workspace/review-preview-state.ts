@@ -109,6 +109,7 @@ export function useReviewPreviewState(store: WorkspaceStoreApi) {
     store,
     (state) => state.review.sessionRuntimeDebugStateBySession,
   )
+  const sessionTasksBySession = useWorkspaceStoreSelector(store, (state) => state.review.sessionTasksBySession)
   const workspaceFileCommentsByTarget = useWorkspaceStoreSelector(
     store,
     (state) => state.review.workspaceFileCommentsByTarget,
@@ -132,6 +133,10 @@ export function useReviewPreviewState(store: WorkspaceStoreApi) {
     store,
     (state) => state.reviewActions.setSessionRuntimeDebugStateBySession,
   )
+  const setSessionTasksBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.reviewActions.setSessionTasksBySession,
+  )
   const setWorkspaceFileCommentsByTarget = useWorkspaceStoreSelector(
     store,
     (state) => state.reviewActions.setWorkspaceFileCommentsByTarget,
@@ -152,12 +157,14 @@ export function useReviewPreviewState(store: WorkspaceStoreApi) {
     sessionDiffStateBySession,
     sessionRuntimeDebugBySession,
     sessionRuntimeDebugStateBySession,
+    sessionTasksBySession,
     setPreviewByWorkspaceID,
     setSelectedDiffFileBySession,
     setSessionDiffBySession,
     setSessionDiffStateBySession,
     setSessionRuntimeDebugBySession,
     setSessionRuntimeDebugStateBySession,
+    setSessionTasksBySession,
     setWorkspaceFileCommentsByTarget,
     setWorkspaceFileReviewState,
     workspaceFileCommentsByTarget,

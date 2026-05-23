@@ -1,4 +1,4 @@
-export type SessionDataLoadKind = "history" | "diff" | "permissions" | "runtime"
+export type SessionDataLoadKind = "history" | "diff" | "permissions" | "runtime" | "tasks"
 export type SessionDataLoadMode = "silent" | "visible"
 export type SessionDataLoadReason = "open" | "stream" | "permission" | "manual" | "side-chat"
 
@@ -24,6 +24,7 @@ export function createSessionDataLoadCache(): SessionDataLoadCache {
     history: {},
     permissions: {},
     runtime: {},
+    tasks: {},
   }
 }
 

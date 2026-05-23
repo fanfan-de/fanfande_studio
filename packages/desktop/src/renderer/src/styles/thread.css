@@ -3048,10 +3048,69 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
   min-width: 0;
 }
 
+.user-bubble-text-frame {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.user-bubble-text-frame.is-collapsed {
+  max-height: 12.8em;
+  overflow: hidden;
+}
+
+.user-bubble-text-frame.is-collapsed::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3.2em;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(238, 242, 247, 0), var(--surface-user-bubble, #eef2f7));
+}
+
 .user-bubble-text {
   min-width: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.user-bubble-collapse-button {
+  justify-self: end;
+  min-width: 0;
+  width: fit-content;
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 2px 0 0;
+  border: 0;
+  background: transparent;
+  color: var(--seg-accent-strong);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+  text-align: right;
+  cursor: pointer;
+}
+
+.user-bubble-collapse-button:hover,
+.user-bubble-collapse-button:focus-visible {
+  color: var(--seg-accent);
+  outline: none;
+}
+
+.user-bubble-collapse-button:focus-visible {
+  border-radius: 3px;
+  box-shadow: 0 0 0 var(--focus-outline-width) var(--focus-outline-color);
+}
+
+.user-bubble-collapse-button svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
 }
 
 .user-bubble-steer-note {

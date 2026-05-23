@@ -229,7 +229,7 @@ describe("stream trace reducer", () => {
     expect(taskItem?.progressItems?.map((item) => item.status)).toEqual(["completed", "in_progress"])
   })
 
-  it("restores task state from completed tool history", () => {
+  it("restores completed task tool history as regular tool trace items", () => {
     const [turn] = buildTurnsFromHistory([
       {
         info: {
@@ -319,9 +319,11 @@ describe("stream trace reducer", () => {
 
     expect(turn?.kind).toBe("assistant")
     if (turn?.kind !== "assistant") return
-    const taskItem = turn.items.find((item) => item.kind === "task-state")
-    expect(taskItem?.title).toBe("1/2 tasks")
-    expect(taskItem?.progressItems?.[0]?.step).toBe("Implement (default)")
+    const taskToolItem = turn.items.find((item) => item.kind === "tool" && item.toolCallID === "toolcall-task")
+    expect(taskToolItem?.title).toBe("TaskUpdate")
+    expect(taskToolItem?.toolOutputText).toBe("Task updated")
+    expect(taskToolItem?.visibilityKey).toBe("toolCalls")
+    expect(turn.items.find((item) => item.kind === "task-state")).toBeUndefined()
   })
 
   it("settles on completed runtime phase even before a terminal event arrives", () => {

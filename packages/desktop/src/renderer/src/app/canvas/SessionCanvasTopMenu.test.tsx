@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { useState } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { SessionSummary, ToolPermissionMode } from "../types"
+import type { SessionSummary, SessionTaskListView, SessionTaskSummary, ToolPermissionMode } from "../types"
 import { SessionCanvasTopMenu } from "./SessionCanvasTopMenu"
 
 const session: SessionSummary = {
@@ -12,6 +12,79 @@ const session: SessionSummary = {
   updated: 1,
   focus: "",
   summary: "",
+}
+
+function createTask(
+  id: string,
+  subject: string,
+  status: SessionTaskSummary["status"],
+  overrides: Partial<SessionTaskSummary> = {},
+): SessionTaskSummary {
+  return {
+    id,
+    sessionID: session.id,
+    subject,
+    description: "",
+    activeForm: "",
+    owner: "codex",
+    status,
+    sortIndex: Number(id.replace(/\D/g, "")) || 0,
+    blocks: [],
+    blockedBy: [],
+    metadata: {},
+    createdAt: 1,
+    updatedAt: 1,
+    isBlocked: false,
+    blockingTasks: [],
+    blockedTasks: [],
+    ...overrides,
+  }
+}
+
+function createTaskList(tasks: SessionTaskSummary[]): SessionTaskListView {
+  const completed = tasks.filter((task) => task.status === "completed").length
+  const inProgress = tasks.filter((task) => task.status === "in_progress").length
+  const pending = tasks.filter((task) => task.status === "pending").length
+  const blocked = tasks.filter((task) => task.isBlocked).length
+
+  return {
+    sessionID: session.id,
+    generatedAt: 1,
+    tasks,
+    current: tasks.filter((task) => task.status === "in_progress"),
+    next: tasks.filter((task) => task.status === "pending" && !task.isBlocked),
+    blocked: tasks.filter((task) => task.isBlocked),
+    owners: [],
+    teammateActivity: [],
+    summary: {
+      total: tasks.length,
+      completed,
+      pending,
+      inProgress,
+      blocked,
+    },
+  }
+}
+
+function createRect(input: Partial<DOMRect>): DOMRect {
+  const left = input.left ?? 0
+  const top = input.top ?? 0
+  const width = input.width ?? ((input.right ?? left) - left)
+  const height = input.height ?? ((input.bottom ?? top) - top)
+  const right = input.right ?? left + width
+  const bottom = input.bottom ?? top + height
+
+  return {
+    x: input.x ?? left,
+    y: input.y ?? top,
+    left,
+    top,
+    width,
+    height,
+    right,
+    bottom,
+    toJSON: () => ({}),
+  } as DOMRect
 }
 
 function createTopMenuProps(
@@ -268,6 +341,145 @@ describe("SessionCanvasTopMenu trace export", () => {
     renderTopMenu({ activeSession: null })
 
     expect(screen.queryByRole("button", { name: "Export session trace" })).not.toBeInTheDocument()
+  })
+})
+
+describe("SessionCanvasTopMenu task progress", () => {
+  it("opens a compact task progress card from the canvas toolbar", () => {
+    renderTopMenu({
+      sessionTasks: createTaskList([
+        createTask("task-1", "Inspect current task tools", "completed"),
+        createTask("task-2", "Run tests", "in_progress", {
+          activeForm: "Running tests",
+          owner: "desktop",
+        }),
+        createTask("task-3", "Wait for review", "pending", {
+          isBlocked: true,
+        }),
+      ]),
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Session information: 2 active tasks" }))
+
+    const menu = screen.getByRole("dialog", { name: "Session information" })
+    expect(within(menu).getByRole("button", { name: "收起进度" })).toBeInTheDocument()
+    expect(within(menu).getByText("进度")).toBeInTheDocument()
+    expect(within(menu).getByText("Inspect current task tools")).toBeInTheDocument()
+    expect(within(menu).getByText("Running tests")).toBeInTheDocument()
+    expect(within(menu).getByText("Wait for review")).toBeInTheDocument()
+    expect(within(menu).queryByText("desktop")).not.toBeInTheDocument()
+    expect(within(menu).queryByText("Blocked")).not.toBeInTheDocument()
+  })
+
+  it("keeps progress collapsed by default when no task is running", () => {
+    renderTopMenu({
+      sessionTasks: createTaskList([
+        createTask("task-1", "Inspect current task tools", "completed"),
+        createTask("task-2", "Wait for review", "pending"),
+      ]),
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Session information: 1 active task" }))
+
+    const menu = screen.getByRole("dialog", { name: "Session information" })
+    expect(within(menu).getByRole("button", { name: "展开进度" })).toBeInTheDocument()
+    expect(within(menu).queryByText("Inspect current task tools")).not.toBeInTheDocument()
+    expect(within(menu).queryByText("Wait for review")).not.toBeInTheDocument()
+
+    fireEvent.click(within(menu).getByRole("button", { name: "展开进度" }))
+
+    expect(within(menu).getByRole("button", { name: "收起进度" })).toBeInTheDocument()
+    expect(within(menu).getByText("Inspect current task tools")).toBeInTheDocument()
+    expect(within(menu).getByText("Wait for review")).toBeInTheDocument()
+  })
+
+  it("auto-expands the information panel when it fits beside the thread column", () => {
+    const getRect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const element = this as HTMLElement
+      if (element.classList.contains("workbench-pane")) return createRect({ left: 0, right: 900, width: 900, top: 0, bottom: 700, height: 700 })
+      if (element.classList.contains("thread-column")) return createRect({ left: 80, right: 520, width: 440, top: 90, bottom: 700, height: 610 })
+      if (element.classList.contains("canvas-top-menu-info-trigger")) return createRect({ left: 852, right: 884, width: 32, top: 40, bottom: 72, height: 32 })
+      return createRect({})
+    })
+
+    try {
+      render(
+        <section className="workbench-pane">
+          <div className="thread-column" />
+          <SessionCanvasTopMenu
+            {...createTopMenuProps({
+              sessionTasks: createTaskList([
+                createTask("task-1", "Inspect current task tools", "completed"),
+                createTask("task-2", "Run tests", "in_progress"),
+              ]),
+            })}
+          />
+        </section>,
+      )
+
+      expect(screen.getByRole("dialog", { name: "Session information" })).toBeInTheDocument()
+    } finally {
+      getRect.mockRestore()
+    }
+  })
+
+  it("keeps the information panel collapsed when it would overlap the thread column", () => {
+    const getRect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const element = this as HTMLElement
+      if (element.classList.contains("workbench-pane")) return createRect({ left: 0, right: 900, width: 900, top: 0, bottom: 700, height: 700 })
+      if (element.classList.contains("thread-column")) return createRect({ left: 80, right: 760, width: 680, top: 90, bottom: 700, height: 610 })
+      if (element.classList.contains("canvas-top-menu-info-trigger")) return createRect({ left: 852, right: 884, width: 32, top: 40, bottom: 72, height: 32 })
+      return createRect({})
+    })
+
+    try {
+      render(
+        <section className="workbench-pane">
+          <div className="thread-column" />
+          <SessionCanvasTopMenu
+            {...createTopMenuProps({
+              sessionTasks: createTaskList([
+                createTask("task-1", "Inspect current task tools", "completed"),
+                createTask("task-2", "Run tests", "in_progress"),
+              ]),
+            })}
+          />
+        </section>,
+      )
+
+      expect(screen.queryByRole("dialog", { name: "Session information" })).not.toBeInTheDocument()
+    } finally {
+      getRect.mockRestore()
+    }
+  })
+
+  it("keeps the task trigger as the rightmost session action", () => {
+    renderTopMenu({ sessionTasks: null })
+
+    const topMenu = screen.getByLabelText("Session canvas top menu")
+    const buttons = within(topMenu).getAllByRole("button")
+    expect(buttons.at(-1)).toHaveAccessibleName("Session information: task data not loaded")
+  })
+
+  it("keeps the task trigger available before a task snapshot is loaded", () => {
+    renderTopMenu({ sessionTasks: null })
+
+    fireEvent.click(screen.getByRole("button", { name: "Session information: task data not loaded" }))
+
+    const menu = screen.getByRole("dialog", { name: "Session information" })
+    expect(within(menu).getByRole("button", { name: "展开进度" })).toBeInTheDocument()
+    expect(within(menu).queryByText("Task data not loaded")).not.toBeInTheDocument()
+
+    fireEvent.click(within(menu).getByRole("button", { name: "展开进度" }))
+
+    expect(within(menu).getByText("Task data not loaded")).toBeInTheDocument()
+    expect(within(menu).getByText("Task progress will appear here once the session reports it.")).toBeInTheDocument()
+  })
+
+  it("hides the task trigger without an active session", () => {
+    renderTopMenu({ activeSession: null, sessionTasks: null })
+
+    expect(screen.queryByRole("button", { name: /Session information:/ })).not.toBeInTheDocument()
   })
 })
 

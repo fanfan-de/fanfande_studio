@@ -18,6 +18,7 @@ import type {
   SessionDiffSummary,
   SessionRuntimeDebugSnapshot,
   SessionRuntimeDebugState,
+  SessionTaskListView,
   WorkspaceFileComment,
   WorkspaceFileReviewState,
   WorkspaceGroup,
@@ -334,6 +335,7 @@ export interface ReviewSliceState {
   sessionDiffStateBySession: Record<string, SessionDiffState>
   sessionRuntimeDebugBySession: Record<string, SessionRuntimeDebugSnapshot>
   sessionRuntimeDebugStateBySession: Record<string, SessionRuntimeDebugState>
+  sessionTasksBySession: Record<string, SessionTaskListView>
   workspaceFileCommentsByTarget: Record<string, WorkspaceFileComment[]>
   workspaceFileReviewState: WorkspaceFileReviewState
 }
@@ -411,6 +413,7 @@ export interface ReviewSliceActions {
   setSessionRuntimeDebugStateBySession: (
     update: WorkspaceStateUpdater<Record<string, SessionRuntimeDebugState>>,
   ) => void
+  setSessionTasksBySession: (update: WorkspaceStateUpdater<Record<string, SessionTaskListView>>) => void
   setWorkspaceFileCommentsByTarget: (
     update: WorkspaceStateUpdater<Record<string, WorkspaceFileComment[]>>,
   ) => void
@@ -523,6 +526,7 @@ export function createWorkspaceStore({
       sessionDiffStateBySession: {},
       sessionRuntimeDebugBySession: {},
       sessionRuntimeDebugStateBySession: {},
+      sessionTasksBySession: {},
       workspaceFileCommentsByTarget: {},
       workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
     },
@@ -996,6 +1000,13 @@ export function createWorkspaceStore({
             sessionRuntimeDebugStateBySession: resolveStateUpdate(state.review.sessionRuntimeDebugStateBySession, update),
           },
         })),
+      setSessionTasksBySession: (update) =>
+        set((state) => ({
+          review: {
+            ...state.review,
+            sessionTasksBySession: resolveStateUpdate(state.review.sessionTasksBySession, update),
+          },
+        })),
       setWorkspaceFileCommentsByTarget: (update) =>
         set((state) => ({
           review: {
@@ -1073,6 +1084,7 @@ export const workspaceStoreSelectors = {
     sessionDiffStateBySession: state.review.sessionDiffStateBySession,
     sessionRuntimeDebugBySession: state.review.sessionRuntimeDebugBySession,
     sessionRuntimeDebugStateBySession: state.review.sessionRuntimeDebugStateBySession,
+    sessionTasksBySession: state.review.sessionTasksBySession,
   }),
   composerStateForTab:
     (tabKey: string | null) =>
