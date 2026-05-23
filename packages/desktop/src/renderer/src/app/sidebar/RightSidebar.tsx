@@ -15,6 +15,7 @@ import { UnifiedPreviewPanel } from "../preview/UnifiedPreviewPanel"
 import { ShellTopMenu } from "../shared-ui"
 import type { SessionMessageTree } from "../session-message-tree"
 import { InlineSideChatThread } from "../thread/ThreadView"
+import { collectSideChatCountsForParentSession } from "../agent-workspace/workspace-derived-state"
 import type {
   AssistantTraceVisibility,
   ComposerAttachment,
@@ -93,6 +94,7 @@ interface RightSidebarProps {
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onOpenBrowserTab: () => void
   onOpenFilesTab: () => void
+  onOpenMessageTreeSideChat: (sessionID: string, messageID: string) => void | Promise<void>
   onOpenMessageTreeTab: () => void
   onOpenReviewTab: () => void
   onOpenTerminalTab: () => void
@@ -254,6 +256,7 @@ export function RightSidebar({
   onLocalFileLinkOpen,
   onOpenBrowserTab,
   onOpenFilesTab,
+  onOpenMessageTreeSideChat,
   onOpenMessageTreeTab,
   onOpenReviewTab,
   onOpenTerminalTab,
@@ -463,8 +466,10 @@ export function RightSidebar({
           <SessionMessageTreePanel
             session={treeSession}
             messageTree={messageTreeBySession[activeTab.sessionID] ?? null}
+            sideChatCountsByAnchorMessageID={collectSideChatCountsForParentSession(workspaces, activeTab.sessionID)}
             onArtifactLinkOpen={onArtifactLinkOpen}
             onLocalFileLinkOpen={onLocalFileLinkOpen}
+            onOpenSideChat={onOpenMessageTreeSideChat}
             onSelectMessage={onMessageTreeNodeSelect}
           />
         )

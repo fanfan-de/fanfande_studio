@@ -2090,6 +2090,12 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onWorkspaceFileSelect={handleWorkspaceFileSelect}
                 onOpenBrowserTab={handleOpenRightSidebarBrowserTab}
                 onOpenFilesTab={handleOpenRightSidebarFilesTab}
+                onOpenMessageTreeSideChat={(sessionID, messageID) =>
+                  handleOpenSideChat(messageID, {
+                    parentSessionID: sessionID,
+                    placement: "right-sidebar",
+                  })
+                }
                 onOpenMessageTreeTab={handleOpenRightSidebarMessageTreeTab}
                 onOpenReviewTab={handleOpenRightSidebarReviewTab}
                 onOpenTerminalTab={handleOpenRightSidebarTerminalTab}

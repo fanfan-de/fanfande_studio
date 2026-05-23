@@ -2078,6 +2078,89 @@
   white-space: nowrap;
 }
 
+.session-message-tree-response-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.session-message-tree-side-chat-button {
+  position: relative;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--seg-text-3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease;
+}
+
+.session-message-tree-side-chat-button:hover,
+.session-message-tree-side-chat-button:focus-visible,
+.session-message-tree-side-chat-button.has-count {
+  background: var(--mix-seg-text-2-10-transparent-90);
+  color: var(--seg-accent-strong);
+  outline: 0;
+}
+
+.session-message-tree-side-chat-button:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
+}
+
+.session-message-tree-side-chat-button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.session-message-tree-side-chat-button.is-collapsed-node {
+  position: absolute;
+  top: 16px;
+  right: -1px;
+  background: var(--seg-panel);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.session-message-tree-graph-node:hover .session-message-tree-side-chat-button.is-collapsed-node,
+.session-message-tree-graph-node:focus-within .session-message-tree-side-chat-button.is-collapsed-node,
+.session-message-tree-side-chat-button.is-collapsed-node.has-count {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.session-message-tree-side-chat-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border: 1px solid var(--seg-panel);
+  border-radius: 999px;
+  background: var(--seg-accent-strong);
+  color: var(--seg-panel);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .session-message-tree-response-collapse {
   width: 22px;
   height: 22px;

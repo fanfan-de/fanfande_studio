@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type RightSidebarState, type RightSidebarTab, type WorkspaceGroup } from "../types"
 import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE, DEFAULT_WORKSPACE_PREVIEW_STATE } from "../agent-workspace/review-preview-state"
@@ -303,10 +303,12 @@ function renderRightSidebar(input: {
   canOpenTerminal?: boolean
   messageTreeBySession?: Record<string, SessionMessageTree>
   rightSidebar: RightSidebarState
+  workspaces?: WorkspaceGroup[]
   onActivateTab?: (tabID: string) => void
   onCloseTab?: (tabID: string) => void
   onOpenBrowserTab?: () => void
   onOpenFilesTab?: () => void
+  onOpenMessageTreeSideChat?: (sessionID: string, messageID: string) => void
   onOpenMessageTreeTab?: () => void
   onOpenReviewTab?: () => void
   onOpenTerminalTab?: () => void
@@ -333,7 +335,7 @@ function renderRightSidebar(input: {
       sessionDiffStateBySession={{}}
       messageTreeBySession={input.messageTreeBySession ?? {}}
       sideChatPanelState={null}
-      workspaces={[workspace]}
+      workspaces={input.workspaces ?? [workspace]}
       onActivateTab={input.onActivateTab ?? vi.fn()}
       onCloseTab={input.onCloseTab ?? vi.fn()}
       onAskUserQuestionAnswer={vi.fn()}
@@ -343,6 +345,7 @@ function renderRightSidebar(input: {
       onLocalFileLinkOpen={vi.fn()}
       onOpenBrowserTab={input.onOpenBrowserTab ?? vi.fn()}
       onOpenFilesTab={input.onOpenFilesTab ?? vi.fn()}
+      onOpenMessageTreeSideChat={input.onOpenMessageTreeSideChat ?? vi.fn()}
       onOpenMessageTreeTab={input.onOpenMessageTreeTab ?? vi.fn()}
       onOpenReviewTab={input.onOpenReviewTab ?? vi.fn()}
       onOpenTerminalTab={input.onOpenTerminalTab ?? vi.fn()}
@@ -464,6 +467,78 @@ describe("RightSidebar", () => {
 
     fireEvent.click(screen.getByRole("treeitem", { name: /Alternative answer/ }))
     expect(onMessageTreeNodeSelect).toHaveBeenCalledWith("session-1", "assistant-2")
+  })
+
+  it("opens side chats from assistant message tree nodes without selecting the node", () => {
+    const onMessageTreeNodeSelect = vi.fn()
+    const onOpenMessageTreeSideChat = vi.fn()
+    const sideChatWorkspace: WorkspaceGroup = {
+      ...workspace,
+      sessions: [
+        ...workspace.sessions,
+        {
+          id: "side-chat-1",
+          title: "Side chat 1",
+          branch: "main",
+          focus: "Side chat",
+          summary: "Active answer",
+          status: "Ready",
+          kind: "side-chat",
+          origin: {
+            parentSessionID: "session-1",
+            anchorMessageID: "assistant-1",
+            anchorPreview: "Active answer",
+          },
+          created: 10,
+          updated: 10,
+        },
+        {
+          id: "side-chat-2",
+          title: "Side chat 2",
+          branch: "main",
+          focus: "Side chat",
+          summary: "Active answer",
+          status: "Ready",
+          kind: "side-chat",
+          origin: {
+            parentSessionID: "session-1",
+            anchorMessageID: "assistant-1",
+            anchorPreview: "Active answer",
+          },
+          created: 11,
+          updated: 11,
+        },
+      ],
+    }
+
+    renderRightSidebar({
+      messageTreeBySession: {
+        "session-1": createMessageTree(),
+      },
+      rightSidebar: {
+        activeTabID: "message-tree-tab",
+        tabs: [createMessageTreeTab()],
+      },
+      workspaces: [sideChatWorkspace],
+      onMessageTreeNodeSelect,
+      onOpenMessageTreeSideChat,
+    })
+
+    const activeNode = queryMessageTreeNode("assistant-1")
+    const alternativeNode = queryMessageTreeNode("assistant-2")
+    const userNode = queryMessageTreeNode("user-1")
+    expect(activeNode).not.toBeNull()
+    expect(alternativeNode).not.toBeNull()
+    expect(userNode).not.toBeNull()
+    if (!activeNode || !alternativeNode || !userNode) return
+
+    expect(within(activeNode).getByRole("button", { name: "Open side chat (2)" })).toBeInTheDocument()
+    expect(within(userNode).queryByRole("button", { name: /Open side chat/ })).toBeNull()
+
+    fireEvent.click(within(alternativeNode).getByRole("button", { name: "Open side chat" }))
+
+    expect(onOpenMessageTreeSideChat).toHaveBeenCalledWith("session-1", "assistant-2")
+    expect(onMessageTreeNodeSelect).not.toHaveBeenCalled()
   })
 
   it("toggles full expansion from the message tree panel header", () => {
