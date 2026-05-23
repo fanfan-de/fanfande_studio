@@ -81,11 +81,77 @@ function hasAssistantResponseText(message: LoadedSessionHistoryMessage) {
   return message.parts.some((part) => readTextPartPreview(part).trim())
 }
 
-function shouldIncludeMessageTreeNode(message: LoadedSessionHistoryMessage) {
+function getMessageTurnID(message: LoadedSessionHistoryMessage) {
+  return readString(message.turn?.id).trim() || readString(message.info.turnID).trim()
+}
+
+function getMessageTurnLastMessageID(message: LoadedSessionHistoryMessage) {
+  return readString(message.turn?.lastMessageID).trim() || readString(message.info.lastMessageID).trim()
+}
+
+function isAssistantResponseTreeCandidate(message: LoadedSessionHistoryMessage) {
+  return (
+    !readBoolean(message.info.internal) &&
+    message.info.role === "assistant" &&
+    Boolean(message.info.id) &&
+    hasAssistantResponseText(message)
+  )
+}
+
+function selectFinalAssistantMessagesByTurn(messages: LoadedSessionHistoryMessage[]) {
+  const candidatesByTurnID = new Map<string, LoadedSessionHistoryMessage[]>()
+
+  for (const message of messages) {
+    if (!isAssistantResponseTreeCandidate(message)) continue
+    const turnID = getMessageTurnID(message)
+    if (!turnID) continue
+    candidatesByTurnID.set(turnID, [...(candidatesByTurnID.get(turnID) ?? []), message])
+  }
+
+  const finalAssistantMessageIDs = new Set<string>()
+  const finalAssistantMessageIDByTurnID = new Map<string, string>()
+
+  for (const [turnID, candidates] of candidatesByTurnID) {
+    const candidatesByID = new Map(candidates.map((candidate) => [candidate.info.id, candidate]))
+    let finalMessage: LoadedSessionHistoryMessage | undefined
+
+    for (const candidate of candidates) {
+      const lastMessageID = getMessageTurnLastMessageID(candidate)
+      if (!lastMessageID) continue
+      finalMessage = candidatesByID.get(lastMessageID)
+      if (finalMessage) break
+    }
+
+    finalMessage ??= [...candidates].sort((left, right) => {
+      const createdDelta = readNumber(left.info.created) - readNumber(right.info.created)
+      if (createdDelta !== 0) return createdDelta
+      return left.info.id.localeCompare(right.info.id)
+    }).at(-1)
+
+    if (!finalMessage?.info.id) continue
+    finalAssistantMessageIDs.add(finalMessage.info.id)
+    finalAssistantMessageIDByTurnID.set(turnID, finalMessage.info.id)
+  }
+
+  return {
+    finalAssistantMessageIDByTurnID,
+    finalAssistantMessageIDs,
+  }
+}
+
+function shouldIncludeMessageTreeNode(
+  message: LoadedSessionHistoryMessage,
+  finalAssistantMessageIDs: Set<string>,
+) {
   if (readBoolean(message.info.internal)) return false
   if (message.info.role === "user") return true
   if (message.info.role !== "assistant") return false
-  return hasAssistantResponseText(message)
+  if (!hasAssistantResponseText(message)) return false
+
+  const turnID = getMessageTurnID(message)
+  if (!turnID) return true
+
+  return finalAssistantMessageIDs.has(message.info.id)
 }
 
 function getParentKey(parentMessageID: string | null) {
@@ -141,17 +207,23 @@ export function buildSessionMessageTree(
   messages: LoadedSessionHistoryMessage[],
   activeMessageID?: string | null,
 ): SessionMessageTree | null {
+  const messageByID = new Map<string, LoadedSessionHistoryMessage>()
   const parentIDByMessageID = new Map<string, string | null>()
   for (const message of messages) {
     if (!message.info.id) continue
+    messageByID.set(message.info.id, message)
     parentIDByMessageID.set(
       message.info.id,
       typeof message.info.parentMessageID === "string" ? message.info.parentMessageID : null,
     )
   }
+  const {
+    finalAssistantMessageIDByTurnID,
+    finalAssistantMessageIDs,
+  } = selectFinalAssistantMessagesByTurn(messages)
 
   const nodes = messages
-    .filter(shouldIncludeMessageTreeNode)
+    .filter((message) => shouldIncludeMessageTreeNode(message, finalAssistantMessageIDs))
     .map((message): SessionMessageTreeNode => ({
       id: message.info.id,
       sessionID: message.info.sessionID,
@@ -198,10 +270,29 @@ export function buildSessionMessageTree(
   }
 
   const rootMessageIDs = childIDsByParentID[ROOT_PARENT_ID] ?? []
-  const resolvedActiveMessageID =
-    activeMessageID && nodesByID[activeMessageID]
-      ? activeMessageID
-      : nodes[nodes.length - 1]?.id ?? null
+  const resolvedActiveMessageID = (() => {
+    if (activeMessageID && nodesByID[activeMessageID]) return activeMessageID
+
+    if (activeMessageID) {
+      const activeMessage = messageByID.get(activeMessageID)
+      const activeTurnID = activeMessage ? getMessageTurnID(activeMessage) : ""
+      const activeTurnFinalMessageID = activeTurnID
+        ? finalAssistantMessageIDByTurnID.get(activeTurnID) ?? null
+        : null
+      if (activeTurnFinalMessageID && nodesByID[activeTurnFinalMessageID]) return activeTurnFinalMessageID
+
+      let parentMessageID = parentIDByMessageID.get(activeMessageID) ?? null
+      const seenParentIDs = new Set<string>()
+      while (parentMessageID) {
+        if (nodesByID[parentMessageID]) return parentMessageID
+        if (seenParentIDs.has(parentMessageID)) break
+        seenParentIDs.add(parentMessageID)
+        parentMessageID = parentIDByMessageID.get(parentMessageID) ?? null
+      }
+    }
+
+    return nodes[nodes.length - 1]?.id ?? null
+  })()
   const activePathMessageIDs = buildActivePath(nodesByID, resolvedActiveMessageID)
   const activePathSet = new Set(activePathMessageIDs)
   const branchOptionsByParentID: Record<string, SessionMessageBranchOption[]> = {}

@@ -10,6 +10,9 @@ function createMessage(input: {
   role: "user" | "assistant"
   parts?: unknown[]
   text: string
+  turnID?: string
+  turnLastMessageID?: string
+  turnUserMessageID?: string
 }): LoadedSessionHistoryMessage {
   return {
     info: {
@@ -21,6 +24,19 @@ function createMessage(input: {
       sessionID: "session-1",
     },
     parts: input.parts ?? [{ id: `part-${input.id}`, type: "text", text: input.text }],
+    turn: input.turnID
+      ? {
+          id: input.turnID,
+          sessionID: "session-1",
+          projectID: "project-1",
+          userMessageID: input.turnUserMessageID,
+          status: "completed",
+          lastMessageID: input.turnLastMessageID,
+          createdAt: input.created,
+          updatedAt: input.created,
+          completedAt: input.created,
+        }
+      : undefined,
   }
 }
 
@@ -107,6 +123,76 @@ describe("session message tree", () => {
     expect(tree?.nodesByID["assistant-1"]?.preview).toBe("Final response only")
     expect(tree?.nodesByID["assistant-1"]?.content).toBe("Final response only")
     expect(tree?.activePathMessageIDs).toEqual(["user-1", "user-2", "assistant-1"])
+  })
+
+  it("hides intermediate text responses from the same assistant turn", () => {
+    const tree = buildSessionMessageTree([
+      createMessage({ id: "user-1", role: "user", created: 1, text: "Start" }),
+      createMessage({
+        id: "assistant-progress",
+        role: "assistant",
+        created: 2,
+        parentMessageID: "user-1",
+        text: "I will inspect the project first.",
+        turnID: "turn-1",
+        turnLastMessageID: "assistant-final",
+        turnUserMessageID: "user-1",
+      }),
+      createMessage({
+        id: "assistant-mid",
+        role: "assistant",
+        created: 3,
+        parentMessageID: "assistant-progress",
+        text: "The project contains these files.",
+        turnID: "turn-1",
+        turnLastMessageID: "assistant-final",
+        turnUserMessageID: "user-1",
+      }),
+      createMessage({
+        id: "assistant-final",
+        role: "assistant",
+        created: 4,
+        parentMessageID: "assistant-mid",
+        text: "Final answer only.",
+        turnID: "turn-1",
+        turnLastMessageID: "assistant-final",
+        turnUserMessageID: "user-1",
+      }),
+    ], "assistant-progress")
+
+    expect(Object.keys(tree?.nodesByID ?? {})).toEqual(["user-1", "assistant-final"])
+    expect(tree?.childIDsByParentID["user-1"]).toEqual(["assistant-final"])
+    expect(tree?.nodesByID["assistant-final"]?.parentMessageID).toBe("user-1")
+    expect(tree?.nodesByID["assistant-final"]?.content).toBe("Final answer only.")
+    expect(tree?.activeMessageID).toBe("assistant-final")
+    expect(tree?.activePathMessageIDs).toEqual(["user-1", "assistant-final"])
+  })
+
+  it("falls back to the latest text response when a turn has no last message id", () => {
+    const tree = buildSessionMessageTree([
+      createMessage({ id: "user-1", role: "user", created: 1, text: "Start" }),
+      createMessage({
+        id: "assistant-progress",
+        role: "assistant",
+        created: 2,
+        parentMessageID: "user-1",
+        text: "Working on it.",
+        turnID: "turn-1",
+        turnUserMessageID: "user-1",
+      }),
+      createMessage({
+        id: "assistant-final",
+        role: "assistant",
+        created: 3,
+        parentMessageID: "assistant-progress",
+        text: "Latest visible response.",
+        turnID: "turn-1",
+        turnUserMessageID: "user-1",
+      }),
+    ], "assistant-final")
+
+    expect(Object.keys(tree?.nodesByID ?? {})).toEqual(["user-1", "assistant-final"])
+    expect(tree?.childIDsByParentID["user-1"]).toEqual(["assistant-final"])
   })
 
   it("keeps full response content while compacting node previews", () => {
