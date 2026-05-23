@@ -27,6 +27,7 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import type { SessionMessageTree } from "../session-message-tree"
+import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
 import {
   getActiveDockviewPanelReference,
   normalizeDockviewLayout,
@@ -72,8 +73,13 @@ import {
 } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
-type SideChatPanelPlacement = "inline" | "right-sidebar"
-type SideChatOpenOptions = { parentSessionID?: string | null; paneID?: string | null; placement?: SideChatPanelPlacement }
+type SideChatPanelPlacement = "inline" | "right-sidebar" | "tree"
+type SideChatOpenOptions = {
+  initialDraftText?: string | null
+  parentSessionID?: string | null
+  paneID?: string | null
+  placement?: SideChatPanelPlacement
+}
 
 export function filterSideChatMappingForCleanup(
   mapping: Record<string, string>,
@@ -863,6 +869,22 @@ export function useSessionLifecycleController({
     }
   }
 
+  function prefillSideChatDraft(sessionID: string, initialDraftText?: string | null) {
+    const text = initialDraftText?.trim()
+    if (!text) return
+
+    const tabKey = getWorkbenchTabKey(createSessionWorkbenchTab(sessionID))
+    setComposerDraftStateByTabKey((current) => {
+      const existingDraftState = current[tabKey]
+      if (existingDraftState?.plainText.trim()) return current
+
+      return {
+        ...current,
+        [tabKey]: createComposerDraftStateFromPlainText(text),
+      }
+    })
+  }
+
   async function handleCreateSideChatTab(anchorMessageID: string, input?: SideChatOpenOptions) {
     const parentSessionID = input?.parentSessionID ?? activeSessionID
     if (!parentSessionID) return
@@ -877,6 +899,7 @@ export function useSessionLifecycleController({
       if (!nextSession) return
 
       await activateSideChatThread(parentSessionID, nextSession.id, parentSelection.workspace.id)
+      prefillSideChatDraft(nextSession.id, input?.initialDraftText)
       if (input?.placement === "right-sidebar") {
         openSideChatRightSidebarTab(parentSessionID, anchorMessageID, nextSession)
       }
@@ -897,8 +920,10 @@ export function useSessionLifecycleController({
     const activeInlineSideChatID = activeSideChatSessionIDByParentSessionID[parentSessionID] ?? null
     const activeInlineSideChatSelection = findSession(workspaces, activeInlineSideChatID)
     const opensRightSidebar = input?.placement === "right-sidebar"
+    const opensFromTree = input?.placement === "tree"
     if (
       !opensRightSidebar &&
+      !opensFromTree &&
       activeInlineSideChatSelection.session?.origin?.parentSessionID === parentSessionID &&
       activeInlineSideChatSelection.session.origin.anchorMessageID === anchorMessageID
     ) {
@@ -917,6 +942,7 @@ export function useSessionLifecycleController({
         upsertSideChatSessions(existing.workspace.id, [nextSession])
       }
       await activateSideChatThread(parentSessionID, nextSession.id, existing.workspace.id)
+      prefillSideChatDraft(nextSession.id, input?.initialDraftText)
       if (opensRightSidebar) {
         openSideChatRightSidebarTab(parentSessionID, anchorMessageID, nextSession)
       }

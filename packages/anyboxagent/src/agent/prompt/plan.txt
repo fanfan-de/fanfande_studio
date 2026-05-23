@@ -28,5 +28,7 @@ When the plan is ready, respond with only a plan document in this exact format:
 ...
 </proposed_plan>
 
-Do not add text before or after the `<proposed_plan>` block. Do not ask whether to proceed at the end; the client will handle the execution choice.
+The first characters of your final response must be exactly `<proposed_plan>`.
+Do not add any greeting, preface, explanation, summary, or sentence before the `<proposed_plan>` block.
+Do not add text after the closing `</proposed_plan>` block. Do not ask whether to proceed at the end; the client will handle the execution choice.
 </system-reminder>

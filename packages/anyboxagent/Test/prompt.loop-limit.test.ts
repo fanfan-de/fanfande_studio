@@ -28,7 +28,7 @@ function createTestModel(): Provider.Model {
 }
 
 describe("prompt loop limit", () => {
-  it("allows long-running turns to exceed 16 iterations before a final response", async () => {
+  it("allows long-running turns to exceed the old 64-iteration default before a final response", async () => {
     let streamCalls = 0
 
     const restoreProvider = Provider.setProviderFunctionOverridesForTesting({
@@ -45,7 +45,7 @@ describe("prompt loop limit", () => {
       getLanguage: async (model) => model as never,
       streamText: ((input: any) => {
         streamCalls += 1
-        const isFinalCall = streamCalls === 17
+        const isFinalCall = streamCalls === 65
 
         return {
           fullStream: (async function* () {
@@ -98,7 +98,7 @@ describe("prompt loop limit", () => {
             ],
           })
 
-          expect(streamCalls).toBe(17)
+          expect(streamCalls).toBe(65)
           expect(result.info.role).toBe("assistant")
           expect(result.info.finishReason).toBe("stop")
           expect(
@@ -113,12 +113,12 @@ describe("prompt loop limit", () => {
             assistants.push(item.info.id)
           }
 
-          expect(assistants).toHaveLength(17)
+          expect(assistants).toHaveLength(65)
         },
       })
     } finally {
       restoreLLM()
       restoreProvider()
     }
-  })
+  }, 15_000)
 })

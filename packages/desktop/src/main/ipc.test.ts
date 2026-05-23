@@ -273,6 +273,196 @@ describe("ipc session trace export helpers", () => {
     )
   })
 
+  it("saves a split session trace directory with per-record files", async () => {
+    const turn = {
+      turnID: "turn-1",
+      status: "completed" as const,
+      resume: false,
+      llmCalls: [],
+      tools: [
+        {
+          callID: "toolcall-1",
+          tool: "grep",
+          status: "completed",
+        },
+      ],
+      recentEvents: [],
+    }
+    const traceWithRecords = {
+      ...traceExport,
+      stats: {
+        ...traceExport.stats,
+        messageCount: 1,
+        eventCount: 1,
+        turnCount: 1,
+        toolCallCount: 1,
+      },
+      messages: [
+        {
+          id: "message-1",
+          role: "assistant",
+          turnID: "turn-1",
+          created: 1,
+        },
+      ],
+      events: [
+        {
+          eventID: "event-1",
+          sessionID: "session-1",
+          turnID: "turn-1",
+          seq: 1,
+          timestamp: 2,
+          type: "tool.call.completed",
+          payload: {
+            part: {
+              callID: "toolcall-1",
+            },
+          },
+        },
+      ],
+      runtime: {
+        ...traceExport.runtime,
+        latestTurn: turn,
+        turns: [turn],
+        recentEvents: [
+          {
+            eventID: "event-1",
+            type: "tool.call.completed",
+            sessionID: "session-1",
+            turnID: "turn-1",
+            seq: 1,
+            timestamp: 2,
+          },
+        ],
+      },
+      toolCalls: [
+        {
+          callID: "toolcall-1",
+          tool: "grep",
+          status: "completed",
+          turnID: "turn-1",
+          messageID: "message-1",
+          eventIDs: ["event-1"],
+        },
+      ],
+    }
+    const showOpenDialog = vi.fn().mockResolvedValue({
+      canceled: false,
+      filePaths: ["C:\\Exports"],
+    })
+    const makeDirectory = vi.fn().mockResolvedValue(undefined)
+    const writeTraceFile = vi.fn().mockResolvedValue(undefined)
+    requestAgentJSONMock.mockResolvedValueOnce({
+      data: traceWithRecords,
+    })
+
+    const result = await internal.saveSessionTraceExportDirectory(
+      { sessionID: "session-1" },
+      {
+        downloadsPath: "C:\\Downloads",
+        now: new Date(2026, 4, 22, 9, 8, 7),
+        showOpenDialog,
+        makeDirectory,
+        writeTraceFile,
+      },
+    )
+
+    expect(result).toEqual({
+      canceled: false,
+      path: "C:\\Exports\\anybox-trace-session-1-20260522-090807",
+      fileCount: 11,
+      recordCount: 1,
+    })
+    expect(showOpenDialog).toHaveBeenCalledWith(expect.objectContaining({
+      buttonLabel: "Export Here",
+      defaultPath: "C:\\Downloads",
+      properties: ["openDirectory", "createDirectory"],
+      title: "Select folder for split session trace",
+    }))
+    expect(makeDirectory).toHaveBeenCalledWith(
+      "C:\\Exports\\anybox-trace-session-1-20260522-090807",
+      { recursive: true },
+    )
+
+    const writtenPaths = writeTraceFile.mock.calls.map((call) => call[0])
+    expect(writtenPaths.some((filePath) => String(filePath).endsWith("\\manifest.json"))).toBe(true)
+    expect(writtenPaths.some((filePath) => String(filePath).endsWith("\\records\\index.json"))).toBe(true)
+    expect(writtenPaths.some((filePath) => String(filePath).includes("\\records\\000001-tool.call.completed-1-event-1.json"))).toBe(true)
+    expect(writtenPaths.some((filePath) => String(filePath).endsWith("\\runtime\\status.json"))).toBe(true)
+
+    const manifestCall = writeTraceFile.mock.calls.find((call) => String(call[0]).endsWith("\\manifest.json"))
+    expect(manifestCall?.[1]).toContain('"exportFormat": "anybox-session-trace-directory"')
+    const recordCall = writeTraceFile.mock.calls.find((call) =>
+      String(call[0]).includes("\\records\\000001-tool.call.completed-1-event-1.json"))
+    expect(recordCall?.[1]).toContain('"relatedToolCallFiles"')
+    expect(recordCall?.[1]).toContain('"tool-calls/000001-grep-toolcall-1.json"')
+  })
+
+  it("saves a split session trace directory when runtime arrays are missing", async () => {
+    const traceWithSparseRuntime = {
+      ...traceExport,
+      events: [
+        {
+          eventID: "event-1",
+          sessionID: "session-1",
+          turnID: "turn-1",
+          seq: 1,
+          timestamp: 2,
+          type: "turn.started",
+          payload: {},
+        },
+      ],
+      runtime: {
+        ...traceExport.runtime,
+        latestTurn: {
+          turnID: "turn-1",
+          status: "completed",
+        },
+        turns: [
+          {
+            turnID: "turn-1",
+            status: "completed",
+          },
+        ],
+        recentEvents: undefined,
+      },
+      toolCalls: [
+        {
+          callID: "toolcall-1",
+          tool: "grep",
+          status: "completed",
+        },
+      ],
+    }
+    const showOpenDialog = vi.fn().mockResolvedValue({
+      canceled: false,
+      filePaths: ["C:\\Exports"],
+    })
+    const makeDirectory = vi.fn().mockResolvedValue(undefined)
+    const writeTraceFile = vi.fn().mockResolvedValue(undefined)
+    requestAgentJSONMock.mockResolvedValueOnce({
+      data: traceWithSparseRuntime,
+    })
+
+    await expect(internal.saveSessionTraceExportDirectory(
+      { sessionID: "session-1" },
+      {
+        downloadsPath: "C:\\Downloads",
+        showOpenDialog,
+        makeDirectory,
+        writeTraceFile,
+      },
+    )).resolves.toEqual(expect.objectContaining({
+      canceled: false,
+      recordCount: 1,
+    }))
+
+    const turnIndexCall = writeTraceFile.mock.calls.find((call) => String(call[0]).endsWith("\\runtime\\turns\\index.json"))
+    expect(turnIndexCall?.[1]).toContain('"toolCount": 0')
+    expect(turnIndexCall?.[1]).toContain('"llmCallCount": 0')
+    expect(turnIndexCall?.[1]).toContain('"recentEventCount": 0')
+  })
+
   it("does not write a trace file when the save dialog is canceled", async () => {
     const showSaveDialog = vi.fn().mockResolvedValue({
       canceled: true,

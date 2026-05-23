@@ -645,6 +645,13 @@ export interface DesktopSaveSessionTraceExportResult {
   path?: string
 }
 
+export interface DesktopSaveSessionTraceExportDirectoryResult {
+  canceled: boolean
+  path?: string
+  fileCount?: number
+  recordCount?: number
+}
+
 export interface DesktopIpcContract {
   "desktop:get-info": {
     input: void
@@ -960,6 +967,10 @@ export interface DesktopIpcContract {
   "desktop:save-session-trace-export": {
     input: { sessionID: string }
     output: DesktopSaveSessionTraceExportResult
+  }
+  "desktop:save-session-trace-export-directory": {
+    input: { sessionID: string }
+    output: DesktopSaveSessionTraceExportDirectoryResult
   }
   "desktop:update-session-workflow": {
     input: { sessionID: string } & AgentSessionWorkflowUpdateInput
@@ -1508,6 +1519,7 @@ export interface DesktopApiMethods {
   getSessionRuntimeDebug(input: DesktopIpcInput<"desktop:get-session-runtime-debug">): Promise<DesktopIpcOutput<"desktop:get-session-runtime-debug">>
   getSessionTraceExport(input: DesktopIpcInput<"desktop:get-session-trace-export">): Promise<DesktopIpcOutput<"desktop:get-session-trace-export">>
   saveSessionTraceExport(input: DesktopIpcInput<"desktop:save-session-trace-export">): Promise<DesktopIpcOutput<"desktop:save-session-trace-export">>
+  saveSessionTraceExportDirectory(input: DesktopIpcInput<"desktop:save-session-trace-export-directory">): Promise<DesktopIpcOutput<"desktop:save-session-trace-export-directory">>
   agentSession: DesktopAgentSessionApi
   getGlobalProviderCatalog(): Promise<DesktopIpcOutput<"desktop:get-global-provider-catalog">>
   refreshGlobalProviderCatalog(): Promise<DesktopIpcOutput<"desktop:refresh-global-provider-catalog">>

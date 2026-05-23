@@ -668,7 +668,7 @@ function SessionTraceExportMenuButton({ sessionID }: { sessionID: string }) {
   const menuRef = useRef<HTMLDivElement | null>(null)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const [busyAction, setBusyAction] = useState<"copy" | "save" | null>(null)
+  const [busyAction, setBusyAction] = useState<"copy" | "save" | "saveDirectory" | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -749,6 +749,26 @@ function SessionTraceExportMenuButton({ sessionID }: { sessionID: string }) {
     }
   }
 
+  async function handleSaveDirectoryClick() {
+    resetStatus()
+    setBusyAction("saveDirectory")
+
+    try {
+      if (!window.desktop?.saveSessionTraceExportDirectory) {
+        throw new Error("Split trace export save is unavailable.")
+      }
+
+      const result = await window.desktop.saveSessionTraceExportDirectory({ sessionID })
+      if (!result.canceled) {
+        setStatusMessage("Split trace folder saved.")
+      }
+    } catch (error) {
+      setErrorMessage(readErrorMessage(error))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   return (
     <div className="canvas-top-menu-selector-anchor">
       <button
@@ -802,6 +822,19 @@ function SessionTraceExportMenuButton({ sessionID }: { sessionID: string }) {
               <strong>Save trace JSON</strong>
             </span>
             <span className="canvas-top-menu-context-option-status">{busyAction === "save" ? "Saving" : "Save"}</span>
+          </button>
+          <button
+            className="canvas-top-menu-context-option canvas-top-menu-trace-option"
+            disabled={busyAction !== null}
+            onClick={() => void handleSaveDirectoryClick()}
+            role="menuitem"
+            type="button"
+          >
+            <span className="canvas-top-menu-context-option-label">
+              <DownloadIcon />
+              <strong>Save split trace folder</strong>
+            </span>
+            <span className="canvas-top-menu-context-option-status">{busyAction === "saveDirectory" ? "Saving" : "Folder"}</span>
           </button>
           {statusMessage ? <p className="canvas-top-menu-quick-status">{statusMessage}</p> : null}
           {errorMessage ? <p className="canvas-top-menu-quick-status is-error">{errorMessage}</p> : null}

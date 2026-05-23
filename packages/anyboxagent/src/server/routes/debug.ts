@@ -94,6 +94,7 @@ function buildRuntimePayload(input?: {
         sessionID: item.sessionID,
         eventLimit,
         turnLimit,
+        recentOnly: true,
       }),
     ),
   }

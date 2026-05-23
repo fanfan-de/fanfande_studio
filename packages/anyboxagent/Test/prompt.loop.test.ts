@@ -6,6 +6,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Instance } from "#project/instance.ts"
+import * as SessionDiff from "#session/diff/diff.ts"
 import * as LLM from "#session/core/llm.ts"
 import type * as MessageTypes from "#session/core/message.ts"
 import * as Provider from "#provider/provider.ts"
@@ -439,6 +440,7 @@ describe("prompt loop concurrency", () => {
           expect(users[1]?.info.role === "user" ? users[1].info.diffSummary : undefined).toBeUndefined()
           expect(assistants[0]?.info.role === "assistant" ? assistants[0].info.diffSummary : undefined).toBeUndefined()
           expect(assistants[1]?.info.role === "assistant" ? assistants[1].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["first.txt", "second.txt"])
+          expect((await SessionDiff.computeLatestTurnDetailedDiff(session.id))?.diffs.map((diff) => diff.file)).toEqual(["first.txt", "second.txt"])
         },
       })
     } finally {

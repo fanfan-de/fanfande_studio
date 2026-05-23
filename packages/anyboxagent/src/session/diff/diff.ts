@@ -18,6 +18,16 @@ export interface DetailedDiffOptions {
     maxPatchBytes?: number
 }
 
+type LatestVisibleTurnDiffSource =
+    | {
+        type: "message-summary"
+        summary: Message.MessageDiffSummary
+    }
+    | {
+        type: "snapshot"
+        snapshot: string
+    }
+
 function listSessionParts(sessionID: string) {
     return db.findManyWithSchema("parts", Message.Part, {
         where: [{ column: "sessionID", value: sessionID }],
@@ -85,6 +95,69 @@ export function findLatestUserMessageWithSnapshot(sessionID: string): {
     return null
 }
 
+async function listVisibleSessionMessages(sessionID: string) {
+    const messages: Message.WithParts[] = []
+    for await (const item of Message.stream(sessionID)) {
+        messages.push(item)
+    }
+    return messages
+}
+
+function readSnapshotPart(message: Message.WithParts): string | undefined {
+    return message.parts.find((part): part is Message.SnapshotPart => part.type === "snapshot" && Boolean(part.snapshot.trim()))?.snapshot
+}
+
+function buildDetailedDiffSummaryFromMessageSummary(summary: Message.MessageDiffSummary): DetailedDiffSummary {
+    const detailedDiffs = summary.diffs.map((diff) => ({
+        before: "",
+        after: "",
+        ...diff,
+    }))
+    const detailed = buildDetailedDiffSummary(detailedDiffs)
+    return {
+        ...detailed,
+        ...(summary.title ? { title: summary.title } : {}),
+        ...(summary.body ? { body: summary.body } : {}),
+        ...(summary.stats ? { stats: summary.stats } : {}),
+    }
+}
+
+export async function findLatestVisibleTurnDiffSource(sessionID: string): Promise<LatestVisibleTurnDiffSource | null> {
+    const messages = await listVisibleSessionMessages(sessionID)
+    let latestUserIndex = -1
+    let latestUserSnapshot: string | undefined
+
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index]
+        if (!message || message.info.role !== "user") continue
+        if (message.info.internal) continue
+
+        const snapshot = readSnapshotPart(message)
+        if (!snapshot) continue
+        latestUserIndex = index
+        latestUserSnapshot = snapshot
+        break
+    }
+
+    if (latestUserIndex < 0 || !latestUserSnapshot) return null
+
+    for (let index = messages.length - 1; index > latestUserIndex; index -= 1) {
+        const message = messages[index]
+        if (!message || message.info.role !== "assistant") continue
+        if (!message.info.diffSummary?.diffs.length) continue
+
+        return {
+            type: "message-summary",
+            summary: message.info.diffSummary,
+        }
+    }
+
+    return {
+        type: "snapshot",
+        snapshot: latestUserSnapshot,
+    }
+}
+
 export async function computeDiffSummaryFromSnapshot(snapshot: string): Promise<DiffSummary> {
     const currentSnapshot = await Snapshot.track()
     if (!currentSnapshot) {
@@ -131,7 +204,10 @@ export async function computeSessionDetailedDiff(sessionID: string): Promise<Det
 }
 
 export async function computeLatestTurnDetailedDiff(sessionID: string): Promise<DetailedDiffSummary | null> {
-    const latestUser = findLatestUserMessageWithSnapshot(sessionID)
-    if (!latestUser) return null
-    return computeDetailedDiffFromSnapshot(latestUser.snapshot)
+    const source = await findLatestVisibleTurnDiffSource(sessionID)
+    if (!source) return null
+    if (source.type === "message-summary") {
+        return buildDetailedDiffSummaryFromMessageSummary(source.summary)
+    }
+    return computeDetailedDiffFromSnapshot(source.snapshot)
 }

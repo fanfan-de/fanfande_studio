@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type SaveDialogOptions, type SaveDialogReturnValue, type WebContents } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type OpenDialogOptions, type OpenDialogReturnValue, type SaveDialogOptions, type SaveDialogReturnValue, type WebContents } from "electron"
 import { createPlatformAdapter } from "@anybox/platform"
 import { DesktopIpcSchemas } from "@anybox/shared"
 import { mkdir, writeFile } from "node:fs/promises"
@@ -428,11 +428,20 @@ async function updateToolPermissionMode(input: AgentToolPermissionModePayload) {
 
 type SessionTraceExportInput = DesktopIpcInput<"desktop:get-session-trace-export">
 type SaveSessionTraceExportInput = DesktopIpcInput<"desktop:save-session-trace-export">
+type SaveSessionTraceExportDirectoryInput = DesktopIpcInput<"desktop:save-session-trace-export-directory">
 
 interface SaveSessionTraceExportOptions {
   downloadsPath?: string
   now?: Date
   showSaveDialog?: (options: SaveDialogOptions) => Promise<SaveDialogReturnValue>
+  writeTraceFile?: (filePath: string, data: string, encoding: BufferEncoding) => Promise<unknown>
+}
+
+interface SaveSessionTraceExportDirectoryOptions {
+  downloadsPath?: string
+  makeDirectory?: (directory: string, options: { recursive: true }) => Promise<unknown>
+  now?: Date
+  showOpenDialog?: (options: OpenDialogOptions) => Promise<OpenDialogReturnValue>
   writeTraceFile?: (filePath: string, data: string, encoding: BufferEncoding) => Promise<unknown>
 }
 
@@ -458,6 +467,316 @@ function formatSessionTraceTimestamp(date: Date) {
     pad(date.getMinutes()),
     pad(date.getSeconds()),
   ].join("")
+}
+
+function sanitizeSessionTraceFileNamePart(value: string | undefined) {
+  return (value ?? "")
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
+    .replace(/[^a-z0-9._-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 56)
+}
+
+function readTraceExportRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function readTraceExportString(value: unknown) {
+  return typeof value === "string" ? value : undefined
+}
+
+function readTraceExportNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+function readTraceExportArray<T = unknown>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : []
+}
+
+function readTraceExportStringArray(value: unknown) {
+  return readTraceExportArray(value).filter((item): item is string => typeof item === "string")
+}
+
+function traceExportRelativePath(...parts: string[]) {
+  return parts.join("/")
+}
+
+function traceExportDiskPath(directory: string, relativePath: string) {
+  return path.join(directory, ...relativePath.split("/"))
+}
+
+function formatTraceExportRecordFileName(index: number, fallback: string, ...parts: Array<string | undefined>) {
+  const ordinal = String(index + 1).padStart(6, "0")
+  const slug = parts
+    .map((part) => sanitizeSessionTraceFileNamePart(part))
+    .filter(Boolean)
+    .join("-")
+    .slice(0, 96)
+
+  return `${ordinal}-${slug || fallback}.json`
+}
+
+function summarizeTraceExportMessage(message: unknown, index: number, file: string) {
+  const record = readTraceExportRecord(message)
+  const info = readTraceExportRecord(record?.info)
+  const pathInfo = readTraceExportRecord(record?.path)
+
+  return {
+    index: index + 1,
+    file,
+    messageID: readTraceExportString(record?.id) ?? readTraceExportString(record?.messageID),
+    role: readTraceExportString(record?.role),
+    turnID: readTraceExportString(record?.turnID) ?? readTraceExportString(info?.turnID),
+    parentMessageID: readTraceExportString(record?.parentMessageID) ?? readTraceExportString(record?.parentID),
+    created: readTraceExportNumber(record?.created),
+    completed: readTraceExportNumber(record?.completed),
+    providerID: readTraceExportString(record?.providerID),
+    modelID: readTraceExportString(record?.modelID),
+    agent: readTraceExportString(record?.agent),
+    cwd: readTraceExportString(pathInfo?.cwd),
+  }
+}
+
+function summarizeTraceExportTurn(turn: unknown, index: number, file: string) {
+  const record = readTraceExportRecord(turn)
+  const tools = readTraceExportArray(record?.tools)
+  const llmCalls = readTraceExportArray(record?.llmCalls)
+  const recentEvents = readTraceExportArray(record?.recentEvents)
+
+  return {
+    index: index + 1,
+    file,
+    turnID: readTraceExportString(record?.turnID),
+    status: readTraceExportString(record?.status),
+    phase: readTraceExportString(record?.phase),
+    startedAt: readTraceExportNumber(record?.startedAt),
+    endedAt: readTraceExportNumber(record?.endedAt),
+    durationMs: readTraceExportNumber(record?.durationMs),
+    lastEventAt: readTraceExportNumber(record?.lastEventAt),
+    userMessageID: readTraceExportString(record?.userMessageID),
+    agent: readTraceExportString(record?.agent),
+    model: readTraceExportString(record?.model),
+    toolCount: tools.length,
+    llmCallCount: llmCalls.length,
+    recentEventCount: recentEvents.length,
+  }
+}
+
+function summarizeTraceExportToolCall(
+  toolCall: unknown,
+  index: number,
+  file: string,
+) {
+  const record = readTraceExportRecord(toolCall)
+
+  return {
+    index: index + 1,
+    file,
+    callID: readTraceExportString(record?.callID),
+    tool: readTraceExportString(record?.tool),
+    status: readTraceExportString(record?.status),
+    turnID: readTraceExportString(record?.turnID),
+    messageID: readTraceExportString(record?.messageID),
+    title: readTraceExportString(record?.title),
+    startedAt: readTraceExportNumber(record?.startedAt),
+    endedAt: readTraceExportNumber(record?.endedAt),
+    durationMs: readTraceExportNumber(record?.durationMs),
+    eventIDs: readTraceExportStringArray(record?.eventIDs),
+  }
+}
+
+async function writeSplitSessionTraceExportDirectory(
+  trace: AgentSessionTraceExport,
+  directory: string,
+  options: SaveSessionTraceExportDirectoryOptions,
+) {
+  const makeDirectory = options.makeDirectory ?? ((target: string, mkdirOptions: { recursive: true }) =>
+    mkdir(target, mkdirOptions))
+  const writeTraceFile = options.writeTraceFile ?? ((filePath: string, data: string, encoding: BufferEncoding) =>
+    writeFile(filePath, data, encoding))
+  const directories = [
+    directory,
+    traceExportDiskPath(directory, "records"),
+    traceExportDiskPath(directory, "messages"),
+    traceExportDiskPath(directory, "tool-calls"),
+    traceExportDiskPath(directory, "runtime"),
+    traceExportDiskPath(directory, "runtime/turns"),
+  ]
+  let fileCount = 0
+
+  for (const target of directories) {
+    await makeDirectory(target, { recursive: true })
+  }
+
+  async function writeJSON(relativePath: string, value: unknown) {
+    await writeTraceFile(traceExportDiskPath(directory, relativePath), `${JSON.stringify(value, null, 2)}\n`, "utf8")
+    fileCount += 1
+  }
+
+  const messages = readTraceExportArray(trace.messages)
+  const events = readTraceExportArray(trace.events)
+  const toolCalls = readTraceExportArray(trace.toolCalls)
+  const runtimeTurns = readTraceExportArray(trace.runtime?.turns)
+  const runtimeRecentEvents = readTraceExportArray(trace.runtime?.recentEvents)
+  const toolCallFilesByEventID = new Map<string, string[]>()
+  const toolCallIndex = toolCalls.map((toolCall, index) => {
+    const record = readTraceExportRecord(toolCall)
+    const tool = readTraceExportString(record?.tool)
+    const callID = readTraceExportString(record?.callID)
+    const eventIDs = readTraceExportStringArray(record?.eventIDs)
+    const file = traceExportRelativePath(
+      "tool-calls",
+      formatTraceExportRecordFileName(index, "tool-call", tool, callID),
+    )
+    for (const eventID of eventIDs) {
+      const files = toolCallFilesByEventID.get(eventID) ?? []
+      files.push(file)
+      toolCallFilesByEventID.set(eventID, files)
+    }
+
+    return summarizeTraceExportToolCall(toolCall, index, file)
+  })
+  const messageIndex = messages.map((message, index) => {
+    const summary = summarizeTraceExportMessage(message, index, "")
+    const file = traceExportRelativePath(
+      "messages",
+      formatTraceExportRecordFileName(index, "message", summary.role, summary.messageID),
+    )
+    return summarizeTraceExportMessage(message, index, file)
+  })
+  const runtimeTurnIndex = runtimeTurns.map((turn, index) => {
+    const turnRecord = readTraceExportRecord(turn)
+    const turnID = readTraceExportString(turnRecord?.turnID)
+    const file = traceExportRelativePath(
+      "runtime",
+      "turns",
+      formatTraceExportRecordFileName(index, "turn", turnID),
+    )
+    return summarizeTraceExportTurn(turn, index, file)
+  })
+  const recordIndex = events.map((event, index) => {
+    const record = readTraceExportRecord(event)
+    const eventID = readTraceExportString(record?.eventID)
+    const eventType = readTraceExportString(record?.type)
+    const seq = readTraceExportNumber(record?.seq)
+    const file = traceExportRelativePath(
+      "records",
+      formatTraceExportRecordFileName(index, "event", eventType, seq === undefined ? undefined : String(seq), eventID),
+    )
+
+    return {
+      index: index + 1,
+      file,
+      eventID,
+      sessionID: readTraceExportString(record?.sessionID),
+      turnID: readTraceExportString(record?.turnID),
+      seq,
+      timestamp: readTraceExportNumber(record?.timestamp),
+      type: eventType,
+      relatedToolCallFiles: eventID ? toolCallFilesByEventID.get(eventID) ?? [] : [],
+    }
+  })
+  const latestTurn = trace.runtime?.latestTurn ?? null
+  const runtimeStatus: Partial<AgentSessionTraceExport["runtime"]> = trace.runtime ? { ...trace.runtime } : {}
+  delete runtimeStatus.turns
+  delete runtimeStatus.recentEvents
+  delete runtimeStatus.latestTurn
+  const latestTurnRecord = readTraceExportRecord(latestTurn)
+  const latestTurnID = readTraceExportString(latestTurnRecord?.turnID)
+  const latestTurnIndex = latestTurnID
+    ? runtimeTurns.findIndex((turn) => readTraceExportString(readTraceExportRecord(turn)?.turnID) === latestTurnID)
+    : -1
+
+  await writeJSON("manifest.json", {
+    schemaVersion: 1,
+    exportFormat: "anybox-session-trace-directory",
+    generatedAt: trace.generatedAt,
+    mode: trace.mode,
+    session: trace.session,
+    stats: trace.stats,
+    redaction: trace.redaction,
+    layout: {
+      records: "records/index.json",
+      messages: "messages/index.json",
+      toolCalls: "tool-calls/index.json",
+      runtimeStatus: "runtime/status.json",
+      runtimeRecentEvents: "runtime/recent-events.json",
+      runtimeTurns: "runtime/turns/index.json",
+    },
+  })
+  await writeJSON("records/index.json", recordIndex)
+  for (const [index, event] of events.entries()) {
+    await writeJSON(recordIndex[index].file, {
+      schemaVersion: 1,
+      recordType: "event",
+      index: index + 1,
+      event,
+      relatedToolCallFiles: recordIndex[index].relatedToolCallFiles,
+    })
+  }
+
+  await writeJSON("messages/index.json", messageIndex)
+  for (const [index, message] of messages.entries()) {
+    await writeJSON(messageIndex[index].file, {
+      schemaVersion: 1,
+      recordType: "message",
+      index: index + 1,
+      message,
+    })
+  }
+
+  await writeJSON("tool-calls/index.json", toolCallIndex)
+  for (const [index, toolCall] of toolCalls.entries()) {
+    await writeJSON(toolCallIndex[index].file, {
+      schemaVersion: 1,
+      recordType: "tool-call",
+      index: index + 1,
+      toolCall,
+    })
+  }
+
+  await writeJSON("runtime/status.json", {
+    schemaVersion: 1,
+    runtime: runtimeStatus,
+    latestTurn: latestTurn && latestTurnIndex >= 0
+      ? runtimeTurnIndex[latestTurnIndex]
+      : latestTurn
+        ? {
+            turnID: latestTurnID,
+            status: readTraceExportString(latestTurnRecord?.status),
+            phase: readTraceExportString(latestTurnRecord?.phase),
+            startedAt: readTraceExportNumber(latestTurnRecord?.startedAt),
+            endedAt: readTraceExportNumber(latestTurnRecord?.endedAt),
+            durationMs: readTraceExportNumber(latestTurnRecord?.durationMs),
+            lastEventAt: readTraceExportNumber(latestTurnRecord?.lastEventAt),
+          }
+        : null,
+    turns: {
+      count: runtimeTurns.length,
+      index: "runtime/turns/index.json",
+    },
+    recentEvents: {
+      count: runtimeRecentEvents.length,
+      file: "runtime/recent-events.json",
+    },
+  })
+  await writeJSON("runtime/recent-events.json", runtimeRecentEvents)
+  await writeJSON("runtime/turns/index.json", runtimeTurnIndex)
+  for (const [index, turn] of runtimeTurns.entries()) {
+    await writeJSON(runtimeTurnIndex[index].file, {
+      schemaVersion: 1,
+      recordType: "runtime-turn",
+      index: index + 1,
+      turn,
+    })
+  }
+
+  return {
+    fileCount,
+    recordCount: events.length,
+  }
 }
 
 async function getSessionTraceExport(input: SessionTraceExportInput) {
@@ -506,6 +825,40 @@ async function saveSessionTraceExport(
   return {
     canceled: false,
     path: selection.filePath,
+  }
+}
+
+async function saveSessionTraceExportDirectory(
+  input: SaveSessionTraceExportDirectoryInput,
+  options: SaveSessionTraceExportDirectoryOptions = {},
+) {
+  const trace = await getSessionTraceExport(input)
+  const sessionID = input.sessionID.trim()
+  const safeSessionID = sanitizeSessionTraceFileSegment(sessionID)
+  const timestamp = formatSessionTraceTimestamp(options.now ?? new Date())
+  const folderName = `anybox-trace-${safeSessionID}-${timestamp}`
+  const showOpenDialog = options.showOpenDialog ?? ((dialogOptions: OpenDialogOptions) =>
+    dialog.showOpenDialog(dialogOptions))
+  const selection = await showOpenDialog({
+    buttonLabel: "Export Here",
+    defaultPath: options.downloadsPath ?? app.getPath("downloads"),
+    properties: ["openDirectory", "createDirectory"],
+    title: "Select folder for split session trace",
+  })
+
+  const selectedDirectory = selection.filePaths?.[0]
+  if (selection.canceled || !selectedDirectory) {
+    return { canceled: true }
+  }
+
+  const targetDirectory = path.join(selectedDirectory, folderName)
+  const result = await writeSplitSessionTraceExportDirectory(trace, targetDirectory, options)
+
+  return {
+    canceled: false,
+    path: targetDirectory,
+    fileCount: result.fileCount,
+    recordCount: result.recordCount,
   }
 }
 
@@ -1603,6 +1956,11 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   handleDesktopIpc(
     "desktop:save-session-trace-export",
     async (_event, input: SaveSessionTraceExportInput) => saveSessionTraceExport(input),
+  )
+
+  handleDesktopIpc(
+    "desktop:save-session-trace-export-directory",
+    async (_event, input: SaveSessionTraceExportDirectoryInput) => saveSessionTraceExportDirectory(input),
   )
 
   handleDesktopIpc(
@@ -3337,5 +3695,6 @@ export const internal = {
   resolvePreviewTarget,
   saveComposerPastedImages,
   saveSessionTraceExport,
+  saveSessionTraceExportDirectory,
   updateToolPermissionMode,
 }

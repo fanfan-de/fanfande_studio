@@ -953,6 +953,7 @@ export function getSessionRuntimeDebugSnapshot(input: {
   sessionID: string
   eventLimit?: number
   turnLimit?: number
+  recentOnly?: boolean
 }): SessionRuntimeDebugSnapshot {
   const eventLimit = Math.max(5, Math.min(input.eventLimit ?? 25, 100))
   const turnLimit = Math.max(1, Math.min(input.turnLimit ?? 6, 20))
@@ -960,7 +961,12 @@ export function getSessionRuntimeDebugSnapshot(input: {
   const running = RunningState.info(input.sessionID)
   const runner = SessionRunner.info(input.sessionID)
   const activeTurn = Orchestrator.activeTurn(input.sessionID)
-  const events = EventStore.listSessionEvents({ sessionID: input.sessionID })
+  const events = input.recentOnly
+    ? EventStore.listRecentSessionEvents({
+        sessionID: input.sessionID,
+        limit: Math.max(eventLimit, 100),
+      })
+    : EventStore.listSessionEvents({ sessionID: input.sessionID })
   const turns = new Map<string, MutableTurnSummary>()
   const recentEvents: RuntimeEventSummary[] = []
 

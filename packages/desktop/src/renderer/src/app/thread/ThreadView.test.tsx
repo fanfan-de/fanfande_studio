@@ -1511,6 +1511,33 @@ describe("ThreadView assistant response markdown", () => {
     expect(getByRole("button", { name: "确认实施" })).toBeEnabled()
   })
 
+  it("renders proposed plan blocks even when the model adds a preface", () => {
+    const onProposedPlanConfirm = vi.fn()
+    const proposedPlan = `I will draft the plan now.\n\n${createProposedPlan("Prefaced Plan")}`
+
+    const { getByRole, queryByText } = renderThread([
+      assistantTraceTurn("assistant-1", [
+        {
+          id: "response-1",
+          kind: "text",
+          timestamp: 1,
+          label: "Assistant",
+          text: proposedPlan,
+          status: "completed",
+        },
+      ], false),
+    ], {
+      onProposedPlanConfirm,
+    })
+
+    expect(getByRole("article", { name: "Proposed plan" })).toBeInTheDocument()
+    expect(getByRole("heading", { name: "Prefaced Plan" })).toBeInTheDocument()
+    expect(queryByText("<proposed_plan>")).not.toBeInTheDocument()
+    expect(queryByText("I will draft the plan now.")).not.toBeInTheDocument()
+    expect(getByRole("button", { name: "取消" })).toBeEnabled()
+    expect(getByRole("button", { name: "确认实施" })).toBeEnabled()
+  })
+
   it("removes proposed plan actions and shows cancelled state after cancel", () => {
     const onProposedPlanConfirm = vi.fn()
     const proposedPlan = createProposedPlan()

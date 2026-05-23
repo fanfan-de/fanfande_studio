@@ -12,6 +12,101 @@ import { Scheduler } from "../scheduler"
 const log = Log.create({ service: "snapshot" })
 const hour = 60 * 60 * 1000
 const prune = "7.days"
+const snapshotGitQueues = new Map<string, Promise<void>>()
+const DEFAULT_SNAPSHOT_EXCLUDE_PATTERNS = [
+  "node_modules/**",
+  "**/node_modules/**",
+  "dist/**",
+  "**/dist/**",
+  "build/**",
+  "**/build/**",
+  "coverage/**",
+  "**/coverage/**",
+  ".next/**",
+  "**/.next/**",
+  ".nuxt/**",
+  "**/.nuxt/**",
+  ".svelte-kit/**",
+  "**/.svelte-kit/**",
+  ".turbo/**",
+  "**/.turbo/**",
+  ".cache/**",
+  "**/.cache/**",
+  ".vite/**",
+  "**/.vite/**",
+  "out/**",
+  "**/out/**",
+]
+
+function snapshotPathspecs() {
+  return [
+    ".",
+    ...DEFAULT_SNAPSHOT_EXCLUDE_PATTERNS.map((pattern) => `:(exclude)${pattern}`),
+  ]
+}
+
+async function withSnapshotGitLock<T>(git: string, fn: () => Promise<T>): Promise<T> {
+  const previous = snapshotGitQueues.get(git) ?? Promise.resolve()
+  let releaseCurrent!: () => void
+  const current = new Promise<void>((resolve) => {
+    releaseCurrent = resolve
+  })
+  const queued = previous.catch(() => { }).then(() => current)
+  snapshotGitQueues.set(git, queued)
+
+  await previous.catch(() => { })
+  try {
+    return await fn()
+  } finally {
+    releaseCurrent()
+    if (snapshotGitQueues.get(git) === queued) {
+      snapshotGitQueues.delete(git)
+    }
+  }
+}
+
+async function stageSnapshot(git: string) {
+  const listed = await runGitArgs([
+    "--git-dir",
+    git,
+    "--work-tree",
+    Instance.worktree,
+    "ls-files",
+    "-z",
+    "--cached",
+    "--modified",
+    "--deleted",
+    "--others",
+    "--exclude-standard",
+    "--",
+    ...snapshotPathspecs(),
+  ])
+  if (listed.exitCode !== 0) return listed
+
+  const files = listed.stdout.split("\0").filter(Boolean)
+  if (files.length === 0) return listed
+
+  const pathspecFile = path.join(
+    Global.Path.cache,
+    `snapshot-pathspec-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  )
+
+  try {
+    await fs.writeFile(pathspecFile, `${files.join("\0")}\0`)
+    return await runGitArgs([
+      "--git-dir",
+      git,
+      "--work-tree",
+      Instance.worktree,
+      "add",
+      "--pathspec-from-file",
+      pathspecFile,
+      "--pathspec-file-nul",
+    ])
+  } finally {
+    await fs.unlink(pathspecFile).catch(() => { })
+  }
+}
 
 async function runGitArgs(args: string[], cwd = Instance.directory) {
   const child = Bun.spawn(["git", ...args], {
@@ -115,34 +210,36 @@ export async function track() {
   if (cfg.snapshot === false) return
   const git = gitdir()
 
-  if (!(await ensureSnapshotRepository(git))) {
-    return
-  }
+  return withSnapshotGitLock(git, async () => {
+    if (!(await ensureSnapshotRepository(git))) {
+      return
+    }
 
-  const add = await $`git --git-dir ${git} --work-tree ${Instance.worktree} add .`.quiet().cwd(Instance.directory).nothrow()
-  if (add.exitCode !== 0) {
-    log.warn("failed to stage snapshot", {
-      exitCode: add.exitCode,
-      stderr: add.stderr.toString(),
-    })
-    return
-  }
+    const add = await stageSnapshot(git)
+    if (add.exitCode !== 0) {
+      log.warn("failed to stage snapshot", {
+        exitCode: add.exitCode,
+        stderr: add.stderr,
+      })
+      return
+    }
 
-  const result = await $`git --git-dir ${git} --work-tree ${Instance.worktree} write-tree`
-    .quiet()
-    .cwd(Instance.directory)
-    .nothrow()
-  if (result.exitCode !== 0) {
-    log.warn("failed to write snapshot tree", {
-      exitCode: result.exitCode,
-      stderr: result.stderr.toString(),
-    })
-    return
-  }
+    const result = await $`git --git-dir ${git} --work-tree ${Instance.worktree} write-tree`
+      .quiet()
+      .cwd(Instance.directory)
+      .nothrow()
+    if (result.exitCode !== 0) {
+      log.warn("failed to write snapshot tree", {
+        exitCode: result.exitCode,
+        stderr: result.stderr.toString(),
+      })
+      return
+    }
 
-  const hash = result.text()
-  log.info("tracking", { hash, cwd: Instance.directory, git })
-  return hash.trim()
+    const hash = result.text()
+    log.info("tracking", { hash, cwd: Instance.directory, git })
+    return hash.trim()
+  })
 }
 
 export const Patch = z.object({
@@ -153,30 +250,40 @@ export type Patch = z.infer<typeof Patch>
 
 export async function patch(hash: string): Promise<Patch> {
   const git = gitdir()
-  await $`git --git-dir ${git} --work-tree ${Instance.worktree} add .`.quiet().cwd(Instance.directory).nothrow()
-  const result =
-    await $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --no-ext-diff --name-only ${hash} -- .`
-      .quiet()
-      .cwd(Instance.directory)
-      .nothrow()
+  return withSnapshotGitLock(git, async () => {
+    await stageSnapshot(git)
+    const result = await runGitArgs([
+      "-c",
+      "core.autocrlf=false",
+      "--git-dir",
+      git,
+      "--work-tree",
+      Instance.worktree,
+      "diff",
+      "--no-ext-diff",
+      "--name-only",
+      hash,
+      "--",
+      ...snapshotPathspecs(),
+    ])
 
-  // If git diff fails, return empty patch
-  if (result.exitCode !== 0) {
-    log.warn("failed to get diff", { hash, exitCode: result.exitCode })
-    return { hash, files: [] }
-  }
+    // If git diff fails, return empty patch
+    if (result.exitCode !== 0) {
+      log.warn("failed to get diff", { hash, exitCode: result.exitCode })
+      return { hash, files: [] }
+    }
 
-  const files = result.text()
-  return {
-    hash,
-    files: files
-      .trim()
-      .split("\n")
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .map((x) => unquote(x))
-      .map((x) => path.join(Instance.worktree, x)),
-  }
+    return {
+      hash,
+      files: result.stdout
+        .trim()
+        .split("\n")
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .map((x) => unquote(x))
+        .map((x) => path.join(Instance.worktree, x)),
+    }
+  })
 }
 
 export async function restore(snapshot: string) {
@@ -232,24 +339,34 @@ export async function revert(patches: Patch[]) {
 
 export async function diff(hash: string) {
   const git = gitdir()
-  await $`git --git-dir ${git} --work-tree ${Instance.worktree} add .`.quiet().cwd(Instance.directory).nothrow()
-  const result =
-    await $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --no-ext-diff ${hash} -- .`
-      .quiet()
-      .cwd(Instance.worktree)
-      .nothrow()
-
-  if (result.exitCode !== 0) {
-    log.warn("failed to get diff", {
+  return withSnapshotGitLock(git, async () => {
+    await stageSnapshot(git)
+    const result = await runGitArgs([
+      "-c",
+      "core.autocrlf=false",
+      "--git-dir",
+      git,
+      "--work-tree",
+      Instance.worktree,
+      "diff",
+      "--no-ext-diff",
       hash,
-      exitCode: result.exitCode,
-      stderr: result.stderr.toString(),
-      stdout: result.stdout.toString(),
-    })
-    return ""
-  }
+      "--",
+      ...snapshotPathspecs(),
+    ], Instance.worktree)
 
-  return result.text().trim()
+    if (result.exitCode !== 0) {
+      log.warn("failed to get diff", {
+        hash,
+        exitCode: result.exitCode,
+        stderr: result.stderr,
+        stdout: result.stdout,
+      })
+      return ""
+    }
+
+    return result.stdout.trim()
+  })
 }
 
 export const FileDiff = z
@@ -330,11 +447,33 @@ export async function diffFull(
     return undefined
   }
 
-  for await (const line of $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --no-ext-diff --no-renames --numstat ${from} ${to} -- .`
-    .quiet()
-    .cwd(Instance.directory)
-    .nothrow()
-    .lines()) {
+  const numstat = await runGitArgs([
+    "-c",
+    "core.autocrlf=false",
+    "--git-dir",
+    git,
+    "--work-tree",
+    Instance.worktree,
+    "diff",
+    "--no-ext-diff",
+    "--no-renames",
+    "--numstat",
+    from,
+    to,
+    "--",
+    ...snapshotPathspecs(),
+  ])
+  if (numstat.exitCode !== 0) {
+    log.warn("failed to get full diff", {
+      from,
+      to,
+      exitCode: numstat.exitCode,
+      stderr: numstat.stderr,
+    })
+    return result
+  }
+
+  for (const line of numstat.stdout.split(/\r?\n/)) {
     if (!line) continue
     const [additions, deletions, rawFile] = line.split("\t")
     const file = unquote(rawFile!)

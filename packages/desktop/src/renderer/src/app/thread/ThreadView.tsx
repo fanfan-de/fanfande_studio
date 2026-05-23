@@ -2862,16 +2862,18 @@ function formatTraceStatusText(status?: AssistantTraceItem["status"]) {
 
 function parseProposedPlanBlock(text: string | null | undefined) {
   const raw = text?.trim() ?? ""
-  if (!raw.startsWith(PROPOSED_PLAN_OPEN_TAG)) return null
+  const openTagIndex = raw.indexOf(PROPOSED_PLAN_OPEN_TAG)
+  if (openTagIndex < 0) return null
 
-  const closeTagIndex = raw.indexOf(PROPOSED_PLAN_CLOSE_TAG, PROPOSED_PLAN_OPEN_TAG.length)
+  const contentStartIndex = openTagIndex + PROPOSED_PLAN_OPEN_TAG.length
+  const closeTagIndex = raw.indexOf(PROPOSED_PLAN_CLOSE_TAG, contentStartIndex)
   const isComplete = closeTagIndex >= 0
   const contentEndIndex = isComplete ? closeTagIndex : raw.length
   const rawEndIndex = isComplete ? closeTagIndex + PROPOSED_PLAN_CLOSE_TAG.length : raw.length
-  const markdown = raw.slice(PROPOSED_PLAN_OPEN_TAG.length, contentEndIndex).trim()
+  const markdown = raw.slice(contentStartIndex, contentEndIndex).trim()
 
   return {
-    raw: raw.slice(0, rawEndIndex).trim(),
+    raw: raw.slice(openTagIndex, rawEndIndex).trim(),
     markdown,
     isComplete,
   }

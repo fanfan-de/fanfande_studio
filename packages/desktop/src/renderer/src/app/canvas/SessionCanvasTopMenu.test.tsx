@@ -337,6 +337,26 @@ describe("SessionCanvasTopMenu trace export", () => {
     })
   })
 
+  it("saves split trace folder and displays save status", async () => {
+    const saveSessionTraceExportDirectory = vi.fn().mockResolvedValue({
+      canceled: false,
+      path: "C:\\Temp\\trace-folder",
+      fileCount: 11,
+      recordCount: 1,
+    })
+    setDesktopApi({ saveSessionTraceExportDirectory })
+
+    renderTopMenu()
+
+    fireEvent.click(screen.getByRole("button", { name: "Export session trace" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: /Save split trace folder/ }))
+
+    await waitFor(() => {
+      expect(saveSessionTraceExportDirectory).toHaveBeenCalledWith({ sessionID: "session-1" })
+      expect(screen.getByText("Split trace folder saved.")).toBeInTheDocument()
+    })
+  })
+
   it("does not show trace export actions without an active session", () => {
     renderTopMenu({ activeSession: null })
 

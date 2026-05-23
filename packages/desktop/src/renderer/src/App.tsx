@@ -68,6 +68,19 @@ const EMPTY_SIDE_CHAT_ATTACHMENTS: ComposerAttachment[] = []
 const EMPTY_SIDE_CHAT_PERMISSION_REQUESTS: PermissionRequest[] = []
 const EMPTY_SIDE_CHAT_TURNS: Turn[] = []
 
+function createSelectedResponseSideChatDraft(selectedText: string) {
+  const quotedSelection = selectedText
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`)
+    .join("\n")
+
+  return [
+    "Please comment on this selected part of the response:",
+    "",
+    quotedSelection,
+  ].join("\n")
+}
+
 interface RightSidebarSideChatPanelState {
   activeProjectID: string | null
   activeTabID: string
@@ -2090,10 +2103,13 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onWorkspaceFileSelect={handleWorkspaceFileSelect}
                 onOpenBrowserTab={handleOpenRightSidebarBrowserTab}
                 onOpenFilesTab={handleOpenRightSidebarFilesTab}
-                onOpenMessageTreeSideChat={(sessionID, messageID) =>
+                onOpenMessageTreeSideChat={(sessionID, messageID, options) =>
                   handleOpenSideChat(messageID, {
+                    initialDraftText: options?.selectedText
+                      ? createSelectedResponseSideChatDraft(options.selectedText)
+                      : undefined,
                     parentSessionID: sessionID,
-                    placement: "right-sidebar",
+                    placement: options?.selectedText ? "tree" : "right-sidebar",
                   })
                 }
                 onOpenMessageTreeTab={handleOpenRightSidebarMessageTreeTab}

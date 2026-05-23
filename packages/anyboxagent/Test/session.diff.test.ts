@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import "./sqlite.cleanup.ts"
 import { spawnSync } from "node:child_process"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Instance } from "#project/instance.ts"
@@ -141,6 +141,40 @@ describe("session diff summary", () => {
           })
           expect(diffs[0]?.patch).toContain("diff --git")
           expect(diffs[0]?.patch).toContain("+面朝大海")
+        },
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  testIfGit("excludes generated dependency directories from snapshots", async () => {
+    const root = await mkdtemp(join(tmpdir(), "anybox-snapshot-ignore-"))
+
+    try {
+      await Instance.provide({
+        directory: root,
+        async fn() {
+          const before = await Snapshot.track()
+
+          await mkdir(join(root, "app", "src"), { recursive: true })
+          await mkdir(join(root, "app", "node_modules", "left-pad"), { recursive: true })
+          await mkdir(join(root, "app", "dist"), { recursive: true })
+          await writeFile(join(root, "app", "src", "index.ts"), "export const value = 1\n", "utf8")
+          await writeFile(join(root, "app", "node_modules", "left-pad", "index.js"), "module.exports = 1\n", "utf8")
+          await writeFile(join(root, "app", "dist", "bundle.js"), "console.log(1)\n", "utf8")
+
+          const after = await Snapshot.track()
+
+          if (!before || !after) {
+            throw new Error("Expected snapshots to be captured for the test workspace.")
+          }
+
+          const diffs = await Snapshot.diffFull(before, after, {
+            includeContent: false,
+          })
+
+          expect(diffs.map((diff) => diff.file)).toEqual(["app/src/index.ts"])
         },
       })
     } finally {

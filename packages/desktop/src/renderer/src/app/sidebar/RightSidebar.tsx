@@ -94,7 +94,11 @@ interface RightSidebarProps {
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onOpenBrowserTab: () => void
   onOpenFilesTab: () => void
-  onOpenMessageTreeSideChat: (sessionID: string, messageID: string) => void | Promise<void>
+  onOpenMessageTreeSideChat: (
+    sessionID: string,
+    messageID: string,
+    options?: { selectedText?: string },
+  ) => void | Promise<void>
   onOpenMessageTreeTab: () => void
   onOpenReviewTab: () => void
   onOpenTerminalTab: () => void

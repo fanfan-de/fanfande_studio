@@ -39,11 +39,13 @@ import { resolveTools } from "./resolve-tools.ts";
  */
 
 const log = Log.create({ service: "session.prompt" });
-const DEFAULT_PROMPT_LOOP_LIMIT = 64
+const DEFAULT_PROMPT_LOOP_LIMIT = Number.POSITIVE_INFINITY
 const HARD_PROMPT_LOOP_LIMIT = Flag.ANYBOX_EXPERIMENTAL_AGENT_LOOP_LIMIT
 const DANGLING_TOOL_CALL_ERROR =
     "Recovered dangling tool call from an earlier interrupted run before resuming."
 const MODEL_CALL_PATCH_MAX_PATCH_BYTES = 128 * 1024
+const MODEL_CALL_PATCH_MAX_FILES = 200
+const MODEL_CALL_PATCH_MAX_TOTAL_PATCH_BYTES = 512 * 1024
 
 // ---------------------------------------------------------------------------
 // 输入协议与运行态
@@ -600,7 +602,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             throwIfAborted(abort)
             const maxLoopIterations = resolvePromptLoopLimit(agent);
             iteration += 1;
-            if (iteration > maxLoopIterations) {
+            if (Number.isFinite(maxLoopIterations) && iteration > maxLoopIterations) {
                 log.error("prompt loop exceeded maximum iterations", {
                     sessionID,
                     userMessageID: lastUser.id,
@@ -609,7 +611,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 });
                 throw new Error(
                     `Prompt loop exceeded ${maxLoopIterations} iterations without reaching a final response. ` +
-                    `If this task legitimately needs more tool steps, increase ANYBOX_EXPERIMENTAL_AGENT_LOOP_LIMIT.`,
+                    `If this task legitimately needs more tool steps, increase or unset ANYBOX_EXPERIMENTAL_AGENT_LOOP_LIMIT.`,
                 );
             }
 
@@ -1473,12 +1475,28 @@ function readModelCallPatchPart(messageID: string): Message.PatchPart | undefine
 function toPatchFileChangeSummary(
     diffs: SessionDiff.DetailedDiffSummary["diffs"],
 ): Message.PatchFileChangeSummary[] {
-    return diffs.map((diff) => ({
-        file: diff.file,
-        additions: diff.additions,
-        deletions: diff.deletions,
-        ...(diff.patch ? { patch: diff.patch } : {}),
-    }))
+    let storedPatchBytes = 0
+
+    return diffs.slice(0, MODEL_CALL_PATCH_MAX_FILES).map((diff) => {
+        const change: Message.PatchFileChangeSummary = {
+            file: diff.file,
+            additions: diff.additions,
+            deletions: diff.deletions,
+        }
+
+        if (!diff.patch) return change
+
+        const patchBytes = Buffer.byteLength(diff.patch, "utf8")
+        if (storedPatchBytes + patchBytes > MODEL_CALL_PATCH_MAX_TOTAL_PATCH_BYTES) {
+            return change
+        }
+
+        storedPatchBytes += patchBytes
+        return {
+            ...change,
+            patch: diff.patch,
+        }
+    })
 }
 
 async function persistModelCallPatchPart(input: {
