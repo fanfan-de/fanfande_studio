@@ -55,6 +55,19 @@ function parseComposerModelValue(value: string | null | undefined) {
   }
 }
 
+function resolveComposerTurnModel(
+  selectedModel: string | null | undefined,
+  session: Pick<SessionSummary, "modelSelection">,
+) {
+  const modelValue = selectedModel?.trim()
+  if (!modelValue) return undefined
+
+  const persistedModelValue = session.modelSelection?.model?.trim()
+  if (!persistedModelValue || persistedModelValue !== modelValue) return undefined
+
+  return parseComposerModelValue(modelValue)
+}
+
 interface SendPromptToSessionInput {
   attachments: ComposerAttachment[]
   backendSessionID?: string | null
@@ -177,7 +190,7 @@ export async function sendPromptToSession(
     path: attachment.path,
     name: attachment.name,
   }))
-  const model = parseComposerModelValue(selectedModel)
+  const model = resolveComposerTurnModel(selectedModel, session)
   const effectiveSelectedSkillIDs = resolveComposerSkillSelectionForSession(session, selectedSkillIDs)
   const userTurnDisplayText = displayText?.trim() || normalizeQuestionAnswerText(questionAnswer) || undefined
   const userTurn: Turn = buildUserTurn({

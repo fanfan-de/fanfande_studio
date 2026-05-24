@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest"
-import type { PendingAgentStream } from "../types"
+import type { PendingAgentStream, SideChatLink } from "../types"
 import {
   filterSideChatMappingForCleanup,
   removePendingStreamsForSessions,
   removeSubscribedSessionStreamsForCleanup,
+  sideChatLinkHasRealResponse,
 } from "./session-lifecycle-controller"
 
 describe("session lifecycle cleanup helpers", () => {
@@ -76,5 +77,24 @@ describe("session lifecycle cleanup helpers", () => {
     expect(subscribed).toEqual({
       "ui-session-2": "backend-session-2",
     })
+  })
+
+  it("detects whether side chat link snapshots contain a real response", () => {
+    const createLink = (assistantText: string): SideChatLink => ({
+      sessionID: "side-1",
+      parentSessionID: "parent-1",
+      anchorMessageID: "assistant-1",
+      createdAt: 1,
+      anchorPreview: "Parent response",
+      snapshotVersion: 1,
+      snapshot: {
+        assistantText,
+      },
+    })
+
+    expect(sideChatLinkHasRealResponse(createLink(""))).toBe(false)
+    expect(sideChatLinkHasRealResponse(createLink("   "))).toBe(false)
+    expect(sideChatLinkHasRealResponse(createLink("<!-- anybox-response-format: markdown -->"))).toBe(false)
+    expect(sideChatLinkHasRealResponse(createLink("<!-- anybox-response-format: markdown -->\nA real answer."))).toBe(true)
   })
 })

@@ -1,6 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type RightSidebarState, type RightSidebarTab, type WorkspaceGroup } from "../types"
+import {
+  DEFAULT_ASSISTANT_TRACE_VISIBILITY,
+  type RightSidebarState,
+  type RightSidebarTab,
+  type WorkspaceGroup,
+} from "../types"
 import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE, DEFAULT_WORKSPACE_PREVIEW_STATE } from "../agent-workspace/review-preview-state"
 import type { SessionMessageTree } from "../session-message-tree"
 import { RightSidebar } from "./RightSidebar"
@@ -308,7 +313,6 @@ function renderRightSidebar(input: {
   onCloseTab?: (tabID: string) => void
   onOpenBrowserTab?: () => void
   onOpenFilesTab?: () => void
-  onOpenMessageTreeSideChat?: (sessionID: string, messageID: string, options?: { selectedText?: string }) => void
   onOpenMessageTreeTab?: () => void
   onOpenReviewTab?: () => void
   onOpenTerminalTab?: () => void
@@ -345,7 +349,6 @@ function renderRightSidebar(input: {
       onLocalFileLinkOpen={vi.fn()}
       onOpenBrowserTab={input.onOpenBrowserTab ?? vi.fn()}
       onOpenFilesTab={input.onOpenFilesTab ?? vi.fn()}
-      onOpenMessageTreeSideChat={input.onOpenMessageTreeSideChat ?? vi.fn()}
       onOpenMessageTreeTab={input.onOpenMessageTreeTab ?? vi.fn()}
       onOpenReviewTab={input.onOpenReviewTab ?? vi.fn()}
       onOpenTerminalTab={input.onOpenTerminalTab ?? vi.fn()}
@@ -469,9 +472,8 @@ describe("RightSidebar", () => {
     expect(onMessageTreeNodeSelect).toHaveBeenCalledWith("session-1", "assistant-2")
   })
 
-  it("opens side chats from assistant message tree nodes without selecting the node", () => {
+  it("does not render side chat controls in message tree nodes", () => {
     const onMessageTreeNodeSelect = vi.fn()
-    const onOpenMessageTreeSideChat = vi.fn()
     const sideChatWorkspace: WorkspaceGroup = {
       ...workspace,
       sessions: [
@@ -521,23 +523,18 @@ describe("RightSidebar", () => {
       },
       workspaces: [sideChatWorkspace],
       onMessageTreeNodeSelect,
-      onOpenMessageTreeSideChat,
     })
 
     const activeNode = queryMessageTreeNode("assistant-1")
-    const alternativeNode = queryMessageTreeNode("assistant-2")
     const userNode = queryMessageTreeNode("user-1")
     expect(activeNode).not.toBeNull()
-    expect(alternativeNode).not.toBeNull()
     expect(userNode).not.toBeNull()
-    if (!activeNode || !alternativeNode || !userNode) return
+    if (!activeNode || !userNode) return
 
-    expect(within(activeNode).getByRole("button", { name: "Open side chat (2)" })).toBeInTheDocument()
+    expect(within(activeNode).queryByRole("button", { name: /Open side chat/ })).toBeNull()
     expect(within(userNode).queryByRole("button", { name: /Open side chat/ })).toBeNull()
 
-    fireEvent.click(within(alternativeNode).getByRole("button", { name: "Open side chat" }))
-
-    expect(onOpenMessageTreeSideChat).toHaveBeenCalledWith("session-1", "assistant-2")
+    fireEvent.click(activeNode)
     expect(onMessageTreeNodeSelect).not.toHaveBeenCalled()
   })
 
@@ -612,99 +609,6 @@ describe("RightSidebar", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Markdown answer" })).toBeInTheDocument()
     expect(screen.getByText("Strong").closest("strong")).not.toBeNull()
     expect(screen.getByRole("table")).toBeInTheDocument()
-  })
-
-  it("opens a selected response text side chat from the response context menu", () => {
-    const onOpenSideChat = vi.fn()
-    const getSelectionSpy = vi.spyOn(window, "getSelection")
-    render(
-      <SessionMessageTreePanel
-        session={workspace.sessions[0] ?? null}
-        messageTree={createMessageTree()}
-        onOpenSideChat={onOpenSideChat}
-        onSelectMessage={vi.fn()}
-      />,
-    )
-
-    const activeNode = queryMessageTreeNode("assistant-1")
-    expect(activeNode).not.toBeNull()
-    if (!activeNode) return
-
-    fireEvent.doubleClick(activeNode)
-
-    const responseBody = document.querySelector<HTMLElement>(".session-message-tree-response-card-body")
-    expect(responseBody).not.toBeNull()
-    if (!responseBody) return
-
-    getSelectionSpy.mockReturnValue({
-      isCollapsed: false,
-      anchorNode: responseBody,
-      focusNode: responseBody,
-      toString: () => "specific selected content",
-    } as unknown as Selection)
-
-    fireEvent.contextMenu(responseBody, {
-      clientX: 120,
-      clientY: 90,
-    })
-    fireEvent.click(screen.getByRole("menuitem", { name: "Add side chat comment" }))
-
-    expect(onOpenSideChat).toHaveBeenCalledWith("session-1", "assistant-1", {
-      selectedText: "specific selected content",
-    })
-    expect(screen.getByText("specific selected content")).toBeInTheDocument()
-    getSelectionSpy.mockRestore()
-  })
-
-  it("expands response annotation tabs to read side chat answers in the tree", async () => {
-    const originalDesktop = window.desktop
-    const listSideChats = vi.fn().mockResolvedValue([
-      {
-        sessionID: "side-chat-1",
-        parentSessionID: "session-1",
-        anchorMessageID: "assistant-1",
-        createdAt: 10,
-        anchorPreview: "Active answer",
-        snapshotVersion: 1,
-        snapshot: {
-          userText: "What does this line mean?",
-          assistantText: "This line explains the implementation plan.",
-        },
-      },
-    ])
-    window.desktop = {
-      ...originalDesktop,
-      listSideChats,
-    } as Window["desktop"]
-
-    try {
-      renderRightSidebar({
-        messageTreeBySession: {
-          "session-1": createMessageTree(),
-        },
-        rightSidebar: {
-          activeTabID: "message-tree-tab",
-          tabs: [createMessageTreeTab()],
-        },
-      })
-
-      const activeNode = queryMessageTreeNode("assistant-1")
-      expect(activeNode).not.toBeNull()
-      if (!activeNode) return
-
-      fireEvent.doubleClick(activeNode)
-
-      const annotationTab = await screen.findByRole("button", { name: "Side chat annotations (1)" })
-      fireEvent.click(annotationTab)
-
-      expect(await screen.findByText("This line explains the implementation plan.")).toBeInTheDocument()
-      expect(screen.getByText("What does this line mean?")).toBeInTheDocument()
-      await waitFor(() => {
-        expect(listSideChats).toHaveBeenCalledWith({ parentSessionID: "session-1" })
-      })
-    } finally {
-      window.desktop = originalDesktop
-    }
   })
 
   it("renders message tree nodes as a directed graph and updates the active path", async () => {

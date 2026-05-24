@@ -257,6 +257,50 @@ function mapSessionInfo(session: AgentSessionInfo) {
   }
 }
 
+function sideChatLinkHasRealAssistantResponse(link: AgentSideChatLink) {
+  return Boolean(link.snapshot?.assistantText?.trim())
+}
+
+async function deleteAgentSessionRecord(sessionID: string) {
+  const result = await requestAgentJSON<AgentSessionDeleteResult>(`/api/sessions/${encodeURIComponent(sessionID)}`, {
+    method: "DELETE",
+  })
+  return {
+    ...result.data,
+    requestId: result.requestId,
+  }
+}
+
+async function cleanupSideChatLinksWithoutResponses(
+  links: AgentSideChatLink[],
+  deleteSession: (sessionID: string) => Promise<unknown> = deleteAgentSessionRecord,
+) {
+  const retainedLinks: AgentSideChatLink[] = []
+  const deletedSessionIDs = new Set<string>()
+
+  for (const link of links) {
+    const sessionID = link.sessionID.trim()
+    if (deletedSessionIDs.has(sessionID)) {
+      continue
+    }
+
+    if (!sessionID || link.archived || sideChatLinkHasRealAssistantResponse(link)) {
+      retainedLinks.push(link)
+      continue
+    }
+
+    try {
+      await deleteSession(sessionID)
+      deletedSessionIDs.add(sessionID)
+    } catch (error) {
+      safeWarn("[desktop] empty side chat cleanup failed:", error)
+      retainedLinks.push(link)
+    }
+  }
+
+  return retainedLinks
+}
+
 async function loadProjectWorkspace(project: AgentProjectInfo): Promise<AgentProjectWorkspace> {
   const sessionsResult = await requestAgentJSON<AgentSessionInfo[]>(`/api/projects/${encodeURIComponent(project.id)}/sessions`)
 
@@ -1794,7 +1838,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
         `/api/sessions/${encodeURIComponent(parentSessionID)}/side-chats${search}`,
       )
 
-      return result.data
+      return cleanupSideChatLinksWithoutResponses(result.data)
     },
   )
 
@@ -1821,14 +1865,9 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
 
   handleDesktopIpc("desktop:delete-agent-session", async (_event, input: { sessionID: string }) => {
     const sessionID = input.sessionID.trim()
-    const result = await requestAgentJSON<AgentSessionDeleteResult>(`/api/sessions/${encodeURIComponent(sessionID)}`, {
-      method: "DELETE",
-    })
+    const result = await deleteAgentSessionRecord(sessionID)
 
-    return {
-      ...result.data,
-      requestId: result.requestId,
-    }
+    return result
   })
 
   handleDesktopIpc("desktop:archive-agent-session", async (_event, input: { sessionID: string }) => {
@@ -3687,6 +3726,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
 
 export const internal = {
   abortActiveAgentSessionRequestsInMap,
+  cleanupSideChatLinksWithoutResponses,
   capturePreviewScreenshotFromWindow,
   disposeSessionStreamSubscriptionsForWebContents,
   getSessionTraceExport,

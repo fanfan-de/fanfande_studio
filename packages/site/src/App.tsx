@@ -10,6 +10,7 @@ import {
 } from "./releaseDownloads"
 
 const brandLogoBlack = "/brand-logo-black.svg"
+const wechatCommunityImage = "/wechat-community-group.png"
 
 function getGitHubRepoApiUrl(href: string) {
   const match = href.match(/^https:\/\/github\.com\/([^/]+)\/([^/#?]+)/)
@@ -147,6 +148,33 @@ function ProofList() {
   )
 }
 
+function ProductIntro() {
+  return (
+    <section className="intro-section" id="product">
+      <p className="section-kicker">产品介绍</p>
+      <div className="intro-content">
+        <h2>和真实用户一起打磨通用 agent 工作台。</h2>
+        <div className="intro-community">
+          <div className="intro-community-copy">
+            <p>Anybox 产品交流</p>
+            <span>
+              通过交流群反馈问题、讨论用法，也可以第一时间了解后续版本更新。
+            </span>
+          </div>
+          <figure className="community-card">
+            <img
+              src={wechatCommunityImage}
+              alt="微信群聊：anybox 产品交流二维码"
+              loading="lazy"
+            />
+            <figcaption>微信扫码加入产品交流群</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export function App() {
   return (
     <main className="page-shell" id="top">
@@ -197,6 +225,7 @@ export function App() {
         </div>
         <ProofList />
       </section>
+      <ProductIntro />
     </main>
   )
 }

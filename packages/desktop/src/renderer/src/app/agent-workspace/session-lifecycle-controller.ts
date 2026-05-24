@@ -23,11 +23,12 @@ import type {
   SessionTaskListView,
   SessionSummary,
   SidebarActionKey,
+  SideChatLink,
   Turn,
   WorkspaceGroup,
 } from "../types"
 import type { SessionMessageTree } from "../session-message-tree"
-import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
+import { stripStreamingResponseFormatMarker } from "../thread-response-format"
 import {
   getActiveDockviewPanelReference,
   normalizeDockviewLayout,
@@ -73,9 +74,8 @@ import {
 } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
-type SideChatPanelPlacement = "inline" | "right-sidebar" | "tree"
+type SideChatPanelPlacement = "inline" | "right-sidebar"
 type SideChatOpenOptions = {
-  initialDraftText?: string | null
   parentSessionID?: string | null
   paneID?: string | null
   placement?: SideChatPanelPlacement
@@ -119,6 +119,14 @@ export function removeSubscribedSessionStreamsForCleanup(
   }
 
   return backendSessionIDs
+}
+
+function hasRealAssistantResponseText(text: string | null | undefined) {
+  return Boolean(stripStreamingResponseFormatMarker(text ?? "").trim())
+}
+
+export function sideChatLinkHasRealResponse(link: Pick<SideChatLink, "snapshot"> | null | undefined) {
+  return hasRealAssistantResponseText(link?.snapshot?.assistantText)
 }
 
 interface UseSessionLifecycleControllerOptions {
@@ -669,6 +677,10 @@ export function useSessionLifecycleController({
     return collectSideChatSessionsByAnchorMessageID(workspaces, parentSessionID)[anchorMessageID] ?? []
   }
 
+  function hasPendingSideChatActivity(sessionID: string) {
+    return Object.values(pendingStreamsRef.current).some((stream) => stream.sessionID === sessionID && !stream.cancelRequested)
+  }
+
   function upsertSideChatSessions(workspaceID: string, sessions: SessionSummary[]) {
     if (sessions.length === 0) return
 
@@ -693,9 +705,20 @@ export function useSessionLifecycleController({
 
     try {
       const links = await listSideChats({ parentSessionID, anchorMessageID })
+      const retainedLinkedSessionIDs = new Set(
+        links
+          .filter((link) => !link.archived && sideChatLinkHasRealResponse(link))
+          .map((link) => link.sessionID),
+      )
+      const staleLocalSideChatIDs = localSideChats
+        .filter((session) => !retainedLinkedSessionIDs.has(session.id))
+        .map((session) => session.id)
+      if (staleLocalSideChatIDs.length > 0) {
+        applyArchivedSessions(new Set(staleLocalSideChatIDs), workspaceID)
+      }
       const syncedSideChats = links
         .flatMap((link, index) => {
-          if (!link.session || link.archived) return []
+          if (!link.session || link.archived || !sideChatLinkHasRealResponse(link)) return []
 
           return [
             mapLoadedSession(
@@ -721,6 +744,7 @@ export function useSessionLifecycleController({
 
       const sideChatsByID = new Map<string, SessionSummary>()
       for (const session of localSideChats) {
+        if (!retainedLinkedSessionIDs.has(session.id)) continue
         sideChatsByID.set(session.id, session)
       }
       for (const session of syncedSideChats) {
@@ -798,6 +822,22 @@ export function useSessionLifecycleController({
     }
   }
 
+  async function deleteSideChatSessionWithoutResponse(session: SessionSummary) {
+    if (hasPendingSideChatActivity(session.id)) return null
+    if (!window.desktop?.getSideChatLink || !window.desktop?.deleteAgentSession) return null
+
+    try {
+      const link = await window.desktop.getSideChatLink({ sessionID: session.id })
+      if (sideChatLinkHasRealResponse(link)) return null
+
+      const deleted = await window.desktop.deleteAgentSession({ sessionID: session.id })
+      return new Set<string>([deleted.sessionID || session.id])
+    } catch (error) {
+      console.error("[desktop] delete empty side chat failed:", error)
+      return null
+    }
+  }
+
   async function createSideChatForAnchor(
     parentSessionID: string,
     anchorMessageID: string,
@@ -841,15 +881,17 @@ export function useSessionLifecycleController({
 
     setDeletingSessionID(session.id)
     try {
-      const archiveResult = await window.desktop.archiveAgentSession({ sessionID: session.id })
-      const archivedSessionIDs = new Set((archiveResult.archivedSessionIDs?.filter(Boolean) ?? [session.id]) as string[])
-      const remainingSideChats = siblingSideChats.filter((sideChat) => !archivedSessionIDs.has(sideChat.id))
+      const deletedEmptySideChatIDs = await deleteSideChatSessionWithoutResponse(session)
+      const removedSessionIDs = deletedEmptySideChatIDs ?? new Set(
+        ((await window.desktop.archiveAgentSession({ sessionID: session.id })).archivedSessionIDs?.filter(Boolean) ?? [session.id]) as string[],
+      )
+      const remainingSideChats = siblingSideChats.filter((sideChat) => !removedSessionIDs.has(sideChat.id))
       const nextActiveSideChat =
         deletingActiveSideChat && remainingSideChats.length > 0
           ? remainingSideChats[Math.max(0, deletedIndex - 1)] ?? remainingSideChats[0] ?? null
           : null
 
-      applyArchivedSessions(archivedSessionIDs, selection.workspace.id)
+      applyArchivedSessions(removedSessionIDs, selection.workspace.id)
 
       if (deletingActiveSideChat && nextActiveSideChat) {
         setActiveSideChatSessionIDByParentSessionID((current) => ({
@@ -869,22 +911,6 @@ export function useSessionLifecycleController({
     }
   }
 
-  function prefillSideChatDraft(sessionID: string, initialDraftText?: string | null) {
-    const text = initialDraftText?.trim()
-    if (!text) return
-
-    const tabKey = getWorkbenchTabKey(createSessionWorkbenchTab(sessionID))
-    setComposerDraftStateByTabKey((current) => {
-      const existingDraftState = current[tabKey]
-      if (existingDraftState?.plainText.trim()) return current
-
-      return {
-        ...current,
-        [tabKey]: createComposerDraftStateFromPlainText(text),
-      }
-    })
-  }
-
   async function handleCreateSideChatTab(anchorMessageID: string, input?: SideChatOpenOptions) {
     const parentSessionID = input?.parentSessionID ?? activeSessionID
     if (!parentSessionID) return
@@ -899,7 +925,6 @@ export function useSessionLifecycleController({
       if (!nextSession) return
 
       await activateSideChatThread(parentSessionID, nextSession.id, parentSelection.workspace.id)
-      prefillSideChatDraft(nextSession.id, input?.initialDraftText)
       if (input?.placement === "right-sidebar") {
         openSideChatRightSidebarTab(parentSessionID, anchorMessageID, nextSession)
       }
@@ -920,14 +945,17 @@ export function useSessionLifecycleController({
     const activeInlineSideChatID = activeSideChatSessionIDByParentSessionID[parentSessionID] ?? null
     const activeInlineSideChatSelection = findSession(workspaces, activeInlineSideChatID)
     const opensRightSidebar = input?.placement === "right-sidebar"
-    const opensFromTree = input?.placement === "tree"
     if (
       !opensRightSidebar &&
-      !opensFromTree &&
       activeInlineSideChatSelection.session?.origin?.parentSessionID === parentSessionID &&
       activeInlineSideChatSelection.session.origin.anchorMessageID === anchorMessageID
     ) {
-      closeActiveSideChat(parentSessionID)
+      const deletedEmptySideChatIDs = await deleteSideChatSessionWithoutResponse(activeInlineSideChatSelection.session)
+      if (deletedEmptySideChatIDs && activeInlineSideChatSelection.workspace) {
+        applyArchivedSessions(deletedEmptySideChatIDs, activeInlineSideChatSelection.workspace.id)
+      } else {
+        closeActiveSideChat(parentSessionID)
+      }
       return
     }
 
@@ -942,7 +970,6 @@ export function useSessionLifecycleController({
         upsertSideChatSessions(existing.workspace.id, [nextSession])
       }
       await activateSideChatThread(parentSessionID, nextSession.id, existing.workspace.id)
-      prefillSideChatDraft(nextSession.id, input?.initialDraftText)
       if (opensRightSidebar) {
         openSideChatRightSidebarTab(parentSessionID, anchorMessageID, nextSession)
       }

@@ -478,6 +478,117 @@ describe("composer controller", () => {
     expect(result.current.turnsRef.current["created-session-1"]).toHaveLength(2)
   })
 
+  it("uses a saved model selection for the first create-session prompt", async () => {
+    const previousDesktop = window.desktop
+    const sendTurn = vi.fn(async (input: { clientTurnID: string }) => ({
+      clientTurnID: input.clientTurnID,
+    }))
+    const updateSessionModelSelection = vi.fn(async () => ({
+      model: "deepseek/deepseek-reasoner",
+    }))
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        createAgentSession: vi.fn(),
+        updateSessionModelSelection,
+        agentSession: {
+          sendTurn,
+        },
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() =>
+        useComposerHarness({
+          activeCreateSessionTabID: "create-1",
+          activeSessionID: null,
+          activeTabKey: "create-session:create-1",
+          agentConnected: true,
+        }),
+      )
+
+      await act(async () => {
+        await result.current.controller.handleSend({
+          selectedModel: "deepseek/deepseek-reasoner",
+        })
+      })
+
+      expect(updateSessionModelSelection).toHaveBeenCalledWith({
+        sessionID: "created-session-1",
+        model: "deepseek/deepseek-reasoner",
+      })
+      expect(sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "created-session-1",
+        model: {
+          providerID: "deepseek",
+          modelID: "deepseek-reasoner",
+        },
+      }))
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
+  it("drops an unsaved model selection for the first create-session prompt", async () => {
+    const previousDesktop = window.desktop
+    const sendTurn = vi.fn(async (input: { clientTurnID: string }) => ({
+      clientTurnID: input.clientTurnID,
+    }))
+    const updateSessionModelSelection = vi.fn(async () => {
+      throw new Error("model unavailable")
+    })
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        createAgentSession: vi.fn(),
+        updateSessionModelSelection,
+        agentSession: {
+          sendTurn,
+        },
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() =>
+        useComposerHarness({
+          activeCreateSessionTabID: "create-1",
+          activeSessionID: null,
+          activeTabKey: "create-session:create-1",
+          agentConnected: true,
+        }),
+      )
+
+      await act(async () => {
+        await result.current.controller.handleSend({
+          selectedModel: "missing/model",
+        })
+      })
+
+      expect(updateSessionModelSelection).toHaveBeenCalledWith({
+        sessionID: "created-session-1",
+        model: "missing/model",
+      })
+      expect(sendTurn).toHaveBeenCalledTimes(1)
+      expect(sendTurn.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+        backendSessionID: "created-session-1",
+        text: "New prompt",
+      }))
+      expect(sendTurn.mock.calls[0]?.[0]).not.toHaveProperty("model")
+    } finally {
+      consoleError.mockRestore()
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
   it("toggles plan mode for an existing session", async () => {
     const previousDesktop = window.desktop
     const updateSessionWorkflow = vi.fn(async () => ({

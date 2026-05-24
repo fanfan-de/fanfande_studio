@@ -6,25 +6,18 @@ import {
   useRef,
   useState,
 } from "react"
-import { createPortal } from "react-dom"
-import type { CSSProperties, MouseEvent as ReactMouseEvent, WheelEvent as ReactWheelEvent } from "react"
-import { ExpandIcon, MinimizeIcon, SideChatIcon } from "../icons"
+import type { CSSProperties, WheelEvent as ReactWheelEvent } from "react"
+import { ExpandIcon, MinimizeIcon } from "../icons"
 import type { SessionMessageTree } from "../session-message-tree"
 import { joinClassNames } from "../shared-ui"
 import { ThreadMarkdown, type MarkdownArtifactLinkTarget, type MarkdownLocalFileLinkTarget } from "../thread-markdown"
 import type { SessionSummary } from "../types"
 
-interface MessageTreeSideChatOpenOptions {
-  selectedText?: string
-}
-
 interface SessionMessageTreePanelProps {
   messageTree: SessionMessageTree | null
   onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
-  onOpenSideChat?: (sessionID: string, messageID: string, options?: MessageTreeSideChatOpenOptions) => void | Promise<void>
   session: SessionSummary | null
-  sideChatCountsByAnchorMessageID?: Record<string, number>
   onSelectMessage: (sessionID: string, messageID: string) => void | Promise<void>
 }
 
@@ -81,24 +74,6 @@ interface MessageTreeGraphAnchor {
   screenY: number
 }
 
-interface MessageTreeResponseContextMenu {
-  messageID: string
-  selectedText: string
-  x: number
-  y: number
-}
-
-interface MessageTreeSideChatLink {
-  anchorMessageID: string
-  archived?: boolean
-  createdAt: number
-  sessionID: string
-  snapshot: {
-    assistantText?: string
-    userText?: string
-  }
-}
-
 const COLLAPSED_NODE_HEIGHT = 56
 const COLLAPSED_NODE_WIDTH = 136
 const EXPANDED_RESPONSE_NODE_MIN_HEIGHT = 270
@@ -124,7 +99,6 @@ const SIBLING_WHEEL_LINE_DELTA_PX = 40
 const SIBLING_WHEEL_PAGE_DELTA_PX = 480
 const SIBLING_WHEEL_MAX_EVENT_DELTA_PX = 120
 const MESSAGE_TREE_LAYOUT_ANIMATION_DURATION_MS = 260
-const MESSAGE_TREE_SELECTED_TEXT_MAX_LENGTH = 1200
 const WHEEL_DELTA_LINE_MODE = 1
 const WHEEL_DELTA_PAGE_MODE = 2
 
@@ -549,58 +523,6 @@ function clampGraphZoom(value: number) {
   return Math.min(MAX_GRAPH_ZOOM, Math.max(MIN_GRAPH_ZOOM, value))
 }
 
-function normalizeSelectedText(value: string, maxLength = MESSAGE_TREE_SELECTED_TEXT_MAX_LENGTH) {
-  const normalized = value
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim()
-  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}...` : normalized
-}
-
-function readSelectedTextInside(container: HTMLElement) {
-  const selection = window.getSelection?.()
-  if (!selection || selection.isCollapsed) return null
-
-  const anchorNode = selection.anchorNode
-  const focusNode = selection.focusNode
-  if (
-    (!anchorNode || !container.contains(anchorNode)) &&
-    (!focusNode || !container.contains(focusNode))
-  ) {
-    return null
-  }
-
-  const selectedText = normalizeSelectedText(selection.toString())
-  return selectedText ? selectedText : null
-}
-
-function formatSideChatPreviewText(value: string | undefined, maxLength = 520) {
-  const compacted = value?.replace(/\s+/g, " ").trim() ?? ""
-  if (!compacted) return ""
-  return compacted.length > maxLength ? `${compacted.slice(0, maxLength - 1)}...` : compacted
-}
-
-function getSideChatLinksByAnchorMessageID(links: MessageTreeSideChatLink[]) {
-  const linksByAnchorMessageID: Record<string, MessageTreeSideChatLink[]> = {}
-
-  for (const link of links) {
-    if (link.archived) continue
-    linksByAnchorMessageID[link.anchorMessageID] = [
-      ...(linksByAnchorMessageID[link.anchorMessageID] ?? []),
-      link,
-    ]
-  }
-
-  for (const [anchorMessageID, anchorLinks] of Object.entries(linksByAnchorMessageID)) {
-    linksByAnchorMessageID[anchorMessageID] = [...anchorLinks].sort(
-      (left, right) => left.createdAt - right.createdAt,
-    )
-  }
-
-  return linksByAnchorMessageID
-}
-
 function shouldAllowResponseTextContextMenu(event: MouseEvent) {
   const target = event.target
   const targetElement = target instanceof Element ? target : null
@@ -628,15 +550,12 @@ export function SessionMessageTreePanel({
   messageTree,
   onArtifactLinkOpen,
   onLocalFileLinkOpen,
-  onOpenSideChat,
   session,
-  sideChatCountsByAnchorMessageID = {},
   onSelectMessage,
 }: SessionMessageTreePanelProps) {
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const canvasPanCleanupRef = useRef<(() => void) | null>(null)
   const canvasPanStateRef = useRef<MessageTreeCanvasPanState | null>(null)
-  const contextMenuRef = useRef<HTMLDivElement | null>(null)
   const graphPanLayoutKeyRef = useRef<string | null>(null)
   const graphPanWasUserControlledRef = useRef(false)
   const pendingGraphAnchorRef = useRef<MessageTreeGraphAnchor | null>(null)
@@ -647,11 +566,7 @@ export function SessionMessageTreePanel({
   const [isCanvasPanning, setIsCanvasPanning] = useState(false)
   const [isFullyExpanded, setIsFullyExpanded] = useState(false)
   const [expandedResponseMessageID, setExpandedResponseMessageID] = useState<string | null>(null)
-  const [expandedAnnotationMessageID, setExpandedAnnotationMessageID] = useState<string | null>(null)
   const [centeredChildResponseMessageID, setCenteredChildResponseMessageID] = useState<string | null>(null)
-  const [responseContextMenu, setResponseContextMenu] = useState<MessageTreeResponseContextMenu | null>(null)
-  const [selectedTextByAnchorMessageID, setSelectedTextByAnchorMessageID] = useState<Record<string, string>>({})
-  const [sideChatLinksByAnchorMessageID, setSideChatLinksByAnchorMessageID] = useState<Record<string, MessageTreeSideChatLink[]>>({})
   const pendingLayoutAnimationSnapshotRef = useRef<MessageTreeLayoutAnimationSnapshot | null>(null)
   const layoutAnimationFrameRef = useRef<number | null>(null)
   const siblingWheelSwitchRef = useRef<SiblingWheelSwitchState | null>(null)
@@ -701,13 +616,6 @@ export function SessionMessageTreePanel({
     return nextMessageIDs
   }, [childResponseMessageIDs, focusedExpandedResponseMessageID, isFullyExpanded, messageTree])
   const expandedResponseMessageIDsKey = [...expandedResponseMessageIDs].join("\u0000")
-  const sideChatCountKey = useMemo(
-    () => Object.entries(sideChatCountsByAnchorMessageID)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([messageID, count]) => `${messageID}:${count}`)
-      .join("|"),
-    [sideChatCountsByAnchorMessageID],
-  )
   const graphLayout = useMemo(
     () => (messageTree
       ? buildGraphLayout(
@@ -763,63 +671,6 @@ export function SessionMessageTreePanel({
     setExpandedResponseMessageID(null)
     setCenteredChildResponseMessageID(null)
   }, [expandedResponseMessageID, messageTree])
-
-  useEffect(() => {
-    if (!expandedAnnotationMessageID || expandedResponseMessageIDs.has(expandedAnnotationMessageID)) return
-    setExpandedAnnotationMessageID(null)
-  }, [expandedAnnotationMessageID, expandedResponseMessageIDsKey, expandedResponseMessageIDs])
-
-  useEffect(() => {
-    if (!session?.id || !window.desktop?.listSideChats) {
-      setSideChatLinksByAnchorMessageID({})
-      return
-    }
-
-    let cancelled = false
-    window.desktop.listSideChats({ parentSessionID: session.id })
-      .then((links) => {
-        if (cancelled) return
-        setSideChatLinksByAnchorMessageID(getSideChatLinksByAnchorMessageID(links))
-      })
-      .catch((error) => {
-        if (cancelled) return
-        console.error("[desktop] listSideChats for message tree failed:", error)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [expandedAnnotationMessageID, session?.id, sideChatCountKey])
-
-  useEffect(() => {
-    if (!responseContextMenu) return
-
-    function handlePointerDown(event: PointerEvent) {
-      const target = event.target
-      if (target instanceof Node && contextMenuRef.current?.contains(target)) return
-      setResponseContextMenu(null)
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setResponseContextMenu(null)
-      }
-    }
-
-    function handleWindowBlur() {
-      setResponseContextMenu(null)
-    }
-
-    window.addEventListener("pointerdown", handlePointerDown, true)
-    window.addEventListener("keydown", handleKeyDown, true)
-    window.addEventListener("blur", handleWindowBlur, true)
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown, true)
-      window.removeEventListener("keydown", handleKeyDown, true)
-      window.removeEventListener("blur", handleWindowBlur, true)
-    }
-  }, [responseContextMenu])
 
   useLayoutEffect(() => {
     if (!graphLayout) return
@@ -1093,42 +944,6 @@ export function SessionMessageTreePanel({
 
   const currentSession = session
 
-  function handleResponseBodyContextMenu(event: ReactMouseEvent<HTMLElement>, messageID: string) {
-    if (!onOpenSideChat) return
-
-    const selectedText = readSelectedTextInside(event.currentTarget)
-    if (!selectedText) return
-
-    event.preventDefault()
-    event.stopPropagation()
-
-    const menuWidth = 236
-    const menuHeight = 46
-    const viewportWidth = document.documentElement.clientWidth || window.innerWidth
-    const viewportHeight = document.documentElement.clientHeight || window.innerHeight
-    const x = Math.max(8, Math.min(event.clientX, viewportWidth - menuWidth - 8))
-    const y = Math.max(8, Math.min(event.clientY, viewportHeight - menuHeight - 8))
-    setResponseContextMenu({
-      messageID,
-      selectedText,
-      x,
-      y,
-    })
-  }
-
-  function handleOpenSelectedTextSideChat() {
-    if (!responseContextMenu) return
-
-    const { messageID, selectedText } = responseContextMenu
-    setSelectedTextByAnchorMessageID((current) => ({
-      ...current,
-      [messageID]: selectedText,
-    }))
-    setExpandedAnnotationMessageID(messageID)
-    setResponseContextMenu(null)
-    void onOpenSideChat?.(currentSession.id, messageID, { selectedText })
-  }
-
   function setGraphPanPosition(nextPan: MessageTreeGraphPan) {
     graphPanRef.current = nextPan
     setGraphPan(nextPan)
@@ -1318,33 +1133,7 @@ export function SessionMessageTreePanel({
   }
 
   return (
-    <>
-      {responseContextMenu ? createPortal(
-        <div
-          ref={contextMenuRef}
-          className="session-message-tree-context-menu"
-          role="menu"
-          aria-label="Response annotation actions"
-          style={{
-            left: `${responseContextMenu.x}px`,
-            top: `${responseContextMenu.y}px`,
-          }}
-        >
-          <button
-            type="button"
-            className="session-message-tree-context-menu-item"
-            role="menuitem"
-            onClick={handleOpenSelectedTextSideChat}
-          >
-            <span className="session-message-tree-context-menu-icon" aria-hidden="true">
-              <SideChatIcon />
-            </span>
-            <span className="session-message-tree-context-menu-label">Add side chat comment</span>
-          </button>
-        </div>,
-        document.body,
-      ) : null}
-      <section
+    <section
       className="session-message-tree-panel"
       aria-label="Session message tree"
       onDoubleClickCapture={(event) => {
@@ -1465,19 +1254,6 @@ export function SessionMessageTreePanel({
             const isExpandedResponse = expandedResponseMessageIDs.has(node.id) && canExpandResponse
             const isSiblingWheelTarget = effectiveCenteredChildResponseMessageID === node.id &&
               childResponseMessageIDs.length > 1
-            const sideChatCount = sideChatCountsByAnchorMessageID[node.id] ?? 0
-            const sideChatLinks = sideChatLinksByAnchorMessageID[node.id] ?? []
-            const selectedAnnotationText = selectedTextByAnchorMessageID[node.id] ?? null
-            const annotationCount = Math.max(sideChatCount, sideChatLinks.length, selectedAnnotationText ? 1 : 0)
-            const hasAnnotationTabs = annotationCount > 0
-            const isAnnotationPanelOpen = expandedAnnotationMessageID === node.id
-            const canOpenNodeSideChat = canExpandResponse && Boolean(onOpenSideChat)
-            const sideChatButtonLabel = sideChatCount > 0
-              ? `Open side chat (${sideChatCount})`
-              : "Open side chat"
-            const sideChatButtonTitle = sideChatCount > 0
-              ? `${sideChatCount} side chat thread${sideChatCount === 1 ? "" : "s"}`
-              : "Open a side chat for this response"
             const nodeStyle: MessageTreeGraphNodeStyle = {
               left: `${layoutNode.x}px`,
               top: `${layoutNode.y}px`,
@@ -1551,30 +1327,6 @@ export function SessionMessageTreePanel({
                     <div className="session-message-tree-response-card-header">
                       <span className="session-message-tree-response-card-title">Response</span>
                       <div className="session-message-tree-response-card-actions">
-                        {canOpenNodeSideChat ? (
-                          <button
-                            type="button"
-                            className={joinClassNames(
-                              "session-message-tree-side-chat-button is-response-card",
-                              sideChatCount > 0 && "has-count",
-                            )}
-                            aria-label={sideChatButtonLabel}
-                            title={sideChatButtonTitle}
-                            onClick={(event) => {
-                              event.preventDefault()
-                              event.stopPropagation()
-                              void onOpenSideChat?.(currentSession.id, node.id)
-                            }}
-                            onKeyDown={(event) => event.stopPropagation()}
-                          >
-                            <SideChatIcon />
-                            {sideChatCount > 0 ? (
-                              <span className="session-message-tree-side-chat-count" aria-hidden="true">
-                                {sideChatCount}
-                              </span>
-                            ) : null}
-                          </button>
-                        ) : null}
                         {isFullyExpanded ? null : (
                           <button
                             type="button"
@@ -1591,37 +1343,8 @@ export function SessionMessageTreePanel({
                         )}
                       </div>
                     </div>
-                    {hasAnnotationTabs ? (
-                      <button
-                        type="button"
-                        className={joinClassNames(
-                          "session-message-tree-annotation-tab",
-                          isAnnotationPanelOpen && "is-open",
-                        )}
-                        aria-label={`Side chat annotations (${annotationCount})`}
-                        aria-expanded={isAnnotationPanelOpen}
-                        title={`${annotationCount} side chat annotation${annotationCount === 1 ? "" : "s"}`}
-                        onClick={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          setExpandedAnnotationMessageID(isAnnotationPanelOpen ? null : node.id)
-                        }}
-                        onKeyDown={(event) => event.stopPropagation()}
-                      >
-                        <SideChatIcon />
-                        <span className="session-message-tree-annotation-tab-count">{annotationCount}</span>
-                      </button>
-                    ) : null}
-                    <div
-                      className={joinClassNames(
-                        "session-message-tree-response-card-main",
-                        isAnnotationPanelOpen && "has-annotation-panel",
-                      )}
-                    >
-                      <div
-                        className="session-message-tree-response-card-body-wrap"
-                        onContextMenu={(event) => handleResponseBodyContextMenu(event, node.id)}
-                      >
+                    <div className="session-message-tree-response-card-main">
+                      <div className="session-message-tree-response-card-body-wrap">
                         <ThreadMarkdown
                           className="session-message-tree-response-card-body thread-markdown"
                           text={node.content}
@@ -1629,90 +1352,11 @@ export function SessionMessageTreePanel({
                           onLocalFileLinkOpen={onLocalFileLinkOpen}
                         />
                       </div>
-                      {isAnnotationPanelOpen ? (
-                        <aside className="session-message-tree-annotation-panel" aria-label="Side chat annotations">
-                          <div className="session-message-tree-annotation-panel-header">
-                            <span>Side chat annotations</span>
-                            {canOpenNodeSideChat ? (
-                              <button
-                                type="button"
-                                className="session-message-tree-annotation-open-button"
-                                onClick={(event) => {
-                                  event.preventDefault()
-                                  event.stopPropagation()
-                                  void onOpenSideChat?.(currentSession.id, node.id)
-                                }}
-                              >
-                                Open chat
-                              </button>
-                            ) : null}
-                          </div>
-                          {selectedAnnotationText ? (
-                            <div className="session-message-tree-annotation-selection">
-                              <span>Selected text</span>
-                              <blockquote>{selectedAnnotationText}</blockquote>
-                            </div>
-                          ) : null}
-                          {sideChatLinks.length > 0 ? (
-                            <div className="session-message-tree-annotation-list">
-                              {sideChatLinks.map((link, index) => {
-                                const userText = formatSideChatPreviewText(link.snapshot.userText)
-                                const assistantText = formatSideChatPreviewText(link.snapshot.assistantText)
-                                return (
-                                  <article key={link.sessionID} className="session-message-tree-annotation-preview">
-                                    <strong>{`Chat ${index + 1}`}</strong>
-                                    {userText ? (
-                                      <p>
-                                        <span>User</span>
-                                        {userText}
-                                      </p>
-                                    ) : null}
-                                    {assistantText ? (
-                                      <p>
-                                        <span>Answer</span>
-                                        {assistantText}
-                                      </p>
-                                    ) : (
-                                      <p className="session-message-tree-annotation-empty">No answer saved yet.</p>
-                                    )}
-                                  </article>
-                                )
-                              })}
-                            </div>
-                          ) : (
-                            <p className="session-message-tree-annotation-empty">No side chat answer yet.</p>
-                          )}
-                        </aside>
-                      ) : null}
                     </div>
                   </div>
                 ) : (
                   <>
                     <span className="session-message-tree-node-preview">{node.preview}</span>
-                    {canOpenNodeSideChat ? (
-                      <button
-                        type="button"
-                        className={joinClassNames(
-                          "session-message-tree-side-chat-button is-collapsed-node",
-                          sideChatCount > 0 && "has-count",
-                        )}
-                        aria-label={sideChatButtonLabel}
-                        title={sideChatButtonTitle}
-                        onClick={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          void onOpenSideChat?.(currentSession.id, node.id)
-                        }}
-                        onKeyDown={(event) => event.stopPropagation()}
-                      >
-                        <SideChatIcon />
-                        {sideChatCount > 0 ? (
-                          <span className="session-message-tree-side-chat-count" aria-hidden="true">
-                            {sideChatCount}
-                          </span>
-                        ) : null}
-                      </button>
-                    ) : null}
                   </>
                 )}
               </div>
@@ -1720,7 +1364,6 @@ export function SessionMessageTreePanel({
           })}
         </div>
       </div>
-      </section>
-    </>
+    </section>
   )
 }
