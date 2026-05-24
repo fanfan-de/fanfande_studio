@@ -10,7 +10,7 @@ import {
 } from "./releaseDownloads"
 
 const brandLogoBlack = "/brand-logo-black.svg"
-const wechatCommunityImage = "/wechat-community-group.png"
+const wechatCommunityImage = "/wechat-community-group-20260525.png"
 
 function getGitHubRepoApiUrl(href: string) {
   const match = href.match(/^https:\/\/github\.com\/([^/]+)\/([^/#?]+)/)
