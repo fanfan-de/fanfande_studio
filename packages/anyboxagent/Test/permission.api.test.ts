@@ -87,7 +87,7 @@ async function createApprovalRequest(repositoryRoot: string, targetPath: string)
         messageID: assistant.id,
         type: "tool",
         callID: `toolcall_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-        tool: "read-file",
+        tool: "read_file",
         state: {
           status: "waiting-approval",
           approvalID: `approval_${Date.now()}_${Math.random().toString(16).slice(2)}`,

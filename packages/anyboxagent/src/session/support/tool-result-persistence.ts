@@ -119,7 +119,7 @@ function buildPersistedMessage(input: {
     input.failed
       ? `Output too large (${formatBytes(input.bytes)}). Full output could not be saved: ${input.error ?? "unknown error"}`
       : `Output too large (${formatBytes(input.bytes)}). Full output saved to: ${input.path}`,
-    input.failed ? undefined : "Use read-file with this path if you need the full output.",
+    input.failed ? undefined : "Use read_file with this path if you need the full output.",
     "",
     `Preview (first ${PREVIEW_CHARS} chars):`,
     input.preview,

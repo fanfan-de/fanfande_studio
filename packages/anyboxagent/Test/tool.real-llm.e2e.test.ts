@@ -137,12 +137,12 @@ realTest("real LLM can use prompt() to drive core tools", async () => {
 
   const scenarios: Scenario[] = [
     {
-      name: "read-file",
-      toolName: "read-file",
+      name: "read_file",
+      toolName: "read_file",
       setup: async (directory) => {
         await fs.writeFile(path.join(directory, "readme.txt"), "alpha-content", "utf8")
       },
-      prompt: "Read readme.txt with the read-file tool and reply with the exact content.",
+      prompt: "Read readme.txt with the read_file tool and reply with the exact content.",
       verify: async (_directory, _assistant, toolPart) => {
         const completed = toolPart.state as Message.ToolStateCompleted
         expect(String(completed.output)).toContain("alpha-content")
@@ -195,12 +195,12 @@ realTest("real LLM can use prompt() to drive core tools", async () => {
       },
     },
     {
-      name: "replace-text",
-      toolName: "replace-text",
+      name: "replace_text",
+      toolName: "replace_text",
       setup: async (directory) => {
         await fs.writeFile(path.join(directory, "edit.txt"), "alpha beta alpha", "utf8")
       },
-      prompt: "Replace all occurrences of alpha with omega in edit.txt using the replace-text tool.",
+      prompt: "Replace all occurrences of alpha with omega in edit.txt using the replace_text tool.",
       verify: async (directory, _assistant, toolPart) => {
         const updated = await fs.readFile(path.join(directory, "edit.txt"), "utf8")
         expect(updated).toBe("omega beta omega")

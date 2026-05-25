@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>当前工具模块实现说明</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --text: #17202a;
+      --muted: #5b6572;
+      --line: #d8dee6;
+      --soft: #f5f7fa;
+      --soft-2: #edf2f7;
+      --accent: #1f5f8b;
+      --warn: #8a4b00;
+      --code: #0f1720;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background: #fff;
+      font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    }
+
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 28px 32px 48px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0 0 10px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: 28px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid var(--line);
+    }
+
+    h2 {
+      margin-top: 30px;
+      font-size: 21px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 6px;
+    }
+
+    h3 {
+      margin-top: 20px;
+      font-size: 16px;
+    }
+
+    p {
+      margin: 8px 0;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    code,
+    pre,
+    kbd {
+      font-family: "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+    }
+
+    code,
+    kbd {
+      padding: 1px 4px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--soft);
+      color: var(--code);
+    }
+
+    pre {
+      margin: 10px 0;
+      padding: 12px 14px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfe;
+      color: var(--code);
+      white-space: pre;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 16px;
+      table-layout: fixed;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 7px 8px;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--soft-2);
+      text-align: left;
+      font-weight: 700;
+    }
+
+    td {
+      background: #fff;
+    }
+
+    ul,
+    ol {
+      margin: 8px 0 14px 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    .meta,
+    .note {
+      color: var(--muted);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 14px 0 18px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+      background: var(--soft);
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    .metric span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .dense td:nth-child(1),
+    .dense th:nth-child(1) {
+      width: 21%;
+    }
+
+    .dense td:nth-child(2),
+    .dense th:nth-child(2) {
+      width: 25%;
+    }
+
+    .dense td:nth-child(3),
+    .dense th:nth-child(3) {
+      width: 34%;
+    }
+
+    .dense td:nth-child(4),
+    .dense th:nth-child(4) {
+      width: 20%;
+    }
+
+    .tag {
+      display: inline-block;
+      margin: 0 4px 4px 0;
+      padding: 1px 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--soft);
+      color: var(--muted);
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .warning {
+      border-left: 4px solid #d08a00;
+      padding: 8px 12px;
+      background: #fff8e8;
+      color: var(--warn);
+    }
+
+    .toc {
+      columns: 2;
+      column-gap: 36px;
+      margin: 12px 0 18px;
+    }
+
+    .toc a {
+      display: block;
+      break-inside: avoid;
+      padding: 2px 0;
+    }
+
+    @media (max-width: 900px) {
+      main {
+        padding: 20px 16px 36px;
+      }
+
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .toc {
+        columns: 1;
+      }
+
+      table {
+        table-layout: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>当前工具模块实现说明</h1>
+    <p class="meta">基于当前工作区读取结果撰写，时间：2026-05-25。这里的“工具模块”主要指 <code>packages/anyboxagent/src/tool</code> 的 agent 侧工具定义、注册、过滤、权限与执行体系；同时覆盖 desktop 包中“Tools”管理界面的实现链路。</p>
+
+    <section class="summary-grid" aria-label="关键事实">
+      <div class="metric"><strong>2 层</strong><span>agent 工具运行时 + desktop 管理界面</span></div>
+      <div class="metric"><strong>4 个入口</strong><span>registry / resolveTools / settings API / desktop IPC</span></div>
+      <div class="metric"><strong>8 类能力</strong><span>read/write/search/exec/workflow/interaction/delegation/other</span></div>
+      <div class="metric"><strong>2 种权限模式</strong><span>default / full_access</span></div>
+    </section>
+
+    <h2 id="toc">目录</h2>
+    <nav class="toc">
+      <a href="#scope">1. 范围与结论</a>
+      <a href="#flow">2. 端到端调用链</a>
+      <a href="#files">3. 关键文件职责</a>
+      <a href="#types">4. 核心类型模型</a>
+      <a href="#definition">5. Tool.define 的封装语义</a>
+      <a href="#registry">6. 注册表与工具来源</a>
+      <a href="#resolution">7. 会话解析与模型暴露</a>
+      <a href="#execution">8. 执行、权限、输出持久化</a>
+      <a href="#permission">9. 权限策略与审批流</a>
+      <a href="#filesystem">10. 文件系统安全边界</a>
+      <a href="#replace-text">11. replace-text 当前实现</a>
+      <a href="#api">12. 设置 API 与配置持久化</a>
+      <a href="#desktop">13. Desktop 管理界面</a>
+      <a href="#tests">14. 测试覆盖</a>
+      <a href="#edges">15. 边界与注意事项</a>
+    </nav>
+
+    <h2 id="scope">1. 范围与结论</h2>
+    <table>
+      <tr><th>问题</th><th>结论</th></tr>
+      <tr>
+        <td>真正的工具实现在哪里？</td>
+        <td><code>packages/anyboxagent/src/tool</code>。这里定义工具协议、内置工具、MCP/自定义工具合并、执行包装、权限接入、文件访问辅助。</td>
+      </tr>
+      <tr>
+        <td>desktop 的 Tools 页面做什么？</td>
+        <td>只做内置工具全局可用性的读取、展示、切换、保存、重置；它不直接执行工具。</td>
+      </tr>
+      <tr>
+        <td>工具何时传给模型？</td>
+        <td>每轮会话在 <code>resolveTools</code> 中读取注册表并按全局选择、agent allowlist、只读会话过滤，再包装成 AI SDK <code>ToolSet</code>。</td>
+      </tr>
+      <tr>
+        <td>权限如何决策？</td>
+        <td>执行前由 <code>createToolExecution</code> 调 <code>Permission.evaluate</code>。决策来源包括工具声明、路径/风险推导、会话状态、审批记录、全局权限模式。</td>
+      </tr>
+      <tr>
+        <td>当前工作树的显著变化？</td>
+        <td><code>replace-text</code> 已移除 <code>path/search/replace/all</code> 旧别名，当前参数为 <code>file_path/old_string/new_string/replace_all</code>；测试名称也从 alias 兼容转向 CRLF 保真。</td>
+      </tr>
+    </table>
+
+    <h2 id="flow">2. 端到端调用链</h2>
+    <pre>用户会话启动/继续
+  -> prompt.ts 调 resolveTools({ agent, sessionID, messageID, abort })
+    -> ToolRegistry.tools()
+      -> builtinTools()
+      -> Mcp.tools()
+      -> registry.state().custom
+      -> assertUniqueToolNames()
+    -> Config.getToolSelection("__global__")
+    -> getToolAccessFailure()
+      -> 全局内置工具禁用过滤
+      -> agent.tools allowlist/denylist 过滤
+      -> side-chat / read-only agent 过滤
+    -> createToolExecution()
+      -> item.init({ agent })
+      -> Permission.evaluate()
+      -> runtime.execute()
+      -> maybePersistToolResult()
+      -> runtime.toModelOutput() / 默认 text
+    -> ai.tool({ title, description, inputSchema, needsApproval, execute, toModelOutput })
+  -> AI SDK 流式产生 tool-call / tool-result
+    -> processor.ts 维护 Message.ToolPart 状态并发 runtime events
+    -> 如需审批：Permission.registerApprovalRequest()
+    -> 用户批准/拒绝：Permission.resolveRequest()
+      -> 批准时重新执行等待中的工具调用
+      -> 拒绝时写入 denied 状态</pre>
+
+    <h2 id="files">3. 关键文件职责</h2>
+    <table class="dense">
+      <tr><th>文件</th><th>角色</th><th>主要内容</th><th>关键点</th></tr>
+      <tr>
+        <td><code>anyboxagent/src/tool/tool.ts</code></td>
+        <td>工具协议与定义器</td>
+        <td><code>ToolInfo</code>、<code>ToolRuntime</code>、<code>ToolCapabilities</code>、<code>ToolOutput</code>、<code>define()</code></td>
+        <td>统一参数校验、validate/authorize、输出标准化、assessPermission 参数校验。</td>
+      </tr>
+      <tr>
+        <td><code>anyboxagent/src/tool/registry.ts</code></td>
+        <td>工具注册表</td>
+        <td>内置工具清单、平台 shell 工具、MCP 工具、自定义工具合并、唯一名检查</td>
+        <td><code>get()</code> 同时匹配 id 和 aliases。</td>
+      </tr>
+      <tr>
+        <td><code>anyboxagent/src/tool/execution.ts</code></td>
+        <td>执行包装层</td>
+        <td>可用性过滤、只读会话判定、权限决策缓存、运行时上下文、输出持久化</td>
+        <td>模型不会直接调用 runtime，而是调用这里创建的 <code>ToolExecution</code>。</td>
+      </tr>
+      <tr>
+        <td><code>anyboxagent/src/session/core/resolve-tools.ts</code></td>
+        <td>模型工具集解析</td>
+        <td>把 registry 工具包装为 AI SDK <code>ToolSet</code></td>
+        <td>只注册 provider-safe 名称：<code>/^[a-zA-Z0-9_-]+$/</code>。</td>
+      </tr>
+      <tr>
+        <td><code>anyboxagent/src/permission/permission.ts</code></td>
+        <td>权限与审批</td>
+        <td>风险推导、allow/ask/deny 决策、审批请求表、审批后工具补执行</td>
+        <td>side-chat 和 planning mode 对副作用工具有额外限制。</td>
+      </tr>
+      <tr>
+        <td><code>anyboxagent/src/tool/shared.ts</code></td>
+        <td>文件工具公共层</td>
+        <td>项目边界解析、真实路径检查、文本/二进制判定、原子写入、行范围格式化</td>
+        <td>写工具不能越过 active project boundary。</td>
+      </tr>
+      <tr>
+        <td><code>anyboxagent/src/server/usecases/settings.ts</code></td>
+        <td>设置用例</td>
+        <td>列出内置工具、保存工具选择、读写权限模式</td>
+        <td>将 Zod schema 转 JSON Schema 给 UI 展示。</td>
+      </tr>
+      <tr>
+        <td><code>desktop/src/renderer/src/app/tools/BuiltinToolsPage.tsx</code></td>
+        <td>Tools 页面</td>
+        <td>分类导航、工具卡片、schema 展开、开关、保存/重置</td>
+        <td>纯展示/配置；执行仍在 agent。</td>
+      </tr>
+    </table>
+
+    <h2 id="types">4. 核心类型模型</h2>
+    <table>
+      <tr><th>类型</th><th>字段/语义</th><th>设计含义</th></tr>
+      <tr>
+        <td><code>ToolKind</code></td>
+        <td><span class="tag">read</span><span class="tag">write</span><span class="tag">search</span><span class="tag">exec</span><span class="tag">workflow</span><span class="tag">interaction</span><span class="tag">delegation</span><span class="tag">other</span></td>
+        <td>用于 UI 分组、权限风险推导、read-only session 过滤、parallel tool eligibility。</td>
+      </tr>
+      <tr>
+        <td><code>ToolCapabilities</code></td>
+        <td><code>kind?</code>, <code>readOnly?</code>, <code>destructive?</code>, <code>concurrency?</code>, <code>needsShell?</code></td>
+        <td>工具声明自己的行为特征；权限层仍会结合输入路径和 intent 再判断。</td>
+      </tr>
+      <tr>
+        <td><code>ToolInfo</code></td>
+        <td><code>id</code>, <code>title?</code>, <code>aliases?</code>, <code>capabilities?</code>, <code>maxResultSizeChars?</code>, <code>init()</code></td>
+        <td>注册表持有的静态工具定义；<code>init()</code> 生成实际 runtime。</td>
+      </tr>
+      <tr>
+        <td><code>ToolRuntime</code></td>
+        <td><code>description</code>, <code>parameters</code>, <code>execute</code>, <code>validate?</code>, <code>authorize?</code>, <code>assessPermission?</code>, <code>describeApproval?</code>, <code>toModelOutput?</code></td>
+        <td>执行期能力。参数由 Zod schema 约束，description/inputSchema 暴露给模型。</td>
+      </tr>
+      <tr>
+        <td><code>Tool.Context</code></td>
+        <td><code>sessionID</code>, <code>messageID</code>, <code>cwd?</code>, <code>worktree?</code>, <code>abort?</code>, <code>toolCallID?</code></td>
+        <td>把会话、项目目录、中断信号和工具调用 ID 注入工具。</td>
+      </tr>
+      <tr>
+        <td><code>ToolOutput</code></td>
+        <td><code>text</code>, <code>title?</code>, <code>metadata?</code>, <code>data?</code>, <code>attachments?</code></td>
+        <td><code>text</code> 是默认模型可见输出；<code>data/metadata</code> 支持 UI、持久化和结构化消费。</td>
+      </tr>
+      <tr>
+        <td><code>ToolPermissionIntent</code></td>
+        <td><code>action?</code>, <code>risk?</code>, <code>reason?</code>, <code>resource?</code>, <code>allowInPlanning?</code>, <code>forceAsk?</code></td>
+        <td>工具可在执行前声明本次调用的风险和建议动作，但最终由权限层裁决。</td>
+      </tr>
+    </table>
+
+    <h2 id="definition">5. Tool.define 的封装语义</h2>
+    <p><code>Tool.define(id, init, options)</code> 返回 <code>ToolInfo</code>，但会在 <code>init()</code> 内替换 runtime 的 <code>execute</code> 和可选 <code>assessPermission</code>，使每个工具都获得一致的运行前处理。</p>
+    <table>
+      <tr><th>阶段</th><th>逻辑</th><th>失败表现</th></tr>
+      <tr>
+        <td>参数解析</td>
+        <td><code>runtime.parameters.safeParse(args)</code></td>
+        <td>抛出包含工具 id 和 Zod 错误的异常；若定义了 <code>formatValidationError</code> 则用自定义文案。</td>
+      </tr>
+      <tr>
+        <td>validate</td>
+        <td>工具自定义业务校验，返回 string 或 <code>{ message }</code> 表示失败。</td>
+        <td>抛出校验失败消息。</td>
+      </tr>
+      <tr>
+        <td>authorize</td>
+        <td>工具级硬授权检查，不同于全局权限审批。</td>
+        <td>抛出授权失败消息。</td>
+      </tr>
+      <tr>
+        <td>execute</td>
+        <td>调用原始 runtime.execute，并把 string 输出标准化为 <code>{ text }</code>。</td>
+        <td>工具异常向上传递，由 processor 记为 failed/error。</td>
+      </tr>
+      <tr>
+        <td>assessPermission</td>
+        <td>如果存在，也先经过同一套参数解析。</td>
+        <td>避免权限评估看到未解析或 schema 外的输入。</td>
+      </tr>
+    </table>
+
+    <h2 id="registry">6. 注册表与工具来源</h2>
+    <table>
+      <tr><th>来源</th><th>实现</th><th>说明</th></tr>
+      <tr>
+        <td>内置工具</td>
+        <td><code>ToolRegistry.builtinTools()</code></td>
+        <td>硬编码导入当前平台适用的工具；Windows 下加入 Git Bash、PowerShell、cmd、WSL Bash；macOS 下加入 macOS shell；其他平台当前无 shell 内置项。</td>
+      </tr>
+      <tr>
+        <td>MCP 工具</td>
+        <td><code>Mcp.tools()</code></td>
+        <td>由 MCP manager 转成 registry shape，工具 id 通常是 <code>mcp__server__tool</code> 形式。</td>
+      </tr>
+      <tr>
+        <td>自定义工具</td>
+        <td><code>registry.state().custom</code></td>
+        <td>通过 <code>Instance.state</code> 保存运行时可插入的工具定义，测试中也用它注入 custom tool。</td>
+      </tr>
+      <tr>
+        <td>合并结果</td>
+        <td><code>tools()</code></td>
+        <td><code>[...builtinTools, ...mcpTools, ...custom]</code>，合并后检查 id/alias 全局唯一。</td>
+      </tr>
+    </table>
+
+    <h3>当前内置工具族</h3>
+    <table>
+      <tr><th>族</th><th>代表工具</th><th>说明</th></tr>
+      <tr><td>交互/工作流</td><td><code>ask-user-question</code>, task tools</td><td>处理用户问题、任务进度和任务状态。注意：<code>enter-plan-mode.ts</code> / <code>exit-plan-mode.ts</code> 文件存在，但当前未在 <code>registry.ts</code> 的 <code>builtinTools()</code> 中注册。</td></tr>
+      <tr><td>读/搜索</td><td><code>read-file</code>, <code>glob</code>, <code>grep</code>, <code>list-directory</code>, skill/resource tools</td><td>多数应标记 <code>readOnly=true</code> 和 <code>concurrency=safe</code>。</td></tr>
+      <tr><td>写入</td><td><code>replace-text</code>, <code>apply_patch</code></td><td>项目内文本修改，通常 <code>destructive=true</code>、<code>concurrency=exclusive</code>。</td></tr>
+      <tr><td>Shell/Terminal</td><td><code>git_bash_command</code>, <code>powershell_command</code>, <code>cmd_command</code>, <code>wsl_bash_command</code>, terminal tools</td><td>需要 shell 或终端进程，风险和权限提示更高。</td></tr>
+      <tr><td>MCP 资源</td><td><code>list_mcp_resources</code>, <code>list_mcp_resource_templates</code>, <code>read_mcp_resource</code></td><td>作为内置只读工具出现，可在 read-only agent / side chat 中使用。</td></tr>
+      <tr><td>并行</td><td><code>multi_tool_use_parallel</code></td><td>只允许批量执行 read/search 且 <code>readOnly=true</code>、<code>concurrency=safe</code> 的子工具。</td></tr>
+      <tr><td>媒体/浏览</td><td><code>generate-image</code>, <code>view-image</code>, <code>web-fetch</code></td><td>图片、网页读取或生成能力。</td></tr>
+      <tr><td>委派</td><td><code>spawn-subagent</code>, <code>read-subagent</code>, <code>wait-subagent</code>, <code>cancel-subagent</code></td><td>子代理生命周期管理。</td></tr>
+    </table>
+
+    <h2 id="resolution">7. 会话解析与模型暴露</h2>
+    <p><code>resolveTools</code> 是模型可见工具集合的最后一道门。它不直接修改 registry，而是为本轮会话构造一个临时 <code>ToolSet</code>。</p>
+    <table>
+      <tr><th>过滤条件</th><th>函数/配置</th><th>行为</th></tr>
+      <tr>
+        <td>全局内置工具选择</td>
+        <td><code>Config.getToolSelection("__global__")</code> + <code>isToolGloballyEnabled</code></td>
+        <td>只作用于内置工具。任一 id/alias 显式为 <code>false</code> 即禁用；空选择代表默认全部启用。</td>
+      </tr>
+      <tr>
+        <td>Agent 工具策略</td>
+        <td><code>agent.tools</code> + <code>isToolAllowedForAgent</code></td>
+        <td>如果有显式 false 则拒绝；如果出现任意 true，则变成 allowlist；空对象会拒绝所有工具。</td>
+      </tr>
+      <tr>
+        <td>只读会话</td>
+        <td><code>readOnlyToolsOnlyForSession</code></td>
+        <td>side-chat 或 <code>agent.toolPolicy === "read-only"</code> 时，只保留 <code>capabilities.readOnly === true</code> 的工具。</td>
+      </tr>
+      <tr>
+        <td>Provider-safe 名称</td>
+        <td><code>/^[a-zA-Z0-9_-]+$/</code></td>
+        <td>模型只获得合法函数名；如 <code>multi_tool_use.parallel</code> 旧别名不暴露给 provider，但 registry 仍可匹配。</td>
+      </tr>
+      <tr>
+        <td>重复名称</td>
+        <td><code>assertUniqueToolNames</code> 与 <code>resolveTools</code> 中的 duplicate 检查</td>
+        <td>registry 层检查 id/alias 全局唯一；ToolSet 注册时再次防止 provider-safe 名称冲突。</td>
+      </tr>
+    </table>
+
+    <h2 id="execution">8. 执行、权限、输出持久化</h2>
+    <table>
+      <tr><th>步骤</th><th>实现</th><th>说明</th></tr>
+      <tr>
+        <td>初始化 runtime</td>
+        <td><code>item.init({ agent })</code></td>
+        <td>允许工具根据 agent 信息改变行为。</td>
+      </tr>
+      <tr>
+        <td>构造上下文</td>
+        <td><code>runtimeContext(toolCallID)</code></td>
+        <td>注入 <code>Instance.directory</code>、<code>Instance.worktree</code>、<code>AbortSignal</code>、session/message/toolCall id。</td>
+      </tr>
+      <tr>
+        <td>权限评估</td>
+        <td><code>evaluatePermission()</code></td>
+        <td>先调用工具的 <code>assessPermission</code>，再交给 <code>Permission.evaluate</code>；非 ask 的决策按 toolCallID 缓存。</td>
+      </tr>
+      <tr>
+        <td>执行拦截</td>
+        <td><code>execute(args)</code></td>
+        <td><code>deny</code> 抛决策原因；<code>ask</code> 抛“requires approval”；<code>allow</code> 才调用 runtime。</td>
+      </tr>
+      <tr>
+        <td>大输出处理</td>
+        <td><code>ToolResultPersistence.maybePersistToolResult</code></td>
+        <td>超过工具的 <code>maxResultSizeChars</code> 时把大输出落盘，返回替换文本和 metadata，减少上下文压力。</td>
+      </tr>
+      <tr>
+        <td>模型输出转换</td>
+        <td><code>toModelOutput(output)</code></td>
+        <td>若输出已持久化，模型只看到替换文本；否则使用 runtime 自定义 <code>toModelOutput</code> 或默认 text。</td>
+      </tr>
+    </table>
+
+    <h2 id="permission">9. 权限策略与审批流</h2>
+    <h3>权限决策顺序</h3>
+    <ol>
+      <li>准备权限表和审计表。</li>
+      <li>从输入与 intent 中抽取路径、命令、workdir、body，并推导风险。</li>
+      <li>side-chat 中任何非 read-only 工具直接 deny。</li>
+      <li><code>ANYBOX_PERMISSION=off/false/0/disabled</code> 时直接 allow。</li>
+      <li>非 read-only 工具引用 active project boundary 外路径时 deny，风险为 critical。</li>
+      <li>如果当前 toolCallID 已有 approved/denied 审批记录，按记录复用。</li>
+      <li>planning mode 下，副作用工具默认 deny，除非 intent 设置 <code>allowInPlanning</code>。</li>
+      <li>工具 intent 为 deny 时 deny；风险为 critical 时 deny。</li>
+      <li>工具 intent 为 ask 时，<code>permission_mode=full_access</code> 且未 <code>forceAsk</code> 则 allow，否则 ask。</li>
+      <li>工具 intent 为 allow 时 allow。</li>
+      <li>fallback 使用 <code>DEFAULT_ACTIONS</code>；当前所有 kind 默认都是 allow。</li>
+    </ol>
+
+    <h3>审批对象与状态流</h3>
+    <table>
+      <tr><th>对象/事件</th><th>来源</th><th>作用</th></tr>
+      <tr><td><code>ToolApprovalDescriptor</code></td><td>runtime.<code>describeApproval</code> 或 fallback</td><td>生成用户看到的标题、摘要、路径/命令/正文详情。</td></tr>
+      <tr><td><code>permission_requests</code></td><td><code>registerApprovalRequest</code></td><td>持久化 pending/approved/denied 审批记录。</td></tr>
+      <tr><td><code>PermissionPart</code></td><td><code>createPermissionPart</code></td><td>写入对话消息 parts，连接 approvalID 与 toolCallID。</td></tr>
+      <tr><td><code>tool.call.waiting_approval</code></td><td>processor 或 permission registration</td><td>通知 runtime/UI 工具正在等待用户。</td></tr>
+      <tr><td><code>permission.resolved</code></td><td><code>resolveRequest</code></td><td>用户审批结果进入事件流。</td></tr>
+      <tr><td><code>tool.call.approved/completed/denied/failed</code></td><td><code>completeApprovedRequest</code>/<code>denyApprovedRequest</code></td><td>审批后补执行工具或写入拒绝状态。</td></tr>
+    </table>
+
+    <h2 id="filesystem">10. 文件系统安全边界</h2>
+    <table>
+      <tr><th>能力</th><th>实现</th><th>安全语义</th></tr>
+      <tr>
+        <td>项目路径解析</td>
+        <td><code>resolveToolPath(inputPath)</code></td>
+        <td>相对路径基于 <code>Instance.directory</code>；绝对路径必须位于 active project boundary；拒绝 UNC 路径。</td>
+      </tr>
+      <tr>
+        <td>符号链接/真实路径防逃逸</td>
+        <td><code>resolveDeepestExistingPath</code> + canonical roots</td>
+        <td>检查最终解析路径仍在 <code>Instance.directory</code> 或 <code>Instance.worktree</code> 内。</td>
+      </tr>
+      <tr>
+        <td>文本文件判定</td>
+        <td>扩展名黑名单 + 采样检测 NUL/控制字符比例</td>
+        <td>防止 read/write 工具误处理二进制文件。</td>
+      </tr>
+      <tr>
+        <td>设备路径阻断</td>
+        <td><code>BLOCKED_DEVICE_PATHS</code> 与 <code>/proc/*/fd</code></td>
+        <td>避免读取或写入特殊设备路径。</td>
+      </tr>
+      <tr>
+        <td>写入方式</td>
+        <td>先写临时文件，再 rename；异常时清理临时文件</td>
+        <td>尽量避免成功写入后出现半文件。</td>
+      </tr>
+      <tr>
+        <td>可读绝对路径</td>
+        <td><code>resolveReadableTextFilePath</code></td>
+        <td>允许只读工具引用项目外绝对路径；权限层也允许 read-only 工具外部路径。</td>
+      </tr>
+    </table>
+
+    <h2 id="replace-text">11. replace-text 当前实现</h2>
+    <p><code>replace-text</code> 是当前工作树里被修改的工具文件。它定位于“单文件、精确字符串替换或创建一个新文本文件”，并明确建议多文件/结构化变更使用 <code>apply_patch</code>。</p>
+    <table>
+      <tr><th>方面</th><th>当前行为</th></tr>
+      <tr>
+        <td>参数 schema</td>
+        <td><code>file_path: string</code>、<code>old_string: string</code>、<code>new_string: string</code>、<code>replace_all?: boolean</code>。旧别名 <code>path/search/replace/all</code> 已从当前实现移除。</td>
+      </tr>
+      <tr>
+        <td>validate</td>
+        <td>如果 <code>old_string === new_string</code>，返回“No changes to make”。</td>
+      </tr>
+      <tr>
+        <td>创建文件</td>
+        <td>目标不存在且 <code>old_string === ""</code> 时创建文件；目标不存在但 old_string 非空时报错。</td>
+      </tr>
+      <tr>
+        <td>空文件填充</td>
+        <td>目标存在且 <code>old_string === ""</code> 时，只允许原文件 trim 后为空；否则报错，避免覆盖非空文件。</td>
+      </tr>
+      <tr>
+        <td>匹配策略</td>
+        <td>优先精确匹配；若 old_string 含换行，会尝试 LF/CRLF 互转匹配。</td>
+      </tr>
+      <tr>
+        <td>多匹配策略</td>
+        <td>匹配数大于 1 且 <code>replace_all</code> 非 true 时拒绝，要求更精确 old_string 或显式全量替换。</td>
+      </tr>
+      <tr>
+        <td>换行保真</td>
+        <td>替换文本按实际匹配到的 oldString 换行风格归一化：旧内容是 CRLF 时 new_string 转 CRLF；旧内容是 LF 时转 LF。</td>
+      </tr>
+      <tr>
+        <td>审批描述</td>
+        <td><code>describeApproval</code> 先 <code>prepareWriteTextFile</code>，根据 create / replace all / unique edit 生成 summary，details 包含 target path 和 workdir。</td>
+      </tr>
+      <tr>
+        <td>能力声明</td>
+        <td><code>kind="write"</code>、<code>readOnly=false</code>、<code>destructive=true</code>、<code>concurrency="exclusive"</code>。</td>
+      </tr>
+    </table>
+
+    <div class="warning">
+      注意：当前 <code>tool.contract.test.ts</code> 的相关测试已从“保留旧别名并保留 CRLF”改为“保留 CRLF”。如果仍需要向后兼容 <code>path/search/replace/all</code>，当前实现与测试意图已经不再覆盖这件事。
+    </div>
+
+    <h2 id="api">12. 设置 API 与配置持久化</h2>
+    <h3>Agent HTTP API</h3>
+    <table>
+      <tr><th>路由</th><th>方法</th><th>返回/输入</th><th>实现</th></tr>
+      <tr>
+        <td><code>/api/tools/builtins</code></td>
+        <td>GET</td>
+        <td><code>{ items, selection }</code></td>
+        <td><code>SettingsUseCase.listBuiltinTools()</code>：初始化每个内置工具，返回 title/description/inputSchema/aliases/capabilities/enabled。</td>
+      </tr>
+      <tr>
+        <td><code>/api/tools/builtins/selection</code></td>
+        <td>PUT</td>
+        <td>输入 <code>{ tools: Record&lt;string, boolean&gt; }</code>，返回规范化 selection。</td>
+        <td><code>updateBuiltinToolSelection()</code>：只接受已知内置工具 id，写入全局 config 的 <code>tools</code> 字段。</td>
+      </tr>
+      <tr>
+        <td><code>/api/tools/permission-mode</code></td>
+        <td>GET</td>
+        <td><code>{ mode: "default" | "full_access" }</code></td>
+        <td><code>Config.getPermissionMode("__global__")</code>。</td>
+      </tr>
+      <tr>
+        <td><code>/api/tools/permission-mode</code></td>
+        <td>PUT</td>
+        <td>输入 <code>{ mode }</code>，返回保存后的 mode。</td>
+        <td><code>Config.setPermissionMode("__global__", mode)</code>。</td>
+      </tr>
+    </table>
+
+    <h3>配置存储</h3>
+    <table>
+      <tr><th>配置字段</th><th>位置/类型</th><th>语义</th></tr>
+      <tr><td><code>tools</code></td><td><code>Config.Info</code>: <code>Record&lt;string, boolean&gt;</code></td><td>全局内置工具选择。空或不存在代表默认；显式 false 禁用。</td></tr>
+      <tr><td><code>permission_mode</code></td><td><code>Config.Info</code>: <code>"default" | "full_access"</code></td><td>影响 intent=ask 的处理。<code>full_access</code> 自动通过非 <code>forceAsk</code> 的 ask。</td></tr>
+      <tr><td>存储表</td><td><code>project_configs</code>，全局 id 为 <code>__global__</code></td><td>Config 层通过 <code>readConfig/writeConfig</code> 读写 SQLite 中的配置文档。</td></tr>
+    </table>
+
+    <h2 id="desktop">13. Desktop 管理界面</h2>
+    <h3>IPC 链路</h3>
+    <pre>renderer window.desktop.getBuiltinTools()
+  -> preload invokeDesktop("desktop:get-builtin-tools")
+  -> main ipc.ts handleDesktopIpc("desktop:get-builtin-tools")
+  -> requestAgentJSON("/api/tools/builtins")
+  -> anyboxagent settings route/usecase
+
+renderer window.desktop.updateBuiltinToolSelection({ tools })
+  -> desktop:update-builtin-tool-selection
+  -> requestAgentJSON("/api/tools/builtins/selection", PUT)
+
+renderer window.desktop.getToolPermissionMode()/updateToolPermissionMode()
+  -> desktop:get-tool-permission-mode / desktop:update-tool-permission-mode
+  -> requestAgentJSON("/api/tools/permission-mode", GET/PUT)</pre>
+
+    <h3>Renderer 状态与 UI</h3>
+    <table>
+      <tr><th>位置</th><th>职责</th><th>关键实现</th></tr>
+      <tr>
+        <td><code>App.tsx</code></td>
+        <td>路由和顶层状态</td>
+        <td>当 <code>leftSidebarView === "tools"</code> 时打开 Tools 页面；持有 <code>activeBuiltinToolKind</code>、<code>toolPermissionMode</code>、保存中状态。</td>
+      </tr>
+      <tr>
+        <td><code>use-settings-page.ts</code></td>
+        <td>工具选择数据源</td>
+        <td>页面打开时 <code>loadBuiltinTools()</code>；本地 optimistic toggle；save/reset 调 desktop API；用 <code>stableSelectionKey</code> 判断 dirty。</td>
+      </tr>
+      <tr>
+        <td><code>Sidebar.tsx</code></td>
+        <td>左侧工具分类导航</td>
+        <td>复用 <code>BuiltinToolsSidebarView</code>，显示每组数量和 enabled 比例。</td>
+      </tr>
+      <tr>
+        <td><code>BuiltinToolsPage.tsx</code></td>
+        <td>工具详情页</td>
+        <td>按 <code>builtinToolKindOrder</code> 分组；展示风险 badge、alias 数、concurrency、input schema；保存/重置。</td>
+      </tr>
+      <tr>
+        <td><code>SessionCanvasTopMenu.tsx</code></td>
+        <td>会话工具权限模式入口</td>
+        <td>顶部菜单按钮切换 <code>default</code> / <code>full_access</code>；该模式属于全局工具权限，不是单个工具开关。</td>
+      </tr>
+    </table>
+
+    <h3>UI 风险标签映射</h3>
+    <table>
+      <tr><th>条件</th><th>标签</th><th>样式意图</th></tr>
+      <tr><td><code>needsShell</code> 或 <code>kind === "exec"</code></td><td>Shell access</td><td>warning</td></tr>
+      <tr><td><code>kind === "delegation"</code> 且 readOnly</td><td>Delegation status</td><td>普通/只读</td></tr>
+      <tr><td><code>kind === "delegation"</code> 且非 readOnly</td><td>Delegates work</td><td>warning</td></tr>
+      <tr><td><code>kind === "workflow"</code></td><td>Workflow control</td><td>非只读 workflow 为 warning</td></tr>
+      <tr><td><code>kind === "interaction"</code></td><td>User interaction</td><td>普通</td></tr>
+      <tr><td><code>destructive</code></td><td>High risk</td><td>warning</td></tr>
+      <tr><td><code>readOnly</code></td><td>Read-only</td><td>highlight</td></tr>
+      <tr><td>其他</td><td>Moderate</td><td>普通</td></tr>
+    </table>
+
+    <h2 id="tests">14. 测试覆盖</h2>
+    <table>
+      <tr><th>测试文件</th><th>覆盖点</th></tr>
+      <tr><td><code>anyboxagent/Test/tool.selection.test.ts</code></td><td>provider-safe 名称、空全局选择默认启用、全局禁用内置工具、agent allowlist 优先级、parallel tool 旧别名禁用、custom tool 不受内置选择影响。</td></tr>
+      <tr><td><code>anyboxagent/Test/tool.contract.test.ts</code></td><td>具体工具契约；当前修改处覆盖 <code>replace-text</code> CRLF replacement 保真。</td></tr>
+      <tr><td><code>anyboxagent/Test/permission.test.ts</code></td><td>默认权限、read-only 工具外部路径、不同工具 kind、intent allow/ask/deny、full_access、critical 风险。</td></tr>
+      <tr><td><code>anyboxagent/Test/mcp.test.ts</code></td><td>MCP 工具映射、资源工具只读可见、MCP tool policies 和诊断。</td></tr>
+      <tr><td><code>desktop/src/renderer/src/app/tools/BuiltinToolsPage.test.tsx</code></td><td>Tools 页面渲染、分类切换、展开 schema、toggle、save/reset、loading/error/empty 状态。</td></tr>
+      <tr><td><code>desktop/src/renderer/src/app/settings/SettingsPage.tools.test.tsx</code></td><td>验证 built-in tools 已从 settings 页面移出；设置页不再渲染 Tools 控件。</td></tr>
+      <tr><td><code>desktop/src/main/ipc.test.ts</code></td><td>工具权限模式 IPC helper 的 get/update 行为。</td></tr>
+    </table>
+
+    <h3>建议验证命令</h3>
+    <pre># agent 侧重点
+cd C:\Projects\fanfande_studio\packages\anyboxagent
+bun test Test/tool.selection.test.ts
+bun test Test/tool.contract.test.ts
+bun test Test/permission.test.ts
+
+# desktop 侧重点
+cd C:\Projects\fanfande_studio\packages\desktop
+npm test -- BuiltinToolsPage
+npm test -- SettingsPage.tools
+npm test -- ipc</pre>
+
+    <h2 id="edges">15. 边界与注意事项</h2>
+    <table>
+      <tr><th>事项</th><th>当前事实</th><th>影响</th></tr>
+      <tr>
+        <td>全局工具选择默认含义</td>
+        <td>空 <code>tools</code> 不是禁用，而是默认全部内置工具启用。</td>
+        <td>“Reset to default” 会写入空选择，恢复默认启用状态。</td>
+      </tr>
+      <tr>
+        <td>API 与 alias</td>
+        <td>运行时读取 selection 时会检查 id + aliases；但 <code>updateBuiltinToolSelection</code> 当前只接受内置工具 id。</td>
+        <td>手工配置 alias false 可能影响运行时；通过当前 HTTP 更新接口保存包含 alias 的 selection 会被视为 unknown builtin tool。</td>
+      </tr>
+      <tr>
+        <td>权限 fallback</td>
+        <td><code>DEFAULT_ACTIONS</code> 当前对所有 kind 都是 allow。</td>
+        <td>安全性主要依赖路径边界、critical 风险阻断、planning/side-chat 限制、工具自身 <code>assessPermission</code>。</td>
+      </tr>
+      <tr>
+        <td>full_access 模式</td>
+        <td>只改变 intent=ask 的结果；<code>forceAsk</code>、critical、deny、side-chat、外部路径写入等仍会阻断。</td>
+        <td>它不是无条件跳过安全策略。</td>
+      </tr>
+      <tr>
+        <td>provider-safe 名称</td>
+        <td>含点号的旧别名不暴露给模型。</td>
+        <td>例如 <code>multi_tool_use.parallel</code> 可作为 registry alias，但模型工具名是 <code>multi_tool_use_parallel</code>。</td>
+      </tr>
+      <tr>
+        <td>replace-text 兼容性</td>
+        <td>当前工作树移除了旧参数 alias。</td>
+        <td>外部调用方若仍发送 <code>path/search/replace/all</code> 会 schema 校验失败。</td>
+      </tr>
+      <tr>
+        <td>desktop Tools 页面边界</td>
+        <td>页面展示 <code>inputSchema</code>、<code>capabilities</code>、alias 数，但不展示实时 MCP/custom 工具。</td>
+        <td>它是“内置工具全局可用性”管理页，不是所有可调用工具总览。</td>
+      </tr>
+    </table>
+  </main>
+</body>
+</html>

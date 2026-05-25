@@ -26,7 +26,7 @@ function inferPlanTitle(title: string | undefined, body: string) {
 }
 
 export const ExitPlanModeTool = Tool.define(
-  "ExitPlanMode",
+  "exit_plan_mode",
   async () => {
     return {
       title: "Exit Plan Mode",
@@ -42,7 +42,7 @@ export const ExitPlanModeTool = Tool.define(
           return {
             action: "deny",
             risk: "medium",
-            reason: "ExitPlanMode can only be used while the session is in planning mode.",
+            reason: "exit_plan_mode can only be used while the session is in planning mode.",
             resource: {
               body,
             },
@@ -68,7 +68,7 @@ export const ExitPlanModeTool = Tool.define(
 
         const workflow = Session.normalizeWorkflowState(session.workflow)
         if (workflow.mode !== "planning") {
-          return "ExitPlanMode can only be used while the session is in planning mode."
+          return "exit_plan_mode can only be used while the session is in planning mode."
         }
 
         if (!normalizePlanBody(parameters.body)) {
@@ -94,7 +94,7 @@ export const ExitPlanModeTool = Tool.define(
 
         const workflow = Session.normalizeWorkflowState(session.workflow)
         if (workflow.mode !== "planning") {
-          throw new Error("ExitPlanMode can only be executed while the session is in planning mode.")
+          throw new Error("exit_plan_mode can only be executed while the session is in planning mode.")
         }
 
         const body = normalizePlanBody(parameters.body)
@@ -154,7 +154,7 @@ export const ExitPlanModeTool = Tool.define(
   },
   {
     title: "Exit Plan Mode",
-    aliases: ["exit_plan_mode", "exit-plan-mode"],
+    aliases: ["ExitPlanMode", "exit-plan-mode"],
     capabilities: {
       kind: "workflow",
       readOnly: false,

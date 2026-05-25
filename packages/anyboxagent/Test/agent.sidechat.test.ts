@@ -253,8 +253,8 @@ describe("sidechat agent", () => {
 
       expect(userMessages?.at(-1)?.agent).toBe("sidechat")
       expect(streamTextInputs.at(-1)?.system).toContain(customPrompt)
-      expect(streamTextInputs.at(-1)?.tools?.["read-file"]).toBeDefined()
-      expect(streamTextInputs.at(-1)?.tools?.["replace-text"]).toBeUndefined()
+      expect(streamTextInputs.at(-1)?.tools?.["read_file"]).toBeDefined()
+      expect(streamTextInputs.at(-1)?.tools?.["replace_text"]).toBeUndefined()
     })
   })
 
@@ -351,10 +351,10 @@ describe("sidechat agent", () => {
           abort: new AbortController().signal,
         })
 
-        expect(tools["read-file"]).toBeDefined()
+        expect(tools["read_file"]).toBeDefined()
         expect(tools["grep"]).toBeDefined()
         expect(tools["load_workspace_dependencies"]).toBeDefined()
-        expect(tools["replace-text"]).toBeUndefined()
+        expect(tools["replace_text"]).toBeUndefined()
         expect(tools["spawn_subagent"]).toBeUndefined()
         expect(tools["macos_shell_command"]).toBeUndefined()
         expect(tools["powershell_command"]).toBeUndefined()

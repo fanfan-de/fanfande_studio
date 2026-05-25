@@ -340,8 +340,8 @@ export async function loadPromptCatalogSections(
   return [[
     `<skills progressive="true" mode="${selectedOnly ? "selected" : "discoverable"}">`,
     "Skills are loaded progressively. Do not assume a skill's full workflow from metadata alone.",
-    "Use the load-skill tool to read a skill's SKILL.md before following that skill's instructions.",
-    "Use the read-skill-resource tool only after load-skill, and only for relative files referenced by that skill.",
+    "Use the load_skill tool to read a skill's SKILL.md before following that skill's instructions.",
+    "Use the read_skill_resource tool only after load_skill, and only for relative files referenced by that skill.",
     selectedOnly
       ? "The user preselected the following skills for this turn. Stay within this set unless the user changes it."
       : "The following skills are available for this turn. Load one only when it clearly matches the task.",

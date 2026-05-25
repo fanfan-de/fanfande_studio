@@ -164,7 +164,7 @@ test("resolveTools persists large tool output before the processor sees it", asy
           messageID: "msg-wrapper-persist",
           abort: new AbortController().signal,
         })
-        const runtimeTool = tools["large-wrapper-tool"] as any
+        const runtimeTool = tools["large_wrapper_tool"] as any
         const output = await runtimeTool.execute({}, {
           toolCallId: "tool-wrapper-persist",
           messages: [],
@@ -242,7 +242,7 @@ test("resolveTools honors Infinity maxResultSizeChars opt-out", async () => {
           messageID: "msg-wrapper-passthrough",
           abort: new AbortController().signal,
         })
-        const output = await (tools["passthrough-wrapper-tool"] as any).execute({}, {
+        const output = await (tools["passthrough_wrapper_tool"] as any).execute({}, {
           toolCallId: "tool-wrapper-passthrough",
           messages: [],
         })
@@ -282,7 +282,7 @@ test("read-file caps output before the persistence layer", async () => {
           abort: new AbortController().signal,
         })
 
-        const output = await (tools["read-file"] as any).execute({
+        const output = await (tools["read_file"] as any).execute({
           file_path: "large.txt",
           startLine: 1,
           endLine: 400,

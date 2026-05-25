@@ -197,7 +197,7 @@ async function runCommandInTerminal(input: {
 }
 
 export const TerminalRunCommandTool = Tool.define(
-  "terminal-run-command",
+  "terminal_run_command",
   async () => ({
     title: "Run Terminal Command",
     description: "Run a command in the persistent terminal bound to the current main session.",
@@ -274,6 +274,7 @@ export const TerminalRunCommandTool = Tool.define(
   }),
   {
     title: "Run Terminal Command",
+    aliases: ["terminal-run-command"],
     capabilities: {
       kind: "exec",
       concurrency: "exclusive",
@@ -283,7 +284,7 @@ export const TerminalRunCommandTool = Tool.define(
 )
 
 export const TerminalReadTool = Tool.define(
-  "terminal-read",
+  "terminal_read",
   async () => ({
     title: "Read Terminal",
     description: "Read the recent buffer from the persistent terminal bound to the current main session.",
@@ -312,6 +313,7 @@ export const TerminalReadTool = Tool.define(
   }),
   {
     title: "Read Terminal",
+    aliases: ["terminal-read"],
     capabilities: {
       kind: "read",
       readOnly: true,
@@ -321,14 +323,14 @@ export const TerminalReadTool = Tool.define(
 )
 
 export const TerminalWriteInputTool = Tool.define(
-  "terminal-write-input",
+  "terminal_write_input",
   async () => ({
     title: "Write Terminal Input",
     description: "Write raw input to the persistent terminal bound to the current main session.",
     parameters: WriteInputParameters,
     validate: (_parameters, ctx) => {
       if (activeRunCommands.has(ctx.sessionID)) {
-        return "Cannot write raw terminal input while terminal-run-command is active for this session."
+        return "Cannot write raw terminal input while terminal_run_command is active for this session."
       }
     },
     describeApproval: async (_parameters, ctx) => {
@@ -373,6 +375,7 @@ export const TerminalWriteInputTool = Tool.define(
   }),
   {
     title: "Write Terminal Input",
+    aliases: ["terminal-write-input"],
     capabilities: {
       kind: "exec",
       concurrency: "exclusive",

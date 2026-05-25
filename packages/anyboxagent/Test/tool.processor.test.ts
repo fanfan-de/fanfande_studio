@@ -352,7 +352,7 @@ describe("processor tool persistence", () => {
           yield {
             type: "tool-call",
             toolCallId: "call-ask",
-            toolName: "AskUserQuestion",
+            toolName: "ask_user_question",
             input: {
               header: "Question",
               question: "What next?",
@@ -368,7 +368,7 @@ describe("processor tool persistence", () => {
           yield {
             type: "tool-result",
             toolCallId: "call-ask",
-            toolName: "AskUserQuestion",
+            toolName: "ask_user_question",
             input: {
               header: "Question",
               question: "What next?",
@@ -693,12 +693,12 @@ describe("processor tool persistence", () => {
           yield {
             type: "tool-input-start",
             id: "tool-approval",
-            toolName: "replace-text",
+            toolName: "replace_text",
           }
           yield {
             type: "tool-call",
             toolCallId: "tool-approval",
-            toolName: "replace-text",
+            toolName: "replace_text",
             input: { file_path: "a.txt", old_string: "", new_string: "alpha" },
             title: "Replace Text",
           }
@@ -853,7 +853,7 @@ describe("processor tool persistence", () => {
           yield {
             type: "tool-input-start",
             id: "tool-timeout",
-            toolName: "replace-text",
+            toolName: "replace_text",
           }
           yield {
             type: "tool-input-delta",
@@ -933,12 +933,12 @@ describe("processor tool persistence", () => {
           yield {
             type: "tool-input-start",
             id: "tool-reconciled",
-            toolName: "replace-text",
+            toolName: "replace_text",
           }
           yield {
             type: "tool-call",
             toolCallId: "tool-reconciled",
-            toolName: "replace-text",
+            toolName: "replace_text",
             input: { file_path: "a.txt", old_string: "", new_string: "alpha" },
             title: "Replace Text",
           }
@@ -951,7 +951,7 @@ describe("processor tool persistence", () => {
           {
             type: "tool-result",
             toolCallId: "tool-reconciled",
-            toolName: "replace-text",
+            toolName: "replace_text",
             input: { file_path: "a.txt", old_string: "", new_string: "alpha" },
             output: {
               text: "created a.txt",

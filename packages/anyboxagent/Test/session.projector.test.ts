@@ -121,7 +121,7 @@ test("runtime events project messages and parts into the session read model", as
         type: "permission",
         approvalID,
         toolCallID: "tool-approval",
-        tool: "replace-text",
+        tool: "replace_text",
         action: "ask",
         created: Date.now(),
       })
@@ -138,7 +138,7 @@ test("runtime events project messages and parts into the session read model", as
         toolCallID: "tool-approval",
         projectID: Instance.project.id,
         agent: "plan",
-        tool: "replace-text",
+        tool: "replace_text",
         toolKind: "write",
         risk: "medium",
         status: "pending",

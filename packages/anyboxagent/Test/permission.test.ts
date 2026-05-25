@@ -42,7 +42,7 @@ test("permission defaults auto-run safe reads and writes while honoring tool den
           cwd: Instance.directory,
           worktree: Instance.worktree,
           tool: {
-            id: "read-file",
+            id: "read_file",
             kind: "read",
             readOnly: true,
             destructive: false,
@@ -61,7 +61,7 @@ test("permission defaults auto-run safe reads and writes while honoring tool den
           cwd: Instance.directory,
           worktree: Instance.worktree,
           tool: {
-            id: "replace-text",
+            id: "replace_text",
             kind: "write",
             readOnly: false,
             destructive: false,
@@ -140,7 +140,7 @@ test("permission allows read-only tools to reference outside paths", async () =>
         const readDecision = await Permission.evaluate({
           ...base,
           tool: {
-            id: "read-file",
+            id: "read_file",
             kind: "read",
             readOnly: true,
             destructive: false,
@@ -150,7 +150,7 @@ test("permission allows read-only tools to reference outside paths", async () =>
         const writeDecision = await Permission.evaluate({
           ...base,
           tool: {
-            id: "replace-text",
+            id: "replace_text",
             kind: "write",
             readOnly: false,
             destructive: false,
@@ -191,7 +191,7 @@ test("permission defaults allow workflow, interaction, delegation, exec, and oth
         await expect(Permission.evaluate({
           ...baseInput,
           tool: {
-            id: "AskUserQuestion",
+            id: "ask_user_question",
             kind: "interaction",
             readOnly: true,
             destructive: false,
@@ -205,7 +205,7 @@ test("permission defaults allow workflow, interaction, delegation, exec, and oth
         await expect(Permission.evaluate({
           ...baseInput,
           tool: {
-            id: "EnterPlanMode",
+            id: "enter_plan_mode",
             kind: "workflow",
             readOnly: false,
             destructive: false,
@@ -366,7 +366,7 @@ test("permission evaluates tool intents before falling back to tool kind default
   }
 }, 120000)
 
-test("permission approval can complete a waiting read-file tool call without resuming the LLM loop", async () => {
+test("permission approval can complete a waiting read_file tool call without resuming the LLM loop", async () => {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "anybox-permission-approve-"))
 
   try {
@@ -413,7 +413,7 @@ test("permission approval can complete a waiting read-file tool call without res
           messageID: assistant.id,
           type: "tool",
           callID: "toolcall_readme",
-          tool: "read-file",
+          tool: "read_file",
           state: {
             status: "waiting-approval",
             approvalID: "approval_readme",

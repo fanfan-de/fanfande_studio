@@ -88,7 +88,7 @@ describe("prompt loop unanswered question guard", () => {
           messageID: assistant.id,
           type: "tool",
           callID: "call-question",
-          tool: "AskUserQuestion",
+          tool: "ask_user_question",
           state: {
             status: "completed",
             input: {

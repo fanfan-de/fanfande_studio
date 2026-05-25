@@ -137,7 +137,7 @@ const workflowPermission = {
 }
 
 export const TaskCreateTool = Tool.define(
-  "TaskCreate",
+  "task_create",
   async (initctx) => ({
     title: "Create Tasks",
     description:
@@ -169,7 +169,7 @@ export const TaskCreateTool = Tool.define(
   }),
   {
     title: "Create Tasks",
-    aliases: ["task_create", "task-create"],
+    aliases: ["TaskCreate", "task-create"],
     capabilities: {
       kind: "workflow",
       readOnly: false,
@@ -180,7 +180,7 @@ export const TaskCreateTool = Tool.define(
 )
 
 export const TaskGetTool = Tool.define(
-  "TaskGet",
+  "task_get",
   async () => ({
     title: "Get Task",
     description: "Read a single structured session task by id, including derived blocker information.",
@@ -216,7 +216,7 @@ export const TaskGetTool = Tool.define(
   }),
   {
     title: "Get Task",
-    aliases: ["task_get", "task-get"],
+    aliases: ["TaskGet", "task-get"],
     capabilities: {
       kind: "workflow",
       readOnly: true,
@@ -227,7 +227,7 @@ export const TaskGetTool = Tool.define(
 )
 
 export const TaskListTool = Tool.define(
-  "TaskList",
+  "task_list",
   async () => ({
     title: "List Tasks",
     description:
@@ -265,7 +265,7 @@ export const TaskListTool = Tool.define(
   }),
   {
     title: "List Tasks",
-    aliases: ["task_list", "task-list"],
+    aliases: ["TaskList", "task-list"],
     capabilities: {
       kind: "workflow",
       readOnly: true,
@@ -276,7 +276,7 @@ export const TaskListTool = Tool.define(
 )
 
 export const TaskUpdateTool = Tool.define(
-  "TaskUpdate",
+  "task_update",
   async () => ({
     title: "Update Task",
     description:
@@ -307,7 +307,7 @@ export const TaskUpdateTool = Tool.define(
   }),
   {
     title: "Update Task",
-    aliases: ["task_update", "task-update"],
+    aliases: ["TaskUpdate", "task-update"],
     capabilities: {
       kind: "workflow",
       readOnly: false,

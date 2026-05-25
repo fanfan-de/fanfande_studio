@@ -48,7 +48,7 @@ export function tools(toolNames: string[]) {
         [
             "# Parallel tool use",
             "- When you need multiple independent read/search tool calls, prefer one `multi_tool_use_parallel` call.",
-            "- Use `{ calls: [{ tool: \"read-file\", input: { file_path: \"...\" } }] }`.",
+            "- Use `{ calls: [{ tool: \"read_file\", input: { file_path: \"...\" } }] }`.",
             "- Do not use it for dependent steps, edits, shell commands, user questions, image generation, or subagent control.",
         ].join("\n"),
     ]

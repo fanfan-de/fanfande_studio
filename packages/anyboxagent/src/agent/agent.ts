@@ -31,11 +31,11 @@ export type AgentInfo = z.infer<typeof AgentInfo>
 export const SIDECHAT_AGENT_NAME = "sidechat"
 
 const PLAN_AGENT_TOOL_POLICY: Record<string, boolean> = {
-  AskUserQuestion: true,
-  "read-file": true,
+  ask_user_question: true,
+  read_file: true,
   "read_background_task": true,
   "read_subagent": true,
-  "load-skill": true,
+  load_skill: true,
   "read_skill_resource": true,
   "list_mcp_resources": true,
   "list_mcp_resource_templates": true,
@@ -43,7 +43,7 @@ const PLAN_AGENT_TOOL_POLICY: Record<string, boolean> = {
   "multi_tool_use_parallel": true,
   "glob": true,
   "grep": true,
-  "list-directory": true,
+  list_directory: true,
   "web_fetch": true,
   "lsp_definition": true,
   "lsp_references": true,

@@ -29,6 +29,7 @@ import * as Provider from "#provider/provider.ts"
 import * as Permission from "#permission/schema.ts"
 import * as Log from "#util/log.ts"
 import * as ToolResultPersistence from "#session/support/tool-result-persistence.ts"
+import * as Tool from "#tool/tool.ts"
 import { ReasoningEffortSchema } from "@anybox/shared"
 
 export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
@@ -56,8 +57,7 @@ export type APIError = z.infer<typeof APIError.Schema>
 const log = Log.create({ service: "session.message" })
 
 function modelSafeToolName(toolName: string) {
-    if (toolName === "multi_tool_use.parallel") return "multi_tool_use_parallel"
-    return toolName
+    return Tool.toModelToolName(toolName)
 }
 
 function summarizeAttachmentPartForLog(part: FilePart | ImagePart) {

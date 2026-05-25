@@ -622,16 +622,16 @@ describe("subagent tools", () => {
           abort: new AbortController().signal,
         })
 
-        expect(planTools["read-file"]).toBeDefined()
-        expect(planTools["AskUserQuestion"]).toBeDefined()
-        expect(planTools["EnterPlanMode"]).toBeUndefined()
-        expect(planTools["ExitPlanMode"]).toBeUndefined()
+        expect(planTools["read_file"]).toBeDefined()
+        expect(planTools["ask_user_question"]).toBeDefined()
+        expect(planTools["enter_plan_mode"]).toBeUndefined()
+        expect(planTools["exit_plan_mode"]).toBeUndefined()
         expect(planTools["git_bash_command"]).toBeUndefined()
         expect(planTools["macos_shell_command"]).toBeUndefined()
         expect(planTools["powershell_command"]).toBeUndefined()
         expect(planTools["cmd_command"]).toBeUndefined()
         expect(planTools["wsl_bash_command"]).toBeUndefined()
-        expect(planTools["replace-text"]).toBeUndefined()
+        expect(planTools["replace_text"]).toBeUndefined()
         expect(planTools["spawn_subagent"]).toBeUndefined()
 
         const compactionTools = await ResolveTools.resolveTools({

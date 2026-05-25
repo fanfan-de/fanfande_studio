@@ -102,8 +102,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeIdentifier(value: string) {
-  const normalized = value.trim().replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "")
-  return normalized || "tool"
+  return Tool.toModelToolName(value)
 }
 
 function canonicalToolID(serverID: string, toolName: string) {

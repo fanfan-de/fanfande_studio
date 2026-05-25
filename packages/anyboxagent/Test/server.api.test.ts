@@ -801,7 +801,7 @@ describe("server api", () => {
       expect(listResponse.status).toBe(200)
       expect(listBody.success).toBe(true)
       expect(listBody.data?.selection.tools).toEqual({})
-      expect(listBody.data?.items.some((tool) => tool.id === "AskUserQuestion")).toBe(true)
+      expect(listBody.data?.items.some((tool) => tool.id === "ask_user_question")).toBe(true)
       expect(listBody.data?.items.find((tool) => tool.id === "load_workspace_dependencies")).toMatchObject({
         enabled: true,
         aliases: ["load-workspace-dependencies"],
@@ -879,6 +879,21 @@ describe("server api", () => {
       const resetBody = (await resetResponse.json()) as BuiltinToolSelectionEnvelope
       expect(resetResponse.status).toBe(200)
       expect(resetBody.data?.tools).toEqual({})
+
+      const legacyAliasResponse = await app.request("http://localhost/api/tools/builtins/selection", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tools: {
+            "replace-text": false,
+          },
+        }),
+      })
+      const legacyAliasBody = (await legacyAliasResponse.json()) as BuiltinToolSelectionEnvelope
+      expect(legacyAliasResponse.status).toBe(200)
+      expect(legacyAliasBody.data?.tools).toEqual({
+        replace_text: false,
+      })
 
       const invalidResponse = await app.request("http://localhost/api/tools/builtins/selection", {
         method: "PUT",
@@ -1071,7 +1086,7 @@ describe("server api", () => {
       messageID: assistantMessageID,
       type: "tool",
       callID: "toolcall_debug_runtime",
-      tool: "read-file",
+      tool: "read_file",
       state: {
         status: "waiting-approval",
         approvalID: "approval_debug_runtime",
@@ -1174,7 +1189,7 @@ describe("server api", () => {
       const detailEvents = detailBody.data?.recentEvents ?? []
       const latestEvent = detailEvents[detailEvents.length - 1]
       expect(latestEvent?.type).toBe("tool.call.waiting_approval")
-      expect(latestEvent?.summary?.["tool"]).toBe("read-file")
+      expect(latestEvent?.summary?.["tool"]).toBe("read_file")
       expect(latestEvent?.summary?.["status"]).toBe("waiting-approval")
     } finally {
       Orchestrator.finishTurn(turn)
@@ -4248,7 +4263,7 @@ describe("server api", () => {
       messageID: assistantMessageID,
       type: "tool",
       callID: "toolcall_stream_replay",
-      tool: "read-file",
+      tool: "read_file",
       state: {
         status: "waiting-approval",
         approvalID: "approval_stream_replay",
@@ -4321,7 +4336,7 @@ describe("server api", () => {
     expect(raw).toContain(`"type":"tool.call.waiting_approval"`)
     expect(raw).toContain(`"type":"turn.completed"`)
     expect(raw).toContain(`id: ${RuntimeEvent.serializeCursor(RuntimeEvent.cursorOf(turn2Started))}`)
-    expect(raw).toContain(`"tool":"read-file"`)
+    expect(raw).toContain(`"tool":"read_file"`)
     expect(raw).toContain(`"turnID":"${turn2ID}"`)
     expect(raw).not.toContain(`"turnID":"${turn1ID}"`)
   })

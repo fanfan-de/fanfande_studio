@@ -7,16 +7,12 @@ import {
 } from "#tool/shared.ts"
 
 const ReplaceTextParameters = z.object({
-  file_path: z.string().min(1).optional().describe("Single target text file to edit, using an absolute or project-relative path."),
-  path: z.string().min(1).optional().describe("Deprecated alias for file_path."),
-  old_string: z.string().optional().describe("Exact text to replace in one file. Use an empty string only to create one new text file or fill an empty file."),
-  search: z.string().optional().describe("Deprecated alias for old_string."),
-  new_string: z.string().optional().describe("Replacement text, or the complete contents when creating one new text file. Can be empty to delete the matched text."),
-  replace: z.string().optional().describe("Deprecated alias for new_string."),
+  file_path: z.string().min(1).describe("Single target text file to edit, using an absolute or project-relative path."),
+  old_string: z.string().describe("Exact text to replace in one file. Use an empty string only to create one new text file or fill an empty file."),
+  new_string: z.string().describe("Replacement text, or the complete contents when creating one new text file. Can be empty to delete the matched text."),
   replace_all: z.boolean().optional().describe("Replace all exact matches in the single target file. When false, the match must be unique."),
-  all: z.boolean().optional().describe("Deprecated alias for replace_all."),
 }).superRefine((value, ctx) => {
-  if (!value.file_path && !value.path) {
+  if (!value.file_path) {
     ctx.addIssue({
       code: "custom",
       path: ["file_path"],
@@ -24,15 +20,7 @@ const ReplaceTextParameters = z.object({
     })
   }
 
-  if (value.file_path && value.path && value.file_path !== value.path) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["file_path"],
-      message: "file_path and path must match when both are provided.",
-    })
-  }
-
-  if (value.old_string == null && value.search == null) {
+  if (value.old_string == null) {
     ctx.addIssue({
       code: "custom",
       path: ["old_string"],
@@ -40,39 +28,11 @@ const ReplaceTextParameters = z.object({
     })
   }
 
-  if (value.old_string != null && value.search != null && value.old_string !== value.search) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["old_string"],
-      message: "old_string and search must match when both are provided.",
-    })
-  }
-
-  if (value.new_string == null && value.replace == null) {
+  if (value.new_string == null) {
     ctx.addIssue({
       code: "custom",
       path: ["new_string"],
       message: "new_string is required.",
-    })
-  }
-
-  if (value.new_string != null && value.replace != null && value.new_string !== value.replace) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["new_string"],
-      message: "new_string and replace must match when both are provided.",
-    })
-  }
-
-  if (
-    value.replace_all != null &&
-    value.all != null &&
-    value.replace_all !== value.all
-  ) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["replace_all"],
-      message: "replace_all and all must match when both are provided.",
     })
   }
 })
@@ -88,10 +48,10 @@ type NormalizedEdit = {
 
 function normalizeParameters(parameters: ReplaceTextParameters): NormalizedEdit {
   return {
-    filePath: parameters.file_path ?? parameters.path ?? "",
-    oldString: parameters.old_string ?? parameters.search ?? "",
-    newString: parameters.new_string ?? parameters.replace ?? "",
-    replaceAll: parameters.replace_all ?? parameters.all ?? false,
+    filePath: parameters.file_path,
+    oldString: parameters.old_string,
+    newString: parameters.new_string,
+    replaceAll: parameters.replace_all ?? false,
   }
 }
 
@@ -133,7 +93,7 @@ function countOccurrences(haystack: string, needle: string): number {
 }
 
 export const ReplaceTextTool = Tool.define(
-  "replace-text",
+  "replace_text",
   async () => {
     return {
       title: "Replace Text",
@@ -259,6 +219,7 @@ export const ReplaceTextTool = Tool.define(
   },
   {
     title: "Replace Text",
+    aliases: ["replace-text"],
     capabilities: {
       kind: "write",
       readOnly: false,

@@ -8,7 +8,7 @@ const Parameters = z.object({
 })
 
 export const EnterPlanModeTool = Tool.define(
-  "EnterPlanMode",
+  "enter_plan_mode",
   async () => {
     return {
       title: "Enter Plan Mode",
@@ -72,7 +72,7 @@ export const EnterPlanModeTool = Tool.define(
   },
   {
     title: "Enter Plan Mode",
-    aliases: ["enter_plan_mode", "enter-plan-mode"],
+    aliases: ["EnterPlanMode", "enter-plan-mode"],
     capabilities: {
       kind: "workflow",
       readOnly: false,

@@ -5,7 +5,7 @@ import * as Skill from "#skill/skill.ts"
 import * as Tool from "#tool/tool.ts"
 
 export const LoadSkillTool = Tool.define(
-  "load-skill",
+  "load_skill",
   async () => {
     return {
       title: "Load Skill",
@@ -46,7 +46,7 @@ export const LoadSkillTool = Tool.define(
   },
   {
     title: "Load Skill",
-    aliases: ["load_skill"],
+    aliases: ["load-skill"],
     capabilities: {
       kind: "read",
       readOnly: true,

@@ -39,15 +39,26 @@ function exposedNames(tool: Tool.ToolInfo): string[] {
 
 function assertUniqueToolNames(tools: Tool.ToolInfo[]) {
   const seen = new Map<string, string>()
+  const seenModelNames = new Map<string, string>()
 
   for (const tool of tools) {
     for (const name of exposedNames(tool)) {
       const existing = seen.get(name)
-      if (existing) {
+      if (existing && existing !== tool.id) {
         throw new Error(`Duplicate tool name "${name}" is declared by both "${existing}" and "${tool.id}".`)
       }
 
       seen.set(name, tool.id)
+
+      const modelName = Tool.toModelToolName(name)
+      const existingModelName = seenModelNames.get(modelName)
+      if (existingModelName && existingModelName !== tool.id) {
+        throw new Error(
+          `Duplicate model-facing tool name "${modelName}" is declared by both "${existingModelName}" and "${tool.id}".`,
+        )
+      }
+
+      seenModelNames.set(modelName, tool.id)
     }
   }
 }

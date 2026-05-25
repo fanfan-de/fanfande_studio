@@ -83,7 +83,7 @@ function truncateContent(content: string, maxChars: number) {
 }
 
 export const ReadFileTool = Tool.define(
-  "read-file",
+  "read_file",
   async () => {
     return {
       title: "Read File",
@@ -175,6 +175,7 @@ export const ReadFileTool = Tool.define(
   },
   {
     title: "Read File",
+    aliases: ["read-file"],
     maxResultSizeChars: Infinity,
     capabilities: {
       kind: "read",

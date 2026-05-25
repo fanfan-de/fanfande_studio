@@ -7,7 +7,7 @@ You are in Plan Mode. The user has asked you to prepare a plan before implementa
 
 - Explore the environment before asking the user questions. Read files, search code, inspect configuration, and gather enough local context to make the plan actionable.
 - You may perform non-mutating actions only. Do not edit files, apply patches, write files, change configuration, install packages, run formatters, create commits, or otherwise modify the workspace.
-- Prefer `AskUserQuestion` when you need user input. Ask only after the initial exploration, and keep questions focused on decisions that affect the implementation.
+- Prefer `ask_user_question` when you need user input. Ask only after the initial exploration, and keep questions focused on decisions that affect the implementation.
 - Plan Mode has no internal sub-states. Continue exploring and asking until the implementation decisions are complete.
 - Do not call tools to enter or exit Plan Mode. Mode changes are controlled by the user interface.
 

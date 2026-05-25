@@ -970,16 +970,24 @@ export async function listBuiltinTools() {
 
 export async function updateBuiltinToolSelection(input: z.infer<typeof UpdateBuiltinToolSelectionBody>) {
   const items = await ToolRegistry.builtinTools()
-  const knownToolIDs = new Set(items.map((item) => item.id))
+  const knownToolIDs = new Map<string, string>()
+  for (const item of items) {
+    knownToolIDs.set(item.id, item.id)
+    for (const alias of item.aliases ?? []) {
+      knownToolIDs.set(alias, item.id)
+    }
+  }
+
   const tools: Record<string, boolean> = {}
 
   for (const [toolID, enabled] of Object.entries(input.tools)) {
     const normalizedToolID = toolID.trim()
     if (!normalizedToolID) continue
-    if (!knownToolIDs.has(normalizedToolID)) {
+    const canonicalToolID = knownToolIDs.get(normalizedToolID)
+    if (!canonicalToolID) {
       throw new ApiError(400, "UNKNOWN_BUILTIN_TOOL", `Unknown built-in tool id '${normalizedToolID}'.`)
     }
-    tools[normalizedToolID] = enabled
+    tools[canonicalToolID] = enabled
   }
 
   return Config.setToolSelection(Config.GLOBAL_CONFIG_ID, tools)

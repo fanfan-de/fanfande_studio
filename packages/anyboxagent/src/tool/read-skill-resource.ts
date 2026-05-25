@@ -8,7 +8,7 @@ import { formatLineRange } from "#tool/shared.ts"
 import * as Filesystem from "#util/filesystem.ts"
 
 export const ReadSkillResourceTool = Tool.define(
-  "read-skill-resource",
+  "read_skill_resource",
   async () => {
     return {
       title: "Read Skill Resource",
@@ -71,7 +71,7 @@ export const ReadSkillResourceTool = Tool.define(
   },
   {
     title: "Read Skill Resource",
-    aliases: ["read_skill_resource"],
+    aliases: ["read-skill-resource"],
     maxResultSizeChars: Infinity,
     capabilities: {
       kind: "read",

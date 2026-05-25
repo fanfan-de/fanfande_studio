@@ -82,7 +82,7 @@ test("workflow API toggles plan mode and approves a proposed plan", async () => 
   }
 }, 120000)
 
-test("planning mode permissions allow research and AskUserQuestion but deny write tools", async () => {
+test("planning mode permissions allow research and ask_user_question but deny write tools", async () => {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "anybox-plan-mode-permissions-"))
 
   try {
@@ -110,7 +110,7 @@ test("planning mode permissions allow research and AskUserQuestion but deny writ
         const readDecision = await Permission.evaluate({
           ...baseInput,
           tool: {
-            id: "read-file",
+            id: "read_file",
             kind: "read",
             readOnly: true,
             destructive: false,
@@ -124,7 +124,7 @@ test("planning mode permissions allow research and AskUserQuestion but deny writ
         const writeDecision = await Permission.evaluate({
           ...baseInput,
           tool: {
-            id: "replace-text",
+            id: "replace_text",
             kind: "write",
             readOnly: false,
             destructive: true,
@@ -140,7 +140,7 @@ test("planning mode permissions allow research and AskUserQuestion but deny writ
         const askDecision = await Permission.evaluate({
           ...baseInput,
           tool: {
-            id: "AskUserQuestion",
+            id: "ask_user_question",
             kind: "interaction",
             readOnly: true,
             destructive: false,

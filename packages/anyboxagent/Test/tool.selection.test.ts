@@ -38,9 +38,11 @@ describe("global built-in tool selection", () => {
       directory: process.cwd(),
       async fn() {
         const toolNames = await resolveAgentToolNames("default")
-        expect(toolNames.every((name) => /^[a-zA-Z0-9_-]+$/.test(name))).toBe(true)
+        expect(toolNames.every((name) => /^[a-z0-9_]+$/.test(name))).toBe(true)
         expect(toolNames).toContain("multi_tool_use_parallel")
         expect(toolNames).not.toContain("multi_tool_use.parallel")
+        expect(toolNames).not.toContain("read-file")
+        expect(toolNames).not.toContain("AskUserQuestion")
       },
     })
   })
@@ -53,7 +55,7 @@ describe("global built-in tool selection", () => {
       async fn() {
         const toolNames = await resolveAgentToolNames("default")
         const shellToolIDs = activeOneTimeShellToolIDs()
-        expect(toolNames).toContain("read-file")
+        expect(toolNames).toContain("read_file")
         expect(toolNames).toContain("multi_tool_use_parallel")
         for (const shellToolID of shellToolIDs) {
           expect(toolNames).toContain(shellToolID)
@@ -75,7 +77,7 @@ describe("global built-in tool selection", () => {
   })
 
   it("filters a globally disabled built-in shell tool without legacy aliases", async () => {
-    const selectedToolID = activeOneTimeShellToolIDs()[0] ?? "read-file"
+    const selectedToolID = activeOneTimeShellToolIDs()[0] ?? "read_file"
     await Config.setToolSelection(Config.GLOBAL_CONFIG_ID, {
       [selectedToolID]: false,
     })
@@ -106,9 +108,9 @@ describe("global built-in tool selection", () => {
       directory: process.cwd(),
       async fn() {
         const toolNames = await resolveAgentToolNames("plan")
-        expect(toolNames).toContain("read-file")
+        expect(toolNames).toContain("read_file")
         expect(toolNames).toContain("multi_tool_use_parallel")
-        expect(toolNames).not.toContain("replace-text")
+        expect(toolNames).not.toContain("replace_text")
       },
     })
   })
@@ -147,7 +149,7 @@ describe("global built-in tool selection", () => {
         )
 
         const toolNames = await resolveAgentToolNames("default")
-        expect(toolNames).toContain("custom-test-tool")
+        expect(toolNames).toContain("custom_test_tool")
       },
     })
   })

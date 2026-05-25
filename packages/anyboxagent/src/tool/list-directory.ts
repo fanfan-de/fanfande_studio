@@ -40,7 +40,7 @@ async function readEntries(
 }
 
 export const ListDirectoryTool = Tool.define(
-  "list-directory",
+  "list_directory",
   async () => {
     return {
       title: "List Directory",
@@ -100,6 +100,7 @@ export const ListDirectoryTool = Tool.define(
   },
   {
     title: "List Directory",
+    aliases: ["list-directory"],
     capabilities: {
       kind: "read",
       readOnly: true,

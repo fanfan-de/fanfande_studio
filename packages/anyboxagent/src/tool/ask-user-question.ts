@@ -286,7 +286,7 @@ export function isAnsweredAskUserQuestionMetadata(metadata: Record<string, unkno
 }
 
 export const AskUserQuestionTool = Tool.define(
-  "AskUserQuestion",
+  "ask_user_question",
   async () => {
     return {
       title: "Ask User Question",
@@ -347,7 +347,7 @@ export const AskUserQuestionTool = Tool.define(
   },
   {
     title: "Ask User Question",
-    aliases: ["ask-user-question", "question-tool", "question"],
+    aliases: ["AskUserQuestion", "ask-user-question", "question-tool", "question"],
     capabilities: {
       kind: "interaction",
       readOnly: true,

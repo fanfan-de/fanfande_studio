@@ -369,14 +369,14 @@ test("preparePromptContext prunes oversized tool outputs when compaction cannot 
           messageID: assistant.id,
           type: "tool",
           callID: "tool-1",
-          tool: "read-file",
+          tool: "read_file",
           state: {
             status: "completed",
             input: {
               path: "README.md",
             },
             output: "line ".repeat(1_600),
-            title: "read-file",
+            title: "read_file",
             metadata: {},
             time: {
               start: Date.now(),

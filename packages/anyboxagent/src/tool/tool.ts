@@ -147,6 +147,19 @@ type ToolDefineOptions<
   D = unknown,
 > = Omit<ToolInfo<Parameters, M, D>, "id" | "init">
 
+export function toModelToolName(name: string): string {
+  const normalized = name
+    .trim()
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase()
+
+  return normalized || "tool"
+}
+
 function toGuardErrorMessage(result: ToolGuardResult): string | undefined {
   if (typeof result === "string") {
     const message = result.trim()
@@ -165,7 +178,13 @@ export function toolMatchesName(
   tool: Pick<ToolInfo, "id" | "aliases">,
   name: string,
 ): boolean {
-  return tool.id === name || (tool.aliases?.includes(name) ?? false)
+  if (tool.id === name || (tool.aliases?.includes(name) ?? false)) return true
+
+  const modelName = toModelToolName(name)
+  return (
+    toModelToolName(tool.id) === modelName ||
+    (tool.aliases?.some((alias) => toModelToolName(alias) === modelName) ?? false)
+  )
 }
 
 export function normalizeToolOutput<M extends Metadata = Metadata, D = unknown>(

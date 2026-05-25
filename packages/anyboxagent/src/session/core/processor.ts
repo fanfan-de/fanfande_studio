@@ -16,6 +16,7 @@ import {
     createAskUserQuestionMetadataFromInput,
     isAnsweredAskUserQuestionMetadata,
 } from "#tool/ask-user-question.ts"
+import * as Tool from "#tool/tool.ts"
 
 const log = Log.create({ service: "session.processor" })
 const ENABLE_STREAM_STDOUT_DEBUG = Flag.ANYBOX_DEBUG_STREAM_STDOUT
@@ -615,10 +616,8 @@ function isAskUserQuestionToolResult(
 }
 
 function isAskUserQuestionToolName(toolName: string | undefined) {
-    return toolName === "AskUserQuestion" ||
-        toolName === "ask-user-question" ||
-        toolName === "question-tool" ||
-        toolName === "question"
+    if (!toolName) return false
+    return ["ask_user_question", "question"].includes(Tool.toModelToolName(toolName))
 }
 
 function isWorkflowControlToolResult(

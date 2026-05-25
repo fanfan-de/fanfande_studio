@@ -417,11 +417,11 @@ describe("tool contract", () => {
           const shellToolID = platformShellToolID()
           const output = await parallel.execute({
             calls: [
-              { tool: "replace-text", input: {} },
+              { tool: "replace_text", input: {} },
               ...(shellToolID ? [{ tool: shellToolID, input: {} }] : []),
-              { tool: "terminal-run-command", input: {} },
+              { tool: "terminal_run_command", input: {} },
               { tool: "generate_image", input: {} },
-              { tool: "AskUserQuestion", input: {} },
+              { tool: "ask_user_question", input: {} },
               { tool: "multi_tool_use_parallel", input: {} },
               { tool: "multi_tool_use.parallel", input: {} },
               { tool: "missing_parallel_child", input: {} },
@@ -433,13 +433,13 @@ describe("tool contract", () => {
 
           const results = output.data.results as Array<{ tool: string; status: string; error?: string }>
           expect(results.every((result) => result.status === "error")).toBe(true)
-          expect(results.find((result) => result.tool === "replace-text")?.error).toContain("not eligible")
+          expect(results.find((result) => result.tool === "replace_text")?.error).toContain("not eligible")
           if (shellToolID) {
             expect(results.find((result) => result.tool === shellToolID)?.error).toContain("not eligible")
           }
-          expect(results.find((result) => result.tool === "terminal-run-command")?.error).toContain("not eligible")
+          expect(results.find((result) => result.tool === "terminal_run_command")?.error).toContain("not eligible")
           expect(results.find((result) => result.tool === "generate_image")?.error).toContain("not eligible")
-          expect(results.find((result) => result.tool === "AskUserQuestion")?.error).toContain("not eligible")
+          expect(results.find((result) => result.tool === "ask_user_question")?.error).toContain("not eligible")
           expect(results.find((result) => result.tool === "multi_tool_use_parallel")?.error).toContain("cannot call itself")
           expect(results.find((result) => result.tool === "multi_tool_use.parallel")?.error).toContain("cannot call itself")
           expect(results.find((result) => result.tool === "missing_parallel_child")?.error).toContain("not available")
@@ -977,7 +977,7 @@ describe("tool contract", () => {
     expect(assistantMessage?.content[0]).toMatchObject({
       type: "tool-call",
       toolCallId: "call-ask",
-      toolName: "AskUserQuestion",
+      toolName: "ask_user_question",
       providerOptions: {
         openai: {
           itemId: "item-1",
@@ -988,7 +988,7 @@ describe("tool contract", () => {
     expect(assistantMessage?.content[1]).toMatchObject({
       type: "tool-result",
       toolCallId: "call-ask",
-      toolName: "AskUserQuestion",
+      toolName: "ask_user_question",
       providerOptions: {
         openai: {
           itemId: "item-1",
@@ -1347,7 +1347,7 @@ describe("tool contract", () => {
     const terminalTools = [
       {
         tool: TerminalRunCommandTool,
-        id: "terminal-run-command",
+        id: "terminal_run_command",
         title: "Run Terminal Command",
         capabilities: {
           kind: "exec",
@@ -1364,7 +1364,7 @@ describe("tool contract", () => {
       },
       {
         tool: TerminalReadTool,
-        id: "terminal-read",
+        id: "terminal_read",
         title: "Read Terminal",
         capabilities: {
           kind: "read",
@@ -1378,7 +1378,7 @@ describe("tool contract", () => {
       },
       {
         tool: TerminalWriteInputTool,
-        id: "terminal-write-input",
+        id: "terminal_write_input",
         title: "Write Terminal Input",
         capabilities: {
           kind: "exec",
@@ -2107,7 +2107,7 @@ describe("tool contract", () => {
       {
         type: "tool-call",
         toolCallId: "call-reasoning-tool",
-        toolName: "read-file",
+        toolName: "read_file",
         input: {
           path: "README.md",
         },
@@ -2326,7 +2326,7 @@ describe("tool contract", () => {
       {
         type: "tool-call",
         toolCallId: "call-multi-tool-a",
-        toolName: "read-file",
+        toolName: "read_file",
         input: {
           path: "README.md",
         },
@@ -2543,7 +2543,7 @@ describe("tool contract", () => {
       {
         type: "tool-call",
         toolCallId: "call-provider-executed",
-        toolName: "mcp.remote-search",
+        toolName: "mcp_remote_search",
         input: {
           query: "latest ai news",
         },
@@ -2557,7 +2557,7 @@ describe("tool contract", () => {
       {
         type: "tool-result",
         toolCallId: "call-provider-executed",
-        toolName: "mcp.remote-search",
+        toolName: "mcp_remote_search",
         output: {
           type: "call",
           serverLabel: "remote-search",
@@ -2808,11 +2808,11 @@ describe("tool contract", () => {
     }
   })
 
-  it("keeps backwards-compatible replace-text aliases and preserves CRLF replacements", async () => {
-    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "anybox-replace-text-alias-"))
+  it("preserves CRLF replacements", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "anybox-replace-text-crlf-"))
 
     try {
-      await createGitRepo(repositoryRoot, "replace-text-alias")
+      await createGitRepo(repositoryRoot, "replace-text-crlf")
       await writeFile(path.join(repositoryRoot, "notes.txt"), "alpha\r\nbeta\r\n", "utf8")
 
       await Instance.provide({
@@ -2821,14 +2821,14 @@ describe("tool contract", () => {
           const runtime = await ReplaceTextTool.init()
           const result = Tool.normalizeToolOutput(await runtime.execute(
             {
-              path: "notes.txt",
-              search: "alpha\nbeta",
-              replace: "omega\ngamma",
-              all: true,
+              file_path: "notes.txt",
+              old_string: "alpha\nbeta",
+              new_string: "omega\ngamma",
+              replace_all: true,
             },
             {
-              sessionID: "session-replace-text-alias",
-              messageID: "message-replace-text-alias",
+              sessionID: "session-replace-text-crlf",
+              messageID: "message-replace-text-crlf",
             },
           ))
 
