@@ -200,6 +200,7 @@ const THREAD_FOLLOW_SMOOTH_SCROLL_MAX_DELTA_PX = 420
 const THREAD_FOLLOW_SMOOTH_SCROLL_MIN_DURATION_MS = 90
 const THREAD_FOLLOW_SMOOTH_SCROLL_MAX_DURATION_MS = 220
 const THREAD_FOLLOW_SMOOTH_SCROLL_PX_PER_MS = 2.4
+const THREAD_AUTO_COLLAPSE_MOTION_MS = 240
 const THREAD_VIRTUALIZATION_MIN_ROWS = 80
 const THREAD_VIRTUAL_OVERSCAN_PX = 900
 const THREAD_VIRTUAL_OVERSCAN_ROWS = 2
@@ -231,6 +232,7 @@ type ThreadDisplayRow =
     }
   | {
       blocks: AssistantTraceBlock[]
+      collapsing: boolean
       estimatedHeight: number
       expanded: boolean
       kind: "process-header"
@@ -241,6 +243,7 @@ type ThreadDisplayRow =
       turnIndex: number
     }
   | {
+      collapsing: boolean
       estimatedHeight: number
       item: AssistantTraceItem
       itemID: string
@@ -270,6 +273,7 @@ type ThreadDisplayRow =
     }
 
 type ThreadViewUiState = {
+  processTraceCollapseMotionByTurnID: Record<string, boolean>
   processTraceExpansionByTurnID: Record<string, boolean>
 }
 
@@ -550,12 +554,14 @@ function buildThreadDisplayRows({
       shouldCollapseReasoningAndTools,
       traceVisibility: assistantTraceVisibility,
     })
+    const processTraceCollapsing = Boolean(uiState.processTraceCollapseMotionByTurnID[turn.id])
     const processTraceExpanded =
-      uiState.processTraceExpansionByTurnID[turn.id] ?? !shouldCollapseReasoningAndTools
+      (uiState.processTraceExpansionByTurnID[turn.id] ?? !shouldCollapseReasoningAndTools) && !processTraceCollapsing
 
     if (!ephemeralHint && traceDisplayBlocks.shouldRenderProcessTrace) {
       rows.push({
         blocks: traceDisplayBlocks.processBlocks,
+        collapsing: processTraceCollapsing,
         estimatedHeight: 34,
         expanded: processTraceExpanded,
         kind: "process-header",
@@ -566,10 +572,11 @@ function buildThreadDisplayRows({
         turnIndex,
       })
 
-      if (processTraceExpanded) {
+      if (processTraceExpanded || processTraceCollapsing) {
         traceDisplayBlocks.processBlocks.forEach((block, blockIndex) => {
           getAssistantTraceBlockRenderedItems(block).forEach((item, itemIndex) => {
             rows.push({
+              collapsing: processTraceCollapsing,
               estimatedHeight: estimateAssistantTraceItemHeight(item),
               item,
               itemID: item.id,
@@ -1261,6 +1268,15 @@ function assistantTurnHasTextResponse(turn: AssistantTurn) {
 
 function canCollapseAssistantProcessTrace(turn: AssistantTurn) {
   return !turn.isStreaming && turn.runtime.phase !== "blocked" && turn.runtime.phase !== "waiting_approval"
+}
+
+function buildAssistantProcessTraceCollapseEligibilityByTurnID(turns: Turn[]) {
+  const result: Record<string, boolean> = {}
+  turns.forEach((turn) => {
+    if (turn.kind !== "assistant") return
+    result[turn.id] = canCollapseAssistantProcessTrace(turn)
+  })
+  return result
 }
 
 function shouldFoldAssistantTurnIntoFinalRunTrace(turns: Turn[], assistantIndex: number, turn: AssistantTurn) {
@@ -3438,15 +3454,15 @@ function useToolDraftPatchPreviewState({
   isDraftPatch: boolean
 }) {
   const resetSignature = getPatchPreviewResetSignature(fileChanges, isDraftPatch)
-  const [isListExpanded, setIsListExpanded] = useState(isDraftPatch)
+  const [isListExpanded, setIsListExpanded] = useState(false)
   const [expandedFile, setExpandedFile] = useState<string | null>(null)
   const [fullHeightFile, setFullHeightFile] = useState<string | null>(null)
 
-  useEffect(() => {
-    setIsListExpanded(isDraftPatch)
+  useLayoutEffect(() => {
+    setIsListExpanded(false)
     setExpandedFile(null)
     setFullHeightFile(null)
-  }, [id, isDraftPatch, resetSignature])
+  }, [id, resetSignature])
 
   function toggleList() {
     setIsListExpanded((current) => {
@@ -3605,6 +3621,7 @@ function ToolDraftPatchFileChangeList({
               }
               patch={change.patch}
               previewHunks={change.previewHunks}
+              stickToBottom={isStreaming}
               viewMode="unified"
             />
           </div>
@@ -3666,6 +3683,7 @@ function ToolDraftPatchFileChangeList({
                   }
                   patch={change.patch}
                   previewHunks={change.previewHunks}
+                  stickToBottom={isStreaming}
                   viewMode="unified"
                 />
               </div>
@@ -3729,7 +3747,7 @@ function PatchFileChangePreview({
   id,
   isDraftPatch,
   isStreaming,
-  defaultExpanded = isDraftPatch,
+  defaultExpanded = false,
 }: {
   debugEntries?: AssistantTraceDebugEntry[]
   draftPatchStatus?: AssistantTraceItem["status"]
@@ -3866,6 +3884,7 @@ function PatchFileChangePreview({
                       }
                       patch={change.patch}
                       previewHunks={change.previewHunks}
+                      stickToBottom={isDraftPatch && isStreaming}
                       viewMode="unified"
                     />
                   </div>
@@ -4037,22 +4056,55 @@ function ReasoningTraceItemView({
 }: TraceItemRendererProps) {
   const shouldCollapseTraceItem = shouldCollapseReasoningTraceItem(item, shouldCollapseAfterTurnCompletion)
   const [isExpanded, setIsExpanded] = useState(() => !shouldCollapseTraceItem)
+  const [isCollapsing, setIsCollapsing] = useState(false)
+  const collapseTimerRef = useRef<number | null>(null)
   const contentID = `trace-item-reasoning-${item.id}`
   const reasoningLabel = item.title || item.label || "Reasoning"
   const reasoningContent = getReasoningDisclosureContent(item, reasoningLabel)
   const hasReasoningBodyContent = Boolean(reasoningContent.text || reasoningContent.detail || debugEntries.length > 0)
-  const reasoningSummaryClassName = joinClassNames(
-    "trace-item-text trace-item-plain-text",
-    isExpanded ? "" : "trace-item-collapsed-line",
-  )
+  const reasoningSummaryClassName = joinClassNames("trace-item-text trace-item-plain-text", isExpanded ? "" : "trace-item-collapsed-line")
+
+  function clearReasoningCollapseTimer() {
+    if (collapseTimerRef.current === null) return
+    window.clearTimeout(collapseTimerRef.current)
+    collapseTimerRef.current = null
+  }
 
   useLayoutEffect(() => {
-    if (!shouldCollapseTraceItem) return
+    clearReasoningCollapseTimer()
+
+    if (!shouldCollapseTraceItem) {
+      setIsCollapsing(false)
+      setIsExpanded(true)
+      return
+    }
+
+    if (!isExpanded) {
+      setIsCollapsing(false)
+      return
+    }
+
     setIsExpanded(false)
+    if (prefersReducedThreadMotion()) {
+      setIsCollapsing(false)
+      return
+    }
+
+    setIsCollapsing(true)
+    collapseTimerRef.current = window.setTimeout(() => {
+      collapseTimerRef.current = null
+      setIsCollapsing(false)
+    }, THREAD_AUTO_COLLAPSE_MOTION_MS)
+
+    return clearReasoningCollapseTimer
   }, [item.id, shouldCollapseTraceItem])
+
+  useEffect(() => clearReasoningCollapseTimer, [])
 
   function handleReasoningToggle(event?: { target: EventTarget | null }) {
     if (event?.target instanceof Element && event.target.closest("a[href]")) return
+    clearReasoningCollapseTimer()
+    setIsCollapsing(false)
     setIsExpanded((current) => !current)
   }
 
@@ -4064,7 +4116,7 @@ function ReasoningTraceItemView({
 
   return (
     <article
-      className={joinClassNames(className, isExpanded ? "is-expanded" : "is-collapsed")}
+      className={joinClassNames(className, isExpanded ? "is-expanded" : "is-collapsed", isCollapsing && "is-collapsing")}
       data-kind={item.kind}
     >
       <div
@@ -4082,16 +4134,18 @@ function ReasoningTraceItemView({
           text={reasoningContent.firstLine}
         />
       </div>
-      {isExpanded && hasReasoningBodyContent ? (
+      {(isExpanded || isCollapsing) && hasReasoningBodyContent ? (
         <div
           id={contentID}
-          className="trace-item-reasoning-body trace-reasoning-pane"
+          className={joinClassNames("trace-item-reasoning-body trace-reasoning-pane", isCollapsing && "is-collapsing")}
           role="region"
           aria-label={`${reasoningLabel} content`}
         >
-          {reasoningContent.text ? <ThreadRichText className="trace-item-text trace-item-plain-text" text={reasoningContent.text} /> : null}
-          {reasoningContent.detail ? <ThreadRichText className="trace-item-detail trace-item-plain-detail" text={reasoningContent.detail} /> : null}
-          <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+          <div className="trace-item-reasoning-body-inner">
+            {reasoningContent.text ? <ThreadRichText className="trace-item-text trace-item-plain-text" text={reasoningContent.text} /> : null}
+            {reasoningContent.detail ? <ThreadRichText className="trace-item-detail trace-item-plain-detail" text={reasoningContent.detail} /> : null}
+            <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+          </div>
         </div>
       ) : null}
     </article>
@@ -4386,8 +4440,10 @@ function ToolTraceItemView({
 }: TraceItemRendererProps) {
   const shouldCollapseTraceItem = shouldCollapseAfterTurnCompletion && isCollapsibleTraceItem(item)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isDisclosureCollapsing, setIsDisclosureCollapsing] = useState(false)
   const [isInputExpanded, setIsInputExpanded] = useState(false)
   const [isOutputExpanded, setIsOutputExpanded] = useState(false)
+  const disclosureCollapseTimerRef = useRef<number | null>(null)
   const summaryTitle = item.title || item.label
   const displayState = getToolTraceDisplayState(item)
   const draftPatchFileChanges = normalizeTraceFileChanges(item.draftPatch?.fileChanges)
@@ -4465,14 +4521,51 @@ function ToolTraceItemView({
     </>
   )
 
+  function clearToolDisclosureCollapseTimer() {
+    if (disclosureCollapseTimerRef.current === null) return
+    window.clearTimeout(disclosureCollapseTimerRef.current)
+    disclosureCollapseTimerRef.current = null
+  }
+
   useLayoutEffect(() => {
-    if (!shouldCollapseTraceItem) return
+    clearToolDisclosureCollapseTimer()
+
+    if (!shouldCollapseTraceItem) {
+      setIsDisclosureCollapsing(false)
+      return
+    }
+
+    if (!isExpanded) {
+      setIsDisclosureCollapsing(false)
+      setIsInputExpanded(false)
+      setIsOutputExpanded(false)
+      return
+    }
+
     setIsExpanded(false)
-    setIsInputExpanded(false)
-    setIsOutputExpanded(false)
+    if (prefersReducedThreadMotion()) {
+      setIsDisclosureCollapsing(false)
+      setIsInputExpanded(false)
+      setIsOutputExpanded(false)
+      return
+    }
+
+    setIsDisclosureCollapsing(true)
+    disclosureCollapseTimerRef.current = window.setTimeout(() => {
+      disclosureCollapseTimerRef.current = null
+      setIsDisclosureCollapsing(false)
+      setIsInputExpanded(false)
+      setIsOutputExpanded(false)
+    }, THREAD_AUTO_COLLAPSE_MOTION_MS)
+
+    return clearToolDisclosureCollapseTimer
   }, [item.id, shouldCollapseTraceItem])
 
+  useEffect(() => clearToolDisclosureCollapseTimer, [])
+
   function handleToolToggle() {
+    clearToolDisclosureCollapseTimer()
+    setIsDisclosureCollapsing(false)
     setIsExpanded((current) => {
       if (current) {
         setIsInputExpanded(false)
@@ -4483,7 +4576,7 @@ function ToolTraceItemView({
   }
 
   return (
-    <article className={joinClassNames(className, "trace-log-item")} data-kind={item.kind}>
+    <article className={joinClassNames(className, "trace-log-item", isDisclosureCollapsing && "is-collapsing")} data-kind={item.kind}>
       {shouldRenderToolRowButton ? (
         <button
           className="trace-log-row"
@@ -4515,8 +4608,8 @@ function ToolTraceItemView({
         </div>
       ) : null}
 
-      {hasDisclosureContent && isExpanded ? (
-        <div id={disclosureID} className="trace-log-detail">
+      {hasDisclosureContent && (isExpanded || isDisclosureCollapsing) ? (
+        <div id={disclosureID} className={joinClassNames("trace-log-detail", isDisclosureCollapsing && "is-collapsing")}>
           {hasInputDisclosureContent ? (
             <div className="trace-item-subsection">
               <button
@@ -5167,8 +5260,10 @@ function VisibleThreadView({
   const currentScrollStateKeyRef = useRef<string | null>(null)
   const renderedTurnIDsByScrollKeyRef = useRef<Record<string, Set<string>>>({})
   const threadVirtualHeightCachesRef = useRef<Record<string, Map<string, number>>>({})
+  const previousProcessTraceCollapseEligibilityByTurnIDRef = useRef<Record<string, boolean>>({})
   const [threadVirtualMeasurementVersion, setThreadVirtualMeasurementVersion] = useState(0)
   const [threadViewUiState, setThreadViewUiState] = useState<ThreadViewUiState>(() => ({
+    processTraceCollapseMotionByTurnID: {},
     processTraceExpansionByTurnID: {},
   }))
   const [threadVirtualViewport, setThreadVirtualViewport] = useState<ThreadVirtualViewport>({
@@ -5192,6 +5287,35 @@ function VisibleThreadView({
     return pendingRequestID ? [...ids, `permission-request:${pendingRequestID}`] : ids
   }, [activeTurns, pendingPermissionRequests])
   const visibleTurnIDsKey = visibleTurnIDs.join("\u0000")
+  const pendingProcessTraceAutoCollapseTurnIDs = (() => {
+    const previousEligibility = previousProcessTraceCollapseEligibilityByTurnIDRef.current
+    const ids: string[] = []
+
+    activeTurns.forEach((turn) => {
+      if (turn.kind !== "assistant") return
+      if (threadViewUiState.processTraceExpansionByTurnID[turn.id] !== undefined) return
+      if (previousEligibility[turn.id] !== false || !canCollapseAssistantProcessTrace(turn)) return
+      ids.push(turn.id)
+    })
+
+    return ids
+  })()
+  const pendingProcessTraceAutoCollapseKey = pendingProcessTraceAutoCollapseTurnIDs.join("\u0000")
+  const effectiveThreadViewUiState = useMemo(() => {
+    if (pendingProcessTraceAutoCollapseTurnIDs.length === 0) return threadViewUiState
+
+    const processTraceCollapseMotionByTurnID = {
+      ...threadViewUiState.processTraceCollapseMotionByTurnID,
+    }
+    pendingProcessTraceAutoCollapseTurnIDs.forEach((turnID) => {
+      processTraceCollapseMotionByTurnID[turnID] = true
+    })
+
+    return {
+      ...threadViewUiState,
+      processTraceCollapseMotionByTurnID,
+    }
+  }, [pendingProcessTraceAutoCollapseKey, threadViewUiState])
   const displayRows = useMemo(
     () => buildThreadDisplayRows({
       activeSession,
@@ -5201,7 +5325,7 @@ function VisibleThreadView({
       pendingPermissionRequests,
       readOnlySideChat,
       showSessionBanner,
-      uiState: threadViewUiState,
+      uiState: effectiveThreadViewUiState,
     }),
     [
       activeSession,
@@ -5211,7 +5335,7 @@ function VisibleThreadView({
       pendingPermissionRequests,
       readOnlySideChat,
       showSessionBanner,
-      threadViewUiState,
+      effectiveThreadViewUiState,
     ],
   )
   const shouldVirtualizeThreadRows = displayRows.length >= THREAD_VIRTUALIZATION_MIN_ROWS
@@ -5231,6 +5355,66 @@ function VisibleThreadView({
     [shouldVirtualizeThreadRows, displayRows.length, threadVirtualLayout, threadVirtualViewport],
   )
   const threadVirtualRenderedRangeKey = `${threadVirtualRange.startIndex}:${threadVirtualRange.endIndex}:${threadVirtualLayout.totalHeight}`
+  const activeProcessTraceCollapseMotionKey = Object.keys(effectiveThreadViewUiState.processTraceCollapseMotionByTurnID)
+    .sort()
+    .join("\u0000")
+
+  useLayoutEffect(() => {
+    previousProcessTraceCollapseEligibilityByTurnIDRef.current =
+      buildAssistantProcessTraceCollapseEligibilityByTurnID(activeTurns)
+  }, [activeTurns])
+
+  useLayoutEffect(() => {
+    if (pendingProcessTraceAutoCollapseTurnIDs.length === 0) return
+
+    setThreadViewUiState((current) => {
+      let changed = false
+      const processTraceCollapseMotionByTurnID = {
+        ...current.processTraceCollapseMotionByTurnID,
+      }
+
+      pendingProcessTraceAutoCollapseTurnIDs.forEach((turnID) => {
+        if (current.processTraceExpansionByTurnID[turnID] !== undefined) return
+        if (processTraceCollapseMotionByTurnID[turnID]) return
+        processTraceCollapseMotionByTurnID[turnID] = true
+        changed = true
+      })
+
+      return changed
+        ? {
+            ...current,
+            processTraceCollapseMotionByTurnID,
+          }
+        : current
+    })
+  }, [pendingProcessTraceAutoCollapseKey])
+
+  useEffect(() => {
+    if (!activeProcessTraceCollapseMotionKey) return
+
+    const turnIDs = activeProcessTraceCollapseMotionKey.split("\u0000")
+    const timerIDs = turnIDs.map((turnID) =>
+      window.setTimeout(() => {
+        setThreadViewUiState((current) => {
+          if (!current.processTraceCollapseMotionByTurnID[turnID]) return current
+
+          const processTraceCollapseMotionByTurnID = {
+            ...current.processTraceCollapseMotionByTurnID,
+          }
+          delete processTraceCollapseMotionByTurnID[turnID]
+
+          return {
+            ...current,
+            processTraceCollapseMotionByTurnID,
+          }
+        })
+      }, THREAD_AUTO_COLLAPSE_MOTION_MS),
+    )
+
+    return () => {
+      timerIDs.forEach((timerID) => window.clearTimeout(timerID))
+    }
+  }, [activeProcessTraceCollapseMotionKey])
 
   function getThreadVirtualHeightCache(key = effectiveScrollStateKey) {
     const existingCache = threadVirtualHeightCachesRef.current[key]
@@ -6023,14 +6207,27 @@ function VisibleThreadView({
     saveThreadScrollSnapshotValue(effectiveScrollStateKey, snapshot)
   }
 
-  function toggleProcessTraceRow(turnID: string, expanded: boolean) {
-    setThreadViewUiState((current) => ({
-      ...current,
-      processTraceExpansionByTurnID: {
-        ...current.processTraceExpansionByTurnID,
-        [turnID]: !expanded,
-      },
-    }))
+  function toggleProcessTraceRow(turnID: string, expanded: boolean, collapsing: boolean) {
+    const threadColumn = threadColumnRef.current
+    if (threadColumn) {
+      detachThreadScrollFromFollow(threadColumn, effectiveScrollStateKey)
+    }
+
+    setThreadViewUiState((current) => {
+      const processTraceCollapseMotionByTurnID = {
+        ...current.processTraceCollapseMotionByTurnID,
+      }
+      delete processTraceCollapseMotionByTurnID[turnID]
+
+      return {
+        ...current,
+        processTraceCollapseMotionByTurnID,
+        processTraceExpansionByTurnID: {
+          ...current.processTraceExpansionByTurnID,
+          [turnID]: collapsing ? true : !expanded,
+        },
+      }
+    })
   }
 
   function renderDisplayRow(row: ThreadDisplayRow) {
@@ -6103,6 +6300,7 @@ function VisibleThreadView({
             "assistant-process-trace",
             "assistant-process-trace-row",
             row.expanded ? "is-expanded" : "is-collapsed",
+            row.collapsing && "is-collapsing",
           )}
           data-depth="0"
           data-kind="process-header"
@@ -6114,7 +6312,7 @@ function VisibleThreadView({
             type="button"
             aria-label={`Processed ${duration ? `${duration} ` : ""}${summary}`}
             aria-expanded={row.expanded}
-            onClick={() => toggleProcessTraceRow(row.turnID, row.expanded)}
+            onClick={() => toggleProcessTraceRow(row.turnID, row.expanded, row.collapsing)}
           >
             <span className="assistant-process-trace-chevron" aria-hidden="true">
               {row.expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
@@ -6138,6 +6336,7 @@ function VisibleThreadView({
             "assistant-process-item-row",
             "assistant-section",
             `is-${row.section}`,
+            row.collapsing && "is-collapsing",
           )}
           data-depth="1"
           data-kind="process-item"

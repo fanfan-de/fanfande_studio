@@ -55,6 +55,10 @@
   padding: 0 var(--pane-content-gutter) 12px;
 }
 
+.thread-shell + .composer-stack {
+  padding-top: 12px;
+}
+
 .composer-task-progress {
   width: 100%;
   max-width: var(--pane-content-max-width);

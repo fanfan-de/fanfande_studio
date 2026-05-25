@@ -753,7 +753,7 @@ describe("ThreadView image trace items", () => {
 
     expect(getByRole("region", { name: "Tools" })).toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "File Changes" })).not.toBeInTheDocument()
-    expect(container.querySelector(".trace-file-change-summary")).toHaveAttribute("aria-expanded", "true")
+    expect(container.querySelector(".trace-file-change-summary")).toHaveAttribute("aria-expanded", "false")
     const inlineSummary = container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")
     expect(inlineSummary).not.toBeNull()
     expect(inlineSummary?.querySelector(".trace-file-change-summary-icon")).toBeNull()
@@ -763,7 +763,9 @@ describe("ThreadView image trace items", () => {
     expect(inlineSummary?.textContent).toMatch(/src\/app\.ts\s*\+1-1/)
     expect(inlineSummary?.textContent).not.toContain("正在创建")
     expect(getAllByText("src/app.ts").length).toBeGreaterThan(0)
+    expect(container.querySelector(".trace-tool-draft-patch")).toBeNull()
 
+    fireEvent.click(inlineSummary!)
     expect(container.querySelector(".trace-tool-draft-patch .trace-file-change-row")).toBeNull()
     expect(container.querySelector(".trace-tool-draft-patch .trace-file-change-preview.is-single-file")).not.toBeNull()
     expect(getByRole("region", { name: "Diff preview for src/app.ts" })).toBeInTheDocument()
@@ -771,6 +773,74 @@ describe("ThreadView image trace items", () => {
     expect(getByText("new")).toBeInTheDocument()
     expect(container.querySelectorAll(".right-sidebar-diff-row.is-inline-preview")).toHaveLength(2)
     expect(container.querySelectorAll(".right-sidebar-diff-line-number")).toHaveLength(0)
+  })
+
+  it("keeps streamed draft patch previews pinned to the bottom as rows append", () => {
+    const buildToolItem = (rows: Array<{ content: string; tone: "add" | "remove" | "context" }>): AssistantTraceItem => ({
+      id: "tool-patch-draft",
+      kind: "tool",
+      timestamp: 1,
+      label: "Tool",
+      title: "apply_patch",
+      isStreaming: true,
+      draftPatch: {
+        detail: "Streaming apply_patch preview.",
+        fileChanges: [
+          {
+            file: "src/app.ts",
+            additions: rows.filter((row) => row.tone === "add").length,
+            deletions: rows.filter((row) => row.tone === "remove").length,
+            operation: "add",
+            previewState: "streaming",
+            previewHunks: [
+              {
+                header: "New file",
+                rows,
+              },
+            ],
+          },
+        ],
+        filePaths: ["src/app.ts"],
+        isStreaming: true,
+        status: "running",
+        title: "1 draft file change",
+      },
+      section: "tools",
+      status: "running",
+      toolCallID: "call-live-patch",
+      visibilityKey: "toolCalls",
+    })
+
+    const { container, props, rerender } = renderThread([
+      assistantTraceTurn("assistant-patch-draft", [
+        buildToolItem([
+          { content: "line 1", tone: "add" },
+          { content: "line 2", tone: "add" },
+        ]),
+      ], true),
+    ])
+    const inlineSummary = container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")
+    expect(inlineSummary).not.toBeNull()
+    fireEvent.click(inlineSummary!)
+    const preview = container.querySelector(".trace-tool-draft-patch .right-sidebar-diff-preview") as HTMLElement | null
+    expect(preview).not.toBeNull()
+    setScrollMetrics(preview!, { clientHeight: 80, scrollHeight: 240, scrollTop: 0 })
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeTurns={[
+          assistantTraceTurn("assistant-patch-draft", [
+            buildToolItem(Array.from({ length: 12 }, (_, index) => ({
+              content: `line ${index + 1}`,
+              tone: "add",
+            }))),
+          ], true),
+        ]}
+      />,
+    )
+
+    expect(preview!.scrollTop).toBe(240)
   })
 
   it("settles completed draft patch previews and avoids repeating the file row in the tool summary", () => {
@@ -824,9 +894,61 @@ describe("ThreadView image trace items", () => {
     expect(inlineSummary?.textContent).not.toContain("已创建")
     expect(queryByText("正在创建")).toBeNull()
     expect(queryByText("已创建")).toBeNull()
+    expect(container.querySelector(".trace-tool-draft-patch")).toBeNull()
+    fireEvent.click(inlineSummary!)
     expect(getByRole("button", { name: /src\/app\.ts\s*1 additions,\s*0 deletions/ })).toBeInTheDocument()
     expect(container.querySelector(".trace-tool-draft-patch .trace-file-change-row")).toBeNull()
     expect(getByRole("region", { name: "Diff preview for src/app.ts" })).toBeInTheDocument()
+  })
+
+  it("keeps failed draft patch file changes collapsed by default", () => {
+    const toolItem: AssistantTraceItem = {
+      id: "tool-patch-draft-failed",
+      kind: "tool",
+      timestamp: 1,
+      label: "Tool",
+      title: "apply_patch",
+      draftPatch: {
+        detail: "Patch tool failed.",
+        fileChanges: [
+          {
+            file: "spirefall.html",
+            additions: 0,
+            deletions: 1,
+            operation: "delete",
+            previewState: "complete",
+            previewHunks: [
+              {
+                header: "Patch hunk",
+                rows: [
+                  { content: "<div>old</div>", tone: "remove" },
+                ],
+              },
+            ],
+          },
+        ],
+        filePaths: ["spirefall.html"],
+        isStreaming: false,
+        status: "error",
+        title: "1 draft file change (+0 -1)",
+      },
+      section: "tools",
+      status: "error",
+      toolCallID: "call-failed-patch",
+      visibilityKey: "toolCalls",
+    }
+
+    const { container, getByRole, getByText } = renderThread([
+      assistantTraceTurn("assistant-patch-draft-failed", [toolItem], false),
+    ])
+
+    const inlineSummary = container.querySelector(".trace-tool-inline-draft-patch-summary")
+    expect(inlineSummary).toHaveAttribute("aria-expanded", "false")
+    expect(container.querySelector(".trace-tool-draft-patch")).toBeNull()
+    fireEvent.click(inlineSummary!)
+    expect(container.querySelector(".trace-tool-draft-patch .trace-file-change-row")).toBeNull()
+    expect(getByRole("region", { name: "Diff preview for spirefall.html" })).toBeInTheDocument()
+    expect(getByText("<div>old</div>")).toBeInTheDocument()
   })
 
   it("ignores malformed draft patch preview hunks instead of crashing the thread", () => {
@@ -1257,7 +1379,8 @@ describe("ThreadView trace collapse", () => {
     expect(queryByRole("region", { name: "Reasoning content" })).toBeNull()
   })
 
-  it("keeps streaming reasoning open, then collapses reasoning and tool content when the turn completes", () => {
+  it("keeps streaming reasoning open, then animates reasoning and tool content closed when the turn completes", () => {
+    vi.useFakeTimers()
     const streamingItems: AssistantTraceItem[] = [
       {
         id: "reasoning-1",
@@ -1292,20 +1415,34 @@ describe("ThreadView trace collapse", () => {
         isStreaming: false,
       },
     ]
-    const { container, getByRole, props, rerender } = renderThread([
-      assistantTraceTurn("assistant-1", streamingItems, true),
-    ])
+    try {
+      const { container, getByRole, props, rerender } = renderThread([
+        assistantTraceTurn("assistant-1", streamingItems, true),
+      ])
 
-    expect(container.textContent).toContain("Then compare the rendering states")
+      expect(container.textContent).toContain("Then compare the rendering states")
 
-    fireEvent.click(getByRole("button", { name: /Shell/ }))
-    expect(container.textContent).toContain("Input")
+      fireEvent.click(getByRole("button", { name: /Shell/ }))
+      expect(container.textContent).toContain("Input")
 
-    rerender(<ThreadView {...props} activeTurns={[assistantTraceTurn("assistant-1", completedItems, false)]} />)
+      rerender(<ThreadView {...props} activeTurns={[assistantTraceTurn("assistant-1", completedItems, false)]} />)
 
-    expect(container.textContent).toContain("Inspect files first")
-    expect(container.textContent).not.toContain("Then compare the rendering states")
-    expect(container.textContent).not.toContain("Input")
+      expect(container.textContent).toContain("Inspect files first")
+      expect(container.textContent).toContain("Then compare the rendering states")
+      expect(container.querySelector(".trace-item-reasoning-body.is-collapsing")).not.toBeNull()
+      expect(container.querySelector(".trace-log-detail.is-collapsing")).not.toBeNull()
+
+      act(() => {
+        vi.advanceTimersByTime(250)
+      })
+
+      expect(container.textContent).toContain("Inspect files first")
+      expect(container.textContent).not.toContain("Then compare the rendering states")
+      expect(container.textContent).not.toContain("Input")
+      expect(container.textContent).not.toContain("Output")
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("collapses completed reasoning parts while the turn is still streaming", () => {
@@ -1391,6 +1528,156 @@ describe("ThreadView trace collapse", () => {
     expect(processedTrace).toHaveAttribute("aria-expanded", "true")
     expect(getByText("I will inspect the project first.")).toBeInTheDocument()
     expect(getByText("list-directory")).toBeInTheDocument()
+  })
+
+  it("animates the process trace closed when a streaming turn completes", async () => {
+    vi.useFakeTimers()
+    const streamingItems: AssistantTraceItem[] = [
+      {
+        id: "response-1",
+        kind: "text",
+        timestamp: 1,
+        label: "Assistant",
+        text: "I will inspect the project first.",
+        status: "running",
+        isStreaming: true,
+      },
+      {
+        id: "tool-1",
+        kind: "tool",
+        timestamp: 2,
+        label: "Tool",
+        title: "list-directory",
+        status: "running",
+        isStreaming: true,
+      },
+      {
+        id: "response-2",
+        kind: "text",
+        timestamp: 3,
+        label: "Assistant",
+        text: "The project is ready.",
+        status: "running",
+        isStreaming: true,
+      },
+    ]
+    const completedItems = streamingItems.map((item) => ({
+      ...item,
+      status: "completed" as const,
+      isStreaming: false,
+    }))
+
+    try {
+      const { container, getByRole, getByText, props, queryByText, rerender } = renderThread([
+        assistantTraceTurn("assistant-1", streamingItems, true),
+      ])
+
+      expect(queryByText("Processed")).toBeNull()
+      expect(getByText("I will inspect the project first.")).toBeInTheDocument()
+
+      rerender(<ThreadView {...props} activeTurns={[assistantTraceTurn("assistant-1", completedItems, false)]} />)
+
+      const processedTrace = getByRole("button", { name: /Processed/ })
+      expect(processedTrace).toHaveAttribute("aria-expanded", "false")
+      expect(container.querySelector(".assistant-process-item-row.is-collapsing")).not.toBeNull()
+      expect(getByText("I will inspect the project first.")).toBeInTheDocument()
+      expect(getByText("The project is ready.")).toBeInTheDocument()
+
+      await act(async () => {
+        await Promise.resolve()
+      })
+      act(() => {
+        vi.advanceTimersByTime(250)
+      })
+
+      expect(queryByText("I will inspect the project first.")).toBeNull()
+      expect(getByText("The project is ready.")).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("keeps manually expanded process trace content anchored instead of following the bottom", () => {
+    const originalResizeObserver = globalThis.ResizeObserver
+    let triggerResize: (() => void) | null = null
+
+    class ManualResizeObserver implements ResizeObserver {
+      readonly callback: ResizeObserverCallback
+
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback
+        triggerResize = () => {
+          callback([], this)
+        }
+      }
+
+      observe() {}
+
+      unobserve() {}
+
+      disconnect() {}
+    }
+
+    globalThis.ResizeObserver = ManualResizeObserver
+
+    try {
+      const { getByRole, getByText, threadColumn } = renderThread(
+        [
+          assistantTraceTurn(
+            "assistant-1",
+            [
+              {
+                id: "response-1",
+                kind: "text",
+                timestamp: 1,
+                label: "Assistant",
+                text: "I will inspect the project first.",
+                status: "completed",
+              },
+              {
+                id: "tool-1",
+                kind: "tool",
+                timestamp: 2,
+                label: "Tool",
+                title: "list-directory",
+                status: "completed",
+              },
+              {
+                id: "response-2",
+                kind: "text",
+                timestamp: 3,
+                label: "Assistant",
+                text: "The project is ready.",
+                status: "completed",
+              },
+            ],
+            false,
+          ),
+        ],
+        { scrollStateKey: "session:processed-manual-expand" },
+      )
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 800,
+        scrollTop: 400,
+      })
+
+      fireEvent.click(getByRole("button", { name: /Processed/ }))
+      expect(getByText("I will inspect the project first.")).toBeInTheDocument()
+
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 1100,
+        scrollTop: threadColumn.scrollTop,
+      })
+      act(() => {
+        triggerResize?.()
+      })
+
+      expect(threadColumn.scrollTop).toBe(400)
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver
+    }
   })
 
   it("collapses process trace when a failed tool is followed by a final response", () => {

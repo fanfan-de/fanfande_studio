@@ -12422,6 +12422,11 @@ describe("App", () => {
   it("keeps normal thread scrolling on stable layout heights", () => {
     expect(styles).not.toMatch(/(?:^|\n)\.turn\s*\{[^}]*content-visibility:/s)
     expect(styles).not.toMatch(/(?:^|\n)\.turn\s*\{[^}]*contain-intrinsic-size:/s)
+    expect(styles).toMatch(/\.thread-column\s*\{[^}]*--thread-composer-clearance:\s*52px;[^}]*padding:\s*14px 0 var\(--thread-composer-clearance\);[^}]*scroll-padding-bottom:\s*var\(--thread-composer-clearance\);/s)
+    expect(styles).toMatch(/\.thread-shell\s*>\s*\.thread-column\s*\{[^}]*padding-bottom:\s*var\(--thread-composer-clearance\);/s)
+    expect(styles).toMatch(/\.thread-shell\s*\+\s*\.composer-stack\s*\{[^}]*padding-top:\s*12px;/s)
+    expect(styles).not.toMatch(/\.assistant-process-item-row\s*\{[^}]*grid-template-rows:\s*1fr;/s)
+    expect(styles).toMatch(/\.assistant-process-item-row\.is-collapsing\s*\{[^}]*max-height:\s*420px;[^}]*overflow:\s*hidden;/s)
     expect(styles).toMatch(/body\.is-resizing-sidebar \.assistant-section\.is-tools \.trace-item,[\s\S]*?content-visibility:\s*auto;/s)
   })
 

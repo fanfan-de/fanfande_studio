@@ -47,6 +47,7 @@
 }
 
 .thread-column {
+  --thread-composer-clearance: 52px;
   width: 100%;
   min-width: 0;
   max-width: var(--pane-content-max-width);
@@ -60,7 +61,8 @@
   overflow-anchor: none;
   -ms-overflow-style: none;
   scrollbar-width: none;
-  padding: 14px 0 8px;
+  padding: 14px 0 var(--thread-composer-clearance);
+  scroll-padding-bottom: var(--thread-composer-clearance);
   gap: 12px;
 }
 
@@ -226,6 +228,9 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
 }
 
 .assistant-process-trace-header:hover,
@@ -242,6 +247,18 @@
   align-items: center;
   justify-content: center;
   color: currentColor;
+  transition:
+    opacity 160ms ease,
+    transform 180ms ease;
+}
+
+.assistant-process-trace-row.is-collapsing .assistant-process-trace-header {
+  background: var(--mix-seg-panel-muted-86-transparent-14);
+}
+
+.assistant-process-trace-row.is-collapsing .assistant-process-trace-chevron {
+  opacity: 0.72;
+  transform: translateY(-1px);
 }
 
 .assistant-process-trace-chevron svg {
@@ -302,6 +319,18 @@
   background: transparent;
   box-shadow: none;
   padding: 0 0 0 22px;
+}
+
+.assistant-process-item-row > * {
+  min-height: 0;
+}
+
+.assistant-process-item-row.is-collapsing {
+  max-height: 420px;
+  overflow: hidden;
+  pointer-events: none;
+  transform-origin: top;
+  animation: thread-process-row-collapse 240ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 
 .assistant-process-item-row .trace-item {
@@ -498,14 +527,60 @@
 
 .trace-item-reasoning-body {
   display: grid;
+  grid-template-rows: 1fr;
   gap: 4px;
   min-width: 0;
+  overflow: hidden;
+}
+
+.trace-item-reasoning-body-inner {
+  display: grid;
+  gap: 4px;
+  min-height: 0;
+}
+
+.trace-item-reasoning-body.is-collapsing,
+.trace-log-detail.is-collapsing {
+  pointer-events: none;
+  transform-origin: top;
+  animation: thread-detail-collapse 240ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 
 .trace-item-collapsed-line {
+  --trace-collapsed-dots-width: 78px;
+  --trace-collapsed-fade-width: 32px;
+  position: relative;
   overflow: hidden;
-  text-overflow: ellipsis;
+  padding-right: calc(var(--trace-collapsed-dots-width) + var(--trace-collapsed-fade-width));
+  text-overflow: clip;
   white-space: nowrap;
+}
+
+.trace-item-collapsed-line::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: var(--trace-collapsed-dots-width);
+  bottom: 0;
+  width: var(--trace-collapsed-fade-width);
+  background: linear-gradient(90deg, transparent, var(--surface-trace));
+  pointer-events: none;
+}
+
+.trace-item-collapsed-line::after {
+  content: "............";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--trace-collapsed-dots-width);
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  color: currentColor;
+  letter-spacing: 0.08em;
+  background: var(--surface-trace);
+  pointer-events: none;
 }
 
 .trace-item-toggle {
@@ -3308,6 +3383,36 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
   }
 }
 
+@keyframes thread-process-row-collapse {
+  from {
+    max-height: 420px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes thread-detail-collapse {
+  from {
+    grid-template-rows: 1fr;
+    max-height: 420px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    grid-template-rows: 0fr;
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
 @keyframes trace-tool-name-shimmer {
   0% {
     background-position: 160% 0;
@@ -3518,6 +3623,7 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
 .thread-shell > .thread-column {
   gap: 7px;
   padding-top: 10px;
+  padding-bottom: var(--thread-composer-clearance);
 }
 
 .thread-column .turn {
@@ -3963,7 +4069,7 @@ button.trace-log-row {
 }
 
 .trace-tool-inline-draft-patch-summary {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   grid-template-columns: minmax(0, auto) auto 14px;
   width: auto;
   max-width: min(560px, 100%);

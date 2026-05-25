@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useLayoutEffect, useMemo, useRef } from "react"
 
 export type DiffPreviewLineTone = "add" | "remove" | "context"
 export type DiffViewMode = "unified" | "split"
@@ -211,6 +211,7 @@ export interface DiffPreviewProps {
   onToggleFullHeight?: () => void
   patch?: string
   previewHunks?: DiffPreviewInlineHunk[]
+  stickToBottom?: boolean
   viewMode?: DiffViewMode
 }
 
@@ -223,8 +224,10 @@ export function DiffPreview({
   onToggleFullHeight,
   patch,
   previewHunks,
+  stickToBottom = false,
   viewMode = "unified",
 }: DiffPreviewProps) {
+  const previewRef = useRef<HTMLDivElement | null>(null)
   const hunks = useMemo(() => parsePatchHunks(patch), [patch])
   const inlinePreviewHunks = useMemo(
     () => normalizeInlinePreviewHunks(previewHunks),
@@ -240,6 +243,13 @@ export function DiffPreview({
     [hunks],
   )
 
+  useLayoutEffect(() => {
+    if (!stickToBottom) return
+    const preview = previewRef.current
+    if (!preview) return
+    preview.scrollTop = preview.scrollHeight
+  }, [hunks, inlinePreviewHunks, stickToBottom])
+
   if (!hasPatchPreview && !usesInlinePreview) {
     return (
       <div className={joinClassNames("right-sidebar-diff-empty", emptyClassName)}>
@@ -250,6 +260,7 @@ export function DiffPreview({
 
   return (
     <div
+      ref={previewRef}
       className={joinClassNames(
         "right-sidebar-diff-preview",
         isFullHeight && "is-full-height",
