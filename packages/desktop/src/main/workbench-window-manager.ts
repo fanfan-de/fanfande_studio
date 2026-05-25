@@ -23,6 +23,7 @@ import type {
 } from "../shared/desktop-ipc-contract"
 import { DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL } from "../shared/desktop-ipc-contract"
 import { safeWarn } from "./safe-console"
+import { getWebContentsForWindowSafely, sendWebContentsSafely } from "./safe-web-contents-send"
 
 const MAIN_WORKBENCH_WINDOW_ID = "main"
 const MAIN_WORKBENCH_SURFACE_ID = "main"
@@ -638,8 +639,9 @@ export class WorkbenchWindowManager {
 
   private broadcast(event: WorkbenchStateEvent) {
     for (const windowRecord of this.windows.values()) {
-      if (windowRecord.browserWindow.isDestroyed()) continue
-      windowRecord.browserWindow.webContents.send(DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL, event)
+      const webContents = getWebContentsForWindowSafely(windowRecord.browserWindow)
+      if (!webContents) continue
+      sendWebContentsSafely(webContents, DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL, event)
     }
   }
 }

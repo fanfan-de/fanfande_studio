@@ -3,6 +3,7 @@ import { normalizeComparablePath } from "@anybox/platform"
 import path from "node:path"
 import type { WorkspaceFileChangeIPCEvent } from "../shared/desktop-ipc-contract"
 import { DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL } from "../shared/desktop-ipc-contract"
+import { sendWebContentsSafely } from "./safe-web-contents-send"
 
 export const WORKSPACE_FILE_CHANGE_EVENT_CHANNEL = DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL
 
@@ -83,8 +84,7 @@ function resolveChangedPath(baseDirectory: string, filename: string | Buffer | n
 }
 
 function safeSend(sender: SenderLike, payload: WorkspaceFileChangeIPCEvent) {
-  if (sender.isDestroyed()) return
-  sender.send(WORKSPACE_FILE_CHANGE_EVENT_CHANNEL, payload)
+  sendWebContentsSafely(sender, WORKSPACE_FILE_CHANGE_EVENT_CHANNEL, payload)
 }
 
 function safeExists(existsSync: ExistsSync, targetDirectory: string) {

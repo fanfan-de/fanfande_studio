@@ -1,6 +1,5 @@
 import {
   createContext,
-  Profiler,
   useCallback,
   useContext,
   useEffect,
@@ -60,7 +59,7 @@ import {
   type WorkbenchDockPanelReference,
 } from "./dockview-state"
 import { WorkbenchPaneSurface, type WorkbenchPaneSurfaceProps } from "./WorkbenchPaneSurface"
-import { createRendererProfilerOnRender, measureRendererPerf } from "../perf-profiler"
+import { RendererProfiler, createRendererProfilerOnRender, measureRendererPerf } from "../perf-profiler"
 
 type DetachedSessionPanelBounds = { x: number; y: number; width: number; height: number }
 type WorkbenchDropPlacement = "within" | "left" | "right" | "top" | "bottom"
@@ -871,7 +870,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     }
 
     return (
-      <Profiler id="WorkbenchShell.PanelSurface" onRender={paneProfiler}>
+      <RendererProfiler id="WorkbenchShell.PanelSurface" onRender={paneProfiler}>
         <WorkbenchPaneSurface
           assistantTraceVisibility={props.assistantTraceVisibility}
           composerRefreshVersion={props.composerRefreshVersion}
@@ -917,7 +916,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
           onTurnDiffReview={props.onTurnDiffReview}
           onTurnDiffSummaryHydrate={props.onTurnDiffSummaryHydrate}
         />
-      </Profiler>
+      </RendererProfiler>
     )
   }, [])
 
@@ -1123,7 +1122,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         onDragOverCapture={handleWorkbenchDragOver}
         onDropCapture={handleWorkbenchDrop}
       >
-        <Profiler id="WorkbenchShell.Dockview" onRender={dockviewProfiler}>
+        <RendererProfiler id="WorkbenchShell.Dockview" onRender={dockviewProfiler}>
           <DockviewReact
             className="dockview-theme-anybox"
             components={components}
@@ -1139,7 +1138,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             tabGroupAccent="off"
             onReady={handleReady}
           />
-        </Profiler>
+        </RendererProfiler>
       </div>
     </WorkbenchShellContext.Provider>
   )

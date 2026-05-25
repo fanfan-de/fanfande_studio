@@ -4,6 +4,7 @@ import type {
   AgentRuntimeEvent,
   AssistantQuestionPrompt,
   AssistantTraceDebugEntry,
+  AssistantTraceDraftPatchPreview,
   AssistantTraceItem,
   AssistantTraceSectionKey,
   AssistantTraceStatus,
@@ -20,7 +21,12 @@ import type {
   UserTurnAttachment,
   UserTurnReference,
 } from "./types"
+import { toDraftPatchPreview } from "./streaming-patch-preview"
 import { compactText, createID } from "./utils"
+
+const STREAM_TEXT_RENDER_LIMIT = 160_000
+const STREAM_TOOL_INPUT_RENDER_LIMIT = 120_000
+const STREAM_RENDER_TRUNCATION_MARKER = "\n\n[Renderer truncated this live stream item to keep the desktop responsive.]"
 
 function readString(value: unknown) {
   return typeof value === "string" ? value : ""
@@ -274,6 +280,49 @@ function mergeDebugEntries(
   }
 
   return merged
+}
+
+function truncateStreamRenderText(value: string, limit: number) {
+  if (value.includes(STREAM_RENDER_TRUNCATION_MARKER)) {
+    return {
+      text: value,
+      truncated: true,
+    }
+  }
+  if (value.length <= limit) {
+    return {
+      text: value,
+      truncated: false,
+    }
+  }
+
+  return {
+    text: `${value.slice(0, limit)}${STREAM_RENDER_TRUNCATION_MARKER}`,
+    truncated: true,
+  }
+}
+
+function appendStreamRenderText(existingText: string | undefined, delta: string, fullText: string | undefined, limit: number) {
+  const currentText = existingText ?? ""
+  if (!fullText && currentText.includes(STREAM_RENDER_TRUNCATION_MARKER)) {
+    return {
+      text: currentText,
+      truncated: true,
+    }
+  }
+
+  return truncateStreamRenderText(fullText ?? `${currentText}${delta}`, limit)
+}
+
+function appendTruncationDebugEntry(entries: AssistantTraceDebugEntry[] | undefined, truncated: boolean) {
+  if (!truncated) return entries
+
+  return mergeDebugEntries(entries, [
+    {
+      label: "stream.render.truncated",
+      value: "true",
+    },
+  ])
 }
 
 function formatDebugTimeRange(value: unknown) {
@@ -875,6 +924,44 @@ function settleQueuedPrompt(items: AssistantTraceItem[], turnID: string, status:
   )
 }
 
+function isApplyPatchToolName(value?: string) {
+  return value === "apply_patch" || value === "apply-patch"
+}
+
+function settleDraftPatchPreview(
+  draftPatch: AssistantTraceDraftPatchPreview | undefined,
+  status: AssistantTraceStatus | undefined,
+) {
+  if (!draftPatch || !status || !isTerminalTraceStatus(status)) return draftPatch
+  const fileChanges = Array.isArray(draftPatch.fileChanges) ? draftPatch.fileChanges : []
+
+  return {
+    ...draftPatch,
+    status,
+    detail: status === "completed"
+      ? "Patch tool completed. Waiting for workspace diff confirmation."
+      : draftPatch.detail,
+    isStreaming: false,
+    fileChanges: fileChanges.map((change) => ({
+      ...change,
+      previewState: status === "completed" && change.previewState === "streaming"
+        ? "complete" as const
+        : change.previewState,
+    })),
+  }
+}
+
+function settleDraftPatchPreviews(items: AssistantTraceItem[], status: AssistantTraceStatus) {
+  return items.map((item) =>
+    item.draftPatch
+      ? {
+          ...item,
+          draftPatch: settleDraftPatchPreview(item.draftPatch, status),
+        }
+      : item,
+  )
+}
+
 function appendTraceItem(items: AssistantTraceItem[], nextItem: AssistantTraceItem) {
   return [...items, nextItem]
 }
@@ -921,11 +1008,13 @@ function mergeTraceItem(existing: AssistantTraceItem, nextItem: AssistantTraceIt
   }
 
   if (existing.kind === "tool" && nextItem.kind === "tool") {
+    const draftPatch = settleDraftPatchPreview(nextItem.draftPatch ?? existing.draftPatch, nextItem.status ?? existing.status)
     return {
       ...merged,
       text: nextItem.text ?? existing.text,
       toolInputText: nextItem.toolInputText ?? existing.toolInputText,
       toolOutputText: nextItem.toolOutputText ?? existing.toolOutputText,
+      ...(draftPatch ? { draftPatch } : {}),
     }
   }
 
@@ -979,29 +1068,35 @@ function appendTraceDelta(
 
   if (existingIndex !== -1) {
     const existing = nextItems[existingIndex]
-    const nextText = input.fullText || `${existing?.text ?? ""}${input.delta}`
+    const nextText = appendStreamRenderText(existing?.text, input.delta, input.fullText, STREAM_TEXT_RENDER_LIMIT)
+    const debugEntries = appendTruncationDebugEntry(
+      mergeDebugEntries(existing?.debugEntries, input.debugEntries),
+      nextText.truncated,
+    )
 
     return nextItems.map((item, index) =>
       index === existingIndex
         ? {
             ...existing,
-            text: nextText,
+            text: nextText.text,
             isStreaming: true,
-            debugEntries: mergeDebugEntries(existing?.debugEntries, input.debugEntries),
+            debugEntries,
           }
         : item,
     )
   }
+
+  const nextText = appendStreamRenderText(undefined, input.delta, input.fullText, STREAM_TEXT_RENDER_LIMIT)
 
   return appendTraceItem(
     nextItems,
     createTraceItem({
       kind: input.kind,
       label: input.kind === "reasoning" ? "Reasoning" : "Response",
-      text: input.fullText || input.delta,
+      text: nextText.text,
       sourceID: input.sourceID,
       isStreaming: true,
-      debugEntries: input.debugEntries,
+      debugEntries: appendTruncationDebugEntry(input.debugEntries, nextText.truncated),
     }),
   )
 }
@@ -1027,10 +1122,24 @@ function appendToolInputDelta(
       (input.toolCallID ? item.toolCallID === input.toolCallID : false)
     )
   )
-  const nextToolInputText = `${existing?.toolInputText ?? ""}${input.delta}`
+  const nextToolInput = appendStreamRenderText(
+    existing?.toolInputText,
+    input.delta,
+    undefined,
+    STREAM_TOOL_INPUT_RENDER_LIMIT,
+  )
+  const nextToolInputText = nextToolInput.text
   const status = input.status ?? (existing?.kind === "tool" && existing.status && !isTerminalTraceStatus(existing.status)
     ? existing.status
     : "pending")
+  const isApplyPatchTool = isApplyPatchToolName(input.toolName || existing?.title)
+  const parsedDraftPatch = isApplyPatchTool && input.toolCallID
+    ? toDraftPatchPreview({
+        rawToolInput: nextToolInputText,
+        status,
+      })
+    : null
+  const draftPatch = parsedDraftPatch ?? existing?.draftPatch
   const nextItem = createTraceItem({
     id: existing?.id ?? input.sourceID,
     sourceID: existing?.sourceID ?? input.sourceID,
@@ -1045,10 +1154,11 @@ function appendToolInputDelta(
     messageID: input.messageID || existing?.messageID,
     partID: existing?.partID ?? input.sourceID,
     toolCallID: input.toolCallID || existing?.toolCallID,
+    ...(draftPatch ? { draftPatch: settleDraftPatchPreview(draftPatch, status) } : {}),
     section: "tools",
     visibilityKey: "toolCalls",
     isStreaming: status === "running" || status === "pending",
-    debugEntries: input.debugEntries,
+    debugEntries: appendTruncationDebugEntry(input.debugEntries, nextToolInput.truncated),
   })
 
   return upsertTraceItem(nextItems, nextItem)
@@ -1068,16 +1178,17 @@ function buildTraceItemFromPart(
   const debugEntries = mergeDebugEntries(buildPartDebugEntries(part), options?.debugEntries)
 
   if (type === "reasoning" || type === "text") {
+    const renderedText = truncateStreamRenderText(readString(part.text), STREAM_TEXT_RENDER_LIMIT)
     return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: type,
       label: type === "reasoning" ? "Reasoning" : "Response",
-      text: readString(part.text),
+      text: renderedText.text,
       section: type === "reasoning" ? "reasoning" : "response",
       visibilityKey: type === "reasoning" ? "reasoning" : "response",
       isStreaming: false,
-      debugEntries,
+      debugEntries: appendTruncationDebugEntry(debugEntries, renderedText.truncated),
     })]
   }
 
@@ -1101,8 +1212,26 @@ function buildTraceItemFromPart(
     const toolName = readString(part.tool) || "Tool"
     const messageID = readString(part.messageID)
     const toolCallID = readString(part.callID)
-    const toolInputText = createToolTraceInputText(status, state)
-    const toolOutputText = createToolTraceOutputText(status, state)
+    const rawToolInputText = createToolTraceInputText(status, state)
+    const rawToolOutputText = createToolTraceOutputText(status, state)
+    const toolInput = rawToolInputText
+      ? truncateStreamRenderText(rawToolInputText, STREAM_TOOL_INPUT_RENDER_LIMIT)
+      : null
+    const toolOutput = rawToolOutputText
+      ? truncateStreamRenderText(rawToolOutputText, STREAM_TEXT_RENDER_LIMIT)
+      : null
+    const toolInputText = toolInput?.text
+    const toolOutputText = toolOutput?.text
+    const toolDebugEntries = appendTruncationDebugEntry(
+      debugEntries,
+      Boolean(toolInput?.truncated || toolOutput?.truncated),
+    )
+    const draftPatch = isApplyPatchToolName(toolName) && toolInputText
+      ? toDraftPatchPreview({
+          rawToolInput: toolInputText,
+          status,
+        })
+      : null
     const questionPrompt = readAskUserQuestionPrompt(state?.metadata)
 
     if (questionPrompt && !questionPrompt.answered) {
@@ -1117,7 +1246,7 @@ function buildTraceItemFromPart(
         status,
         section: "response",
         visibilityKey: "response",
-        debugEntries,
+        debugEntries: toolDebugEntries,
         questionPrompt,
       })]
     }
@@ -1137,12 +1266,13 @@ function buildTraceItemFromPart(
       messageID,
       partID: sourceID,
       toolCallID,
+      ...(draftPatch ? { draftPatch } : {}),
       section: "tools",
       visibilityKey: "toolCalls",
       isStreaming: status === "running" || status === "pending",
-      debugEntries,
+      debugEntries: toolDebugEntries,
     }),
-      ...buildToolAttachmentTraceItems(sourceID, state, debugEntries),
+      ...buildToolAttachmentTraceItems(sourceID, state, toolDebugEntries),
     ]
   }
 
@@ -2533,9 +2663,12 @@ function applyRuntimeEventToTurn(
   if (event.type === "task.state.updated") {
     const taskState = readTaskState(payload.state)
     if (!taskState) return turn
-    const sourceID = `task-state:${event.eventID}`
+    const sourceID = `task-state:${event.turnID}`
+    const baseItems = clearStreamingItems(preparedItems).filter(
+      (traceItem) => traceItem.kind !== "task-state" || traceItem.sourceID === sourceID,
+    )
     const nextItems = upsertTraceItem(
-      clearStreamingItems(preparedItems),
+      baseItems,
       createTaskStateTraceItem({
         sourceID,
         taskState,
@@ -2591,7 +2724,7 @@ function applyRuntimeEventToTurn(
     })
     if (traceItems.length === 0) return turn
 
-    const nextItems = upsertTraceItems(clearStreamingItems(preparedItems), traceItems)
+    let nextItems = upsertTraceItems(clearStreamingItems(preparedItems), traceItems)
     const primaryItem = traceItems[0]
     const partRecord = readRecord(part)
     const partState = readRecord(partRecord?.state)
@@ -2630,7 +2763,8 @@ function applyRuntimeEventToTurn(
 
   if (event.type === "turn.completed") {
     const parts = Array.isArray(payload.parts) ? payload.parts : []
-    const finalizedItems = alignAnonymousTraceItemsWithParts(clearStreamingItems(preparedItems), parts)
+    const baseItems = settleDraftPatchPreviews(preparedItems, "completed")
+    const finalizedItems = alignAnonymousTraceItemsWithParts(clearStreamingItems(baseItems), parts)
     const nextItems = mergeTraceParts(finalizedItems, parts)
 
     return finalizeStreamAssistantTurn({
@@ -2651,8 +2785,9 @@ function applyRuntimeEventToTurn(
     const message = failure?.message || readString(payload.error) || "Unknown backend error"
     const messageID = resolvePayloadMessageID(payload) || turn.messageID
     const messageTurn = applyAssistantMessageMetadata(turn, payload.message)
+    const baseItems = settleDraftPatchPreviews(preparedItems, "error")
     const nextItems = appendTraceItem(
-      mergeTraceParts(clearStreamingItems(preparedItems), parts),
+      mergeTraceParts(clearStreamingItems(baseItems), parts),
       createTraceItem({
         kind: "error",
         label: "Error",
@@ -2683,8 +2818,9 @@ function applyRuntimeEventToTurn(
     const detail = readString(payload.detail) || readString(payload.reason) || "The turn was cancelled."
     const messageID = resolvePayloadMessageID(payload) || turn.messageID
     const cancelledTurn = markAssistantTurnInterrupted(applyAssistantMessageMetadata(turn, payload.message), detail)
+    const cancelledItems = settleDraftPatchPreviews(cancelledTurn.items, "cancelled")
     const nextItems = upsertTraceItem(
-      mergeTraceParts(cancelledTurn.items, parts),
+      mergeTraceParts(cancelledItems, parts),
       createTraceItem({
         kind: "system",
         label: "System",

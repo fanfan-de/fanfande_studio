@@ -1,6 +1,8 @@
 import type { LoadedSessionHistoryMessage } from "./types"
 
 const ROOT_PARENT_ID = "__root__"
+const MESSAGE_TREE_NODE_CONTENT_LIMIT = 12_000
+const MESSAGE_TREE_NODE_TRUNCATION_MARKER = "\n\n[Message tree preview truncated to keep the desktop responsive.]"
 
 export interface SessionMessageTreeNode {
   id: string
@@ -53,6 +55,11 @@ function readBoolean(value: unknown) {
 function compactPreview(value: string, maxLength = 72) {
   const compacted = value.replace(/\s+/g, " ").trim()
   return compacted.length > maxLength ? `${compacted.slice(0, maxLength - 1)}...` : compacted
+}
+
+function limitNodeContent(value: string) {
+  if (value.length <= MESSAGE_TREE_NODE_CONTENT_LIMIT) return value
+  return `${value.slice(0, MESSAGE_TREE_NODE_CONTENT_LIMIT)}${MESSAGE_TREE_NODE_TRUNCATION_MARKER}`
 }
 
 function readTextPartPreview(part: unknown) {
@@ -229,7 +236,7 @@ export function buildSessionMessageTree(
       sessionID: message.info.sessionID,
       role: message.info.role,
       created: readNumber(message.info.created),
-      content: getMessageContent(message),
+      content: limitNodeContent(getMessageContent(message)),
       parentMessageID: typeof message.info.parentMessageID === "string" ? message.info.parentMessageID : null,
       preview: getMessagePreview(message),
     }))

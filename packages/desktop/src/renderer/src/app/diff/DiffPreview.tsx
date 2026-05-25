@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 
-type DiffPreviewLineTone = "add" | "remove" | "context"
+export type DiffPreviewLineTone = "add" | "remove" | "context"
 export type DiffViewMode = "unified" | "split"
 type SplitDiffCellTone = DiffPreviewLineTone | "empty"
 
@@ -16,6 +16,16 @@ interface ParsedDiffHunk {
   rows: ParsedDiffRow[]
 }
 
+export interface DiffPreviewInlineRow {
+  content: string
+  tone: DiffPreviewLineTone
+}
+
+export interface DiffPreviewInlineHunk {
+  header: string
+  rows: DiffPreviewInlineRow[]
+}
+
 interface SplitDiffRow {
   newContent: string
   newLineNumber: number | null
@@ -29,6 +39,36 @@ const DIFF_HUNK_HEADER_PATTERN = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:
 
 function joinClassNames(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ")
+}
+
+function isDiffPreviewLineTone(value: unknown): value is DiffPreviewLineTone {
+  return value === "add" || value === "remove" || value === "context"
+}
+
+function normalizeInlinePreviewHunks(previewHunks: unknown): DiffPreviewInlineHunk[] {
+  if (!Array.isArray(previewHunks)) return []
+
+  return previewHunks.flatMap((hunk): DiffPreviewInlineHunk[] => {
+    if (!hunk || typeof hunk !== "object") return []
+    const record = hunk as { header?: unknown; rows?: unknown }
+    if (!Array.isArray(record.rows)) return []
+
+    const rows = record.rows.flatMap((row): DiffPreviewInlineRow[] => {
+      if (!row || typeof row !== "object") return []
+      const rowRecord = row as { content?: unknown; tone?: unknown }
+      if (!isDiffPreviewLineTone(rowRecord.tone)) return []
+      return [{
+        content: typeof rowRecord.content === "string" ? rowRecord.content : String(rowRecord.content ?? ""),
+        tone: rowRecord.tone,
+      }]
+    })
+    if (rows.length === 0) return []
+
+    return [{
+      header: typeof record.header === "string" && record.header.trim() ? record.header : "Patch hunk",
+      rows,
+    }]
+  })
 }
 
 function formatDiffRange(start: number, count: number) {
@@ -170,6 +210,7 @@ export interface DiffPreviewProps {
   isFullHeight?: boolean
   onToggleFullHeight?: () => void
   patch?: string
+  previewHunks?: DiffPreviewInlineHunk[]
   viewMode?: DiffViewMode
 }
 
@@ -181,9 +222,16 @@ export function DiffPreview({
   isFullHeight = false,
   onToggleFullHeight,
   patch,
+  previewHunks,
   viewMode = "unified",
 }: DiffPreviewProps) {
   const hunks = useMemo(() => parsePatchHunks(patch), [patch])
+  const inlinePreviewHunks = useMemo(
+    () => normalizeInlinePreviewHunks(previewHunks),
+    [previewHunks],
+  )
+  const hasPatchPreview = Boolean(patch?.trim() && hunks.length > 0)
+  const usesInlinePreview = !hasPatchPreview && inlinePreviewHunks.length > 0
   const splitHunks = useMemo(
     () => hunks.map((hunk) => ({
       header: hunk.header,
@@ -192,7 +240,7 @@ export function DiffPreview({
     [hunks],
   )
 
-  if (!patch?.trim() || hunks.length === 0) {
+  if (!hasPatchPreview && !usesInlinePreview) {
     return (
       <div className={joinClassNames("right-sidebar-diff-empty", emptyClassName)}>
         <p>{emptyMessage}</p>
@@ -210,8 +258,26 @@ export function DiffPreview({
       role="region"
       aria-label={`Diff preview for ${file}`}
     >
-      <div className={viewMode === "split" ? "right-sidebar-diff-code is-split" : "right-sidebar-diff-code"}>
-        {hunks.map((hunk, hunkIndex) => (
+      <div
+        className={joinClassNames(
+          "right-sidebar-diff-code",
+          viewMode === "split" && !usesInlinePreview && "is-split",
+          usesInlinePreview && "is-inline-preview",
+        )}
+      >
+        {usesInlinePreview ? inlinePreviewHunks.map((hunk, hunkIndex) => (
+          <section key={`${file}-preview-hunk-${hunkIndex}`} className="right-sidebar-diff-hunk" aria-label={hunk.header}>
+            <div className="right-sidebar-diff-hunk-header">{hunk.header}</div>
+            {hunk.rows.map((row, rowIndex) => (
+              <div
+                key={`${file}-${hunkIndex}-preview-${rowIndex}`}
+                className={`right-sidebar-diff-row is-${row.tone} is-inline-preview`}
+              >
+                <span className="right-sidebar-diff-content">{row.content || " "}</span>
+              </div>
+            ))}
+          </section>
+        )) : hunks.map((hunk, hunkIndex) => (
           <section key={`${file}-hunk-${hunkIndex}`} className="right-sidebar-diff-hunk" aria-label={hunk.header}>
             <div className="right-sidebar-diff-hunk-header">{hunk.header}</div>
             {viewMode === "split"

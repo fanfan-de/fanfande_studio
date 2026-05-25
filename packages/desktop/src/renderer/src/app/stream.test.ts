@@ -68,6 +68,41 @@ describe("stream trace reducer", () => {
     expect(turns.map((turn) => turn.id)).toEqual(["assistant-older", "assistant-newer"])
   })
 
+  it("truncates oversized live text items before rendering them", () => {
+    let turn = buildStreamingAssistantTurn("Stream a large response")
+    const oversizedText = "x".repeat(170_000)
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      id: "101:turn-runtime:2",
+      event: "runtime",
+      data: {
+        eventID: "event-2",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "text.part.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "part-runtime-text",
+          kind: "text",
+          delta: oversizedText,
+          text: oversizedText,
+        },
+      },
+    })
+
+    const responseItem = turn.items.find((item) => item.kind === "text")
+    const responseText = responseItem?.text ?? ""
+
+    expect(responseText).toContain("Renderer truncated this live stream item")
+    expect(responseText.length).toBeLessThan(161_000)
+    expect(responseItem?.debugEntries).toContainEqual({
+      label: "stream.render.truncated",
+      value: "true",
+    })
+  })
+
   it("reduces canonical runtime events into an assistant turn", () => {
     let turn = buildStreamingAssistantTurn("Show runtime trace")
 
@@ -227,6 +262,82 @@ describe("stream trace reducer", () => {
     const taskItem = turn.items.find((item) => item.kind === "task-state")
     expect(taskItem?.title).toBe("1/2 tasks")
     expect(taskItem?.progressItems?.map((item) => item.status)).toEqual(["completed", "in_progress"])
+  })
+
+  it("replaces repeated task state runtime snapshots for the same turn", () => {
+    let turn = buildStreamingAssistantTurn("Track repeated task updates")
+    const createTaskStateEvent = (eventID: string, completed: number) => ({
+      event: "runtime",
+      data: {
+        eventID,
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: completed,
+        timestamp: 100 + completed,
+        type: "task.state.updated",
+        payload: {
+          state: {
+            sessionID: "session-runtime",
+            generatedAt: 100 + completed,
+            tasks: [
+              {
+                id: "1",
+                sessionID: "session-runtime",
+                subject: "Inspect code",
+                description: "Inspect code",
+                activeForm: "Inspecting code",
+                owner: "default",
+                status: completed > 0 ? "completed" : "in_progress",
+                blocks: [],
+                blockedBy: [],
+                metadata: {},
+                createdAt: 90,
+                updatedAt: 100 + completed,
+                isBlocked: false,
+                blockingTasks: [],
+                blockedTasks: [],
+              },
+            ],
+            current: [],
+            next: [],
+            blocked: [],
+            owners: [],
+            teammateActivity: [],
+            summary: {
+              total: 1,
+              completed,
+              pending: 0,
+              inProgress: completed > 0 ? 0 : 1,
+              blocked: 0,
+            },
+          },
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, createTaskStateEvent("event-task-state-1", 0))
+    const firstTaskItem = turn.items.find((item) => item.kind === "task-state")
+    if (firstTaskItem) {
+      turn = {
+        ...turn,
+        items: [
+          ...turn.items,
+          {
+            ...firstTaskItem,
+            id: "stale-task-state",
+            sourceID: "task-state:event-task-state-stale",
+            title: "0/1 stale tasks",
+          },
+        ],
+      }
+    }
+    turn = applyAgentStreamEventToTurn(turn, createTaskStateEvent("event-task-state-2", 1))
+
+    const taskItems = turn.items.filter((item) => item.kind === "task-state")
+    expect(taskItems).toHaveLength(1)
+    expect(taskItems[0]?.sourceID).toBe("task-state:turn-runtime")
+    expect(taskItems[0]?.title).toBe("1/1 tasks")
+    expect(taskItems[0]?.progressItems?.map((item) => item.status)).toEqual(["completed"])
   })
 
   it("restores completed task tool history as regular tool trace items", () => {
@@ -1014,6 +1125,370 @@ describe("stream trace reducer", () => {
       toolInputText: "{\"path\":\"README.md\"}",
       text: "{\"path\":\"README.md\"}",
       isStreaming: true,
+    })
+  })
+
+  it("previews streamed apply_patch input inside the tool trace item", () => {
+    const fullInput = JSON.stringify({
+      patch: [
+        "*** Begin Patch",
+        "*** Update File: src/app.ts",
+        "@@",
+        "-old",
+        "+new",
+        "*** End Patch",
+      ].join("\n"),
+    })
+    const splitIndex = fullInput.indexOf("+new")
+    let turn = buildStreamingAssistantTurn("Preview live patch input")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-patch-input-1",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-patch",
+          toolCallID: "call-live-patch",
+          toolName: "apply_patch",
+          delta: fullInput.slice(0, splitIndex),
+          rawLength: splitIndex,
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-patch-input-2",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-patch",
+          toolCallID: "call-live-patch",
+          toolName: "apply_patch",
+          delta: fullInput.slice(splitIndex),
+          rawLength: fullInput.length,
+        },
+      },
+    })
+
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(turn.items.filter((item) => item.kind === "patch")).toHaveLength(0)
+    expect(toolItems[0]).toMatchObject({
+      kind: "tool",
+      title: "apply_patch",
+      sourceID: "tool-input-patch",
+      status: "pending",
+      toolCallID: "call-live-patch",
+      draftPatch: {
+        status: "running",
+        fileChanges: [
+          expect.objectContaining({
+            additions: 1,
+            deletions: 1,
+            file: "src/app.ts",
+            previewState: "complete",
+          }),
+        ],
+      },
+    })
+    expect(toolItems[0]?.draftPatch?.fileChanges?.[0]?.previewHunks?.[0]?.rows).toEqual([
+      { content: "old", tone: "remove" },
+      { content: "new", tone: "add" },
+    ])
+  })
+
+  it("previews streamed apply_patch input when the provider streams a top-level JSON string", () => {
+    const fullInput = JSON.stringify([
+      "*** Begin Patch",
+      "*** Add File: src/freeform.ts",
+      "+hello",
+      "*** End Patch",
+    ].join("\n"))
+    const splitIndex = fullInput.indexOf("+hello")
+    let turn = buildStreamingAssistantTurn("Preview freeform patch input")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-freeform-patch-input-1",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-patch",
+          toolCallID: "call-freeform-patch",
+          toolName: "apply_patch",
+          delta: fullInput.slice(0, splitIndex),
+          rawLength: splitIndex,
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-freeform-patch-input-2",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-patch",
+          toolCallID: "call-freeform-patch",
+          toolName: "apply_patch",
+          delta: fullInput.slice(splitIndex),
+          rawLength: fullInput.length,
+        },
+      },
+    })
+
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(turn.items.filter((item) => item.kind === "patch")).toHaveLength(0)
+    expect(toolItems[0]?.draftPatch).toMatchObject({
+      fileChanges: [
+        expect.objectContaining({
+          additions: 1,
+          file: "src/freeform.ts",
+          previewState: "complete",
+        }),
+      ],
+    })
+  })
+
+  it("previews apply_patch raw input from tool lifecycle events when input deltas are unavailable", () => {
+    const rawInput = JSON.stringify({
+      patch: [
+        "*** Begin Patch",
+        "*** Add File: src/lifecycle.ts",
+        "+hello",
+        "*** End Patch",
+      ].join("\n"),
+    })
+    let turn = buildStreamingAssistantTurn("Preview lifecycle patch input")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-patch-started",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "tool.call.started",
+        payload: {
+          part: {
+            id: "tool-lifecycle-patch",
+            type: "tool",
+            tool: "apply_patch",
+            callID: "call-lifecycle-patch",
+            state: {
+              status: "running",
+              raw: rawInput,
+            },
+          },
+        },
+      },
+    })
+
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(turn.items.filter((item) => item.kind === "patch")).toHaveLength(0)
+    expect(toolItems[0]).toMatchObject({
+      sourceID: "tool-lifecycle-patch",
+      status: "running",
+      draftPatch: {
+        status: "running",
+        fileChanges: [
+          expect.objectContaining({
+            additions: 1,
+            file: "src/lifecycle.ts",
+            previewState: "complete",
+          }),
+        ],
+      },
+    })
+  })
+
+  it("keeps streamed draft patch previews on the tool item when the real patch is generated", () => {
+    const fullInput = JSON.stringify({
+      patch: [
+        "*** Begin Patch",
+        "*** Update File: src/app.ts",
+        "@@",
+        "-old",
+        "+new",
+        "*** End Patch",
+      ].join("\n"),
+    })
+    let turn = buildStreamingAssistantTurn("Replace live patch input")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-patch-input",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-patch",
+          toolCallID: "call-live-patch",
+          toolName: "apply_patch",
+          delta: fullInput,
+          rawLength: fullInput.length,
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-patch-generated",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "patch.generated",
+        payload: {
+          part: {
+            id: "patch-real",
+            type: "patch",
+            scope: "model-call",
+            files: ["src/app.ts"],
+            summary: {
+              files: 1,
+              additions: 1,
+              deletions: 1,
+            },
+            changes: [
+              {
+                file: "src/app.ts",
+                additions: 1,
+                deletions: 1,
+                patch: "@@ -1 +1 @@\n-old\n+new",
+              },
+            ],
+          },
+        },
+      },
+    })
+
+    const patchItems = turn.items.filter((item) => item.kind === "patch")
+    expect(patchItems).toHaveLength(1)
+    expect(patchItems[0]).toMatchObject({
+      kind: "patch",
+      label: "Model call",
+      sourceID: "patch-real",
+      status: "completed",
+      fileChanges: [
+        expect.objectContaining({
+          file: "src/app.ts",
+          patch: "@@ -1 +1 @@\n-old\n+new",
+        }),
+      ],
+    })
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(toolItems[0]?.draftPatch).toMatchObject({
+      fileChanges: [
+        expect.objectContaining({
+          additions: 1,
+          deletions: 1,
+          file: "src/app.ts",
+        }),
+      ],
+    })
+  })
+
+  it("marks streamed draft patch previews as failed when apply_patch fails without a real patch", () => {
+    const fullInput = JSON.stringify({
+      patch: [
+        "*** Begin Patch",
+        "*** Update File: src/app.ts",
+        "@@",
+        "-old",
+        "+new",
+        "*** End Patch",
+      ].join("\n"),
+    })
+    let turn = buildStreamingAssistantTurn("Fail live patch input")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-patch-input",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-patch",
+          toolCallID: "call-live-patch",
+          toolName: "apply_patch",
+          delta: fullInput,
+          rawLength: fullInput.length,
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-patch-failed",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "tool.call.failed",
+        payload: {
+          part: {
+            id: "tool-input-patch",
+            type: "tool",
+            tool: "apply_patch",
+            callID: "call-live-patch",
+            state: {
+              status: "error",
+              input: { patch: "..." },
+              error: "Patch failed",
+            },
+          },
+        },
+      },
+    })
+
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(turn.items.filter((item) => item.kind === "patch")).toHaveLength(0)
+    expect(toolItems[0]).toMatchObject({
+      sourceID: "tool-input-patch",
+      status: "error",
+      isStreaming: false,
+      draftPatch: {
+        status: "error",
+        isStreaming: false,
+      },
     })
   })
 

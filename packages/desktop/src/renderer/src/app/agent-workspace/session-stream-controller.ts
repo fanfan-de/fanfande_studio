@@ -54,8 +54,12 @@ import { useAgentSessionStreamEffects } from "./session-stream-hooks"
 import { refreshWorkspaceFromDirectory as refreshWorkspaceFromDirectoryService } from "./workspace-loading-hooks"
 import type { ConversationStoreApi } from "./conversation-store"
 import type { WorkspaceStateUpdater } from "./workspace-store"
+import { clearRendererPerformanceEntries } from "../perf-profiler"
 
 const STREAM_DELTA_FLUSH_INTERVAL_MS = 32
+const STREAM_DELTA_EVENTS_PER_FRAME = 240
+const STREAM_DELTA_PENDING_EVENT_LIMIT = 1_600
+const STREAM_DELTA_BACKPRESSURE_LOG_INTERVAL_MS = 5_000
 
 type StreamEventUpdateTarget = {
   assistantTurnID: string
@@ -134,6 +138,39 @@ export function isHighFrequencyDeltaStreamEvent(streamEvent: { event: string; da
   const runtimeType = readRuntimeStreamType(streamEvent)
   if (runtimeType === "text.part.delta" || runtimeType === "reasoning.part.delta" || runtimeType === "tool.input.delta") return true
   return !runtimeType && streamEvent.event === "delta"
+}
+
+export function compactHighFrequencyDeltaStreamEvent<T extends { event: string; data: unknown }>(streamEvent: T): T {
+  const runtimeEvent = readRuntimeStreamEvent(streamEvent.data)
+  if (
+    runtimeEvent &&
+    (runtimeEvent.type === "text.part.delta" ||
+      runtimeEvent.type === "reasoning.part.delta" ||
+      runtimeEvent.type === "tool.input.delta")
+  ) {
+    const payload = readRecord(runtimeEvent.payload)
+    if (!payload || !readString(payload.delta)) return streamEvent
+    const { raw: _raw, text: _text, ...compactPayload } = payload
+    return {
+      ...streamEvent,
+      data: {
+        ...runtimeEvent,
+        payload: compactPayload,
+      },
+    }
+  }
+
+  if (streamEvent.event === "delta") {
+    const payload = readRecord(streamEvent.data)
+    if (!payload || !readString(payload.delta) || !readString(payload.text)) return streamEvent
+    const { text: _text, ...compactPayload } = payload
+    return {
+      ...streamEvent,
+      data: compactPayload,
+    }
+  }
+
+  return streamEvent
 }
 
 export function isTerminalStreamEvent(streamEvent: { event: string; data: unknown }) {
@@ -915,6 +952,7 @@ export function useSessionStreamController({
 }: UseSessionStreamControllerOptions) {
   const pendingDeltaUpdatesRef = useRef<PendingStreamDeltaUpdate[]>([])
   const pendingDeltaFlushHandleRef = useRef<{ id: number; kind: "frame" | "timer" } | null>(null)
+  const lastDeltaBackpressureLogAtRef = useRef(0)
 
   function updateSessionContextUsage(sessionID: string, usage: SessionContextUsage | null) {
     setContextUsageBySession((prev) => {
@@ -1125,19 +1163,58 @@ export function useSessionStreamController({
     pendingDeltaFlushHandleRef.current = null
   }
 
-  function flushPendingDeltaUpdates() {
+  function logStreamDeltaBackpressure(
+    droppedCount: number,
+    queuedCount: number,
+    event: AgentSessionStreamIPCEvent | AgentStreamIPCEvent,
+  ) {
+    const now = Date.now()
+    if (now - lastDeltaBackpressureLogAtRef.current < STREAM_DELTA_BACKPRESSURE_LOG_INTERVAL_MS) return
+    lastDeltaBackpressureLogAtRef.current = now
+
+    console.warn("[desktop] stream delta backpressure; dropped live renderer delta events", {
+      droppedCount,
+      event: event.event,
+      eventID: event.id,
+      queuedCount,
+      sessionID: "sessionID" in event ? event.sessionID : undefined,
+      streamID: "streamID" in event ? event.streamID : undefined,
+    })
+  }
+
+  function enqueuePendingDeltaUpdate(update: PendingStreamDeltaUpdate) {
+    const pendingUpdates = pendingDeltaUpdatesRef.current
+    pendingUpdates.push({
+      ...update,
+      event: compactHighFrequencyDeltaStreamEvent(update.event),
+    })
+
+    if (pendingUpdates.length > STREAM_DELTA_PENDING_EVENT_LIMIT) {
+      const droppedCount = pendingUpdates.length - STREAM_DELTA_PENDING_EVENT_LIMIT
+      pendingUpdates.splice(0, droppedCount)
+      logStreamDeltaBackpressure(droppedCount, pendingUpdates.length, update.event)
+    }
+
+    schedulePendingDeltaFlush()
+  }
+
+  function flushPendingDeltaUpdates(options: { forceAll?: boolean } = {}) {
     const pendingUpdates = pendingDeltaUpdatesRef.current
     if (pendingUpdates.length === 0) {
       clearPendingDeltaFlushTimer()
       return
     }
 
-    pendingDeltaUpdatesRef.current = []
+    const flushCount = options.forceAll
+      ? pendingUpdates.length
+      : Math.min(pendingUpdates.length, STREAM_DELTA_EVENTS_PER_FRAME)
+    const updatesToFlush = pendingUpdates.slice(0, flushCount)
+    pendingDeltaUpdatesRef.current = pendingUpdates.slice(flushCount)
     clearPendingDeltaFlushTimer()
 
     const groupedUpdates = new Map<string, Map<string, PendingStreamDeltaUpdate["event"][]>>()
 
-    for (const update of pendingUpdates) {
+    for (const update of updatesToFlush) {
       const updatesByTurnID = groupedUpdates.get(update.target.sessionID) ?? new Map<string, PendingStreamDeltaUpdate["event"][]>()
       const events = updatesByTurnID.get(update.target.assistantTurnID) ?? []
       events.push(update.event)
@@ -1152,6 +1229,10 @@ export function useSessionStreamController({
     startTransition(() => {
       setConversations((prev) => updateConversationMapWithDeltaGroups(prev, groupedUpdates))
     })
+
+    if (pendingDeltaUpdatesRef.current.length > 0) {
+      schedulePendingDeltaFlush()
+    }
   }
 
   function schedulePendingDeltaFlush() {
@@ -1182,12 +1263,11 @@ export function useSessionStreamController({
     streamEvent: AgentSessionStreamIPCEvent | AgentStreamIPCEvent,
   ) {
     if (isHighFrequencyDeltaStreamEvent(streamEvent)) {
-      pendingDeltaUpdatesRef.current.push({ target, event: streamEvent })
-      schedulePendingDeltaFlush()
+      enqueuePendingDeltaUpdate({ target, event: streamEvent })
       return
     }
 
-    flushPendingDeltaUpdates()
+    flushPendingDeltaUpdates({ forceAll: true })
     startTransition(() => {
       updateAssistantConversationTurn(target.sessionID, target.assistantTurnID, (turn) =>
         applyAgentStreamEventToTurn(turn, streamEvent),
@@ -1340,6 +1420,7 @@ export function useSessionStreamController({
     }
 
     if (isTerminalStreamEvent(streamEvent)) {
+      clearRendererPerformanceEntries("session-stream-terminal")
       clearCancellingSession(target.sessionID)
       if (isCompletedStreamEvent(streamEvent)) {
         updateSessionContextUsage(target.sessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
@@ -1447,6 +1528,7 @@ export function useSessionStreamController({
     }
 
     if (isTerminalStreamEvent(streamEvent)) {
+      clearRendererPerformanceEntries("session-stream-terminal")
       clearCancellingSession(uiSessionID)
       if (isCompletedStreamEvent(streamEvent)) {
         updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))

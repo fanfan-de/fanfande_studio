@@ -403,6 +403,15 @@
   gap: 4px;
 }
 
+.trace-item-render-error {
+  border-left-color: var(--seg-danger-text, var(--seg-danger));
+  background: color-mix(in srgb, var(--seg-danger, #d14343) 6%, var(--seg-panel-muted));
+}
+
+.trace-item-render-error .trace-item-detail {
+  margin: 0;
+}
+
 .trace-item::before {
   display: none;
 }
@@ -1268,7 +1277,7 @@
 
 .trace-file-change-summary {
   display: inline-grid;
-  grid-template-columns: 16px auto 14px;
+  grid-template-columns: 16px auto auto 14px;
   gap: 6px;
   align-items: center;
   justify-content: start;
@@ -1319,6 +1328,22 @@
   overflow-wrap: anywhere;
 }
 
+.trace-file-change-summary-label.is-live {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, auto) auto;
+  gap: 5px;
+  align-items: baseline;
+  max-width: 100%;
+}
+
+.trace-file-change-summary-label.has-file-change {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, auto) auto;
+  gap: 5px;
+  align-items: baseline;
+  max-width: 100%;
+}
+
 .trace-file-change-list {
   display: grid;
   gap: 2px;
@@ -1334,7 +1359,7 @@
 
 .trace-file-change-row {
   display: grid;
-  grid-template-columns: 14px auto minmax(0, auto) auto auto;
+  grid-template-columns: 14px auto minmax(0, auto) auto auto auto;
   gap: 5px;
   align-items: baseline;
   justify-content: start;
@@ -1387,6 +1412,10 @@
   white-space: nowrap;
 }
 
+.trace-file-change-stats.is-live {
+  font-weight: 600;
+}
+
 .trace-file-change-stats .is-add {
   color: #238447;
 }
@@ -1402,12 +1431,44 @@
   white-space: nowrap;
 }
 
+.trace-file-change-live-dot {
+  display: inline-flex;
+  width: 5px;
+  height: 5px;
+  align-self: center;
+  border-radius: 999px;
+  background: var(--seg-accent-strong);
+  animation: trace-file-change-live-dot 1.1s ease-in-out infinite;
+}
+
+.trace-file-change-live-dot.is-hidden {
+  visibility: hidden;
+  animation: none;
+}
+
+@keyframes trace-file-change-live-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+
+  45% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .trace-file-change-preview {
   min-width: 0;
   margin: 6px 0 8px 19px;
   border: 1px solid rgba(166, 186, 208, 0.22);
   border-radius: var(--seg-radius-xs);
   overflow: hidden;
+}
+
+.trace-file-change-preview.is-single-file {
+  margin-left: 0;
 }
 
 .trace-historical-diff.right-sidebar-diff-preview,
@@ -1451,6 +1512,10 @@
 .trace-historical-diff .right-sidebar-diff-row {
   grid-template-columns: 34px 34px minmax(0, 1fr);
   background: transparent;
+}
+
+.trace-historical-diff .right-sidebar-diff-code.is-inline-preview .right-sidebar-diff-row {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .trace-historical-diff .right-sidebar-diff-row + .right-sidebar-diff-row {
@@ -3228,6 +3293,16 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
   }
 }
 
+@keyframes trace-tool-name-shimmer {
+  0% {
+    background-position: 160% 0;
+  }
+
+  100% {
+    background-position: -160% 0;
+  }
+}
+
 /* Sage / Teal & Slate theme overrides */
 
 .assistant-shell.is-streaming,
@@ -3506,12 +3581,12 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
 }
 
 .trace-tool-status-indicator.is-success {
-  --tool-status-color: var(--seg-success);
+  --tool-status-color: var(--seg-text-3);
 }
 
 .trace-tool-status-indicator.is-error,
 .trace-tool-status-indicator.is-denied {
-  --tool-status-color: var(--seg-danger);
+  --tool-status-color: var(--seg-danger-text, var(--seg-danger));
 }
 
 .trace-tool-status-indicator.is-cancelled {
@@ -3730,6 +3805,54 @@ button.trace-log-row {
   color: var(--seg-text-1);
 }
 
+.trace-log-summary.trace-tool-name {
+  --trace-tool-name-muted: var(--seg-text-3);
+  --trace-tool-name-active: var(--brand-accent-active);
+  --trace-tool-name-glow: color-mix(in srgb, var(--brand-accent-active) 42%, transparent);
+  --trace-tool-name-glow-soft: color-mix(in srgb, var(--brand-accent-active) 22%, transparent);
+  color: var(--trace-tool-name-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.trace-log-row:hover .trace-log-summary.trace-tool-name:not(:is(.is-active, .is-pending, .is-running)),
+.trace-log-row:focus-visible .trace-log-summary.trace-tool-name:not(:is(.is-active, .is-pending, .is-running)) {
+  color: var(--seg-text-2);
+}
+
+.trace-log-summary.trace-tool-name:is(.is-active, .is-pending, .is-running) {
+  color: var(--trace-tool-name-active);
+}
+
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  .trace-log-summary.trace-tool-name:is(.is-active, .is-pending, .is-running) {
+    color: transparent;
+    background-image: linear-gradient(
+      90deg,
+      var(--trace-tool-name-muted) 0%,
+      var(--trace-tool-name-muted) 22%,
+      color-mix(in srgb, var(--trace-tool-name-active) 18%, var(--surface-trace)) 38%,
+      var(--trace-tool-name-active) 50%,
+      color-mix(in srgb, var(--trace-tool-name-active) 18%, var(--surface-trace)) 62%,
+      var(--trace-tool-name-muted) 78%,
+      var(--trace-tool-name-muted) 100%
+    );
+    background-size: 300% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    text-shadow:
+      0 0 6px var(--trace-tool-name-glow),
+      0 0 14px var(--trace-tool-name-glow-soft);
+    animation: trace-tool-name-shimmer 1.6s ease-in-out infinite;
+  }
+
+  .trace-log-row:hover .trace-log-summary.trace-tool-name:is(.is-active, .is-pending, .is-running),
+  .trace-log-row:focus-visible .trace-log-summary.trace-tool-name:is(.is-active, .is-pending, .is-running) {
+    color: transparent;
+  }
+}
+
 .trace-log-meta {
   flex: 0 0 auto;
   min-width: 0;
@@ -3748,7 +3871,7 @@ button.trace-log-row {
 
 .trace-log-status-text.is-running,
 .trace-log-status-text.is-pending {
-  color: var(--brand-accent-active);
+  color: var(--seg-text-3);
 }
 
 .trace-log-status-text.is-waiting-approval {
@@ -3758,7 +3881,7 @@ button.trace-log-row {
 .trace-log-status-text.is-error,
 .trace-log-status-text.is-denied,
 .trace-log-status-text.is-cancelled {
-  color: var(--seg-danger);
+  color: var(--seg-danger-text, var(--seg-danger));
 }
 
 .trace-log-chevron {
@@ -3775,6 +3898,51 @@ button.trace-log-row {
   height: 13px;
 }
 
+.trace-log-inline-toggle {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--seg-radius-xs);
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+}
+
+.trace-log-inline-toggle:hover,
+.trace-log-inline-toggle:focus-visible {
+  color: var(--seg-text-1);
+  outline: none;
+}
+
+.trace-log-inline-toggle svg {
+  width: 13px;
+  height: 13px;
+}
+
+.trace-log-row.has-inline-draft-patch {
+  gap: 7px;
+}
+
+.trace-log-row.has-inline-draft-patch .trace-log-summary {
+  flex: 0 1 auto;
+  max-width: min(220px, 32%);
+}
+
+.trace-tool-inline-draft-patch-summary {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: min(560px, 100%);
+}
+
+.trace-tool-inline-draft-patch-summary .trace-file-change-summary-label,
+.trace-tool-inline-draft-patch-summary .trace-file-change-action {
+  font-size: 13px;
+}
+
 .trace-log-detail {
   display: grid;
   gap: 6px;
@@ -3784,6 +3952,14 @@ button.trace-log-row {
   border-left: 1px solid var(--seg-divider);
   color: var(--seg-text-2);
   contain: layout paint style;
+}
+
+.trace-tool-draft-patch {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  margin: 2px 0 4px 30px;
+  color: var(--seg-text-2);
 }
 
 .thread-resize-lightweight .trace-log-row,
@@ -3800,10 +3976,25 @@ body.is-resizing-sidebar .trace-tool-status-indicator::before {
   animation: none !important;
 }
 
+.thread-resize-lightweight .trace-tool-name:is(.is-active, .is-pending, .is-running),
+body.is-resizing-sidebar .trace-tool-name:is(.is-active, .is-pending, .is-running) {
+  color: var(--brand-accent-active) !important;
+  background: none !important;
+  text-shadow: none !important;
+  animation: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .trace-tool-status-indicator.is-breathing::before {
     animation: none;
     opacity: 1;
     transform: translate(-50%, -50%);
+  }
+
+  .trace-log-summary.trace-tool-name:is(.is-active, .is-pending, .is-running) {
+    color: var(--brand-accent-active);
+    background: none;
+    text-shadow: none;
+    animation: none;
   }
 }

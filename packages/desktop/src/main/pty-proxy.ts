@@ -1,6 +1,7 @@
 import type { WebContents } from "electron"
 import { DESKTOP_PTY_EVENT_CHANNEL } from "../shared/desktop-ipc-contract"
 import { requestAgentJSON, resolveAgentWebSocketURL } from "./agent-client"
+import { sendWebContentsSafely } from "./safe-web-contents-send"
 import type { AgentPtySessionInfo, AgentPtySocketMessage, PtyTransportIPCEvent } from "./types"
 
 export const PTY_EVENT_CHANNEL = DESKTOP_PTY_EVENT_CHANNEL
@@ -21,8 +22,7 @@ function connectionKey(senderID: number, ptyID: string) {
 }
 
 function safeSend(sender: WebContents, payload: PtyTransportIPCEvent) {
-  if (sender.isDestroyed()) return
-  sender.send(PTY_EVENT_CHANNEL, payload)
+  sendWebContentsSafely(sender, PTY_EVENT_CHANNEL, payload)
 }
 
 async function readMessageData(data: MessageEvent["data"]) {

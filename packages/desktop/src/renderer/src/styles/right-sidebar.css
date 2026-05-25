@@ -1667,6 +1667,10 @@
   background: #ffffff;
 }
 
+.right-sidebar-diff-code.is-inline-preview .right-sidebar-diff-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .right-sidebar-diff-row + .right-sidebar-diff-row {
   border-top: 1px solid rgba(166, 186, 208, 0.12);
 }
@@ -1684,6 +1688,10 @@
   padding: 0 12px;
   color: #233241;
   white-space: pre;
+}
+
+.right-sidebar-diff-code.is-inline-preview .right-sidebar-diff-content {
+  padding-left: 12px;
 }
 
 .right-sidebar-diff-row.is-add {

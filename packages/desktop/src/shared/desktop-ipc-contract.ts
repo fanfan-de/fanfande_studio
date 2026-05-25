@@ -304,6 +304,68 @@ export interface DesktopWindowState {
   isMaximized: boolean
 }
 
+export interface DesktopRendererErrorReport {
+  colno?: number
+  componentStack?: string
+  filename?: string
+  lineno?: number
+  message: string
+  name?: string
+  source: "error-boundary" | "unhandled-rejection" | "window-error"
+  stack?: string
+  timestamp: number
+  url?: string
+  userAgent?: string
+}
+
+export interface DesktopRendererMemoryHeapSnapshot {
+  jsHeapSizeLimit?: number
+  totalJSHeapSize?: number
+  usedJSHeapSize?: number
+}
+
+export interface DesktopRendererPerformanceEntryCounts {
+  mark: number
+  measure: number
+  navigation: number
+  paint: number
+  resource: number
+  total: number
+}
+
+export interface DesktopRendererSessionMemoryDiagnostics {
+  assistantTurnCount: number
+  currentSessionID: string | null
+  diffChars: number
+  draftPatchChars: number
+  maxTraceItemChars: number
+  messageTreeContentChars: number
+  messageTreeNodeCount: number
+  streamingAssistantTurnCount: number
+  toolInputChars: number
+  toolOutputChars: number
+  traceItemCount: number
+  traceTextChars: number
+  turnCount: number
+  updatedAt: number
+}
+
+export interface DesktopRendererMemoryDiagnosticsSnapshot {
+  currentSession: DesktopRendererSessionMemoryDiagnostics
+  heap: DesktopRendererMemoryHeapSnapshot
+  performanceEntries: DesktopRendererPerformanceEntryCounts
+  reason?: string
+  source: "renderer"
+  timestamp: number
+  url?: string
+  userAgent?: string
+}
+
+export interface DesktopRendererMemoryDiagnosticsRecord extends DesktopRendererMemoryDiagnosticsSnapshot {
+  senderURL?: string
+  webContentsID: number
+}
+
 export type WorkbenchWindowKind = "main" | "session-popout"
 export type WorkbenchSurfaceKind = "main" | "session-popout"
 export type WorkbenchPanelPlacement = "within" | "left" | "right" | "top" | "bottom"
@@ -676,6 +738,18 @@ export interface DesktopIpcContract {
   "desktop:get-window-state": {
     input: void
     output: DesktopWindowState
+  }
+  "desktop:report-renderer-error": {
+    input: DesktopRendererErrorReport
+    output: { ok: boolean }
+  }
+  "desktop:report-renderer-memory-diagnostics": {
+    input: DesktopRendererMemoryDiagnosticsSnapshot
+    output: { ok: boolean }
+  }
+  "desktop:get-renderer-memory-diagnostics": {
+    input: void
+    output: { records: DesktopRendererMemoryDiagnosticsRecord[] }
   }
   "desktop:get-workbench-window-context": {
     input: void
@@ -1445,6 +1519,9 @@ export interface DesktopApiMethods {
   checkForAppUpdates(): Promise<DesktopIpcOutput<"desktop:check-for-app-updates">>
   getStoragePaths(): Promise<DesktopIpcOutput<"desktop:get-storage-paths">>
   getWindowState(): Promise<DesktopIpcOutput<"desktop:get-window-state">>
+  reportRendererError(input: DesktopIpcInput<"desktop:report-renderer-error">): Promise<DesktopIpcOutput<"desktop:report-renderer-error">>
+  reportRendererMemoryDiagnostics(input: DesktopIpcInput<"desktop:report-renderer-memory-diagnostics">): Promise<DesktopIpcOutput<"desktop:report-renderer-memory-diagnostics">>
+  getRendererMemoryDiagnostics(): Promise<DesktopIpcOutput<"desktop:get-renderer-memory-diagnostics">>
   getWorkbenchWindowContext(): Promise<DesktopIpcOutput<"desktop:get-workbench-window-context">>
   publishWorkbenchSnapshot(input: DesktopIpcInput<"desktop:workbench-publish-state-snapshot">): Promise<DesktopIpcOutput<"desktop:workbench-publish-state-snapshot">>
   detachSessionPanel(input: DesktopIpcInput<"desktop:workbench-detach-session-panel">): Promise<DesktopIpcOutput<"desktop:workbench-detach-session-panel">>

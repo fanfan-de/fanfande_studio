@@ -1,4 +1,4 @@
-import { lazy, Profiler, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import type { SerializedDockview } from "dockview-react"
 import { ActivityRail } from "./app/sidebar/ActivityRail"
 import { BuiltinToolsPage } from "./app/tools/BuiltinToolsPage"
@@ -32,7 +32,7 @@ import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
 import { useSettingsPage } from "./app/use-settings-page"
-import { createRendererProfilerOnRender } from "./app/perf-profiler"
+import { RendererProfiler, createRendererProfilerOnRender } from "./app/perf-profiler"
 import { createEmptyComposerDraftState } from "./app/composer/draft-state"
 import type { BuiltinToolKindKey } from "./app/tools/BuiltinToolsPage"
 import { findSession, isSideChatSession } from "./app/workspace"
@@ -2025,7 +2025,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onPointerDown={handleRightSidebarResizerPointerDown}
             />
 
-            <Profiler id="MainApp.RightSidebar" onRender={rightSidebarProfiler}>
+            <RendererProfiler id="MainApp.RightSidebar" onRender={rightSidebarProfiler}>
               <RightSidebar
                 activeWorkspaceFileScopeDirectory={activeWorkspaceFileScopeDirectory}
                 activeWorkspaceFileScopeName={activeWorkspaceFileScopeName}
@@ -2156,7 +2156,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 )}
                 windowControls={windowControls}
               />
-            </Profiler>
+            </RendererProfiler>
           </>
         ) : null}
 

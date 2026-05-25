@@ -210,4 +210,16 @@ describe("session message tree", () => {
       "First paragraph with enough detail to go beyond the compact preview len...",
     )
   })
+
+  it("caps very large expanded response content", () => {
+    const longResponse = "x".repeat(20_000)
+    const tree = buildSessionMessageTree([
+      createMessage({ id: "user-1", role: "user", created: 1, text: "Start" }),
+      createMessage({ id: "assistant-1", role: "assistant", created: 2, parentMessageID: "user-1", text: longResponse }),
+    ], "assistant-1")
+
+    const content = tree?.nodesByID["assistant-1"]?.content ?? ""
+    expect(content.length).toBeLessThan(longResponse.length)
+    expect(content).toContain("Message tree preview truncated")
+  })
 })

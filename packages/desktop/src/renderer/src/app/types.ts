@@ -998,11 +998,38 @@ export interface AssistantTraceProgressItem {
   status: SessionTaskStatus
 }
 
+export type AssistantTraceFileChangePreviewState = "streaming" | "complete" | "invalid" | "truncated"
+
+export interface AssistantTracePreviewDiffRow {
+  content: string
+  tone: "add" | "context" | "remove"
+}
+
+export interface AssistantTracePreviewDiffHunk {
+  header: string
+  rows: AssistantTracePreviewDiffRow[]
+}
+
+export type AssistantTraceFileChangeOperation = "add" | "update" | "delete" | "move"
+
+export interface AssistantTraceDraftPatchPreview {
+  detail: string
+  fileChanges: AssistantTraceFileChange[]
+  filePaths: string[]
+  isStreaming: boolean
+  status: AssistantTraceStatus
+  title: string
+}
+
 export interface AssistantTraceFileChange {
   file: string
   additions: number
   deletions: number
+  fromFile?: string
+  operation?: AssistantTraceFileChangeOperation
   patch?: string
+  previewHunks?: AssistantTracePreviewDiffHunk[]
+  previewState?: AssistantTraceFileChangePreviewState
 }
 
 export interface AssistantTraceItem {
@@ -1020,6 +1047,7 @@ export interface AssistantTraceItem {
   alt?: string
   toolInputText?: string
   toolOutputText?: string
+  draftPatch?: AssistantTraceDraftPatchPreview
   fileChanges?: AssistantTraceFileChange[]
   filePaths?: string[]
   status?: AssistantTraceStatus

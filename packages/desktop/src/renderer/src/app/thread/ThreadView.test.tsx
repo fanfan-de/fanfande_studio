@@ -284,33 +284,36 @@ describe("ThreadView trace item renderers", () => {
     expect(screen.getByRole("button", { name: /Tool error/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Tool denied/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Tool cancelled/ })).toBeInTheDocument()
+    expect(container.querySelector(".trace-kind-tool .trace-tool-status-indicator")).toBeNull()
+    expect(container.querySelector(".trace-kind-tool .trace-log-label")).toBeNull()
 
-    for (const status of ["pending", "running", "waiting-approval"] as const) {
-      const indicator = container.querySelector(`.trace-kind-tool.is-${status} .trace-tool-status-indicator`)
-      expect(indicator).not.toBeNull()
-      expect(indicator).toHaveClass("is-icon-dot")
-      expect(indicator).not.toHaveClass("is-breathing")
-    }
+    const pendingToolName = container.querySelector(".trace-kind-tool.is-pending .trace-tool-name")
+    expect(pendingToolName).not.toBeNull()
+    expect(pendingToolName).toHaveClass("is-pending")
 
-    const completedIndicator = container.querySelector(".trace-kind-tool.is-completed .trace-tool-status-indicator")
-    expect(completedIndicator).not.toBeNull()
-    expect(completedIndicator).toHaveClass("is-icon-success")
-    expect(completedIndicator).not.toHaveClass("is-breathing")
+    const waitingApprovalToolName = container.querySelector(".trace-kind-tool.is-waiting-approval .trace-tool-name")
+    expect(waitingApprovalToolName).not.toBeNull()
+    expect(waitingApprovalToolName).toHaveClass("is-waiting-approval")
 
-    const errorIndicator = container.querySelector(".trace-kind-tool.is-error .trace-tool-status-indicator")
-    expect(errorIndicator).not.toBeNull()
-    expect(errorIndicator).toHaveClass("is-icon-error")
-    expect(errorIndicator).not.toHaveClass("is-breathing")
+    const runningToolName = container.querySelector(".trace-kind-tool.is-running .trace-tool-name")
+    expect(runningToolName).not.toBeNull()
+    expect(runningToolName).toHaveClass("is-running")
 
-    const deniedIndicator = container.querySelector(".trace-kind-tool.is-denied .trace-tool-status-indicator")
-    expect(deniedIndicator).not.toBeNull()
-    expect(deniedIndicator).toHaveClass("is-icon-error")
-    expect(deniedIndicator).not.toHaveClass("is-breathing")
+    const completedToolName = container.querySelector(".trace-kind-tool.is-completed .trace-tool-name")
+    expect(completedToolName).not.toBeNull()
+    expect(completedToolName).not.toHaveClass("is-running")
 
-    const cancelledIndicator = container.querySelector(".trace-kind-tool.is-cancelled .trace-tool-status-indicator")
-    expect(cancelledIndicator).not.toBeNull()
-    expect(cancelledIndicator).toHaveClass("is-icon-error")
-    expect(cancelledIndicator).not.toHaveClass("is-breathing")
+    const errorToolName = container.querySelector(".trace-kind-tool.is-error .trace-tool-name")
+    expect(errorToolName).not.toBeNull()
+    expect(errorToolName).not.toHaveClass("is-running")
+
+    const deniedToolName = container.querySelector(".trace-kind-tool.is-denied .trace-tool-name")
+    expect(deniedToolName).not.toBeNull()
+    expect(deniedToolName).not.toHaveClass("is-running")
+
+    const cancelledToolName = container.querySelector(".trace-kind-tool.is-cancelled .trace-tool-name")
+    expect(cancelledToolName).not.toBeNull()
+    expect(cancelledToolName).not.toHaveClass("is-running")
   })
 
   it("renders pending tool traces as cancelled when the assistant turn is cancelled", () => {
@@ -325,10 +328,30 @@ describe("ThreadView trace item renderers", () => {
 
     expect(screen.getByRole("button", { name: /Tool pending/ })).toBeInTheDocument()
     expect(container.querySelector(".trace-kind-tool.is-pending")).toBeNull()
-    const cancelledIndicator = container.querySelector(".trace-kind-tool.is-cancelled .trace-tool-status-indicator")
-    expect(cancelledIndicator).not.toBeNull()
-    expect(cancelledIndicator).toHaveClass("is-icon-error")
-    expect(cancelledIndicator).not.toHaveClass("is-breathing")
+    expect(container.querySelector(".trace-kind-tool.is-cancelled .trace-tool-status-indicator")).toBeNull()
+    expect(container.querySelector(".trace-kind-tool.is-cancelled .trace-log-label")).toBeNull()
+    const cancelledToolName = container.querySelector(".trace-kind-tool.is-cancelled .trace-tool-name")
+    expect(cancelledToolName).not.toBeNull()
+    expect(cancelledToolName).not.toHaveClass("is-running")
+  })
+
+  it("applies the active tool-name treatment to streaming non-patch tools", () => {
+    const toolItem: AssistantTraceItem = {
+      ...toolStatusTraceItem("completed"),
+      id: "tool-streaming-shell",
+      isStreaming: true,
+      status: undefined,
+      title: "powershell_command",
+    }
+
+    const { container } = renderThread([
+      assistantTraceTurn("assistant-streaming-shell", [toolItem], true),
+    ])
+
+    const toolName = container.querySelector(".trace-kind-tool .trace-tool-name")
+    expect(toolName).not.toBeNull()
+    expect(toolName).toHaveClass("is-active")
+    expect(toolName).not.toHaveClass("is-completed")
   })
 
   it("keeps tool details available after expanding compact summaries", () => {
@@ -682,6 +705,193 @@ describe("ThreadView image trace items", () => {
 
     fireEvent.click(getByRole("button", { name: /已编辑\s*src\/app\.tsx/ }))
     expect(screen.queryByRole("region", { name: "Diff preview for src/app.tsx" })).not.toBeInTheDocument()
+  })
+
+  it("renders streamed draft patch previews without requiring git diff line numbers", () => {
+    const toolItem: AssistantTraceItem = {
+      id: "tool-patch-draft",
+      kind: "tool",
+      timestamp: 1,
+      label: "Tool",
+      title: "apply_patch",
+      isStreaming: true,
+      draftPatch: {
+        detail: "Streaming apply_patch preview.",
+        fileChanges: [
+          {
+            file: "src/app.ts",
+            additions: 1,
+            deletions: 1,
+            operation: "add",
+            previewState: "streaming",
+            previewHunks: [
+              {
+                header: "Patch hunk",
+                rows: [
+                  { content: "old", tone: "remove" },
+                  { content: "new", tone: "add" },
+                ],
+              },
+            ],
+          },
+        ],
+        filePaths: ["src/app.ts"],
+        isStreaming: true,
+        status: "running",
+        title: "1 draft file change (+1 -1)",
+      },
+      section: "tools",
+      status: "running",
+      toolCallID: "call-live-patch",
+      visibilityKey: "toolCalls",
+    }
+
+    const { container, getAllByText, getByRole, getByText } = renderThread([
+      assistantTraceTurn("assistant-patch-draft", [toolItem], true),
+    ])
+
+    expect(getByRole("region", { name: "Tools" })).toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "File Changes" })).not.toBeInTheDocument()
+    expect(container.querySelector(".trace-file-change-summary")).toHaveAttribute("aria-expanded", "true")
+    expect(container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")).not.toBeNull()
+    expect(container.querySelector(".trace-tool-draft-patch .trace-file-change-summary")).toBeNull()
+    expect(container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")?.textContent).toContain("正在创建")
+    expect(container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")?.textContent).toContain("src/app.ts")
+    expect(container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")?.textContent).toContain("+1-1")
+    expect(getAllByText("正在创建").length).toBeGreaterThan(0)
+    expect(getAllByText("src/app.ts").length).toBeGreaterThan(0)
+
+    expect(container.querySelector(".trace-tool-draft-patch .trace-file-change-row")).toBeNull()
+    expect(container.querySelector(".trace-tool-draft-patch .trace-file-change-preview.is-single-file")).not.toBeNull()
+    expect(getByRole("region", { name: "Diff preview for src/app.ts" })).toBeInTheDocument()
+    expect(getByText("old")).toBeInTheDocument()
+    expect(getByText("new")).toBeInTheDocument()
+    expect(container.querySelectorAll(".right-sidebar-diff-row.is-inline-preview")).toHaveLength(2)
+    expect(container.querySelectorAll(".right-sidebar-diff-line-number")).toHaveLength(0)
+  })
+
+  it("settles completed draft patch previews and avoids repeating the file row in the tool summary", () => {
+    const toolItem: AssistantTraceItem = {
+      id: "tool-patch-draft-completed",
+      kind: "tool",
+      timestamp: 1,
+      label: "Tool",
+      title: "apply_patch",
+      draftPatch: {
+        detail: "Patch tool completed.",
+        fileChanges: [
+          {
+            file: "src/app.ts",
+            additions: 1,
+            deletions: 0,
+            operation: "add",
+            previewState: "complete",
+            previewHunks: [
+              {
+                header: "Patch hunk",
+                rows: [
+                  { content: "new", tone: "add" },
+                ],
+              },
+            ],
+          },
+        ],
+        filePaths: ["src/app.ts"],
+        isStreaming: false,
+        status: "completed",
+        title: "1 draft file change (+1 -0)",
+      },
+      section: "tools",
+      status: "completed",
+      toolCallID: "call-completed-patch",
+      visibilityKey: "toolCalls",
+    }
+
+    const { container, getByRole, queryByText } = renderThread([
+      assistantTraceTurn("assistant-patch-draft-completed", [toolItem], false),
+    ])
+
+    const inlineSummary = container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")
+    expect(inlineSummary?.textContent).toContain("已创建")
+    expect(inlineSummary?.textContent).toContain("src/app.ts")
+    expect(inlineSummary?.textContent).toContain("+1-0")
+    expect(queryByText("正在创建")).toBeNull()
+    expect(getByRole("button", { name: /已创建\s*src\/app\.ts\s*1 additions,\s*0 deletions/ })).toBeInTheDocument()
+    expect(container.querySelector(".trace-tool-draft-patch .trace-file-change-row")).toBeNull()
+    expect(getByRole("region", { name: "Diff preview for src/app.ts" })).toBeInTheDocument()
+  })
+
+  it("ignores malformed draft patch preview hunks instead of crashing the thread", () => {
+    const toolItem = {
+      id: "tool-patch-draft-malformed-hunk",
+      kind: "tool",
+      timestamp: 1,
+      label: "Tool",
+      title: "apply_patch",
+      draftPatch: {
+        detail: "Patch tool completed.",
+        fileChanges: [
+          {
+            file: "src/safe.ts",
+            additions: 1,
+            deletions: 0,
+            operation: "add",
+            previewState: "complete",
+            previewHunks: [
+              {
+                header: "Broken hunk",
+              },
+            ],
+          },
+        ],
+        filePaths: ["src/safe.ts"],
+        isStreaming: false,
+        status: "completed",
+        title: "1 draft file change (+1 -0)",
+      },
+      section: "tools",
+      status: "completed",
+      toolCallID: "call-malformed-patch",
+      visibilityKey: "toolCalls",
+    } as unknown as AssistantTraceItem
+
+    const { container } = renderThread([
+      assistantTraceTurn("assistant-patch-draft-malformed-hunk", [toolItem], false),
+    ])
+
+    expect(screen.getByText("src/safe.ts")).toBeInTheDocument()
+    expect(container.querySelector(".trace-tool-inline-draft-patch-summary")).not.toBeNull()
+    expect(screen.queryByRole("region", { name: "Diff preview for src/safe.ts" })).toBeNull()
+  })
+
+  it("falls back to the normal tool row when draft patch file changes are malformed", () => {
+    const toolItem = {
+      id: "tool-patch-draft-malformed-files",
+      kind: "tool",
+      timestamp: 1,
+      label: "Tool",
+      title: "apply_patch",
+      draftPatch: {
+        detail: "Patch tool completed.",
+        fileChanges: null,
+        filePaths: ["src/safe.ts"],
+        isStreaming: false,
+        status: "completed",
+        title: "1 draft file change (+1 -0)",
+      },
+      section: "tools",
+      status: "completed",
+      toolCallID: "call-malformed-files",
+      toolOutputText: "Done",
+      visibilityKey: "toolCalls",
+    } as unknown as AssistantTraceItem
+
+    const { container } = renderThread([
+      assistantTraceTurn("assistant-patch-draft-malformed-files", [toolItem], false),
+    ])
+
+    expect(screen.getByText("apply_patch")).toBeInTheDocument()
+    expect(container.querySelector(".trace-tool-inline-draft-patch-summary")).toBeNull()
   })
 
   it("does not mount patch debug entries while the file change summary is collapsed", () => {
@@ -3120,6 +3330,76 @@ describe("ThreadView scroll restoration", () => {
       expect(threadColumn.scrollTop).toBe(1400)
     } finally {
       layoutSpy.mockRestore()
+    }
+  })
+
+  it("smoothly follows small streaming height changes while pinned to the bottom", () => {
+    const originalRequestAnimationFrame = window.requestAnimationFrame
+    const originalCancelAnimationFrame = window.cancelAnimationFrame
+    let nextFrameID = 0
+    const pendingFrames = new Map<number, FrameRequestCallback>()
+    window.requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+      nextFrameID += 1
+      pendingFrames.set(nextFrameID, callback)
+      return nextFrameID
+    })
+    window.cancelAnimationFrame = vi.fn((frameID: number) => {
+      pendingFrames.delete(frameID)
+    })
+    const flushAnimationFrame = (timestamp: number) => {
+      const callbacks = Array.from(pendingFrames.values())
+      pendingFrames.clear()
+      for (const callback of callbacks) {
+        callback(timestamp)
+      }
+    }
+    const buildStreamingTurn = (text: string) => assistantTraceTurn("assistant-1", [
+      {
+        id: "response-1",
+        kind: "text",
+        timestamp: 1,
+        label: "Assistant",
+        text,
+        status: "running",
+        isStreaming: true,
+      },
+    ], true)
+
+    try {
+      const { rerender, props, threadColumn } = renderThread([
+        userTurn("user-1", "Prompt"),
+        buildStreamingTurn("First chunk"),
+      ], {
+        scrollStateKey: "session:streaming-smooth-follow",
+      })
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 800,
+        scrollTop: 400,
+      })
+
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 830,
+        scrollTop: 400,
+      })
+      rerender(
+        <ThreadView
+          {...props}
+          activeTurns={[
+            userTurn("user-1", "Prompt"),
+            buildStreamingTurn("First chunk\nSecond chunk"),
+          ]}
+        />,
+      )
+
+      expect(threadColumn.scrollTop).toBe(400)
+      act(() => flushAnimationFrame(10_000))
+      expect(threadColumn.scrollTop).toBe(430)
+    } finally {
+      pendingFrames.clear()
+      window.requestAnimationFrame = originalRequestAnimationFrame
+      window.cancelAnimationFrame = originalCancelAnimationFrame
     }
   })
 

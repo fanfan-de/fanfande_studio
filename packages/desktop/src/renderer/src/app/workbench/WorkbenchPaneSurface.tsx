@@ -1,4 +1,4 @@
-import { memo, Profiler, useLayoutEffect, useMemo, useRef } from "react"
+import { memo, useLayoutEffect, useMemo, useRef } from "react"
 import { CreateSessionCanvas } from "../canvas/CreateSessionCanvas"
 import { SessionCanvasTopMenu } from "../canvas/SessionCanvasTopMenu"
 import { Composer } from "../composer/Composer"
@@ -23,7 +23,7 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import { useProjectComposer } from "../use-project-composer"
-import { createRendererProfilerOnRender } from "../perf-profiler"
+import { RendererProfiler, createRendererProfilerOnRender } from "../perf-profiler"
 import { isSideChatSession } from "../workspace"
 import { ThreadView, type ThreadScrollSnapshot } from "../thread/ThreadView"
 import type { WorkbenchPaneState } from "../agent-workspace/workspace-derived-state"
@@ -361,7 +361,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
     >
       <div className="workbench-pane-stage">
         <div className="workbench-pane-live-region is-dockview-managed">
-          <Profiler id="WorkbenchPaneSurface.SessionCanvasTopMenu" onRender={topMenuProfiler}>
+          <RendererProfiler id="WorkbenchPaneSurface.SessionCanvasTopMenu" onRender={topMenuProfiler}>
             <SessionCanvasTopMenu
               activeSession={pane.activeSession}
               sessionTasks={pane.activeSessionTasks ?? pane.activeSessionRuntimeDebug?.tasks ?? null}
@@ -386,19 +386,19 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
               selectedSkillLabel={composer.selectedSkillLabel}
               onSkillToggle={composer.handleSkillToggle}
             />
-          </Profiler>
+          </RendererProfiler>
           {pane.createSessionTabID ? (
             <>
-              <Profiler id="WorkbenchPaneSurface.CreateSessionCanvas" onRender={createSessionCanvasProfiler}>
+              <RendererProfiler id="WorkbenchPaneSurface.CreateSessionCanvas" onRender={createSessionCanvasProfiler}>
                 <CreateSessionCanvas
                   isCreatingSession={pane.isCreatingSession}
                   selectedWorkspaceID={pane.createSessionWorkspaceID}
                   workspaces={workspaces}
                   onWorkspaceChange={(workspaceID) => onCreateSessionWorkspaceChange(workspaceID, pane.createSessionTabID)}
                 />
-              </Profiler>
+              </RendererProfiler>
               <div className="composer-stack">
-                <Profiler id="WorkbenchPaneSurface.CreateSessionComposer" onRender={composerProfiler}>
+                <RendererProfiler id="WorkbenchPaneSurface.CreateSessionComposer" onRender={composerProfiler}>
                   <Composer
                     attachments={pane.composerAttachments}
                     attachmentButtonTitle={composer.attachmentButtonTitle}
@@ -469,7 +469,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                       })
                     }}
                   />
-                </Profiler>
+                </RendererProfiler>
                 {createSessionWorkflowBadge ? <ComposerPlanModeNotice workflow={createSessionWorkflowBadge} /> : null}
                 <ComposerUtilityBar
                   contextWindow={composer.contextWindow}
@@ -482,7 +482,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
             </>
           ) : (
             <>
-              <Profiler id="WorkbenchPaneSurface.ThreadView" onRender={threadViewProfiler}>
+              <RendererProfiler id="WorkbenchPaneSurface.ThreadView" onRender={threadViewProfiler}>
                 <ThreadView
                   activeProjectID={pane.projectID}
                   activeSession={pane.activeSession}
@@ -620,10 +620,10 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                   }
                   onPermissionRequestResponse={onPermissionRequestResponse}
                 />
-              </Profiler>
+              </RendererProfiler>
               <div className="composer-stack">
                 <ComposerPendingSteerDrawer turns={pendingSteerTurns} />
-                <Profiler id="WorkbenchPaneSurface.Composer" onRender={composerProfiler}>
+                <RendererProfiler id="WorkbenchPaneSurface.Composer" onRender={composerProfiler}>
                   <Composer
                     attachments={pane.composerAttachments}
                     attachmentButtonTitle={composer.attachmentButtonTitle}
@@ -696,7 +696,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                       })
                     }}
                   />
-                </Profiler>
+                </RendererProfiler>
                 {pane.composerParentMessageID ? (
                   <ComposerBranchParentNotice
                     messagePreview={composerParentMessagePreview}

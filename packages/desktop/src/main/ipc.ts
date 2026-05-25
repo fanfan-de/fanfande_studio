@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type OpenDialogOptions, type OpenDialogReturnValue, type SaveDialogOptions, type SaveDialogReturnValue, type WebContents } from "electron"
 import { createPlatformAdapter } from "@anybox/platform"
 import { DesktopIpcSchemas } from "@anybox/shared"
-import { mkdir, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { AppearanceConfigDocument } from "../shared/appearance"
 import type { AppLocale, LocaleConfigDocument } from "../shared/locale"
@@ -11,6 +11,9 @@ import type {
   DesktopIpcEventPayload,
   DesktopIpcInput,
   DesktopIpcOutput,
+  DesktopRendererErrorReport,
+  DesktopRendererMemoryDiagnosticsRecord,
+  DesktopRendererMemoryDiagnosticsSnapshot,
   McpServerInput,
 } from "../shared/desktop-ipc-contract"
 import {
@@ -36,7 +39,8 @@ import { resolveManagedAgentDataDir } from "./managed-agent"
 import { openMonitorWindow } from "./monitor-window"
 import { readPreviewText, resolvePreviewTarget } from "./preview-targets"
 import { PtyProxyManager } from "./pty-proxy"
-import { safeWarn } from "./safe-console"
+import { safeError, safeWarn } from "./safe-console"
+import { sendWebContentsSafely } from "./safe-web-contents-send"
 import {
   checkForAppUpdates,
   getAppUpdateSettingsSnapshot,
@@ -229,7 +233,7 @@ function sendDesktopIpcEvent<Channel extends DesktopIpcEventChannel>(
   channel: Channel,
   payload: DesktopIpcEventPayload<Channel>,
 ) {
-  target.send(channel, payload)
+  return sendWebContentsSafely(target, channel, payload)
 }
 
 function normalizeShowMenuInput(input: MenuKey | { menuKey: MenuKey; anchor?: MenuAnchor }) {
@@ -238,6 +242,44 @@ function normalizeShowMenuInput(input: MenuKey | { menuKey: MenuKey; anchor?: Me
   }
 
   return input
+}
+
+function truncateLogString(value: string | undefined, maxLength = 8_000) {
+  if (!value) return value
+  if (value.length <= maxLength) return value
+  return `${value.slice(0, maxLength)}\n[truncated ${value.length - maxLength} chars]`
+}
+
+function normalizeRendererErrorReport(input: DesktopRendererErrorReport): DesktopRendererErrorReport {
+  return {
+    ...input,
+    componentStack: truncateLogString(input.componentStack),
+    message: truncateLogString(input.message, 2_000) ?? "Unknown renderer error",
+    name: truncateLogString(input.name, 500),
+    stack: truncateLogString(input.stack),
+    url: truncateLogString(input.url, 2_000),
+    userAgent: truncateLogString(input.userAgent, 1_000),
+  }
+}
+
+async function appendRendererErrorLog(report: DesktopRendererErrorReport & { senderURL?: string; webContentsID?: number }) {
+  const logPath = path.join(app.getPath("userData"), "renderer-errors.log")
+  const line = `${JSON.stringify(report)}\n`
+  await appendFile(logPath, line, "utf8")
+}
+
+const rendererMemoryDiagnosticsByWebContentsID = new Map<number, DesktopRendererMemoryDiagnosticsRecord>()
+const rendererMemoryDiagnosticsCleanupTargets = new Set<number>()
+
+function normalizeRendererMemoryDiagnostics(
+  input: DesktopRendererMemoryDiagnosticsSnapshot,
+  event: IpcMainInvokeEvent,
+): DesktopRendererMemoryDiagnosticsRecord {
+  return {
+    ...input,
+    senderURL: event.sender.getURL(),
+    webContentsID: event.sender.id,
+  }
 }
 
 function mapSessionInfo(session: AgentSessionInfo) {
@@ -1274,6 +1316,41 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
       isMaximized: win ? isWindowMaximized(win) : false,
     }
   })
+
+  handleDesktopIpc("desktop:report-renderer-error", (event, input) => {
+    const report = normalizeRendererErrorReport(input)
+    const reportWithSender = {
+      ...report,
+      senderURL: event.sender.getURL(),
+      webContentsID: event.sender.id,
+    }
+    safeError("[desktop][renderer-error]", reportWithSender)
+    void appendRendererErrorLog(reportWithSender).catch((error) => {
+      safeWarn("[desktop][renderer-error] failed to write renderer error log", error)
+    })
+
+    return { ok: true }
+  })
+
+  handleDesktopIpc("desktop:report-renderer-memory-diagnostics", (event, input) => {
+    const report = normalizeRendererMemoryDiagnostics(input, event)
+    rendererMemoryDiagnosticsByWebContentsID.set(event.sender.id, report)
+    if (!rendererMemoryDiagnosticsCleanupTargets.has(event.sender.id)) {
+      rendererMemoryDiagnosticsCleanupTargets.add(event.sender.id)
+      event.sender.once("destroyed", () => {
+        rendererMemoryDiagnosticsCleanupTargets.delete(event.sender.id)
+        rendererMemoryDiagnosticsByWebContentsID.delete(event.sender.id)
+      })
+    }
+
+    return { ok: true }
+  })
+
+  handleDesktopIpc("desktop:get-renderer-memory-diagnostics", () => ({
+    records: [...rendererMemoryDiagnosticsByWebContentsID.values()].sort(
+      (left, right) => right.timestamp - left.timestamp,
+    ),
+  }))
 
   handleDesktopIpc("desktop:get-workbench-window-context", (event) => {
     if (!options.workbenchWindowManager) {
@@ -3470,6 +3547,11 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
       controller: new AbortController(),
     }
     activeAgentSessionRequests.set(agentSessionRequestKey(target.id, clientTurnID), request)
+    const abortOnTargetDestroyed = () => {
+      request.cancelRequested = true
+      request.controller.abort()
+    }
+    target.once("destroyed", abortOnTargetDestroyed)
 
     let requestId: string | undefined
 
@@ -3527,6 +3609,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
           receivedAt: Date.now(),
         } satisfies AgentSessionBridgeIPCEvent)
     } finally {
+      target.off("destroyed", abortOnTargetDestroyed)
       removeActiveAgentSessionRequest(target.id, clientTurnID, request)
     }
 

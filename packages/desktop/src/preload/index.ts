@@ -142,6 +142,12 @@ try {
       invokeDesktop("desktop:get-window-state") as Promise<{
         isMaximized: boolean
       }>,
+    reportRendererError: (input: DesktopIpcInput<"desktop:report-renderer-error">) =>
+      invokeDesktop("desktop:report-renderer-error", input) as Promise<DesktopIpcOutput<"desktop:report-renderer-error">>,
+    reportRendererMemoryDiagnostics: (input: DesktopIpcInput<"desktop:report-renderer-memory-diagnostics">) =>
+      invokeDesktop("desktop:report-renderer-memory-diagnostics", input) as Promise<DesktopIpcOutput<"desktop:report-renderer-memory-diagnostics">>,
+    getRendererMemoryDiagnostics: () =>
+      invokeDesktop("desktop:get-renderer-memory-diagnostics") as Promise<DesktopIpcOutput<"desktop:get-renderer-memory-diagnostics">>,
     getWorkbenchWindowContext: () =>
       invokeDesktop("desktop:get-workbench-window-context") as Promise<WorkbenchWindowContext>,
     publishWorkbenchSnapshot: (input: DesktopIpcInput<"desktop:workbench-publish-state-snapshot">) =>

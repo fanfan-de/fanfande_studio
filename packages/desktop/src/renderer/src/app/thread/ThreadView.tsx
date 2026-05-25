@@ -1,4 +1,4 @@
-import { memo, useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
+import { Component, memo, useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ErrorInfo, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
 import { createPortal } from "react-dom"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
@@ -17,7 +17,6 @@ import {
   PlusIcon,
   ResetIcon,
   SideChatIcon,
-  ToolsIcon,
 } from "../icons"
 import { joinClassNames, writeTextToClipboard } from "../shared-ui"
 import { getSessionMessageIDForTurn, type SessionMessageBranchOption, type SessionMessageTree } from "../session-message-tree"
@@ -76,6 +75,20 @@ export interface ThreadScrollSnapshot {
   scrollTop: number
   pinnedToBottom: boolean
   updatedAt: number
+}
+
+interface ThreadFollowScrollTarget {
+  scrollTop: number
+  visualScrollTop: number
+}
+
+interface ThreadSmoothFollowScroll {
+  duration: number
+  frameID: number | null
+  fromScrollTop: number
+  key: string
+  startedAt: number
+  targetScrollTop: number
 }
 
 interface ThreadViewProps {
@@ -182,6 +195,11 @@ const THREAD_BOTTOM_LOCK_THRESHOLD_PX = 32
 const THREAD_USER_SCROLL_INTENT_WINDOW_MS = 800
 const THREAD_COMPLETION_SCROLL_SYNC_SUPPRESS_MS = 600
 const THREAD_TOP_RESET_THRESHOLD_PX = 2
+const THREAD_FOLLOW_SMOOTH_SCROLL_MIN_DELTA_PX = 6
+const THREAD_FOLLOW_SMOOTH_SCROLL_MAX_DELTA_PX = 420
+const THREAD_FOLLOW_SMOOTH_SCROLL_MIN_DURATION_MS = 90
+const THREAD_FOLLOW_SMOOTH_SCROLL_MAX_DURATION_MS = 220
+const THREAD_FOLLOW_SMOOTH_SCROLL_PX_PER_MS = 2.4
 const THREAD_VIRTUALIZATION_MIN_ROWS = 80
 const THREAD_VIRTUAL_OVERSCAN_PX = 900
 const THREAD_VIRTUAL_OVERSCAN_ROWS = 2
@@ -316,12 +334,21 @@ function getThreadScrollMaxTop(threadColumn: HTMLDivElement) {
   return Math.max(0, threadColumn.scrollHeight - threadColumn.clientHeight)
 }
 
-function scrollThreadColumnToBottom(threadColumn: HTMLDivElement) {
-  threadColumn.scrollTop = threadColumn.scrollHeight
+function easeThreadFollowScroll(progress: number) {
+  return 1 - Math.pow(1 - progress, 3)
 }
 
-function scrollThreadColumnToLatestContent(threadColumn: HTMLDivElement) {
-  scrollThreadColumnToBottom(threadColumn)
+function getThreadSmoothFollowScrollDuration(delta: number) {
+  return Math.min(
+    THREAD_FOLLOW_SMOOTH_SCROLL_MAX_DURATION_MS,
+    Math.max(THREAD_FOLLOW_SMOOTH_SCROLL_MIN_DURATION_MS, delta / THREAD_FOLLOW_SMOOTH_SCROLL_PX_PER_MS),
+  )
+}
+
+function prefersReducedThreadMotion() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false
+
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches
 }
 
 function clampThreadScrollTop(threadColumn: HTMLDivElement, scrollTop: number) {
@@ -427,7 +454,9 @@ function estimateAssistantTraceItemHeight(item: AssistantTraceItem) {
       : item.kind === "reasoning"
         ? 58
         : 48
-  return Math.max(kindHeight, textHeight)
+  const draftPatchFileCount = normalizeTraceFileChanges(item.draftPatch?.fileChanges).length
+  const draftPatchHeight = draftPatchFileCount > 0 ? Math.min(220, Math.max(48, draftPatchFileCount * 28 + 34)) : 0
+  return Math.max(kindHeight + draftPatchHeight, textHeight)
 }
 
 function estimateAssistantThreadRowHeight(row: {
@@ -807,6 +836,16 @@ function normalizeTurnDiffSummary(diffSummary: SessionDiffSummary | undefined): 
     })) ?? []
 }
 
+function buildLargeStringSignature(value: string | undefined) {
+  if (!value) return ""
+  if (value.length <= 160) return value
+  return `${value.length}:${value.slice(0, 80)}:${value.slice(-80)}`
+}
+
+function buildFileChangeSignature(change: Pick<AssistantTraceFileChange, "additions" | "deletions" | "file" | "patch">) {
+  return `${change.file}\u0000${change.additions}\u0000${change.deletions}\u0000${buildLargeStringSignature(change.patch)}`
+}
+
 function hydrateUserTurnFileChangesFromPatchSources(
   fileChanges: AssistantTraceFileChange[],
   patchSourceFileChanges: AssistantTraceFileChange[],
@@ -881,7 +920,7 @@ function buildHydratedUserTurnDiffSummary(
 
 function buildDiffSummarySignature(diffSummary: SessionDiffSummary | null) {
   return diffSummary?.diffs
-    .map((diff) => `${diff.file}\u0000${diff.additions}\u0000${diff.deletions}\u0000${diff.patch ?? ""}`)
+    .map(buildFileChangeSignature)
     .join("\u0001") ?? ""
 }
 
@@ -939,7 +978,7 @@ function TurnDiffCard({
     ? hydrateUserTurnFileChangesFromWorkspaceDiff(fileChangesFromTurnSources, activeSessionDiff)
     : fileChangesFromTurnSources
   const fileChangeSignature = fileChanges
-    .map((change) => `${change.file}\u0000${change.additions}\u0000${change.deletions}\u0000${change.patch ?? ""}`)
+    .map(buildFileChangeSignature)
     .join("\u0001")
   const [isListExpanded, setIsListExpanded] = useState(true)
   const [expandedFile, setExpandedFile] = useState<string | null>(null)
@@ -3179,17 +3218,455 @@ function TraceItemFileActions({
   )
 }
 
+const TRACE_FILE_CHANGE_OPERATIONS = new Set<NonNullable<AssistantTraceFileChange["operation"]>>([
+  "add",
+  "delete",
+  "move",
+  "update",
+])
+
+const TRACE_FILE_CHANGE_PREVIEW_STATES = new Set<NonNullable<AssistantTraceFileChange["previewState"]>>([
+  "complete",
+  "invalid",
+  "streaming",
+  "truncated",
+])
+
+const TRACE_FILE_CHANGE_PREVIEW_ROW_TONES = new Set(["add", "context", "remove"])
+
+function normalizeTraceFileChangeNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+function normalizeTraceFileChangeString(value: unknown) {
+  return typeof value === "string" ? value : ""
+}
+
+function normalizeTraceFileChangeOperation(value: unknown): AssistantTraceFileChange["operation"] | undefined {
+  return typeof value === "string" && TRACE_FILE_CHANGE_OPERATIONS.has(value as NonNullable<AssistantTraceFileChange["operation"]>)
+    ? value as NonNullable<AssistantTraceFileChange["operation"]>
+    : undefined
+}
+
+function normalizeTraceFileChangePreviewState(value: unknown): AssistantTraceFileChange["previewState"] | undefined {
+  return typeof value === "string" && TRACE_FILE_CHANGE_PREVIEW_STATES.has(value as NonNullable<AssistantTraceFileChange["previewState"]>)
+    ? value as NonNullable<AssistantTraceFileChange["previewState"]>
+    : undefined
+}
+
+function normalizeTracePreviewHunks(value: unknown): AssistantTraceFileChange["previewHunks"] | undefined {
+  if (!Array.isArray(value)) return undefined
+
+  const hunks = value.flatMap((hunk): NonNullable<AssistantTraceFileChange["previewHunks"]> => {
+    if (!hunk || typeof hunk !== "object") return []
+    const record = hunk as { header?: unknown; rows?: unknown }
+    if (!Array.isArray(record.rows)) return []
+
+    const rows = record.rows.flatMap((row): NonNullable<AssistantTraceFileChange["previewHunks"]>[number]["rows"] => {
+      if (!row || typeof row !== "object") return []
+      const rowRecord = row as { content?: unknown; tone?: unknown }
+      if (typeof rowRecord.tone !== "string" || !TRACE_FILE_CHANGE_PREVIEW_ROW_TONES.has(rowRecord.tone)) return []
+      return [{
+        content: normalizeTraceFileChangeString(rowRecord.content),
+        tone: rowRecord.tone as "add" | "context" | "remove",
+      }]
+    })
+    if (rows.length === 0) return []
+
+    return [{
+      header: normalizeTraceFileChangeString(record.header).trim() || "Patch hunk",
+      rows,
+    }]
+  })
+
+  return hunks.length > 0 ? hunks : undefined
+}
+
+function normalizeTraceFileChanges(value: unknown): AssistantTraceFileChange[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((change): AssistantTraceFileChange[] => {
+    if (!change || typeof change !== "object") return []
+    const record = change as Record<string, unknown>
+    const file = normalizeTraceFileChangeString(record.file).trim()
+    if (!file) return []
+
+    const patch = normalizeTraceFileChangeString(record.patch)
+    const fromFile = normalizeTraceFileChangeString(record.fromFile).trim()
+    const operation = normalizeTraceFileChangeOperation(record.operation)
+    const previewHunks = normalizeTracePreviewHunks(record.previewHunks)
+    const previewState = normalizeTraceFileChangePreviewState(record.previewState)
+
+    return [{
+      file,
+      additions: normalizeTraceFileChangeNumber(record.additions),
+      deletions: normalizeTraceFileChangeNumber(record.deletions),
+      ...(fromFile ? { fromFile } : {}),
+      ...(operation ? { operation } : {}),
+      ...(patch ? { patch } : {}),
+      ...(previewHunks ? { previewHunks } : {}),
+      ...(previewState ? { previewState } : {}),
+    }]
+  })
+}
+
+function normalizeTraceFilePaths(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((file) => normalizeTraceFileChangeString(file).trim())
+    .filter(Boolean)
+}
+
 function normalizePatchFileChanges(item: AssistantTraceItem): AssistantTraceFileChange[] {
-  const changes = item.fileChanges?.filter((change) => change.file.trim()) ?? []
+  const itemFileChanges = normalizeTraceFileChanges(item.fileChanges)
+  const changes = itemFileChanges.length > 0 ? itemFileChanges : normalizeTraceFileChanges(item.draftPatch?.fileChanges)
   if (changes.length > 0) return changes
 
-  return (item.filePaths ?? [])
-    .filter((file) => file.trim())
+  return normalizeTraceFilePaths(item.filePaths)
     .map((file) => ({
       file,
       additions: 0,
       deletions: 0,
     }))
+}
+
+function hasFileChangePreview(change: AssistantTraceFileChange) {
+  return Boolean(change.patch?.trim()) || Boolean(normalizeTracePreviewHunks(change.previewHunks)?.length)
+}
+
+type DraftPatchActionPhase = "live" | "completed" | "error" | "cancelled" | "denied"
+
+function getDraftPatchActionPhase(status: AssistantTraceItem["status"] | undefined, isStreaming: boolean): DraftPatchActionPhase {
+  if (isStreaming || status === "running" || status === "pending") return "live"
+  if (status === "error") return "error"
+  if (status === "cancelled") return "cancelled"
+  if (status === "denied") return "denied"
+  return "completed"
+}
+
+function getDraftPatchActionLabel(change: AssistantTraceFileChange, phase: DraftPatchActionPhase) {
+  if (phase === "cancelled") return "已取消"
+  if (phase === "denied") return "已拒绝"
+
+  switch (change.operation) {
+    case "add":
+      return phase === "live" ? "正在创建" : phase === "error" ? "创建失败" : "已创建"
+    case "delete":
+      return phase === "live" ? "正在删除" : phase === "error" ? "删除失败" : "已删除"
+    case "move":
+      return phase === "live" ? "正在移动" : phase === "error" ? "移动失败" : "已移动"
+    case "update":
+      return phase === "live" ? "正在修改" : phase === "error" ? "修改失败" : "已修改"
+    default:
+      return phase === "live" ? "正在变更" : phase === "error" ? "变更失败" : "已变更"
+  }
+}
+
+function getFileChangeActionLabel(
+  change: AssistantTraceFileChange,
+  isDraftPatch: boolean,
+  phase: DraftPatchActionPhase,
+) {
+  if (!isDraftPatch) return "已编辑"
+  return getDraftPatchActionLabel(change, phase)
+}
+
+function getDraftPatchSummaryLabel(
+  fileChanges: AssistantTraceFileChange[],
+  phase: DraftPatchActionPhase,
+) {
+  const operations = new Set(fileChanges.map((change) => change.operation ?? "update"))
+  const summaryChange: AssistantTraceFileChange = operations.size === 1
+    ? {
+        file: "",
+        additions: 0,
+        deletions: 0,
+        operation: fileChanges[0]?.operation ?? "update",
+      }
+    : {
+        file: "",
+        additions: 0,
+        deletions: 0,
+      }
+  return `${getDraftPatchActionLabel(summaryChange, phase)} ${fileChanges.length} 个文件`
+}
+
+function getFileChangePreviewNote(change: AssistantTraceFileChange) {
+  if (change.previewState === "truncated") return "已截断"
+  if (change.previewState === "invalid") return "解析失败"
+  return ""
+}
+
+function getPrimaryPatchFileChange(fileChanges: AssistantTraceFileChange[]) {
+  return fileChanges.find(hasFileChangePreview) ?? fileChanges[0] ?? null
+}
+
+function getPatchPreviewResetSignature(fileChanges: AssistantTraceFileChange[], isDraftPatch: boolean) {
+  if (isDraftPatch) {
+    return fileChanges
+      .map((change) => [change.file, change.fromFile ?? "", change.operation ?? ""].join("\u0000"))
+      .join("\u0001")
+  }
+
+  return fileChanges
+    .map((change) =>
+      [
+        change.file,
+        change.additions,
+        change.deletions,
+        Boolean(change.patch?.trim()),
+        hasFileChangePreview(change),
+        change.previewState ?? "",
+      ].join("\u0000")
+    )
+    .join("\u0001")
+}
+
+function useToolDraftPatchPreviewState({
+  fileChanges,
+  id,
+  isDraftPatch,
+}: {
+  fileChanges: AssistantTraceFileChange[]
+  id: string
+  isDraftPatch: boolean
+}) {
+  const resetSignature = getPatchPreviewResetSignature(fileChanges, isDraftPatch)
+  const [isListExpanded, setIsListExpanded] = useState(isDraftPatch)
+  const [expandedFile, setExpandedFile] = useState<string | null>(null)
+  const [fullHeightFile, setFullHeightFile] = useState<string | null>(null)
+
+  useEffect(() => {
+    setIsListExpanded(isDraftPatch)
+    setExpandedFile(null)
+    setFullHeightFile(null)
+  }, [id, isDraftPatch, resetSignature])
+
+  function toggleList() {
+    setIsListExpanded((current) => {
+      const next = !current
+      if (!next) {
+        setExpandedFile(null)
+        setFullHeightFile(null)
+      }
+      return next
+    })
+  }
+
+  return {
+    expandedFile,
+    fullHeightFile,
+    isListExpanded,
+    listID: `trace-file-change-list-${id}`,
+    setExpandedFile,
+    setFullHeightFile,
+    toggleList,
+  }
+}
+
+function FileChangeInlineSummary({
+  change,
+  draftPatchStatus,
+  isDraftPatch,
+  isLive,
+  showLiveDot = false,
+}: {
+  change: AssistantTraceFileChange
+  draftPatchStatus?: AssistantTraceItem["status"]
+  isDraftPatch: boolean
+  isLive: boolean
+  showLiveDot?: boolean
+}) {
+  const phase = getDraftPatchActionPhase(draftPatchStatus, isLive)
+
+  return (
+    <>
+      <span className="trace-file-change-action">{getFileChangeActionLabel(change, isDraftPatch, phase)}</span>
+      <span className="trace-file-change-file">{change.file}</span>
+      <span
+        className={joinClassNames("trace-file-change-stats", isLive ? "is-live" : undefined)}
+        aria-label={`${change.additions} additions, ${change.deletions} deletions`}
+      >
+        <span className="is-add">+{change.additions}</span>
+        <span className="is-remove">-{change.deletions}</span>
+      </span>
+      {showLiveDot ? <span className="trace-file-change-live-dot" aria-label="正在更新" /> : null}
+    </>
+  )
+}
+
+function ToolDraftPatchSummaryButton({
+  fileChanges,
+  isExpanded,
+  isStreaming,
+  listID,
+  onToggle,
+  status,
+}: {
+  fileChanges: AssistantTraceFileChange[]
+  isExpanded: boolean
+  isStreaming: boolean
+  listID: string
+  onToggle: () => void
+  status?: AssistantTraceItem["status"]
+}) {
+  const primaryFileChange = getPrimaryPatchFileChange(fileChanges)
+  if (!primaryFileChange) return null
+  const phase = getDraftPatchActionPhase(status, isStreaming)
+  const summaryLabel = getDraftPatchSummaryLabel(fileChanges, phase)
+  const showsSingleFileSummary = fileChanges.length === 1
+
+  return (
+    <button
+      type="button"
+      className="trace-file-change-summary trace-tool-inline-draft-patch-summary"
+      aria-expanded={isExpanded}
+      aria-controls={listID}
+      onClick={onToggle}
+    >
+      <span className="trace-file-change-summary-icon" aria-hidden="true">
+        <ChangesIcon />
+      </span>
+      <span className={joinClassNames("trace-file-change-summary-label", showsSingleFileSummary && "has-file-change")}>
+        {showsSingleFileSummary ? (
+          <FileChangeInlineSummary
+            change={primaryFileChange}
+            draftPatchStatus={status}
+            isDraftPatch
+            isLive={isStreaming}
+          />
+        ) : (
+          summaryLabel
+        )}
+      </span>
+      <span
+        className={joinClassNames(
+          "trace-file-change-live-dot",
+          isStreaming ? undefined : "is-hidden",
+        )}
+        aria-label="正在更新"
+        aria-hidden={isStreaming ? undefined : true}
+      />
+      <span className="trace-file-change-summary-chevron" aria-hidden="true">
+        {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+      </span>
+    </button>
+  )
+}
+
+function ToolDraftPatchFileChangeList({
+  expandedFile,
+  fileChanges,
+  fullHeightFile,
+  id,
+  isStreaming,
+  listID,
+  setExpandedFile,
+  setFullHeightFile,
+  status,
+}: {
+  expandedFile: string | null
+  fileChanges: AssistantTraceFileChange[]
+  fullHeightFile: string | null
+  id: string
+  isStreaming: boolean
+  listID: string
+  setExpandedFile: (updater: (current: string | null) => string | null) => void
+  setFullHeightFile: (updater: (current: string | null) => string | null) => void
+  status?: AssistantTraceItem["status"]
+}) {
+  if (fileChanges.length === 1) {
+    const change = fileChanges[0]!
+    const hasPatch = hasFileChangePreview(change)
+    const previewNote = getFileChangePreviewNote(change)
+    const previewID = `trace-file-change-${id}-0`
+
+    return (
+      <div id={listID} className="trace-file-change-list is-single-file">
+        {!hasPatch && !previewNote ? <span className="trace-file-change-note">仅摘要</span> : null}
+        {previewNote ? <span className="trace-file-change-note">{previewNote}</span> : null}
+        {hasPatch ? (
+          <div id={previewID} className="trace-file-change-preview is-single-file">
+            <DiffPreview
+              className="trace-historical-diff"
+              emptyClassName="trace-historical-diff-empty"
+              file={change.file}
+              isFullHeight={fullHeightFile === change.file}
+              onToggleFullHeight={() =>
+                setFullHeightFile((current) => current === change.file ? null : change.file)
+              }
+              patch={change.patch}
+              previewHunks={change.previewHunks}
+              viewMode="unified"
+            />
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  return (
+    <div id={listID} className="trace-file-change-list">
+      {fileChanges.map((change, changeIndex) => {
+        const hasPatch = hasFileChangePreview(change)
+        const isExpanded = expandedFile === change.file
+        const previewID = `trace-file-change-${id}-${changeIndex}`
+        const previewNote = getFileChangePreviewNote(change)
+        const rowContent = (
+          <>
+            <span className="trace-file-change-toggle-icon" aria-hidden="true">
+              {hasPatch ? (isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />) : null}
+            </span>
+            <FileChangeInlineSummary
+              change={change}
+              draftPatchStatus={status}
+              isDraftPatch
+              isLive={isStreaming}
+              showLiveDot={isStreaming}
+            />
+            {!hasPatch ? <span className="trace-file-change-note">仅摘要</span> : null}
+            {previewNote ? <span className="trace-file-change-note">{previewNote}</span> : null}
+          </>
+        )
+
+        return (
+          <div key={`${id}-${change.file}-${changeIndex}`} className="trace-file-change-entry">
+            {hasPatch ? (
+              <button
+                type="button"
+                className="trace-file-change-row"
+                aria-expanded={isExpanded}
+                aria-controls={previewID}
+                onClick={() => setExpandedFile((current) => current === change.file ? null : change.file)}
+              >
+                {rowContent}
+              </button>
+            ) : (
+              <div className="trace-file-change-row is-static">
+                {rowContent}
+              </div>
+            )}
+            {hasPatch && isExpanded ? (
+              <div id={previewID} className="trace-file-change-preview">
+                <DiffPreview
+                  className="trace-historical-diff"
+                  emptyClassName="trace-historical-diff-empty"
+                  file={change.file}
+                  isFullHeight={fullHeightFile === change.file}
+                  onToggleFullHeight={() =>
+                    setFullHeightFile((current) => current === change.file ? null : change.file)
+                  }
+                  patch={change.patch}
+                  previewHunks={change.previewHunks}
+                  viewMode="unified"
+                />
+              </div>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 function GenericTraceItemView({
@@ -3237,42 +3714,54 @@ function FileTraceItemView(props: TraceItemRendererProps) {
   return <GenericTraceItemView {...props} />
 }
 
-function PatchTraceItemView({
-  className,
-  debugEntries,
-  item,
-  onFileChangeSelect,
-  ...props
-}: TraceItemRendererProps) {
-  const fileChanges = normalizePatchFileChanges(item)
+function PatchFileChangePreview({
+  debugEntries = [],
+  draftPatchStatus,
+  fileChanges,
+  id,
+  isDraftPatch,
+  isStreaming,
+  defaultExpanded = isDraftPatch,
+}: {
+  debugEntries?: AssistantTraceDebugEntry[]
+  draftPatchStatus?: AssistantTraceItem["status"]
+  fileChanges: AssistantTraceFileChange[]
+  id: string
+  isDraftPatch: boolean
+  isStreaming: boolean
+  defaultExpanded?: boolean
+}) {
   const fileChangeSignature = fileChanges
-    .map((change) => `${change.file}\u0000${change.additions}\u0000${change.deletions}\u0000${Boolean(change.patch?.trim())}`)
+    .map((change) =>
+      [
+        change.file,
+        change.additions,
+        change.deletions,
+        Boolean(change.patch?.trim()),
+        hasFileChangePreview(change),
+        change.previewState ?? "",
+      ].join("\u0000")
+    )
     .join("\u0001")
-  const [isListExpanded, setIsListExpanded] = useState(false)
+  const fileChangeIdentitySignature = fileChanges
+    .map((change) => [change.file, change.fromFile ?? "", change.operation ?? ""].join("\u0000"))
+    .join("\u0001")
+  const expansionResetSignature = isDraftPatch ? fileChangeIdentitySignature : fileChangeSignature
+  const [isListExpanded, setIsListExpanded] = useState(defaultExpanded)
   const [expandedFile, setExpandedFile] = useState<string | null>(null)
   const [fullHeightFile, setFullHeightFile] = useState<string | null>(null)
 
   useEffect(() => {
-    setIsListExpanded(false)
+    setIsListExpanded(defaultExpanded)
     setExpandedFile(null)
     setFullHeightFile(null)
-  }, [fileChangeSignature, item.id])
+  }, [defaultExpanded, expansionResetSignature, id])
 
-  if (fileChanges.length === 0) {
-    return (
-      <GenericTraceItemView
-        className={className}
-        debugEntries={debugEntries}
-        item={item}
-        onFileChangeSelect={onFileChangeSelect}
-        showFileActions
-        {...props}
-      />
-    )
-  }
-
-  const listID = `trace-file-change-list-${item.id}`
+  const listID = `trace-file-change-list-${id}`
+  const primaryFileChange = getPrimaryPatchFileChange(fileChanges)
   const editedFileSummary = `已编辑 ${fileChanges.length} 个文件`
+  const draftPatchPhase = getDraftPatchActionPhase(draftPatchStatus, isStreaming)
+  const draftFileSummary = getDraftPatchSummaryLabel(fileChanges, draftPatchPhase)
   const handleSummaryToggle = () => {
     const nextIsListExpanded = !isListExpanded
     setIsListExpanded(nextIsListExpanded)
@@ -3283,7 +3772,7 @@ function PatchTraceItemView({
   }
 
   return (
-    <article className={className} data-kind={item.kind}>
+    <>
       <button
         type="button"
         className="trace-file-change-summary"
@@ -3294,7 +3783,24 @@ function PatchTraceItemView({
         <span className="trace-file-change-summary-icon" aria-hidden="true">
           <ChangesIcon />
         </span>
-        <span className="trace-file-change-summary-label">{editedFileSummary}</span>
+        {isDraftPatch && primaryFileChange ? (
+          <>
+            <span className="trace-file-change-summary-label">{draftFileSummary}</span>
+            <span
+              className={joinClassNames(
+                "trace-file-change-live-dot",
+                isStreaming ? undefined : "is-hidden",
+              )}
+              aria-label="正在更新"
+              aria-hidden={isStreaming ? undefined : true}
+            />
+          </>
+        ) : (
+          <>
+            <span className="trace-file-change-summary-label">{editedFileSummary}</span>
+            <span aria-hidden="true" />
+          </>
+        )}
         <span className="trace-file-change-summary-chevron" aria-hidden="true">
           {isListExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
         </span>
@@ -3302,26 +3808,29 @@ function PatchTraceItemView({
       {isListExpanded ? (
         <div id={listID} className="trace-file-change-list">
           {fileChanges.map((change, changeIndex) => {
-            const hasPatch = Boolean(change.patch?.trim())
+            const hasPatch = hasFileChangePreview(change)
             const isExpanded = expandedFile === change.file
-            const previewID = `trace-file-change-${item.id}-${changeIndex}`
+            const previewID = `trace-file-change-${id}-${changeIndex}`
+            const previewNote = getFileChangePreviewNote(change)
             const rowContent = (
               <>
                 <span className="trace-file-change-toggle-icon" aria-hidden="true">
                   {hasPatch ? (isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />) : null}
                 </span>
-                <span className="trace-file-change-action">已编辑</span>
-                <span className="trace-file-change-file">{change.file}</span>
-                <span className="trace-file-change-stats" aria-label={`${change.additions} additions, ${change.deletions} deletions`}>
-                  <span className="is-add">+{change.additions}</span>
-                  <span className="is-remove">-{change.deletions}</span>
-                </span>
+                <FileChangeInlineSummary
+                  change={change}
+                  draftPatchStatus={draftPatchStatus}
+                  isDraftPatch={isDraftPatch}
+                  isLive={isDraftPatch && isStreaming}
+                  showLiveDot={isDraftPatch && isStreaming}
+                />
                 {!hasPatch ? <span className="trace-file-change-note">仅摘要</span> : null}
+                {previewNote ? <span className="trace-file-change-note">{previewNote}</span> : null}
               </>
             )
 
             return (
-              <div key={`${item.id}-${change.file}-${changeIndex}`} className="trace-file-change-entry">
+              <div key={`${id}-${change.file}-${changeIndex}`} className="trace-file-change-entry">
                 {hasPatch ? (
                   <button
                     type="button"
@@ -3348,6 +3857,7 @@ function PatchTraceItemView({
                         setFullHeightFile((current) => current === change.file ? null : change.file)
                       }
                       patch={change.patch}
+                      previewHunks={change.previewHunks}
                       viewMode="unified"
                     />
                   </div>
@@ -3355,9 +3865,45 @@ function PatchTraceItemView({
               </div>
             )
           })}
-          <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+          <TraceItemDebugEntries debugEntries={debugEntries} itemID={id} />
         </div>
       ) : null}
+    </>
+  )
+}
+
+function PatchTraceItemView({
+  className,
+  debugEntries,
+  item,
+  onFileChangeSelect,
+  ...props
+}: TraceItemRendererProps) {
+  const fileChanges = normalizePatchFileChanges(item)
+
+  if (fileChanges.length === 0) {
+    return (
+      <GenericTraceItemView
+        className={className}
+        debugEntries={debugEntries}
+        item={item}
+        onFileChangeSelect={onFileChangeSelect}
+        showFileActions
+        {...props}
+      />
+    )
+  }
+
+  return (
+    <article className={className} data-kind={item.kind}>
+      <PatchFileChangePreview
+        debugEntries={debugEntries}
+        draftPatchStatus={item.draftPatch?.status ?? item.status}
+        fileChanges={fileChanges}
+        id={item.id}
+        isDraftPatch={Boolean(item.draftPatch)}
+        isStreaming={Boolean(item.draftPatch?.isStreaming ?? item.isStreaming)}
+      />
     </article>
   )
 }
@@ -3759,19 +4305,19 @@ function getToolTraceDisplayState(item: AssistantTraceItem): {
   switch (item.status) {
     case "pending":
       return {
-        iconType: "dot",
+        iconType: "tool",
         isBreathing: true,
         label: "准备中",
         shouldShowLabel: true,
-        tone: "preparing",
+        tone: "idle",
       }
     case "running":
       return {
-        iconType: "dot",
+        iconType: "tool",
         isBreathing: true,
         label: "执行中",
         shouldShowLabel: true,
-        tone: "running",
+        tone: "idle",
       }
     case "waiting-approval":
       return {
@@ -3837,10 +4383,23 @@ function ToolTraceItemView({
   const [isOutputExpanded, setIsOutputExpanded] = useState(false)
   const summaryTitle = item.title || item.label
   const displayState = getToolTraceDisplayState(item)
-  const statusIndicatorClassName = joinClassNames(
-    "trace-tool-status-indicator",
-    `is-${displayState.tone}`,
-    `is-icon-${displayState.iconType}`,
+  const draftPatchFileChanges = normalizeTraceFileChanges(item.draftPatch?.fileChanges)
+  const draftPatch = item.draftPatch && typeof item.draftPatch === "object" && draftPatchFileChanges.length > 0
+    ? {
+        ...item.draftPatch,
+        fileChanges: draftPatchFileChanges,
+      }
+    : null
+  const toolNameStatus = draftPatch?.status ?? item.status
+  const isToolNameActive =
+    toolNameStatus === "pending" ||
+    toolNameStatus === "running" ||
+    Boolean(item.isStreaming && item.status !== "completed" && item.status !== "error" && item.status !== "denied" && item.status !== "cancelled")
+  const toolNameClassName = joinClassNames(
+    "trace-log-summary",
+    "trace-tool-name",
+    toolNameStatus ? `is-${toolNameStatus}` : undefined,
+    isToolNameActive ? "is-active" : undefined,
   )
   const showsToolInputs = item.status === "pending" || item.status === "running" || item.status === "waiting-approval" || item.status === "cancelled"
   const visibleToolInputText = traceVisibility.toolInputs ? item.toolInputText : undefined
@@ -3853,22 +4412,47 @@ function ToolTraceItemView({
   const disclosureID = `trace-log-detail-${item.id}`
   const inputDisclosureID = `trace-item-disclosure-input-${item.id}`
   const outputDisclosureID = `trace-item-disclosure-output-${item.id}`
+  const draftPatchPreview = useToolDraftPatchPreviewState({
+    fileChanges: draftPatch?.fileChanges ?? [],
+    id: `${item.id}-draft-patch`,
+    isDraftPatch: Boolean(draftPatch),
+  })
   const statusText = displayState.shouldShowLabel && displayState.label ? displayState.label : formatTraceStatusText(item.status)
   const rowAriaLabel = displayState.shouldShowLabel && displayState.label ? `${summaryTitle} ${displayState.label}` : summaryTitle
+  const shouldRenderToolRowButton = hasDisclosureContent && !draftPatch
   const rowContent = (
     <>
-      <span className={statusIndicatorClassName} aria-hidden="true">
-        <ToolsIcon />
-      </span>
-      <span className="trace-log-label">{item.label}</span>
-      <span className="trace-log-summary">{summaryTitle}</span>
+      <span className={toolNameClassName}>{summaryTitle}</span>
+      {draftPatch ? (
+        <ToolDraftPatchSummaryButton
+          fileChanges={draftPatch.fileChanges}
+          isExpanded={draftPatchPreview.isListExpanded}
+          isStreaming={Boolean(draftPatch.isStreaming)}
+          listID={draftPatchPreview.listID}
+          onToggle={draftPatchPreview.toggleList}
+          status={draftPatch.status}
+        />
+      ) : null}
       <span className="trace-log-meta">
         {statusText ? <span className={`trace-log-status-text is-${item.status}`}>{statusText}</span> : null}
         <time className="trace-log-time">{formatTime(item.timestamp)}</time>
         {hasDisclosureContent ? (
-          <span className="trace-log-chevron" aria-hidden="true">
-            {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-          </span>
+          draftPatch ? (
+            <button
+              className="trace-log-inline-toggle"
+              type="button"
+              aria-label={`${summaryTitle} details`}
+              aria-expanded={isExpanded}
+              aria-controls={disclosureID}
+              onClick={handleToolToggle}
+            >
+              {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+            </button>
+          ) : (
+            <span className="trace-log-chevron" aria-hidden="true">
+              {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+            </span>
+          )
         ) : null}
       </span>
     </>
@@ -3893,7 +4477,7 @@ function ToolTraceItemView({
 
   return (
     <article className={joinClassNames(className, "trace-log-item")} data-kind={item.kind}>
-      {hasDisclosureContent ? (
+      {shouldRenderToolRowButton ? (
         <button
           className="trace-log-row"
           type="button"
@@ -3905,8 +4489,24 @@ function ToolTraceItemView({
           {rowContent}
         </button>
       ) : (
-        <div className="trace-log-row is-static">{rowContent}</div>
+        <div className={joinClassNames("trace-log-row is-static", draftPatch && "has-inline-draft-patch")}>{rowContent}</div>
       )}
+
+      {draftPatch && draftPatchPreview.isListExpanded ? (
+        <div className="trace-tool-draft-patch">
+          <ToolDraftPatchFileChangeList
+            expandedFile={draftPatchPreview.expandedFile}
+            fileChanges={draftPatch.fileChanges}
+            fullHeightFile={draftPatchPreview.fullHeightFile}
+            id={`${item.id}-draft-patch`}
+            isStreaming={Boolean(draftPatch.isStreaming)}
+            listID={draftPatchPreview.listID}
+            setExpandedFile={draftPatchPreview.setExpandedFile}
+            setFullHeightFile={draftPatchPreview.setFullHeightFile}
+            status={draftPatch.status}
+          />
+        </div>
+      ) : null}
 
       {hasDisclosureContent && isExpanded ? (
         <div id={disclosureID} className="trace-log-detail">
@@ -4028,6 +4628,60 @@ const traceItemRenderers = {
   error: ErrorTraceItemView,
 } satisfies Record<AssistantTraceItemKind, ComponentType<TraceItemRendererProps>>
 
+interface TraceItemRenderBoundaryProps {
+  children: ReactNode
+  itemID: string
+  itemKind: AssistantTraceItemKind
+  itemTitle: string
+}
+
+interface TraceItemRenderBoundaryState {
+  error: Error | null
+}
+
+class TraceItemRenderBoundary extends Component<TraceItemRenderBoundaryProps, TraceItemRenderBoundaryState> {
+  state: TraceItemRenderBoundaryState = {
+    error: null,
+  }
+
+  static getDerivedStateFromError(error: Error): TraceItemRenderBoundaryState {
+    return { error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[desktop][trace-item-render-error]", {
+      componentStack: info.componentStack,
+      itemID: this.props.itemID,
+      itemKind: this.props.itemKind,
+      itemTitle: this.props.itemTitle,
+      message: error.message,
+      stack: error.stack,
+    })
+  }
+
+  componentDidUpdate(previousProps: TraceItemRenderBoundaryProps) {
+    if (!this.state.error) return
+    if (previousProps.itemID === this.props.itemID && previousProps.itemKind === this.props.itemKind) return
+    this.setState({ error: null })
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children
+
+    return (
+      <article className="trace-item trace-kind-error trace-item-render-error" data-kind={this.props.itemKind} role="alert">
+        <div className="trace-item-header">
+          <span className="trace-item-label">Render error</span>
+          <span className="trace-item-summary">{this.props.itemTitle || this.props.itemKind}</span>
+        </div>
+        <p className="trace-item-detail">
+          This trace item could not be rendered. The rest of the thread is still available.
+        </p>
+      </article>
+    )
+  }
+}
+
 const TraceItemView = memo(function TraceItemView({
   answeredQuestionIDs,
   assistantTurnPhase,
@@ -4072,23 +4726,29 @@ const TraceItemView = memo(function TraceItemView({
   const Renderer = traceItemRenderers[renderedItem.kind]
 
   return (
-    <Renderer
-      answeredQuestionIDs={answeredQuestionIDs}
-      className={className}
-      debugEntries={debugEntries}
-      isLatestMessage={isLatestMessage}
-      isQuestionAnswerDisabled={isQuestionAnswerDisabled}
-      isResponseItem={isResponseItem}
-      item={renderedItem}
-      onAskUserQuestionAnswer={onAskUserQuestionAnswer}
-      onFileChangeSelect={onFileChangeSelect}
-      onArtifactLinkOpen={onArtifactLinkOpen}
-      onLocalFileLinkOpen={onLocalFileLinkOpen}
-      onOpenImagePreview={onOpenImagePreview}
-      onProposedPlanConfirm={onProposedPlanConfirm}
-      shouldCollapseAfterTurnCompletion={shouldCollapseAfterTurnCompletion}
-      traceVisibility={traceVisibility}
-    />
+    <TraceItemRenderBoundary
+      itemID={renderedItem.id}
+      itemKind={renderedItem.kind}
+      itemTitle={renderedItem.title || renderedItem.label}
+    >
+      <Renderer
+        answeredQuestionIDs={answeredQuestionIDs}
+        className={className}
+        debugEntries={debugEntries}
+        isLatestMessage={isLatestMessage}
+        isQuestionAnswerDisabled={isQuestionAnswerDisabled}
+        isResponseItem={isResponseItem}
+        item={renderedItem}
+        onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+        onFileChangeSelect={onFileChangeSelect}
+        onArtifactLinkOpen={onArtifactLinkOpen}
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+        onOpenImagePreview={onOpenImagePreview}
+        onProposedPlanConfirm={onProposedPlanConfirm}
+        shouldCollapseAfterTurnCompletion={shouldCollapseAfterTurnCompletion}
+        traceVisibility={traceVisibility}
+      />
+    </TraceItemRenderBoundary>
   )
 })
 
@@ -4489,10 +5149,12 @@ function VisibleThreadView({
   const contentMutationObserverRef = useRef<MutationObserver | null>(null)
   const observedThreadContentRef = useRef<WeakSet<Element>>(new WeakSet())
   const pendingSidebarResizeScrollSyncRef = useRef(false)
+  const smoothFollowScrollRef = useRef<ThreadSmoothFollowScroll | null>(null)
   const lastUserScrollIntentAtRef = useRef(0)
   const lastUserScrollIntentDirectionRef = useRef<"up" | "down" | null>(null)
   const followScrollSyncSuppressedUntilRef = useRef(0)
   const latestAssistantTurnStateRef = useRef<LatestAssistantTurnState | null>(null)
+  const previousActiveTurnCountRef = useRef(activeTurns.length)
   const userScrollIntentConsumedRef = useRef(false)
   const lastKnownScrollTopRef = useRef(0)
   const currentScrollStateKeyRef = useRef<string | null>(null)
@@ -4601,13 +5263,29 @@ function VisibleThreadView({
     return Math.max(getThreadScrollMaxTop(threadColumn), virtualScrollHeight - threadColumn.clientHeight)
   }
 
+  function getLatestThreadContentScrollTarget(threadColumn: HTMLDivElement): ThreadFollowScrollTarget {
+    if (shouldVirtualizeThreadRows) {
+      const scrollTop = getThreadVirtualScrollMaxTop(threadColumn)
+      return {
+        scrollTop,
+        visualScrollTop: scrollTop,
+      }
+    }
+
+    return {
+      scrollTop: threadColumn.scrollHeight,
+      visualScrollTop: getThreadScrollMaxTop(threadColumn),
+    }
+  }
+
   function scrollThreadColumnToLatestThreadContent(threadColumn: HTMLDivElement) {
+    const target = getLatestThreadContentScrollTarget(threadColumn)
     if (!shouldVirtualizeThreadRows) {
-      scrollThreadColumnToLatestContent(threadColumn)
+      threadColumn.scrollTop = target.scrollTop
       return
     }
 
-    threadColumn.scrollTop = getThreadVirtualScrollMaxTop(threadColumn)
+    threadColumn.scrollTop = target.scrollTop
     syncThreadVirtualViewport(threadColumn)
   }
 
@@ -4720,6 +5398,7 @@ function VisibleThreadView({
     if (!key) return
     if (getThreadScrollMaxTop(threadColumn) <= THREAD_TOP_RESET_THRESHOLD_PX) return
 
+    cancelSmoothFollowScroll()
     const snapshot: ThreadScrollSnapshot = {
       scrollTop: 0,
       pinnedToBottom: false,
@@ -4735,6 +5414,7 @@ function VisibleThreadView({
     if (!key) return false
     if (getThreadScrollMaxTop(threadColumn) <= THREAD_TOP_RESET_THRESHOLD_PX) return false
 
+    cancelSmoothFollowScroll()
     const snapshot: ThreadScrollSnapshot = {
       ...readThreadScrollSnapshot(threadColumn),
       pinnedToBottom: false,
@@ -4752,8 +5432,100 @@ function VisibleThreadView({
     syncThreadVirtualViewport(threadColumn)
   }
 
-  function followLatestThreadContent(threadColumn: HTMLDivElement, key = effectiveScrollStateKey) {
+  function cancelSmoothFollowScroll() {
+    const frameID = smoothFollowScrollRef.current?.frameID ?? null
+    smoothFollowScrollRef.current = null
+    if (
+      frameID !== null &&
+      typeof window !== "undefined" &&
+      typeof window.cancelAnimationFrame === "function"
+    ) {
+      window.cancelAnimationFrame(frameID)
+    }
+  }
+
+  function scheduleSmoothFollowLatestThreadContent(threadColumn: HTMLDivElement, key = effectiveScrollStateKey) {
+    if (
+      typeof window === "undefined" ||
+      typeof window.requestAnimationFrame !== "function" ||
+      prefersReducedThreadMotion()
+    ) {
+      return false
+    }
+
+    const target = getLatestThreadContentScrollTarget(threadColumn)
+    const delta = Math.abs(target.visualScrollTop - threadColumn.scrollTop)
+    if (
+      delta < THREAD_FOLLOW_SMOOTH_SCROLL_MIN_DELTA_PX ||
+      delta > THREAD_FOLLOW_SMOOTH_SCROLL_MAX_DELTA_PX
+    ) {
+      return false
+    }
+
+    cancelSmoothFollowScroll()
+    const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now()
+    const animation: ThreadSmoothFollowScroll = {
+      duration: getThreadSmoothFollowScrollDuration(delta),
+      frameID: null,
+      fromScrollTop: threadColumn.scrollTop,
+      key,
+      startedAt,
+      targetScrollTop: target.visualScrollTop,
+    }
+
+    const pinnedSnapshot: ThreadScrollSnapshot = {
+      scrollTop: target.visualScrollTop,
+      pinnedToBottom: true,
+      updatedAt: Date.now(),
+    }
     scrollModeRef.current = "follow"
+    rememberThreadScrollSnapshot(key, pinnedSnapshot)
+    saveThreadScrollSnapshotValue(key, pinnedSnapshot)
+
+    const step = (timestamp: number) => {
+      if (smoothFollowScrollRef.current !== animation) return
+
+      const currentThreadColumn = threadColumnRef.current
+      if (
+        !currentThreadColumn ||
+        currentThreadColumn !== threadColumn ||
+        currentScrollStateKeyRef.current !== key ||
+        scrollModeRef.current !== "follow"
+      ) {
+        smoothFollowScrollRef.current = null
+        return
+      }
+
+      const progress = Math.min(1, Math.max(0, (timestamp - animation.startedAt) / animation.duration))
+      const easedProgress = easeThreadFollowScroll(progress)
+      const nextScrollTop =
+        animation.fromScrollTop +
+        (animation.targetScrollTop - animation.fromScrollTop) * easedProgress
+      setThreadScrollTop(currentThreadColumn, nextScrollTop)
+
+      if (progress >= 1) {
+        smoothFollowScrollRef.current = null
+        persistThreadScrollSnapshot(key, "follow")
+        return
+      }
+
+      animation.frameID = window.requestAnimationFrame(step)
+    }
+
+    smoothFollowScrollRef.current = animation
+    animation.frameID = window.requestAnimationFrame(step)
+    return true
+  }
+
+  function followLatestThreadContent(
+    threadColumn: HTMLDivElement,
+    key = effectiveScrollStateKey,
+    options: { smooth?: boolean } = {},
+  ) {
+    scrollModeRef.current = "follow"
+    if (options.smooth && scheduleSmoothFollowLatestThreadContent(threadColumn, key)) return
+
+    cancelSmoothFollowScroll()
     scrollThreadColumnToLatestThreadContent(threadColumn)
     lastKnownScrollTopRef.current = threadColumn.scrollTop
     syncThreadVirtualViewport(threadColumn)
@@ -4761,6 +5533,7 @@ function VisibleThreadView({
   }
 
   function preserveCurrentFollowThreadPosition(threadColumn: HTMLDivElement, key = effectiveScrollStateKey) {
+    cancelSmoothFollowScroll()
     scrollModeRef.current = "follow"
     lastKnownScrollTopRef.current = threadColumn.scrollTop
     syncThreadVirtualViewport(threadColumn)
@@ -4772,6 +5545,7 @@ function VisibleThreadView({
     snapshot: ThreadScrollSnapshot,
     key = effectiveScrollStateKey,
   ) {
+    cancelSmoothFollowScroll()
     scrollModeRef.current = "detached"
     if (!canRepresentThreadScrollTop(threadColumn, snapshot.scrollTop)) {
       rememberThreadScrollSnapshot(key, snapshot)
@@ -4812,7 +5586,7 @@ function VisibleThreadView({
 
   function syncThreadScrollAfterContentChange(
     key = effectiveScrollStateKey,
-    options: { preserveFollowPosition?: boolean } = {},
+    options: { preserveFollowPosition?: boolean; smoothFollow?: boolean } = {},
   ) {
     const threadColumn = threadColumnRef.current
     if (!threadColumn || currentScrollStateKeyRef.current !== key) return
@@ -4823,7 +5597,7 @@ function VisibleThreadView({
         return
       }
 
-      followLatestThreadContent(threadColumn, key)
+      followLatestThreadContent(threadColumn, key, { smooth: options.smoothFollow })
       return
     }
 
@@ -4836,7 +5610,9 @@ function VisibleThreadView({
       return
     }
 
-    syncThreadScrollAfterContentChange(key)
+    syncThreadScrollAfterContentChange(key, {
+      smoothFollow: latestAssistantTurnStateRef.current?.isStreaming === true,
+    })
   }
 
   const flushDeferredSidebarResizeScrollSync = useEffectEvent((key: string) => {
@@ -4853,6 +5629,7 @@ function VisibleThreadView({
 
   useEffect(() => {
     return () => {
+      cancelSmoothFollowScroll()
       const latestSnapshotKey = latestScrollSnapshotKeyRef.current
       if (latestSnapshotKey) {
         persistLatestThreadScrollSnapshot(latestSnapshotKey)
@@ -5101,6 +5878,7 @@ function VisibleThreadView({
     if (!threadColumn) return
 
     const previousLatestAssistantTurnState = latestAssistantTurnStateRef.current
+    const previousActiveTurnCount = previousActiveTurnCountRef.current
     const latestAssistantTurnState = readLatestAssistantTurnState(activeTurns)
     const isCompletingLatestAssistantTurn = Boolean(
       previousLatestAssistantTurnState &&
@@ -5109,6 +5887,14 @@ function VisibleThreadView({
       previousLatestAssistantTurnState.isStreaming &&
       !latestAssistantTurnState.isStreaming,
     )
+    const isUpdatingSameStreamingAssistantTurn = Boolean(
+      previousLatestAssistantTurnState &&
+      latestAssistantTurnState &&
+      previousLatestAssistantTurnState.id === latestAssistantTurnState.id &&
+      previousLatestAssistantTurnState.isStreaming &&
+      latestAssistantTurnState.isStreaming &&
+      previousActiveTurnCount === activeTurns.length,
+    )
 
     if (isCompletingLatestAssistantTurn) {
       followScrollSyncSuppressedUntilRef.current = Date.now() + THREAD_COMPLETION_SCROLL_SYNC_SUPPRESS_MS
@@ -5116,8 +5902,10 @@ function VisibleThreadView({
 
     syncThreadScrollAfterContentChange(effectiveScrollStateKey, {
       preserveFollowPosition: isCompletingLatestAssistantTurn,
+      smoothFollow: isUpdatingSameStreamingAssistantTurn,
     })
     latestAssistantTurnStateRef.current = latestAssistantTurnState
+    previousActiveTurnCountRef.current = activeTurns.length
   }, [
     activeTurns,
     effectiveScrollStateKey,
@@ -5140,6 +5928,7 @@ function VisibleThreadView({
   }, [effectiveScrollStateKey, visibleTurnIDsKey])
 
   function handleThreadScrollIntent(event?: { currentTarget: HTMLDivElement }) {
+    cancelSmoothFollowScroll()
     lastUserScrollIntentAtRef.current = Date.now()
     userScrollIntentConsumedRef.current = false
     if (event?.currentTarget) {

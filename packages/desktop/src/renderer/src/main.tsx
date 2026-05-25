@@ -4,12 +4,21 @@ import React from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./App"
 import { I18nProvider } from "./app/i18n/I18nProvider"
+import { installRendererMemoryDiagnostics } from "./app/renderer-memory-diagnostics"
+import { RootErrorBoundary, installRendererGlobalErrorReporting } from "./app/renderer-error-reporting"
+import { installRendererPerformanceEntryCleanup } from "./app/perf-profiler"
 import "./styles/index.css"
+
+installRendererGlobalErrorReporting()
+installRendererMemoryDiagnostics()
+installRendererPerformanceEntryCleanup()
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <I18nProvider>
-      <App />
-    </I18nProvider>
+    <RootErrorBoundary>
+      <I18nProvider>
+        <App />
+      </I18nProvider>
+    </RootErrorBoundary>
   </React.StrictMode>,
 )

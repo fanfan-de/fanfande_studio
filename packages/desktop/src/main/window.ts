@@ -2,7 +2,7 @@ import { BrowserWindow, app } from "electron"
 import fs from "node:fs"
 import path from "node:path"
 import { ensureRendererHttpServer } from "./renderer-http-server"
-import { safeError } from "./safe-console"
+import { safeError, safeWarn } from "./safe-console"
 import { clearManualMaximize, sendWindowState } from "./window-state"
 import type { WorkbenchWindowManager } from "./workbench-window-manager"
 
@@ -72,6 +72,45 @@ export async function resolveRendererEntryUrl(mainDir: string) {
   return `${rendererBaseUrl}/index.html`
 }
 
+function installWindowDiagnostics(win: BrowserWindow, input: { label: string; url: string }) {
+  const prefix = `[desktop][window:${input.label}]`
+
+  win.on("unresponsive", () => {
+    safeWarn(prefix, "unresponsive", { url: input.url, webContentsID: win.webContents.id })
+  })
+
+  win.webContents.on("render-process-gone", (_event, details) => {
+    safeError(prefix, "render-process-gone", {
+      ...details,
+      url: win.webContents.getURL() || input.url,
+      webContentsID: win.webContents.id,
+    })
+  })
+
+  win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    safeError(prefix, "did-fail-load", {
+      errorCode,
+      errorDescription,
+      isMainFrame,
+      validatedURL,
+      webContentsID: win.webContents.id,
+    })
+  })
+
+  win.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    if (level < 2) return
+    const log = level >= 3 ? safeError : safeWarn
+    log(prefix, "console-message", {
+      level,
+      line,
+      message,
+      sourceId,
+      url: win.webContents.getURL() || input.url,
+      webContentsID: win.webContents.id,
+    })
+  })
+}
+
 export async function createWindow(mainDir: string, options: { workbenchWindowManager?: WorkbenchWindowManager } = {}) {
   const rendererEntryUrl = await resolveRendererEntryUrl(mainDir)
   const win = new BrowserWindow({
@@ -93,6 +132,7 @@ export async function createWindow(mainDir: string, options: { workbenchWindowMa
       webviewTag: true,
     },
   })
+  installWindowDiagnostics(win, { label: "main", url: rendererEntryUrl })
   options.workbenchWindowManager?.registerMainWindow(win)
 
   win.once("ready-to-show", () => {

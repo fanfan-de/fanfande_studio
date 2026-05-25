@@ -20,6 +20,11 @@ import { useWorkspaceSessionStore } from "./agent-workspace/workspace-session-st
 import { createWorkspaceStore, seedWorkspaceIDs, type WorkspaceStoreApi } from "./agent-workspace/workspace-store"
 import { initialSelection } from "./seed-data"
 import { isRendererPerfProfilerEnabled, logRendererPerf, measureRendererPerf } from "./perf-profiler"
+import {
+  buildRendererSessionMemoryDiagnostics,
+  reportRendererMemoryDiagnostics,
+  updateRendererCurrentSessionDiagnostics,
+} from "./renderer-memory-diagnostics"
 import type { LeftSidebarView, SessionDiffSummary, SessionModelSelection, Turn, WorkspaceGroup } from "./types"
 import type { ThreadScrollSnapshot } from "./thread/ThreadView"
 import { persistUserTurns } from "./user-turn-presentation"
@@ -369,6 +374,18 @@ export function useAgentWorkspace({
   } = workspaceDerivedState
 
   const visibleCanvasSessionKey = visibleCanvasSessionIDs.join("\0")
+  const activeMessageTree = activeSessionID ? messageTreeBySession[activeSessionID] ?? null : null
+
+  useEffect(() => {
+    const diagnostics = buildRendererSessionMemoryDiagnostics({
+      diffSummary: activeSessionDiff,
+      messageTree: activeMessageTree,
+      sessionID: activeSessionID,
+      turns: activeTurns,
+    })
+    updateRendererCurrentSessionDiagnostics(diagnostics)
+    reportRendererMemoryDiagnostics("active-session-update")
+  }, [activeMessageTree, activeSessionDiff, activeSessionID, activeTurns])
 
   useEffect(() => {
     if (!isRendererPerfProfilerEnabled()) return

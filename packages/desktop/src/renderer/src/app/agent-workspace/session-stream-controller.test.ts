@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { AssistantTurn, SessionTaskListView, Turn, UserTurn } from "../types"
 import {
+  compactHighFrequencyDeltaStreamEvent,
   conversationTurnsAreEquivalent,
   isCompletedStreamEvent,
   isHighFrequencyDeltaStreamEvent,
@@ -347,6 +348,39 @@ describe("session stream controller helpers", () => {
       event: "runtime",
       data: createRuntimeEvent("turn.completed"),
     })).toBe(false)
+  })
+
+  it("drops cumulative text from queued high-frequency delta events", () => {
+    const compacted = compactHighFrequencyDeltaStreamEvent({
+      id: "cursor-1",
+      event: "runtime",
+      data: createRuntimeEvent("text.part.delta", {
+        delta: "token",
+        text: "large cumulative response",
+        messageID: "message-1",
+        partID: "part-1",
+      }),
+    })
+
+    expect((compacted.data as { payload: Record<string, unknown> }).payload).toEqual({
+      delta: "token",
+      messageID: "message-1",
+      partID: "part-1",
+    })
+
+    const legacyCompacted = compactHighFrequencyDeltaStreamEvent({
+      event: "delta",
+      data: {
+        delta: "token",
+        kind: "text",
+        text: "large cumulative response",
+      },
+    })
+
+    expect(legacyCompacted.data).toEqual({
+      delta: "token",
+      kind: "text",
+    })
   })
 
   it("reads context usage from in-turn LLM completion events", () => {
