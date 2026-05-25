@@ -277,6 +277,7 @@ describe("ThreadView trace item renderers", () => {
     ])
 
     expect(container.querySelectorAll(".trace-kind-tool .trace-log-row")).toHaveLength(items.length)
+    expect(container.querySelectorAll(".trace-kind-tool .trace-log-filler")).toHaveLength(items.length)
     expect(screen.getByRole("button", { name: /Tool pending/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Tool running/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Tool waiting-approval/ })).toBeInTheDocument()
@@ -815,6 +816,7 @@ describe("ThreadView image trace items", () => {
 
     const inlineSummary = container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")
     expect(inlineSummary?.querySelector(".trace-file-change-summary-icon")).toBeNull()
+    expect(container.querySelector(".trace-log-row .trace-log-filler")).not.toBeNull()
     expect(container.querySelector(".trace-log-row .trace-log-time")).toBeNull()
     expect(inlineSummary?.textContent).toContain("src/app.ts")
     expect(inlineSummary?.textContent).toContain("+1-0")

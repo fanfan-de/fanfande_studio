@@ -3824,10 +3824,26 @@ button.trace-log-row {
   --trace-tool-name-active: var(--brand-accent-active);
   --trace-tool-name-glow: color-mix(in srgb, var(--brand-accent-active) 42%, transparent);
   --trace-tool-name-glow-soft: color-mix(in srgb, var(--brand-accent-active) 22%, transparent);
+  flex: 0 1 auto;
   color: var(--trace-tool-name-muted);
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 500;
+}
+
+.trace-log-filler {
+  flex: 1 1 auto;
+  min-width: 28px;
+  height: 2px;
+  background-image: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--seg-text-3) 42%, transparent) 0 1px,
+    transparent 1.15px
+  );
+  background-repeat: repeat-x;
+  background-position: center;
+  background-size: 8px 2px;
+  transform: translateY(1px);
 }
 
 .trace-log-row:hover .trace-log-summary.trace-tool-name:not(:is(.is-active, .is-pending, .is-running)),

@@ -4440,6 +4440,7 @@ function ToolTraceItemView({
           status={draftPatch.status}
         />
       ) : null}
+      <span className="trace-log-filler" aria-hidden="true" />
       <span className="trace-log-meta">
         {statusText ? <span className={`trace-log-status-text is-${item.status}`}>{statusText}</span> : null}
         {hasDisclosureContent ? (
