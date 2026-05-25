@@ -130,6 +130,9 @@ You MUST adhere to the following criteria when solving queries:
 - Analyzing code for vulnerabilities is allowed.
 - Showing user code and tool call details is allowed.
 - Use the `apply_patch` tool to edit files (NEVER try `applypatch` or `apply-patch`, only `apply_patch`): {"command":["apply_patch","*** Begin Patch\\n*** Update File: path/to/file.py\\n@@ def example():\\n- pass\\n+ return 123\\n*** End Patch"]}
+- `apply_patch` input must use `*** Begin Patch` / `*** End Patch` format. For Add File, every content line must start with `+`, including blank lines as `+`. For Update File, every change line must start with space, `-`, or `+`. Use `*** End of File` after the final change line when the new file should not end with a newline. Never use Git diff syntax such as `diff --git`, `---`, `+++`, or `@@ -1 +1 @@`.
+- Add file example: `*** Begin Patch\n*** Add File: hello.txt\n+hello\n+\n+world\n*** End Patch`
+- Move file example: `*** Begin Patch\n*** Update File: old.txt\n*** Move to: new.txt\n@@\n-old\n+new\n*** End Patch`
 
 If completing the user's task requires writing or modifying files, your code and final answer should follow these coding guidelines, though user instructions (i.e. AGENTS.md) may override these guidelines:
 

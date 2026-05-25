@@ -9,10 +9,7 @@ type HunkLine = {
 }
 
 type Hunk = {
-  oldStart: number
-  oldCount: number
-  newStart: number
-  newCount: number
+  anchor?: string
   lines: HunkLine[]
 }
 
@@ -36,6 +33,42 @@ type SplitContent = {
   newline: "\n" | "\r\n"
   hasFinalNewline: boolean
 }
+
+const APPLY_PATCH_FORMAT = [
+  "Patch must exactly follow this grammar-like format:",
+  "*** Begin Patch",
+  "*** Add File: path/to/file",
+  "+new file line",
+  "+",
+  "+another line",
+  "*** End Patch",
+  "",
+  "*** Begin Patch",
+  "*** Update File: path/to/file",
+  "@@ optional context label",
+  " unchanged context",
+  "-old line",
+  "+new line",
+  "*** End Patch",
+  "",
+  "*** Begin Patch",
+  "*** Delete File: path/to/file",
+  "*** End Patch",
+  "",
+  "*** Begin Patch",
+  "*** Update File: old/path",
+  "*** Move to: new/path",
+  "@@",
+  "-old line",
+  "+new line",
+  "*** End Patch",
+  "",
+  "Rules: first non-empty line must be *** Begin Patch; final line must be *** End Patch.",
+  "For Add File, every file-content line MUST start with +, including blank lines as +.",
+  "For Update File, every changed line MUST start with space, -, or +.",
+  "Use *** End of File after the final change line when the new file should not end with a newline.",
+  "Never use Git diff syntax: no diff --git, no ---, no +++, and no @@ -1 +1 @@.",
+].join("\n")
 
 function parsePatchPath(raw: string): string | null {
   let value = raw.trim()
@@ -62,49 +95,83 @@ function parsePatchPath(raw: string): string | null {
   return value
 }
 
-function parseHunkHeader(line: string): Hunk {
-  const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line)
-  if (!match) {
-    throw new Error(`Invalid hunk header: ${line}`)
-  }
+function oldSequenceOf(hunk: Hunk) {
+  return hunk.lines
+    .filter((line) => line.type === "context" || line.type === "remove")
+    .map((line) => line.text)
+}
 
+function newSequenceOf(hunk: Hunk) {
+  return hunk.lines
+    .filter((line) => line.type === "context" || line.type === "add")
+    .map((line) => line.text)
+}
+
+function addedLinesOf(hunks: Hunk[]) {
+  return hunks.flatMap((hunk) =>
+    hunk.lines.filter((line) => line.type === "add").map((line) => line.text)
+  )
+}
+
+function parsePatchHunkHeader(line: string): Hunk {
+  const anchor = line.slice(2).trim()
   return {
-    oldStart: Number(match[1]),
-    oldCount: Number(match[2] ?? "1"),
-    newStart: Number(match[3]),
-    newCount: Number(match[4] ?? "1"),
+    anchor: anchor || undefined,
     lines: [],
   }
 }
 
-function parseUnifiedDiff(diff: string): FilePatch[] {
+function parseBeginPatch(patch: string): FilePatch[] {
+  type PatchKind = "add" | "update" | "delete"
   type MutableFilePatch = {
-    oldPath?: string | null
-    newPath?: string | null
+    kind: PatchKind
+    oldPath: string | null
+    newPath: string | null
     hunks: Hunk[]
     oldNoNewlineAtEnd?: boolean
     newNoNewlineAtEnd?: boolean
   }
 
-  const normalized = diff.replace(/\r\n/g, "\n")
+  const normalized = patch.replace(/\r\n/g, "\n")
   const lines = normalized.split("\n")
   const files: FilePatch[] = []
 
-  let index = 0
+  let index = lines.findIndex((line) => line.trim().length > 0)
   let current: MutableFilePatch | undefined
   let hunk: Hunk | undefined
   let lastLineType: HunkLine["type"] | undefined
+  let sawEnd = false
 
-  const ensureCurrent = () => {
+  if (index === -1 || lines[index] !== "*** Begin Patch") {
+    throw new Error("Patch must start with *** Begin Patch.")
+  }
+  index += 1
+
+  const requireCurrent = () => {
     if (!current) {
-      current = { hunks: [] }
+      throw new Error("Patch content appeared before a file directive.")
     }
+    return current
   }
 
   const finalizeHunk = () => {
     if (!hunk) return
-    ensureCurrent()
-    current!.hunks.push(hunk)
+    const filePatch = requireCurrent()
+
+    if (filePatch.kind === "delete") {
+      throw new Error(`Delete File for ${filePatch.oldPath} does not accept hunks.`)
+    }
+
+    if (filePatch.kind === "add") {
+      const invalidLine = hunk.lines.find((line) => line.type !== "add")
+      if (invalidLine) {
+        throw new Error(`Add File for ${filePatch.newPath} only accepts + lines.`)
+      }
+    } else if (oldSequenceOf(hunk).length === 0) {
+      throw new Error(`Update hunk for ${filePatch.oldPath} must include at least one context or removal line.`)
+    }
+
+    filePatch.hunks.push(hunk)
     hunk = undefined
     lastLineType = undefined
   }
@@ -113,8 +180,8 @@ function parseUnifiedDiff(diff: string): FilePatch[] {
     if (!current) return
     finalizeHunk()
 
-    if (current.oldPath === undefined || current.newPath === undefined) {
-      throw new Error("Patch file header is incomplete. Expected both --- and +++ lines.")
+    if (current.kind === "update" && current.oldPath === current.newPath && current.hunks.length === 0) {
+      throw new Error(`Update File for ${current.oldPath} must include at least one hunk or a Move to directive.`)
     }
 
     files.push({
@@ -128,94 +195,161 @@ function parseUnifiedDiff(diff: string): FilePatch[] {
     current = undefined
   }
 
+  const startFile = (filePatch: MutableFilePatch) => {
+    finalizeFile()
+    current = filePatch
+  }
+
   while (index < lines.length) {
     const line = lines[index]!
 
-    if (line.startsWith("diff --git ")) {
+    if (line === "*** End Patch") {
       finalizeFile()
-      current = { hunks: [] }
+      sawEnd = true
+      index += 1
+      break
+    }
+
+    if (line.startsWith("*** Add File: ")) {
+      const path = parsePatchPath(line.slice("*** Add File: ".length))
+      if (path === null) throw new Error("Add File directive cannot target /dev/null.")
+      startFile({
+        kind: "add",
+        oldPath: null,
+        newPath: path,
+        hunks: [],
+      })
+      hunk = { lines: [] }
       index += 1
       continue
     }
 
-    if (line.startsWith("--- ")) {
-      if (current?.oldPath !== undefined && current?.newPath !== undefined) {
-        finalizeFile()
-      }
-
-      ensureCurrent()
-      current!.oldPath = parsePatchPath(line.slice(4))
-
-      const next = lines[index + 1]
-      if (!next || !next.startsWith("+++ ")) {
-        throw new Error("Patch file header is incomplete. Expected a +++ line after ---.")
-      }
-      current!.newPath = parsePatchPath(next.slice(4))
-
-      index += 2
+    if (line.startsWith("*** Delete File: ")) {
+      const path = parsePatchPath(line.slice("*** Delete File: ".length))
+      if (path === null) throw new Error("Delete File directive cannot target /dev/null.")
+      startFile({
+        kind: "delete",
+        oldPath: path,
+        newPath: null,
+        hunks: [],
+      })
+      index += 1
       continue
     }
 
-    if (line.startsWith("@@ ")) {
-      ensureCurrent()
-      if (current!.oldPath === undefined || current!.newPath === undefined) {
-        throw new Error("Encountered a hunk before a file header.")
+    if (line.startsWith("*** Update File: ")) {
+      const path = parsePatchPath(line.slice("*** Update File: ".length))
+      if (path === null) throw new Error("Update File directive cannot target /dev/null.")
+      startFile({
+        kind: "update",
+        oldPath: path,
+        newPath: path,
+        hunks: [],
+      })
+      index += 1
+      continue
+    }
+
+    if (line.startsWith("*** Move to: ")) {
+      const filePatch = requireCurrent()
+      if (filePatch.kind !== "update") {
+        throw new Error("*** Move to may only follow an Update File directive.")
       }
       finalizeHunk()
-      hunk = parseHunkHeader(line)
+      const path = parsePatchPath(line.slice("*** Move to: ".length))
+      if (path === null) throw new Error("Move to directive cannot target /dev/null.")
+      if (filePatch.newPath !== filePatch.oldPath) {
+        throw new Error(`Patch already contains a move target for ${filePatch.oldPath}.`)
+      }
+      filePatch.newPath = path
       index += 1
       continue
     }
 
-    if (hunk) {
-      if (line.startsWith(" ")) {
-        hunk.lines.push({ type: "context", text: line.slice(1) })
-        lastLineType = "context"
-        index += 1
-        continue
+    if (line === "@@" || line.startsWith("@@ ")) {
+      const filePatch = requireCurrent()
+      if (filePatch.kind === "add") {
+        throw new Error(`Add File for ${filePatch.newPath} does not accept hunk headers.`)
       }
-      if (line.startsWith("+")) {
-        hunk.lines.push({ type: "add", text: line.slice(1) })
-        lastLineType = "add"
-        index += 1
-        continue
+      if (filePatch.kind === "delete") {
+        throw new Error(`Delete File for ${filePatch.oldPath} does not accept hunks.`)
       }
-      if (line.startsWith("-")) {
-        hunk.lines.push({ type: "remove", text: line.slice(1) })
-        lastLineType = "remove"
-        index += 1
-        continue
-      }
-      if (line === "\\ No newline at end of file") {
-        ensureCurrent()
-        if (lastLineType === "add") current!.newNoNewlineAtEnd = true
-        else if (lastLineType === "remove") current!.oldNoNewlineAtEnd = true
-        else if (lastLineType === "context") {
-          current!.oldNoNewlineAtEnd = true
-          current!.newNoNewlineAtEnd = true
-        }
-        index += 1
-        continue
-      }
-
       finalizeHunk()
-      continue
-    }
-
-    if (!line.trim()) {
+      hunk = parsePatchHunkHeader(line)
       index += 1
       continue
     }
 
-    if (current) {
+    if (line === "*** End of File" || line === "\\ No newline at end of file") {
+      const filePatch = requireCurrent()
+      if (!lastLineType) {
+        throw new Error(`No newline marker in ${filePatch.oldPath ?? filePatch.newPath} is not attached to a hunk line.`)
+      }
+      if (lastLineType === "add") filePatch.newNoNewlineAtEnd = true
+      else if (lastLineType === "remove") filePatch.oldNoNewlineAtEnd = true
+      else {
+        filePatch.oldNoNewlineAtEnd = true
+        filePatch.newNoNewlineAtEnd = true
+      }
       index += 1
       continue
     }
 
-    index += 1
+    if (current?.kind === "delete") {
+      if (!line.trim()) {
+        index += 1
+        continue
+      }
+      throw new Error(`Delete File for ${current.oldPath} does not accept patch content.`)
+    }
+
+    if (!hunk) {
+      if (!line.trim()) {
+        index += 1
+        continue
+      }
+      throw new Error(`Patch line appeared outside a hunk: ${line}`)
+    }
+
+    if (line.startsWith(" ")) {
+      hunk.lines.push({ type: "context", text: line.slice(1) })
+      lastLineType = "context"
+      index += 1
+      continue
+    }
+    if (line.startsWith("+")) {
+      hunk.lines.push({ type: "add", text: line.slice(1) })
+      lastLineType = "add"
+      index += 1
+      continue
+    }
+    if (line.startsWith("-")) {
+      hunk.lines.push({ type: "remove", text: line.slice(1) })
+      lastLineType = "remove"
+      index += 1
+      continue
+    }
+
+    if (current?.kind === "add") {
+      throw new Error(`Add File content lines must start with "+", including blank lines as "+". Raw line found: ${line || "<empty line>"}`)
+    }
+
+    if (current?.kind === "update") {
+      throw new Error(`Update File change lines must start with " ", "-", or "+". Raw line found: ${line || "<empty line>"}`)
+    }
+
+    throw new Error(`Invalid patch hunk line: ${line}`)
   }
 
-  finalizeFile()
+  if (!sawEnd) {
+    throw new Error("Patch must end with *** End Patch.")
+  }
+
+  for (; index < lines.length; index += 1) {
+    if (lines[index]!.trim()) {
+      throw new Error("Patch contains content after *** End Patch.")
+    }
+  }
 
   if (files.length === 0) {
     throw new Error("Patch does not contain any file changes.")
@@ -258,69 +392,41 @@ function joinContent(content: SplitContent): string {
   return content.hasFinalNewline ? `${body}${content.newline}` : body
 }
 
+function findSequence(sourceLines: string[], sequence: string[], startIndex: number): number {
+  for (let index = startIndex; index <= sourceLines.length - sequence.length; index += 1) {
+    let matched = true
+    for (let offset = 0; offset < sequence.length; offset += 1) {
+      if (sourceLines[index + offset] !== sequence[offset]) {
+        matched = false
+        break
+      }
+    }
+    if (matched) return index
+  }
+
+  return -1
+}
+
 function applyHunks(sourceLines: string[], hunks: Hunk[], label: string): string[] {
   if (hunks.length === 0) return sourceLines.slice()
 
-  const output: string[] = []
+  const output = sourceLines.slice()
   let cursor = 0
 
   for (const hunk of hunks) {
-    const expectedIndex = Math.max(0, hunk.oldStart - 1)
-    if (expectedIndex < cursor || expectedIndex > sourceLines.length) {
-      throw new Error(`Hunk target is out of range for ${label} at line ${hunk.oldStart}.`)
+    const oldSequence = oldSequenceOf(hunk)
+    const newSequence = newSequenceOf(hunk)
+    const matchIndex = findSequence(output, oldSequence, cursor)
+
+    if (matchIndex < 0) {
+      const anchor = hunk.anchor ? ` near "${hunk.anchor}"` : ""
+      throw new Error(`Patch context mismatch in ${label}${anchor}. Could not find expected lines.`)
     }
 
-    output.push(...sourceLines.slice(cursor, expectedIndex))
-    cursor = expectedIndex
-
-    let oldSeen = 0
-    let newSeen = 0
-
-    for (const line of hunk.lines) {
-      if (line.type === "context") {
-        const actual = sourceLines[cursor]
-        if (actual !== line.text) {
-          throw new Error(
-            `Patch context mismatch in ${label} at line ${cursor + 1}. Expected "${line.text}" but found "${actual ?? "<EOF>"}".`,
-          )
-        }
-        output.push(actual)
-        cursor += 1
-        oldSeen += 1
-        newSeen += 1
-        continue
-      }
-
-      if (line.type === "remove") {
-        const actual = sourceLines[cursor]
-        if (actual !== line.text) {
-          throw new Error(
-            `Patch removal mismatch in ${label} at line ${cursor + 1}. Expected "${line.text}" but found "${actual ?? "<EOF>"}".`,
-          )
-        }
-        cursor += 1
-        oldSeen += 1
-        continue
-      }
-
-      output.push(line.text)
-      newSeen += 1
-    }
-
-    if (oldSeen !== hunk.oldCount) {
-      throw new Error(
-        `Hunk old-count mismatch in ${label}: expected ${hunk.oldCount}, applied ${oldSeen}.`,
-      )
-    }
-
-    if (newSeen !== hunk.newCount) {
-      throw new Error(
-        `Hunk new-count mismatch in ${label}: expected ${hunk.newCount}, produced ${newSeen}.`,
-      )
-    }
+    output.splice(matchIndex, oldSequence.length, ...newSequence)
+    cursor = matchIndex + newSequence.length
   }
 
-  output.push(...sourceLines.slice(cursor))
   return output
 }
 
@@ -366,12 +472,12 @@ export const ApplyPatchTool = Tool.define(
   async () => {
     return {
       title: "Apply Patch",
-      description: "Use for structured Git-style unified diffs, especially coordinated multi-file edits, creating/deleting/moving files, or changes where patch context is clearer. Prefer replace_text for one small exact single-file replacement.",
+      description: `Use for structured *** Begin Patch edits, especially coordinated multi-file edits, creating/deleting/moving files, or changes where patch context is clearer. Prefer replace_text for one small exact single-file replacement.\n\n${APPLY_PATCH_FORMAT}`,
       parameters: z.object({
-        patch: z.string().min(1).describe("Unified diff text (Git format) containing one or more file patches. Use this for multi-file or structural edits; use replace_text for a simple exact edit in one file."),
+        patch: z.string().min(1).describe(APPLY_PATCH_FORMAT),
       }),
       describeApproval: (parameters, ctx) => {
-        const filePatches = parseUnifiedDiff(parameters.patch)
+        const filePatches = parseBeginPatch(parameters.patch)
         const touched = filePatches.flatMap((filePatch) => [filePatch.oldPath, filePatch.newPath])
           .filter((value): value is string => typeof value === "string" && value.length > 0)
         const uniquePaths = [...new Set(touched)]
@@ -386,13 +492,10 @@ export const ApplyPatchTool = Tool.define(
         }
       },
       execute: async (parameters) => {
-        const filePatches = parseUnifiedDiff(parameters.patch)
+        const filePatches = parseBeginPatch(parameters.patch)
         const actions: ApplyAction[] = []
 
         for (const filePatch of filePatches) {
-          const additions = additionsOf(filePatch.hunks)
-          const deletions = deletionsOf(filePatch.hunks)
-
           if (filePatch.oldPath === null && filePatch.newPath === null) {
             throw new Error("Patch contains an invalid file header with both paths set to /dev/null.")
           }
@@ -403,7 +506,7 @@ export const ApplyPatchTool = Tool.define(
               throw new Error(`Cannot create ${toDisplayPath(targetResolved)} because it already exists.`)
             }
 
-            const updatedLines = applyHunks([], filePatch.hunks, toDisplayPath(targetResolved))
+            const updatedLines = addedLinesOf(filePatch.hunks)
             const content: SplitContent = {
               lines: updatedLines,
               newline: "\n",
@@ -414,8 +517,8 @@ export const ApplyPatchTool = Tool.define(
             actions.push({
               kind: "created",
               path: toDisplayPath(targetResolved),
-              additions,
-              deletions,
+              additions: updatedLines.length,
+              deletions: 0,
             })
             continue
           }
@@ -424,22 +527,19 @@ export const ApplyPatchTool = Tool.define(
             const sourceResolved = resolveToolPath(filePatch.oldPath)
             const originalText = await readTextFile(filePatch.oldPath)
             const source = splitContent(originalText)
-            const updatedLines = applyHunks(source.lines, filePatch.hunks, toDisplayPath(sourceResolved))
-
-            if (updatedLines.length > 0) {
-              throw new Error(`Delete patch for ${toDisplayPath(sourceResolved)} did not remove all lines.`)
-            }
 
             await unlink(sourceResolved)
             actions.push({
               kind: "deleted",
               path: toDisplayPath(sourceResolved),
-              additions,
-              deletions,
+              additions: 0,
+              deletions: source.lines.length,
             })
             continue
           }
 
+          const additions = additionsOf(filePatch.hunks)
+          const deletions = deletionsOf(filePatch.hunks)
           const sourceResolved = resolveToolPath(filePatch.oldPath)
           const targetResolved = resolveToolPath(filePatch.newPath)
           const rename = !samePath(sourceResolved, targetResolved)
@@ -492,7 +592,7 @@ export const ApplyPatchTool = Tool.define(
         }
 
         return {
-          title: "Applied unified diff",
+          title: "Applied patch",
           text: [
             `Applied patch to ${actions.length} file(s).`,
             "",

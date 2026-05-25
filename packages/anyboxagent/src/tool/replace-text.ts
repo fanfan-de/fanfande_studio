@@ -97,7 +97,7 @@ export const ReplaceTextTool = Tool.define(
   async () => {
     return {
       title: "Replace Text",
-      description: "Use for focused single-file text edits when you can provide an exact old_string/new_string, or to create one new text file with old_string empty. Prefer apply_patch for coordinated multi-file edits, file moves/deletes, broad structural changes, or when a unified diff is clearer.",
+      description: "Use for focused single-file text edits when you can provide an exact old_string/new_string, or to create one new text file with old_string empty. Prefer apply_patch for coordinated multi-file edits, file moves/deletes, broad structural changes, or when structured Begin Patch context is clearer.",
       parameters: ReplaceTextParameters,
       validate: (parameters) => {
         const { oldString, newString } = normalizeParameters(parameters)
