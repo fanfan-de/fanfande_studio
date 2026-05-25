@@ -51,6 +51,7 @@ function createSettingsPageProps(
     brandTheme: "sage",
     catalog: [],
     colorMode: "system",
+    fontFamily: "default",
     deletingArchivedSessionID: null,
     deletingMcpServerID: null,
     deletingProviderID: null,
@@ -77,6 +78,7 @@ function createSettingsPageProps(
     onCancelProviderAuthFlow: vi.fn(),
     onClose: vi.fn(),
     onColorModeChange: vi.fn(),
+    onFontFamilyChange: vi.fn(),
     onDebugLineColorsChange: vi.fn(),
     onDebugUiRegionsChange: vi.fn(),
     onDismissMessage: vi.fn(),
@@ -315,6 +317,26 @@ describe("SettingsPage built-in tools", () => {
       })
     })
     expect(await screen.findByRole("heading", { name: "显示语言" })).toBeInTheDocument()
+  })
+
+  it("selects the interface font from appearance settings", () => {
+    const onFontFamilyChange = vi.fn()
+
+    render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          fontFamily: "system",
+          onFontFamilyChange,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
+    expect(screen.getByRole("heading", { name: "Interface Font" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("radio", { name: /微软雅黑/ }))
+
+    expect(onFontFamilyChange).toHaveBeenCalledWith("microsoft-yahei")
   })
 
   it("selects the primary model through the provider model picker", () => {

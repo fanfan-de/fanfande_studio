@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react"
 import {
   APPEARANCE_TOKEN_NAMES,
+  isAppearanceFontFamily,
   normalizeAppearanceConfigDocument,
   type AppearanceConfigDocument,
+  type AppearanceFontFamily,
   type AppearanceTokenMap,
   type AppearanceTokenName,
 } from "../../../shared/appearance"
@@ -27,6 +29,7 @@ import { SIDEBAR_RESIZE_END_EVENT } from "./sidebar-resize-events"
 const ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY = "desktop.activityRailVisible"
 const COLOR_MODE_STORAGE_KEY = "desktop.colorMode"
 const BRAND_THEME_STORAGE_KEY = "desktop.brandTheme"
+const FONT_FAMILY_STORAGE_KEY = "desktop.fontFamily"
 const DEBUG_UI_REGIONS_STORAGE_KEY = "desktop.debugUiRegions"
 const DEBUG_LINE_COLORS_STORAGE_KEY = "desktop.debugLineColors"
 const AGENT_DEBUG_TRACE_STORAGE_KEY = "desktop.agentDebugTrace"
@@ -100,6 +103,19 @@ function readBrandThemePreference(): BrandTheme {
   }
 }
 
+function readFontFamilyPreference(): AppearanceFontFamily {
+  if (typeof window === "undefined") return "default"
+  try {
+    const stored = window.localStorage.getItem(FONT_FAMILY_STORAGE_KEY)
+    if (stored && isAppearanceFontFamily(stored)) {
+      return stored
+    }
+    return "default"
+  } catch {
+    return "default"
+  }
+}
+
 function readDebugUiRegionsPreference() {
   return readBooleanPreference(DEBUG_UI_REGIONS_STORAGE_KEY, false)
 }
@@ -161,6 +177,7 @@ export function useDesktopShell() {
   const [isActivityRailVisible, setIsActivityRailVisible] = useState(readActivityRailVisibilityPreference)
   const [colorMode, setColorMode] = useState<ColorMode>(readColorModePreference)
   const [brandTheme, setBrandTheme] = useState<BrandTheme>(readBrandThemePreference)
+  const [fontFamily, setFontFamily] = useState<AppearanceFontFamily>(readFontFamilyPreference)
   const [appearanceOverrides, setAppearanceOverrides] = useState<AppearanceTokenMap>({})
   const [appearanceTokenValues, setAppearanceTokenValues] =
     useState<Record<AppearanceTokenName, string>>(EMPTY_APPEARANCE_TOKEN_VALUES)
@@ -313,6 +330,7 @@ export function useDesktopShell() {
         setAppearanceConfigError(null)
         setColorMode(nextDocument.colorMode)
         setBrandTheme(nextDocument.brandTheme)
+        setFontFamily(nextDocument.fontFamily)
         setAppearanceOverrides(nextDocument.overrides)
       })
       .catch((error) => {
@@ -438,9 +456,18 @@ export function useDesktopShell() {
   }, [brandTheme])
 
   useEffect(() => {
+    document.documentElement.setAttribute("data-font-family", fontFamily)
+    try {
+      window.localStorage.setItem(FONT_FAMILY_STORAGE_KEY, fontFamily)
+    } catch {
+      return
+    }
+  }, [fontFamily])
+
+  useEffect(() => {
     applyAppearanceOverrides(document.documentElement, appearanceOverrides)
     setAppearanceTokenValues(readResolvedAppearanceTokenValues(document.documentElement))
-  }, [appearanceOverrides, brandTheme, colorMode])
+  }, [appearanceOverrides, brandTheme, colorMode, fontFamily])
 
   useEffect(() => {
     const saveAppearanceConfig = window.desktop?.saveAppearanceConfig
@@ -451,6 +478,7 @@ export function useDesktopShell() {
         version: 1,
         brandTheme,
         colorMode,
+        fontFamily,
         overrides: appearanceOverrides,
         resolvedTokens: readResolvedAppearanceTokenValues(document.documentElement),
         updatedAt: Date.now(),
@@ -469,7 +497,7 @@ export function useDesktopShell() {
     return () => {
       window.clearTimeout(timer)
     }
-  }, [appearanceOverrides, brandTheme, colorMode, isAppearanceConfigReady])
+  }, [appearanceOverrides, brandTheme, colorMode, fontFamily, isAppearanceConfigReady])
 
   useEffect(() => {
     try {
@@ -864,6 +892,7 @@ export function useDesktopShell() {
       path: appearanceConfigPath,
       brandTheme,
       colorMode,
+      fontFamily,
       overrides: appearanceOverrides,
       resolvedTokens: appearanceTokenValues,
     },
@@ -884,8 +913,10 @@ export function useDesktopShell() {
     appShellStyle,
     brandTheme,
     colorMode,
+    fontFamily,
     handleBrandThemeChange: setBrandTheme,
     handleColorModeChange: setColorMode,
+    handleFontFamilyChange: setFontFamily,
     handleActivityRailVisibilityChange,
     handleAppearancePaletteReset,
     handleAppearanceTokenChange,

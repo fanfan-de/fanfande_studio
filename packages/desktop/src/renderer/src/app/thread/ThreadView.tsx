@@ -1624,6 +1624,12 @@ function isCollapsibleTraceItem(item: AssistantTraceItem) {
   return item.kind === "reasoning" || item.kind === "tool"
 }
 
+function shouldCollapseReasoningTraceItem(item: AssistantTraceItem, shouldCollapseAfterTurnCompletion: boolean) {
+  if (shouldCollapseAfterTurnCompletion && isCollapsibleTraceItem(item)) return true
+  if (item.kind !== "reasoning" || item.isStreaming) return false
+  return item.status === undefined || item.status === "completed"
+}
+
 function firstNonEmptyLine(value?: string) {
   return value
     ?.split(/\r?\n/)
@@ -3465,12 +3471,14 @@ function useToolDraftPatchPreviewState({
 }
 
 function FileChangeInlineSummary({
+  actionPlacement = "before",
   change,
   draftPatchStatus,
   isDraftPatch,
   isLive,
   showLiveDot = false,
 }: {
+  actionPlacement?: "before" | "after" | "none"
   change: AssistantTraceFileChange
   draftPatchStatus?: AssistantTraceItem["status"]
   isDraftPatch: boolean
@@ -3478,10 +3486,11 @@ function FileChangeInlineSummary({
   showLiveDot?: boolean
 }) {
   const phase = getDraftPatchActionPhase(draftPatchStatus, isLive)
+  const actionLabel = <span className="trace-file-change-action">{getFileChangeActionLabel(change, isDraftPatch, phase)}</span>
 
   return (
     <>
-      <span className="trace-file-change-action">{getFileChangeActionLabel(change, isDraftPatch, phase)}</span>
+      {actionPlacement === "before" ? actionLabel : null}
       <span className="trace-file-change-file">{change.file}</span>
       <span
         className={joinClassNames("trace-file-change-stats", isLive ? "is-live" : undefined)}
@@ -3490,6 +3499,7 @@ function FileChangeInlineSummary({
         <span className="is-add">+{change.additions}</span>
         <span className="is-remove">-{change.deletions}</span>
       </span>
+      {actionPlacement === "after" ? actionLabel : null}
       {showLiveDot ? <span className="trace-file-change-live-dot" aria-label="正在更新" /> : null}
     </>
   )
@@ -3513,7 +3523,7 @@ function ToolDraftPatchSummaryButton({
   const primaryFileChange = getPrimaryPatchFileChange(fileChanges)
   if (!primaryFileChange) return null
   const phase = getDraftPatchActionPhase(status, isStreaming)
-  const summaryLabel = getDraftPatchSummaryLabel(fileChanges, phase)
+  const summaryLabel = phase === "completed" ? `${fileChanges.length} 个文件` : getDraftPatchSummaryLabel(fileChanges, phase)
   const showsSingleFileSummary = fileChanges.length === 1
 
   return (
@@ -3524,12 +3534,10 @@ function ToolDraftPatchSummaryButton({
       aria-controls={listID}
       onClick={onToggle}
     >
-      <span className="trace-file-change-summary-icon" aria-hidden="true">
-        <ChangesIcon />
-      </span>
       <span className={joinClassNames("trace-file-change-summary-label", showsSingleFileSummary && "has-file-change")}>
         {showsSingleFileSummary ? (
           <FileChangeInlineSummary
+            actionPlacement="none"
             change={primaryFileChange}
             draftPatchStatus={status}
             isDraftPatch
@@ -3925,7 +3933,6 @@ function WorkflowLogTraceItemView({
       <span className="trace-log-summary">{summary}</span>
       <span className="trace-log-meta">
         {statusText ? <span className={`trace-log-status-text is-${item.status}`}>{statusText}</span> : null}
-        <time className="trace-log-time">{formatTime(item.timestamp)}</time>
         {hasDetail ? (
           <span className="trace-log-chevron" aria-hidden="true">
             {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
@@ -4028,7 +4035,7 @@ function ReasoningTraceItemView({
   item,
   shouldCollapseAfterTurnCompletion,
 }: TraceItemRendererProps) {
-  const shouldCollapseTraceItem = shouldCollapseAfterTurnCompletion && isCollapsibleTraceItem(item)
+  const shouldCollapseTraceItem = shouldCollapseReasoningTraceItem(item, shouldCollapseAfterTurnCompletion)
   const [isExpanded, setIsExpanded] = useState(() => !shouldCollapseTraceItem)
   const contentID = `trace-item-reasoning-${item.id}`
   const reasoningLabel = item.title || item.label || "Reasoning"
@@ -4435,7 +4442,6 @@ function ToolTraceItemView({
       ) : null}
       <span className="trace-log-meta">
         {statusText ? <span className={`trace-log-status-text is-${item.status}`}>{statusText}</span> : null}
-        <time className="trace-log-time">{formatTime(item.timestamp)}</time>
         {hasDisclosureContent ? (
           draftPatch ? (
             <button

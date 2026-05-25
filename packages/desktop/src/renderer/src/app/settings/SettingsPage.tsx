@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent, type PointerEvent } from "react"
-import { APPEARANCE_TOKEN_GROUPS, type AppearanceTokenMap, type AppearanceTokenName } from "../../../../shared/appearance"
+import {
+  APPEARANCE_TOKEN_GROUPS,
+  type AppearanceFontFamily,
+  type AppearanceTokenMap,
+  type AppearanceTokenName,
+} from "../../../../shared/appearance"
 import type { DesktopAppUpdateSettings, DesktopStoragePaths } from "../../../../shared/desktop-ipc-contract"
 import {
   ArchiveIcon,
@@ -117,6 +122,44 @@ const assistantTraceVisibilityOptions: Array<{
     key: "debugMetadata",
     title: "Debug metadata",
     description: "Show backend identifiers, payload previews, timing, and token metadata for each trace item.",
+  },
+]
+
+const fontFamilyOptions: Array<{
+  value: AppearanceFontFamily
+  label: string
+  description: string
+  previewClassName: string
+}> = [
+  {
+    value: "default",
+    label: "IBM Plex Sans",
+    description: "Default app stack with balanced Latin and CJK fallbacks.",
+    previewClassName: "is-default",
+  },
+  {
+    value: "system",
+    label: "System UI",
+    description: "Use the operating system interface font stack.",
+    previewClassName: "is-system",
+  },
+  {
+    value: "segoe",
+    label: "Segoe UI",
+    description: "Windows-native UI rhythm with Chinese fallbacks.",
+    previewClassName: "is-segoe",
+  },
+  {
+    value: "microsoft-yahei",
+    label: "微软雅黑",
+    description: "Microsoft YaHei UI / Microsoft YaHei for Simplified Chinese rendering on Windows.",
+    previewClassName: "is-microsoft-yahei",
+  },
+  {
+    value: "pingfang",
+    label: "PingFang SC",
+    description: "macOS-style Chinese font with cross-platform fallbacks.",
+    previewClassName: "is-pingfang",
   },
 ]
 
@@ -842,6 +885,7 @@ interface SettingsPageProps {
   deletingProviderID: string | null
   brandTheme: BrandTheme
   colorMode: ColorMode
+  fontFamily: AppearanceFontFamily
   isActivityRailVisible: boolean
   isAgentDebugTraceEnabled: boolean
   isDebugLineColorsEnabled: boolean
@@ -868,6 +912,7 @@ interface SettingsPageProps {
   selectionDraft: ProjectModelSelection
   onBrandThemeChange: (theme: BrandTheme) => void
   onColorModeChange: (mode: ColorMode) => void
+  onFontFamilyChange: (fontFamily: AppearanceFontFamily) => void
   onActivityRailVisibilityChange: (value: boolean) => void
   onAppearancePaletteReset: () => void
   onAppearanceTokenChange: (tokenName: AppearanceTokenName, value: string) => void
@@ -929,6 +974,7 @@ export function SettingsPage({
   deletingProviderID,
   brandTheme,
   colorMode,
+  fontFamily,
   isActivityRailVisible,
   isAgentDebugTraceEnabled,
   isDebugLineColorsEnabled,
@@ -952,6 +998,7 @@ export function SettingsPage({
   selectionDraft,
   onBrandThemeChange,
   onColorModeChange,
+  onFontFamilyChange,
   onActivityRailVisibilityChange,
   onAppearancePaletteReset,
   onAppearanceTokenChange,
@@ -1826,6 +1873,43 @@ export function SettingsPage({
                             {mode === "light" ? <SunIcon size={16} /> : mode === "dark" ? <MoonIcon size={16} /> : <MonitorIcon size={16} />}
                           </span>
                           <span>{mode === "system" ? "System" : mode === "light" ? "Light" : "Dark"}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="settings-panel">
+                    <div className="settings-section-header">
+                      <div>
+                        <span className="label">Typography</span>
+                        <h3>Interface Font</h3>
+                      </div>
+                      <p>Choose the font used across the desktop interface. Code blocks and terminals keep their monospace font.</p>
+                    </div>
+                    <div className="settings-font-family-group" role="radiogroup" aria-label="Interface font">
+                      {fontFamilyOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          className={
+                            fontFamily === option.value
+                              ? "settings-font-family-option is-active"
+                              : "settings-font-family-option"
+                          }
+                          role="radio"
+                          aria-checked={fontFamily === option.value}
+                          type="button"
+                          onClick={() => onFontFamilyChange(option.value)}
+                        >
+                          <span
+                            className={`settings-font-family-sample ${option.previewClassName}`}
+                            aria-hidden="true"
+                          >
+                            Aa 汉
+                          </span>
+                          <span className="settings-font-family-copy">
+                            <strong>{option.label}</strong>
+                            <small>{option.description}</small>
+                          </span>
                         </button>
                       ))}
                     </div>

@@ -1,5 +1,14 @@
 export type AppearanceColorMode = "system" | "light" | "dark"
 export type AppearanceBrandTheme = "terra" | "sage"
+export type AppearanceFontFamily = "default" | "system" | "segoe" | "microsoft-yahei" | "pingfang"
+
+export const APPEARANCE_FONT_FAMILIES = [
+  "default",
+  "system",
+  "segoe",
+  "microsoft-yahei",
+  "pingfang",
+] as const satisfies readonly AppearanceFontFamily[]
 
 export const APPEARANCE_TOKEN_NAMES = [
   "surface-app-light",
@@ -188,6 +197,7 @@ export interface AppearanceConfigDocument {
   version: 1
   brandTheme: AppearanceBrandTheme
   colorMode: AppearanceColorMode
+  fontFamily: AppearanceFontFamily
   overrides: AppearanceTokenMap
   resolvedTokens: AppearanceTokenMap
   updatedAt: number
@@ -985,6 +995,7 @@ export const APPEARANCE_TOKEN_METADATA = Object.fromEntries(
 ) as Record<AppearanceTokenName, AppearanceTokenMetadata>
 
 const APPEARANCE_TOKEN_NAME_SET = new Set<string>(APPEARANCE_TOKEN_NAMES)
+const APPEARANCE_FONT_FAMILY_SET = new Set<string>(APPEARANCE_FONT_FAMILIES)
 
 const LEGACY_APPEARANCE_TOKEN_MIGRATIONS: Record<string, readonly AppearanceTokenName[]> = {
   "semantic-accent-icon": ["semantic-accent-icon-light", "semantic-accent-icon-dark"],
@@ -1109,6 +1120,10 @@ const LEGACY_APPEARANCE_TOKEN_MIGRATIONS: Record<string, readonly AppearanceToke
 
 export function isAppearanceTokenName(value: string): value is AppearanceTokenName {
   return APPEARANCE_TOKEN_NAME_SET.has(value)
+}
+
+export function isAppearanceFontFamily(value: string): value is AppearanceFontFamily {
+  return APPEARANCE_FONT_FAMILY_SET.has(value)
 }
 
 const DEFAULT_APPEARANCE_OVERRIDES = {
@@ -1338,6 +1353,7 @@ export function createDefaultAppearanceConfigDocument(): AppearanceConfigDocumen
     version: 1,
     brandTheme: "terra",
     colorMode: "light",
+    fontFamily: "default",
     overrides: { ...DEFAULT_APPEARANCE_OVERRIDES },
     resolvedTokens: { ...DEFAULT_APPEARANCE_RESOLVED_TOKENS },
     updatedAt: 0,
@@ -1399,6 +1415,10 @@ export function normalizeAppearanceConfigDocument(input: unknown): AppearanceCon
     partial.colorMode === "light" || partial.colorMode === "dark" || partial.colorMode === "system"
       ? partial.colorMode
       : defaults.colorMode
+  const fontFamily =
+    typeof partial.fontFamily === "string" && isAppearanceFontFamily(partial.fontFamily)
+      ? partial.fontFamily
+      : defaults.fontFamily
   const updatedAt = typeof partial.updatedAt === "number" && Number.isFinite(partial.updatedAt)
     ? partial.updatedAt
     : 0
@@ -1407,6 +1427,7 @@ export function normalizeAppearanceConfigDocument(input: unknown): AppearanceCon
     version: 1,
     brandTheme,
     colorMode,
+    fontFamily,
     overrides: normalizeAppearanceTokenMap(partial.overrides),
     resolvedTokens: normalizeAppearanceTokenMap(partial.resolvedTokens),
     updatedAt,

@@ -4,10 +4,9 @@
 
 :root {
   color-scheme: light dark;
-  font-family: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-
   --font-sans: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-family: var(--font-sans);
 
   --space-1: 4px;
   --space-2: 8px;
@@ -774,6 +773,22 @@
   --seg-radius-xs: var(--radius-control);
   --seg-radius-sm: var(--radius-chip);
   --seg-radius-md: var(--radius-panel);
+}
+
+:root[data-font-family="system"] {
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+:root[data-font-family="segoe"] {
+  --font-sans: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+}
+
+:root[data-font-family="microsoft-yahei"] {
+  --font-sans: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+}
+
+:root[data-font-family="pingfang"] {
+  --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
 }
 
 :root[data-brand-theme="sage"] {

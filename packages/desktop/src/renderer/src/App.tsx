@@ -716,6 +716,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     appShellRef,
     appShellStyle,
     brandTheme,
+    fontFamily,
     handleActivityRailVisibilityChange,
     handleAppearancePaletteReset,
     handleAppearanceTokenChange,
@@ -734,6 +735,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handleWindowAction,
     colorMode,
     handleColorModeChange,
+    handleFontFamilyChange,
     isActivityRailVisible,
     isAgentDebugTraceEnabled,
     isDebugLineColorsEnabled,
@@ -2179,6 +2181,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               assistantTraceVisibility={assistantTraceVisibility}
               brandTheme={brandTheme}
               colorMode={colorMode}
+              fontFamily={fontFamily}
               isActivityRailVisible={isActivityRailVisible}
               isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
               isDebugLineColorsEnabled={isDebugLineColorsEnabled}
@@ -2202,6 +2205,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               selectionDraft={selectionDraft}
               onBrandThemeChange={handleBrandThemeChange}
               onColorModeChange={handleColorModeChange}
+              onFontFamilyChange={handleFontFamilyChange}
               onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
               onAppearancePaletteReset={handleAppearancePaletteReset}
               onAppearanceTokenChange={handleAppearanceTokenChange}

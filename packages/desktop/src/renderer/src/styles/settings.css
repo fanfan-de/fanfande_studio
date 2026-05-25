@@ -3389,6 +3389,12 @@ body.is-dragging-settings-page {
   gap: 10px;
 }
 
+.settings-font-family-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .settings-theme-palette-option {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -3480,6 +3486,96 @@ body.is-dragging-settings-page {
 }
 
 .settings-theme-palette-option.is-active .settings-theme-palette-copy small {
+  color: var(--seg-text-2);
+}
+
+.settings-font-family-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  min-height: 76px;
+  padding: 14px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-panel);
+  color: var(--seg-text-2);
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.settings-font-family-option:hover,
+.settings-font-family-option:focus-visible {
+  border-color: var(--mix-seg-accent-22-seg-border-78);
+  background: var(--mix-seg-panel-muted-72-seg-panel-28);
+  color: var(--seg-text-1);
+}
+
+.settings-font-family-option.is-active {
+  border-color: var(--mix-seg-accent-28-seg-border-72);
+  background: var(--mix-seg-accent-soft-74-seg-panel-26);
+  color: var(--seg-text-1);
+}
+
+.settings-font-family-sample {
+  --settings-font-preview: var(--font-sans);
+  width: 62px;
+  height: 42px;
+  border: 1px solid var(--mix-seg-border-80-transparent-20);
+  border-radius: var(--seg-radius-xs);
+  background: var(--mix-seg-panel-muted-74-seg-panel-26);
+  color: var(--seg-text-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--settings-font-preview);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.settings-font-family-sample.is-default {
+  --settings-font-preview: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.settings-font-family-sample.is-system {
+  --settings-font-preview: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.settings-font-family-sample.is-segoe {
+  --settings-font-preview: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+}
+
+.settings-font-family-sample.is-microsoft-yahei {
+  --settings-font-preview: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+}
+
+.settings-font-family-sample.is-pingfang {
+  --settings-font-preview: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+}
+
+.settings-font-family-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.settings-font-family-copy strong {
+  color: currentColor;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.settings-font-family-copy small {
+  color: var(--seg-text-3);
+  line-height: 1.5;
+}
+
+.settings-font-family-option.is-active .settings-font-family-copy small {
   color: var(--seg-text-2);
 }
 
@@ -4450,6 +4546,7 @@ body.is-dragging-settings-page {
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-actions-row,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-section-summary,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-color-mode-group,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-font-family-group,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-theme-palette-group,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-theme-config-meta,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-theme-config-preview {

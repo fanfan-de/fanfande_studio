@@ -1351,6 +1351,10 @@
   padding-left: 20px;
 }
 
+.trace-file-change-list.is-single-file {
+  padding-left: 0;
+}
+
 .trace-file-change-entry {
   display: grid;
   gap: 0;
@@ -1479,6 +1483,17 @@
 
 .trace-historical-diff.right-sidebar-diff-preview {
   max-height: 280px;
+}
+
+.trace-file-change-preview .trace-historical-diff.right-sidebar-diff-preview {
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.trace-file-change-preview .trace-historical-diff.right-sidebar-diff-preview::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .trace-historical-diff.right-sidebar-diff-preview.is-full-height {
@@ -3771,8 +3786,7 @@ button.trace-log-row {
 }
 
 .trace-log-label,
-.trace-log-status-text,
-.trace-log-time {
+.trace-log-status-text {
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.2;
@@ -3924,7 +3938,7 @@ button.trace-log-row {
 }
 
 .trace-log-row.has-inline-draft-patch {
-  gap: 7px;
+  gap: 16px;
 }
 
 .trace-log-row.has-inline-draft-patch .trace-log-summary {
@@ -3934,8 +3948,13 @@ button.trace-log-row {
 
 .trace-tool-inline-draft-patch-summary {
   flex: 1 1 auto;
+  grid-template-columns: minmax(0, auto) auto 14px;
   width: auto;
   max-width: min(560px, 100%);
+}
+
+.trace-tool-inline-draft-patch-summary .trace-file-change-summary-label.has-file-change {
+  grid-template-columns: minmax(0, auto) auto;
 }
 
 .trace-tool-inline-draft-patch-summary .trace-file-change-summary-label,
@@ -3958,7 +3977,7 @@ button.trace-log-row {
   display: grid;
   gap: 2px;
   min-width: 0;
-  margin: 2px 0 4px 30px;
+  margin: 4px 8px 4px;
   color: var(--seg-text-2);
 }
 

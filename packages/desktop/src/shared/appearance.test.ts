@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest"
-import { APPEARANCE_TOKEN_GROUPS, normalizeAppearanceConfigDocument } from "./appearance"
+import {
+  APPEARANCE_FONT_FAMILIES,
+  APPEARANCE_TOKEN_GROUPS,
+  createDefaultAppearanceConfigDocument,
+  normalizeAppearanceConfigDocument,
+} from "./appearance"
+
+describe("appearance font family", () => {
+  it("normalizes font family preferences", () => {
+    expect(APPEARANCE_FONT_FAMILIES).toEqual([
+      "default",
+      "system",
+      "segoe",
+      "microsoft-yahei",
+      "pingfang",
+    ])
+    expect(createDefaultAppearanceConfigDocument().fontFamily).toBe("default")
+    expect(normalizeAppearanceConfigDocument({ fontFamily: "microsoft-yahei" }).fontFamily).toBe(
+      "microsoft-yahei",
+    )
+    expect(normalizeAppearanceConfigDocument({ fontFamily: "invalid-font" }).fontFamily).toBe("default")
+  })
+})
 
 describe("appearance proposed plan card tokens", () => {
   it("registers the proposed plan card token group", () => {

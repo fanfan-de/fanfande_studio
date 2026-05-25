@@ -753,12 +753,14 @@ describe("ThreadView image trace items", () => {
     expect(getByRole("region", { name: "Tools" })).toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "File Changes" })).not.toBeInTheDocument()
     expect(container.querySelector(".trace-file-change-summary")).toHaveAttribute("aria-expanded", "true")
-    expect(container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")).not.toBeNull()
+    const inlineSummary = container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")
+    expect(inlineSummary).not.toBeNull()
+    expect(inlineSummary?.querySelector(".trace-file-change-summary-icon")).toBeNull()
     expect(container.querySelector(".trace-tool-draft-patch .trace-file-change-summary")).toBeNull()
-    expect(container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")?.textContent).toContain("正在创建")
-    expect(container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")?.textContent).toContain("src/app.ts")
-    expect(container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")?.textContent).toContain("+1-1")
-    expect(getAllByText("正在创建").length).toBeGreaterThan(0)
+    expect(inlineSummary?.textContent).toContain("src/app.ts")
+    expect(inlineSummary?.textContent).toContain("+1-1")
+    expect(inlineSummary?.textContent).toMatch(/src\/app\.ts\s*\+1-1/)
+    expect(inlineSummary?.textContent).not.toContain("正在创建")
     expect(getAllByText("src/app.ts").length).toBeGreaterThan(0)
 
     expect(container.querySelector(".trace-tool-draft-patch .trace-file-change-row")).toBeNull()
@@ -812,11 +814,15 @@ describe("ThreadView image trace items", () => {
     ])
 
     const inlineSummary = container.querySelector(".trace-log-row .trace-tool-inline-draft-patch-summary")
-    expect(inlineSummary?.textContent).toContain("已创建")
+    expect(inlineSummary?.querySelector(".trace-file-change-summary-icon")).toBeNull()
+    expect(container.querySelector(".trace-log-row .trace-log-time")).toBeNull()
     expect(inlineSummary?.textContent).toContain("src/app.ts")
     expect(inlineSummary?.textContent).toContain("+1-0")
+    expect(inlineSummary?.textContent).toMatch(/src\/app\.ts\s*\+1-0/)
+    expect(inlineSummary?.textContent).not.toContain("已创建")
     expect(queryByText("正在创建")).toBeNull()
-    expect(getByRole("button", { name: /已创建\s*src\/app\.ts\s*1 additions,\s*0 deletions/ })).toBeInTheDocument()
+    expect(queryByText("已创建")).toBeNull()
+    expect(getByRole("button", { name: /src\/app\.ts\s*1 additions,\s*0 deletions/ })).toBeInTheDocument()
     expect(container.querySelector(".trace-tool-draft-patch .trace-file-change-row")).toBeNull()
     expect(getByRole("region", { name: "Diff preview for src/app.ts" })).toBeInTheDocument()
   })
@@ -1298,6 +1304,45 @@ describe("ThreadView trace collapse", () => {
     expect(container.textContent).toContain("Inspect files first")
     expect(container.textContent).not.toContain("Then compare the rendering states")
     expect(container.textContent).not.toContain("Input")
+  })
+
+  it("collapses completed reasoning parts while the turn is still streaming", () => {
+    const { container, getByText } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "reasoning-1",
+            kind: "reasoning",
+            timestamp: 1,
+            label: "Reasoning",
+            text: "Finished planning part\nThe completed details should be folded",
+            isStreaming: false,
+          },
+          {
+            id: "reasoning-2",
+            kind: "reasoning",
+            timestamp: 2,
+            label: "Reasoning",
+            text: "Active planning part\nThe live details should stay open",
+            status: "running",
+            isStreaming: true,
+          },
+        ],
+        true,
+      ),
+    ])
+
+    const completedSummary = getByText("Finished planning part")
+    const activeSummary = getByText("Active planning part")
+
+    expect(container.textContent).toContain("Finished planning part")
+    expect(container.textContent).not.toContain("The completed details should be folded")
+    expect(container.textContent).toContain("The live details should stay open")
+    expect(completedSummary).toHaveClass("trace-item-collapsed-line")
+    expect(completedSummary.closest('[role="button"]')).toHaveAttribute("aria-expanded", "false")
+    expect(activeSummary).not.toHaveClass("trace-item-collapsed-line")
+    expect(activeSummary.closest('[role="button"]')).toHaveAttribute("aria-expanded", "true")
   })
 
   it("collapses process trace before the final assistant response", () => {
