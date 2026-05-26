@@ -139,6 +139,7 @@ export async function resolveProjectModelSelectionWithGlobalFallback(
   return {
     model: resolveInheritedModelReference(items, projectSelection.model, globalSelection?.model),
     small_model: resolveInheritedModelReference(items, projectSelection.small_model, globalSelection?.small_model),
+    reasoning_effort: projectSelection.reasoning_effort ?? globalSelection?.reasoning_effort,
   }
 }
 

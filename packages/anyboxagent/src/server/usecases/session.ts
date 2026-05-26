@@ -12,6 +12,7 @@ import * as Message from "#session/core/message.ts"
 import * as Prompt from "#session/core/prompt.ts"
 import * as RunningState from "#session/runtime/running-state.ts"
 import * as Session from "#session/core/session.ts"
+import * as SessionRollback from "#session/core/rollback.ts"
 import * as SessionDiff from "#session/diff/diff.ts"
 import * as Subtask from "#session/tasks/subtask.ts"
 import * as Task from "#session/tasks/task.ts"
@@ -37,6 +38,8 @@ export { createSessionExecutionStream } from "#server/usecases/session-stream.ts
 export const CreateSessionBody = AgentRouteSchemas.sessions.create.body
 
 export const CreateSideChatBody = AgentRouteSchemas.sessions.createSideChat.body
+
+export const RollbackSessionBody = AgentRouteSchemas.sessions.rollback.body
 
 export const UpdateSessionModelSelectionBody = Config.ModelSelection
 
@@ -526,6 +529,50 @@ export function updateSessionActiveMessage(
   return mapSessionSummary(session)
 }
 
+export async function rollbackSessionToCheckpoint(
+  sessionID: string,
+  input: z.infer<typeof RollbackSessionBody>,
+) {
+  const session = requireSession(sessionID)
+
+  try {
+    return await Instance.provide({
+      directory: session.directory,
+      fn: async () => {
+        const workspaceRestore = input.restoreWorkspace
+          ? await SessionRollback.restoreWorkspaceToRollbackSnapshot({
+            sessionID,
+            targetMessageID: input.targetMessageID,
+          })
+          : undefined
+        const branch = await SessionRollback.createCorrectiveBranch({
+          sessionID,
+          targetMessageID: input.targetMessageID,
+          reason: input.reason,
+          correctivePrompt: input.correctivePrompt,
+          restoreWorkspace: workspaceRestore,
+        })
+
+        return {
+          session: mapSessionSummary(branch.session),
+          targetMessageID: branch.targetMessage.id,
+          correctiveMessageID: branch.assistantMessage.id,
+          restoreWorkspace: Boolean(input.restoreWorkspace),
+          targetSnapshot: workspaceRestore?.targetSnapshot,
+          preRestoreSnapshot: workspaceRestore?.preRestoreSnapshot,
+          restoredFiles: workspaceRestore?.restoredFiles ?? [],
+        }
+      },
+    })
+  } catch (error) {
+    throw new ApiError(
+      400,
+      "SESSION_ROLLBACK_FAILED",
+      error instanceof Error ? error.message : String(error),
+    )
+  }
+}
+
 export function getSessionPty(sessionID: string, options: { ptyRegistry: PtyRegistry }) {
   requireMainSession(sessionID)
   return options.ptyRegistry.infoBySession(sessionID)
@@ -617,6 +664,7 @@ function toSessionModelSelectionPayload(selection: Session.SessionModelSelection
   return {
     model: selection?.model,
     small_model: selection?.small_model,
+    reasoning_effort: selection?.reasoning_effort,
   }
 }
 

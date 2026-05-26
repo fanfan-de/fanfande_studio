@@ -87,6 +87,15 @@ export function SessionRoutes(options: { ptyRegistry: PtyRegistry }) {
     return ok(c, SessionUseCase.updateSessionActiveMessage(c.req.param("id"), payload))
   })
 
+  app.post("/:id/rollback", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SessionUseCase.RollbackSessionBody,
+      "Body must include targetMessageID, reason, and correctivePrompt",
+    )
+    return ok(c, await SessionUseCase.rollbackSessionToCheckpoint(c.req.param("id"), payload))
+  })
+
   app.get("/:id/models", async (c) => ok(c, await SessionUseCase.listSessionModels(c.req.param("id"))))
 
   app.patch("/:id/model-selection", async (c) => {

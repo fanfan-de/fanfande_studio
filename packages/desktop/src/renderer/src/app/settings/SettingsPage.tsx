@@ -1,4 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent, type PointerEvent } from "react"
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type MouseEvent,
+  type ReactNode,
+  type PointerEvent,
+} from "react"
 import {
   APPEARANCE_TOKEN_GROUPS,
   type AppearanceFontFamily,
@@ -9,24 +19,20 @@ import type { DesktopAppUpdateState, DesktopStoragePaths } from "../../../../sha
 import {
   ArchiveIcon,
   CloseIcon,
-  CheckIcon,
   ConnectedStatusIcon,
   DisconnectedStatusIcon,
   ChevronDownIcon,
-  DownloadIcon,
   EyeIcon,
   EyeOffIcon,
   FileTextIcon,
   LayoutSidebarLeftIcon,
   MinimizeIcon,
   MonitorIcon,
-  MoonIcon,
   PaletteIcon,
   PlusIcon,
   ResetIcon,
   SearchIcon,
   SettingsIcon,
-  SunIcon,
   TerminalIcon
 } from "../icons"
 import { normalizeAppearanceColorInputValue } from "../appearance-theme"
@@ -61,14 +67,14 @@ import {
 } from "../mcp/mcp-server-source"
 import { clamp, formatTime } from "../utils"
 import {
-  checkForAppUpdates,
   getStoragePaths,
-  getAppUpdateState,
-  installAppUpdate,
   openExternalUrl,
   openMonitorWindow,
-  setAutomaticUpdatesEnabled,
 } from "./client"
+import {
+  shouldOpenUpdateCenterOnly,
+  type AppUpdateStatus,
+} from "../update/UpdateDialog"
 import type { AppLocale } from "../../../../shared/locale"
 
 const assistantTraceVisibilityOptions: Array<{
@@ -771,135 +777,6 @@ function doesMcpServerMatchSearch(
 
 type SettingsSectionKey = "general" | "services" | "defaults" | "mcp" | "appearance" | "developer" | "archive"
 
-type AppUpdateStatus = {
-  tone: "success" | "error" | "muted"
-  text: string
-}
-
-interface UpdateDialogProps {
-  state: DesktopAppUpdateState | null
-  status: AppUpdateStatus | null
-  isChecking: boolean
-  isInstalling: boolean
-  onCheck: () => void
-  onClose: () => void
-  onInstall: () => void
-}
-
-function UpdateDialog({
-  state,
-  status,
-  isChecking,
-  isInstalling,
-  onCheck,
-  onClose,
-  onInstall,
-}: UpdateDialogProps) {
-  const phase = state?.phase ?? "idle"
-  const progressPercent = getUpdateProgressPercent(state)
-  const showProgress = phase === "downloading" || phase === "downloaded"
-  const canCheck = phase !== "checking" && phase !== "downloading" && !isChecking
-  const canInstall = phase === "downloaded"
-
-  function handleOverlayClick(event: MouseEvent<HTMLElement>) {
-    if (event.target === event.currentTarget) {
-      onClose()
-    }
-  }
-
-  return (
-    <section className="update-center-overlay" role="presentation" onClick={handleOverlayClick}>
-      <article className="update-center-dialog" role="dialog" aria-modal="true" aria-labelledby="update-center-title">
-        <header className="update-center-header">
-          <div className="update-center-brand">
-            <span className="update-center-app-icon" aria-hidden="true">
-              A
-            </span>
-            <div>
-              <span className="label">Anybox Desktop</span>
-              <h2 id="update-center-title">{getUpdateDialogTitle(state)}</h2>
-            </div>
-          </div>
-          <button className="settings-page-close-button" type="button" aria-label="Close update center" onClick={onClose}>
-            <CloseIcon size={18} />
-          </button>
-        </header>
-
-        <div className="update-center-status-card">
-          <div className={`update-center-status-badge is-${phase}`}>
-            <span className="update-center-status-dot" aria-hidden="true" />
-            {getAppUpdatePhaseLabel(state)}
-          </div>
-          <p>{getAppUpdateSummary(state)}</p>
-
-          {showProgress ? (
-            <div className="update-center-progress" aria-label={`Download progress ${Math.round(progressPercent)}%`}>
-              <span className="update-center-progress-track">
-                <span className="update-center-progress-fill" style={{ width: `${progressPercent}%` }} />
-              </span>
-              <strong>{Math.round(progressPercent)}%</strong>
-            </div>
-          ) : null}
-        </div>
-
-        <dl className="update-center-meta">
-          <div>
-            <dt>Current version</dt>
-            <dd>{state?.version ?? "Unknown"}</dd>
-          </div>
-          <div>
-            <dt>Latest version</dt>
-            <dd>{state?.latestVersion ?? (phase === "up-to-date" ? state?.version ?? "Unknown" : "Not checked")}</dd>
-          </div>
-          <div>
-            <dt>Last checked</dt>
-            <dd>{formatUpdateCheckTime(state?.lastCheckedAt)}</dd>
-          </div>
-          <div>
-            <dt>Automatic updates</dt>
-            <dd>{state?.automaticUpdates === false ? "Off" : "On"}</dd>
-          </div>
-        </dl>
-
-        {state?.releaseNotes ? (
-          <section className="update-center-release-notes" aria-label="Release notes">
-            <div>
-              <FileTextIcon size={16} />
-              <h3>Release notes</h3>
-            </div>
-            <p>{state.releaseNotes}</p>
-          </section>
-        ) : null}
-
-        {phase === "unsupported" ? (
-          <p className="update-center-helper">
-            Build and install the app, or use the configured development update feed, to test updates locally.
-          </p>
-        ) : null}
-
-        {status ? <p className={`update-center-message is-${status.tone}`}>{status.text}</p> : null}
-
-        <footer className="update-center-actions">
-          <button className="secondary-button" type="button" onClick={onClose}>
-            Later
-          </button>
-          {canInstall ? (
-            <button className="primary-button" type="button" disabled={isInstalling} onClick={onInstall}>
-              <CheckIcon size={16} />
-              {isInstalling ? "Restarting..." : "Restart to install"}
-            </button>
-          ) : (
-            <button className="primary-button" type="button" disabled={!canCheck} onClick={onCheck}>
-              <DownloadIcon size={16} />
-              {isChecking || phase === "checking" ? "Checking..." : "Check for updates"}
-            </button>
-          )}
-        </footer>
-      </article>
-    </section>
-  )
-}
-
 const storagePathItems: Array<{
   key: keyof DesktopStoragePaths
   label: string
@@ -941,95 +818,6 @@ const storagePathItems: Array<{
     description: "Temporary plugin zip extraction directory.",
   },
 ]
-
-function getAppUpdatePhaseLabel(state: DesktopAppUpdateState | null) {
-  switch (state?.phase) {
-    case "checking":
-      return "Checking"
-    case "available":
-      return "Update available"
-    case "downloading":
-      return "Downloading"
-    case "downloaded":
-      return "Ready to install"
-    case "up-to-date":
-      return "Up to date"
-    case "error":
-      return "Needs attention"
-    case "unsupported":
-      return "Unavailable"
-    default:
-      return "Ready"
-  }
-}
-
-function getAppUpdateSummary(state: DesktopAppUpdateState | null) {
-  if (!state) return "Loading update status..."
-
-  switch (state.phase) {
-    case "checking":
-      return "Checking for the latest Anybox desktop release."
-    case "available":
-      return state.latestVersion
-        ? `Anybox ${state.latestVersion} is available and will download automatically.`
-        : "A new Anybox desktop update is available."
-    case "downloading": {
-      const percent = typeof state.downloadPercent === "number" ? ` ${Math.round(state.downloadPercent)}%` : ""
-      return `Downloading the update.${percent}`
-    }
-    case "downloaded":
-      return state.latestVersion
-        ? `Anybox ${state.latestVersion} is ready. Restart to finish installing.`
-        : "An update is ready. Restart to finish installing."
-    case "up-to-date":
-      return "Anybox is running the latest available version."
-    case "error":
-      return state.error ? `Update check failed. ${state.error}` : "Update check failed."
-    case "unsupported":
-      return "Update checks run in packaged builds."
-    default:
-      return "Open Update Center to check for a new version."
-  }
-}
-
-function shouldOpenUpdateCenterOnly(state: DesktopAppUpdateState | null) {
-  return state?.phase === "checking" || state?.phase === "available" || state?.phase === "downloading" || state?.phase === "downloaded"
-}
-
-function getUpdateDialogTitle(state: DesktopAppUpdateState | null) {
-  switch (state?.phase) {
-    case "checking":
-      return "Checking for updates"
-    case "available":
-      return "A new version is available"
-    case "downloading":
-      return "Downloading update"
-    case "downloaded":
-      return "Update ready to install"
-    case "up-to-date":
-      return "Anybox is up to date"
-    case "error":
-      return "Unable to check for updates"
-    case "unsupported":
-      return "Updates unavailable"
-    default:
-      return "Update Center"
-  }
-}
-
-function formatUpdateCheckTime(value: number | null | undefined) {
-  if (!value) return "Not checked yet"
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value))
-}
-
-function getUpdateProgressPercent(state: DesktopAppUpdateState | null) {
-  if (state?.phase === "downloaded") return 100
-  if (typeof state?.downloadPercent !== "number") return 0
-  return Math.max(0, Math.min(100, state.downloadPercent))
-}
 
 const SETTINGS_PAGE_DRAG_MARGIN = 16
 
@@ -1084,6 +872,54 @@ function shouldIgnoreSettingsDragTarget(target: EventTarget | null) {
   return Boolean(target.closest("button, a, input, select, textarea, [role='button']"))
 }
 
+interface SettingsDisclosurePanelProps {
+  children: ReactNode
+  defaultOpen?: boolean
+  description: string
+  label: string
+  panelID: string
+  title: string
+}
+
+function SettingsDisclosurePanel({
+  children,
+  defaultOpen = false,
+  description,
+  label,
+  panelID,
+  title,
+}: SettingsDisclosurePanelProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen)
+  const bodyID = `${panelID}-body`
+
+  return (
+    <section className={isOpen ? "settings-panel settings-disclosure-panel is-open" : "settings-panel settings-disclosure-panel"}>
+      <button
+        className="settings-disclosure-summary"
+        type="button"
+        aria-controls={bodyID}
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <span className="settings-disclosure-copy">
+          <span className="settings-disclosure-label">{label}</span>
+          <span className="settings-disclosure-title">{title}</span>
+          <span className="settings-disclosure-description">{description}</span>
+        </span>
+        <span className="settings-disclosure-chevron" aria-hidden="true">
+          <ChevronDownIcon />
+        </span>
+      </button>
+
+      {isOpen ? (
+        <div id={bodyID} className="settings-disclosure-body">
+          {children}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 interface SettingsPageProps {
   activeMcpServerID: string | null
   activeMcpServerDiagnostic: McpServerDiagnostic | null
@@ -1109,6 +945,10 @@ interface SettingsPageProps {
   isLoading: boolean
   isLoadingArchivedSessions: boolean
   isOpen: boolean
+  appUpdateState: DesktopAppUpdateState | null
+  appUpdateStatus: AppUpdateStatus | null
+  isCheckingAppUpdate: boolean
+  isSavingAutomaticUpdates: boolean
   isRefreshingProviderCatalog: boolean
   loadError: string | null
   installedPlugins?: InstalledPlugin[]
@@ -1137,6 +977,8 @@ interface SettingsPageProps {
   onAgentDebugTraceChange: (value: boolean) => void
   onDebugLineColorsChange: (value: boolean) => void
   onDebugUiRegionsChange: (value: boolean) => void
+  onAutomaticUpdatesToggle: () => void
+  onCheckForUpdates: () => void
   onClose: () => void
   onDismissMessage: () => void
   onDeleteArchivedSession: (sessionID: string) => boolean | Promise<boolean>
@@ -1154,6 +996,7 @@ interface SettingsPageProps {
   ) => void
   onRefreshProviderCatalog: () => boolean | Promise<boolean>
   onLoadArchivedSessions: () => void | Promise<void>
+  onOpenUpdateCenter: () => void
   onRestoreArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onSaveMcpServer: () => boolean | Promise<boolean>
   onSaveProviderApiKey: (providerID: string, apiKey?: string | null) => boolean | Promise<boolean>
@@ -1198,6 +1041,10 @@ export function SettingsPage({
   isLoading,
   isLoadingArchivedSessions,
   isOpen,
+  appUpdateState,
+  appUpdateStatus,
+  isCheckingAppUpdate,
+  isSavingAutomaticUpdates,
   isRefreshingProviderCatalog,
   loadError,
   installedPlugins = [],
@@ -1223,6 +1070,8 @@ export function SettingsPage({
   onAgentDebugTraceChange,
   onDebugLineColorsChange,
   onDebugUiRegionsChange,
+  onAutomaticUpdatesToggle,
+  onCheckForUpdates,
   onClose,
   onDismissMessage,
   onDeleteArchivedSession,
@@ -1236,6 +1085,7 @@ export function SettingsPage({
   onProviderDraftChange,
   onRefreshProviderCatalog,
   onLoadArchivedSessions,
+  onOpenUpdateCenter,
   onRestoreArchivedSession,
   onSaveMcpServer,
   onSaveProviderApiKey,
@@ -1249,14 +1099,8 @@ export function SettingsPage({
   {
     const { error: localeError, locale, setLocale, t } = useI18n()
     const [activeSection, setActiveSection] = useState<SettingsSectionKey>("general")
-    const [appUpdateState, setAppUpdateState] = useState<DesktopAppUpdateState | null>(null)
-    const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus | null>(null)
     const [storagePaths, setStoragePaths] = useState<DesktopStoragePaths | null>(null)
     const [storagePathStatus, setStoragePathStatus] = useState<AppUpdateStatus | null>(null)
-    const [isCheckingAppUpdate, setIsCheckingAppUpdate] = useState(false)
-    const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false)
-    const [isInstallingAppUpdate, setIsInstallingAppUpdate] = useState(false)
-    const [isSavingAutomaticUpdates, setIsSavingAutomaticUpdates] = useState(false)
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
     const [providerSearch, setProviderSearch] = useState("")
     const [mcpServerSearchQuery, setMcpServerSearchQuery] = useState("")
@@ -1264,6 +1108,8 @@ export function SettingsPage({
     const [visibleProviderApiKeys, setVisibleProviderApiKeys] = useState<Record<string, boolean>>({})
     const settingsOverlayRef = useRef<HTMLElement | null>(null)
     const settingsPageRef = useRef<HTMLDivElement | null>(null)
+    const settingsMainRef = useRef<HTMLDivElement | null>(null)
+    const settingsMainTopAnchorRef = useRef<HTMLDivElement | null>(null)
     const serviceDetailPanelRef = useRef<HTMLDivElement | null>(null)
     const settingsPageOffsetRef = useRef<SettingsPageOffset>({ x: 0, y: 0 })
     const settingsPageDragRef = useRef<SettingsPageDragState | null>(null)
@@ -1368,20 +1214,30 @@ export function SettingsPage({
     const mcpServerCanSave = !mcpServerValidationError
     const showLoadedState = !isLoading && !loadError
     const showProviderSections = activeSection === "services" || activeSection === "defaults" || activeSection === "mcp"
-    const appVersionLabel = appUpdateState?.version ? `Version ${appUpdateState.version}` : "Version ..."
+    const appVersionNumber = appUpdateState?.version ?? "..."
+    const appVersionLabel = `${t("settings.about.version")} ${appVersionNumber}`
+    const installerVersionLabel = `${t("settings.about.installerVersion")}: ${appVersionNumber}`
     const automaticUpdatesEnabled = appUpdateState?.automaticUpdates ?? true
     const aboutUpdateActionLabel = shouldOpenUpdateCenterOnly(appUpdateState)
-      ? "Open update center"
+      ? t("settings.about.openUpdateCenter")
       : isCheckingAppUpdate
-        ? "Checking..."
-        : "Check for updates"
+        ? t("settings.about.checkingUpdates")
+        : t("settings.about.checkUpdates")
+
+    function handleAboutUpdateAction() {
+      if (shouldOpenUpdateCenterOnly(appUpdateState)) {
+        onOpenUpdateCenter()
+        return
+      }
+
+      onCheckForUpdates()
+    }
+
     useEffect(() => {
       if (!isOpen) {
         setActiveSection("general")
         setSelectedProviderID(null)
         setProviderSearch("")
-        setIsUpdateDialogOpen(false)
-        setAppUpdateStatus(null)
       }
     }, [isOpen])
 
@@ -1391,38 +1247,26 @@ export function SettingsPage({
       void onLoadArchivedSessions()
     }, [activeSection, isOpen, onLoadArchivedSessions])
 
+    useLayoutEffect(() => {
+      if (!isOpen) return
+
+      scrollSettingsMainToTop()
+    }, [activeSection, isOpen])
+
     useEffect(() => {
       if (!isOpen) return
 
-      let disposed = false
-      void getAppUpdateState()
-        .then((state) => {
-          if (disposed || !state) return
-          setAppUpdateState(state)
-        })
-        .catch((error: unknown) => {
-          if (disposed) return
-          const message = error instanceof Error ? error.message : String(error)
-          setAppUpdateStatus({
-            tone: "error",
-            text: `Unable to load update settings. ${message}`,
-          })
-        })
-
-      const unsubscribe = window.desktop?.onAppUpdateStateChange?.((state) => {
-        if (!disposed) {
-          setAppUpdateState(state)
-        }
-      })
-
-      return () => {
-        disposed = true
-        unsubscribe?.()
-      }
-    }, [isOpen])
+      return scheduleSettingsMainScrollReset()
+    }, [activeSection, isOpen])
 
     useEffect(() => {
-      if (!isOpen) return
+      if (!isOpen || activeSection !== "developer" || !storagePaths) return
+
+      return scheduleSettingsMainScrollReset()
+    }, [activeSection, isOpen, storagePaths])
+
+    useEffect(() => {
+      if (!isOpen || activeSection !== "developer" || storagePaths) return
 
       let disposed = false
       void getStoragePaths()
@@ -1442,7 +1286,7 @@ export function SettingsPage({
       return () => {
         disposed = true
       }
-    }, [isOpen])
+    }, [activeSection, isOpen, storagePaths])
 
     useEffect(() => {
       if (activeSection !== "services") return
@@ -1478,17 +1322,12 @@ export function SettingsPage({
         if (event.key !== "Escape") return
 
         event.preventDefault()
-        if (isUpdateDialogOpen) {
-          setIsUpdateDialogOpen(false)
-          return
-        }
-
         onClose()
       }
 
       window.addEventListener("keydown", handleWindowKeyDown)
       return () => window.removeEventListener("keydown", handleWindowKeyDown)
-    }, [isOpen, isUpdateDialogOpen, onClose])
+    }, [isOpen, onClose])
 
     useEffect(() => {
       if (isOpen) return
@@ -1567,6 +1406,48 @@ export function SettingsPage({
       )
     }
 
+    function scrollSettingsMainToTop() {
+      scrollElementToTop(settingsOverlayRef.current)
+      scrollElementToTop(settingsPageRef.current)
+      scrollElementToTop(settingsMainRef.current)
+
+      if (typeof settingsMainTopAnchorRef.current?.scrollIntoView === "function") {
+        settingsMainTopAnchorRef.current.scrollIntoView({ block: "start", inline: "nearest" })
+      }
+    }
+
+    function scrollElementToTop(element: HTMLElement | null) {
+      if (!element) return
+
+      if (typeof element.scrollTo === "function") {
+        element.scrollTo({ left: 0, top: 0 })
+      } else {
+        element.scrollLeft = 0
+        element.scrollTop = 0
+      }
+    }
+
+    function scheduleSettingsMainScrollReset() {
+      scrollSettingsMainToTop()
+
+      const cancelers: Array<() => void> = []
+      if (typeof window.requestAnimationFrame === "function") {
+        const frame = window.requestAnimationFrame(() => scrollSettingsMainToTop())
+        cancelers.push(() => window.cancelAnimationFrame(frame))
+      }
+
+      for (const delay of [0, 50, 150, 300]) {
+        const timer = window.setTimeout(() => scrollSettingsMainToTop(), delay)
+        cancelers.push(() => window.clearTimeout(timer))
+      }
+
+      return () => {
+        for (const cancel of cancelers) {
+          cancel()
+        }
+      }
+    }
+
     function clampSettingsPageIntoOverlay() {
       const overlayElement = settingsOverlayRef.current
       const pageElement = settingsPageRef.current
@@ -1606,138 +1487,6 @@ export function SettingsPage({
     function handleSettingsOverlayClick(event: MouseEvent<HTMLElement>) {
       if (event.target !== event.currentTarget) return
       onClose()
-    }
-
-    async function refreshAppUpdateState() {
-      const state = await getAppUpdateState()
-      if (state) {
-        setAppUpdateState(state)
-      }
-      return state
-    }
-
-    function getManualUpdateCheckStatusText(result: Awaited<ReturnType<typeof checkForAppUpdates>> | null) {
-      if (!result) return "Update check requested."
-      if (!result.ok) return result.error ? `Update check failed. ${result.error}` : "Update check failed."
-      if (result.reason === "not-packaged") return "Update checks run in packaged builds."
-      if (result.reason === "already-checking") return "An update check is already in progress."
-      return "Update check started."
-    }
-
-    async function handleCheckForUpdates() {
-      if (isCheckingAppUpdate) return
-
-      setIsUpdateDialogOpen(true)
-      setIsCheckingAppUpdate(true)
-      setAppUpdateStatus(null)
-
-      try {
-        const result = await checkForAppUpdates()
-        if (result?.state) {
-          setAppUpdateState(result.state)
-        }
-        if (!result || result.ok === false || result.reason === "already-checking") {
-          setAppUpdateStatus({
-            tone: result?.ok === false ? "error" : "muted",
-            text: getManualUpdateCheckStatusText(result),
-          })
-        }
-        await refreshAppUpdateState()
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        setAppUpdateStatus({
-          tone: "error",
-          text: `Update check failed. ${message}`,
-        })
-      } finally {
-        setIsCheckingAppUpdate(false)
-      }
-    }
-
-    async function handleInstallAppUpdate() {
-      if (isInstallingAppUpdate) return
-
-      setIsInstallingAppUpdate(true)
-      setAppUpdateStatus(null)
-
-      try {
-        const result = await installAppUpdate()
-        if (!result?.ok) {
-          setAppUpdateStatus({
-            tone: "error",
-            text: result?.reason === "update-not-downloaded"
-              ? "The update has not finished downloading yet."
-              : "Unable to install the update.",
-          })
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        setAppUpdateStatus({
-          tone: "error",
-          text: `Unable to install the update. ${message}`,
-        })
-      } finally {
-        setIsInstallingAppUpdate(false)
-      }
-    }
-
-    function handleAboutUpdateAction() {
-      if (shouldOpenUpdateCenterOnly(appUpdateState)) {
-        setIsUpdateDialogOpen(true)
-        return
-      }
-
-      void handleCheckForUpdates()
-    }
-
-    async function handleAutomaticUpdatesToggle() {
-      if (!appUpdateState || isSavingAutomaticUpdates) return
-
-      const enabled = !appUpdateState.automaticUpdates
-      setIsSavingAutomaticUpdates(true)
-      setAppUpdateStatus(null)
-
-      try {
-        const settings = await setAutomaticUpdatesEnabled(enabled)
-        setAppUpdateState((current) =>
-          current
-            ? {
-                ...current,
-                automaticUpdates: settings?.automaticUpdates ?? enabled,
-                updateChecksSupported: settings?.updateChecksSupported ?? current.updateChecksSupported,
-                version: settings?.version ?? current.version,
-              }
-            : {
-                phase: "idle",
-                version: settings?.version ?? "Unknown",
-                automaticUpdates: settings?.automaticUpdates ?? enabled,
-                updateChecksSupported: settings?.updateChecksSupported ?? false,
-                latestVersion: null,
-                downloadPercent: null,
-                error: null,
-                lastCheckedAt: null,
-                releaseNotes: null,
-              },
-        )
-        if (!settings) {
-          setAppUpdateState((current) => current && {
-            ...current,
-            automaticUpdates: enabled,
-          })
-        }
-        setAppUpdateStatus({
-          tone: "success",
-          text: enabled ? "Automatic updates enabled." : "Automatic updates disabled.",
-        })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        setAppUpdateStatus({
-          tone: "error",
-          text: `Unable to save automatic update setting. ${message}`,
-        })
-      } finally {
-        setIsSavingAutomaticUpdates(false)
-      }
     }
 
     async function handleOpenStoragePath(targetPath: string) {
@@ -1851,6 +1600,11 @@ export function SettingsPage({
         description: "Cool sage accents with the existing slate-driven shell.",
       },
     ]
+    const colorModeOptions: Array<{ value: ColorMode; label: string }> = [
+      { value: "light", label: t("settings.appearance.light") },
+      { value: "dark", label: t("settings.appearance.dark") },
+      { value: "system", label: t("settings.appearance.system") },
+    ]
     const languageOptions: Array<{ value: AppLocale; label: string; description: string }> = [
       {
         value: "zh-CN",
@@ -1867,41 +1621,94 @@ export function SettingsPage({
 
     const primarySectionGroups = [
       {
-        label: "\u9009\u9879",
+        label: t("settings.options"),
         items: [
           { key: "general" as const, label: t("settings.nav.general"), Icon: MonitorIcon },
-          { key: "services" as const, label: "Provider", Icon: SettingsIcon },
-          { key: "defaults" as const, label: "Models", Icon: ConnectedStatusIcon },
-          { key: "appearance" as const, label: "Appearance", Icon: LayoutSidebarLeftIcon },
-          { key: "developer" as const, label: "Developer Mode", Icon: TerminalIcon },
-          { key: "archive" as const, label: "Archived Sessions", Icon: ArchiveIcon },
+          { key: "services" as const, label: t("settings.nav.provider"), Icon: SettingsIcon },
+          { key: "defaults" as const, label: t("settings.nav.models"), Icon: ConnectedStatusIcon },
+          { key: "appearance" as const, label: t("settings.nav.appearance"), Icon: LayoutSidebarLeftIcon },
+          { key: "developer" as const, label: t("settings.nav.developer"), Icon: TerminalIcon },
+          { key: "archive" as const, label: t("settings.nav.archive"), Icon: ArchiveIcon },
         ],
       },
     ] as const
 
+    const updateSettingsSection = (
+      <section className="settings-panel settings-about-panel" aria-label={t("settings.about.automaticUpdates")}>
+        <div className="settings-about-row settings-about-version-row">
+          <div className="settings-about-copy settings-about-version-copy">
+            <h3>{appVersionLabel}</h3>
+            <p>{installerVersionLabel}</p>
+            <button className="settings-about-release-link" type="button" onClick={onOpenUpdateCenter}>
+              {t("settings.about.releaseNotes")}
+            </button>
+          </div>
+          <button
+            className="primary-button settings-about-check-button"
+            type="button"
+            disabled={!appUpdateState && isCheckingAppUpdate}
+            onClick={handleAboutUpdateAction}
+          >
+            {aboutUpdateActionLabel}
+          </button>
+        </div>
+
+        <div className="settings-about-divider" />
+
+        <button
+          className={
+            automaticUpdatesEnabled
+              ? "settings-about-toggle-row is-active"
+              : "settings-about-toggle-row"
+          }
+          type="button"
+          role="switch"
+          aria-checked={automaticUpdatesEnabled}
+          disabled={!appUpdateState || isSavingAutomaticUpdates}
+          onClick={onAutomaticUpdatesToggle}
+        >
+          <span className="settings-about-copy">
+            <span className="settings-about-title">{t("settings.about.automaticUpdates")}</span>
+            <span className="settings-about-description">
+              {t("settings.about.automaticUpdatesDescription")}
+            </span>
+          </span>
+          <span className="settings-toggle-control" aria-hidden="true">
+            <span className="settings-toggle-thumb" />
+          </span>
+        </button>
+
+        {appUpdateStatus ? (
+          <p className={`settings-about-status is-${appUpdateStatus.tone}`}>{appUpdateStatus.text}</p>
+        ) : null}
+      </section>
+    )
+
     const languageSection = (
       <section className="settings-panel">
-        <div className="settings-section-header">
-          <div>
-            <span className="label">{t("settings.general.languageLabel")}</span>
-            <h3>{t("settings.general.languageTitle")}</h3>
-          </div>
-          <p>{t("settings.general.languageCopy")}</p>
-        </div>
-        <div className="settings-color-mode-group" role="group" aria-label={t("settings.general.localeGroup")}>
-          {languageOptions.map((option) => (
-            <button
-              key={option.value}
-              className={locale === option.value ? "settings-color-mode-option is-active" : "settings-color-mode-option"}
-              role="radio"
-              aria-checked={locale === option.value}
-              type="button"
-              onClick={() => void setLocale(option.value)}
-            >
-              <span>{option.label}</span>
-              <small>{option.description}</small>
-            </button>
-          ))}
+        <div className="settings-select-list">
+          <label className="settings-select-row">
+            <span className="settings-select-copy">
+              <span className="settings-select-title">{t("settings.general.languageTitle")}</span>
+              <span className="settings-select-description">{t("settings.general.languageCopy")}</span>
+            </span>
+            <span className="settings-select-control">
+              <select
+                aria-label={t("settings.general.languageTitle")}
+                value={locale}
+                onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                  void setLocale(event.target.value as AppLocale)
+                }
+              >
+                {languageOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDownIcon aria-hidden="true" />
+            </span>
+          </label>
         </div>
         {localeError ? (
           <p className="settings-helper-text settings-theme-config-error">
@@ -1968,7 +1775,14 @@ export function SettingsPage({
                           className={isActive ? "settings-primary-nav-item is-active" : "settings-primary-nav-item"}
                           aria-current={isActive ? "page" : undefined}
                           type="button"
-                          onClick={() => setActiveSection(section.key)}
+                          onClick={() => {
+                            if (activeSection === section.key) {
+                              scrollSettingsMainToTop()
+                              return
+                            }
+
+                            setActiveSection(section.key)
+                          }}
                         >
                           <span className="settings-primary-nav-icon" aria-hidden="true">
                             <Icon />
@@ -1984,7 +1798,12 @@ export function SettingsPage({
               ))}
             </aside>
 
-            <div className={activeSection === "services" ? "settings-page-main is-services" : "settings-page-main"}>
+            <div
+              ref={settingsMainRef}
+              className={activeSection === "services" ? "settings-page-main is-services" : "settings-page-main"}
+            >
+              <div ref={settingsMainTopAnchorRef} className="settings-page-main-scroll-anchor" aria-hidden="true" />
+
               {loadError && showProviderSections ? <div className="settings-banner is-error">{loadError}</div> : null}
 
               {archivedSessionsError && activeSection === "archive" ? (
@@ -2009,215 +1828,86 @@ export function SettingsPage({
 
               {activeSection === "general" ? (
                 <div className="settings-general-layout">
-                  <section className="settings-panel settings-about-panel" aria-label="About Anybox">
-                    <div className="settings-about-row settings-about-version-row">
-                      <div className="settings-about-product">
-                        <span className="settings-about-app-icon" aria-hidden="true">
-                          A
-                        </span>
-                        <div className="settings-about-copy">
-                          <span className="label">About</span>
-                          <h3>Anybox Desktop</h3>
-                          <p>{appVersionLabel}</p>
-                        </div>
-                      </div>
-                      <button
-                        className="primary-button settings-about-check-button"
-                        type="button"
-                        disabled={!appUpdateState && isCheckingAppUpdate}
-                        onClick={handleAboutUpdateAction}
-                      >
-                        {aboutUpdateActionLabel}
-                      </button>
-                    </div>
-
-                    <button className="settings-about-update-summary" type="button" onClick={() => setIsUpdateDialogOpen(true)}>
-                      <span className={`update-center-status-badge is-${appUpdateState?.phase ?? "idle"}`}>
-                        <span className="update-center-status-dot" aria-hidden="true" />
-                        {getAppUpdatePhaseLabel(appUpdateState)}
-                      </span>
-                      <span>{getAppUpdateSummary(appUpdateState)}</span>
-                    </button>
-
-                    <div className="settings-about-divider" />
-
-                    <button
-                      className={
-                        automaticUpdatesEnabled
-                          ? "settings-about-toggle-row is-active"
-                          : "settings-about-toggle-row"
-                      }
-                      type="button"
-                      role="switch"
-                      aria-checked={automaticUpdatesEnabled}
-                      disabled={!appUpdateState || isSavingAutomaticUpdates}
-                      onClick={() => void handleAutomaticUpdatesToggle()}
-                    >
-                      <span className="settings-about-copy">
-                        <span className="settings-about-title">Automatic updates</span>
-                        <span className="settings-about-description">
-                          Turn this off to prevent the app from checking for updates.
-                        </span>
-                      </span>
-                      <span className="settings-toggle-control" aria-hidden="true">
-                        <span className="settings-toggle-thumb" />
-                      </span>
-                    </button>
-
-                    {appUpdateStatus ? (
-                      <p className={`settings-about-status is-${appUpdateStatus.tone}`}>{appUpdateStatus.text}</p>
-                    ) : null}
-                  </section>
-
-                  <section className="settings-panel settings-storage-panel" aria-label="Storage locations">
-                    <div className="settings-section-header">
-                      <div>
-                        <span className="label">Storage</span>
-                        <h3>Storage Locations</h3>
-                      </div>
-                      <p>Open or copy the folders used for app data, managed agent data, plugins, and caches.</p>
-                    </div>
-                    <div className="settings-storage-list">
-                      {storagePaths ? (
-                        storagePathItems.map((item) => {
-                          const targetPath = storagePaths[item.key]
-
-                          return (
-                            <div key={item.key} className="settings-storage-row">
-                              <div className="settings-storage-copy">
-                                <strong>{item.label}</strong>
-                                <span>{item.description}</span>
-                                <code title={targetPath}>{targetPath}</code>
-                              </div>
-                              <div className="settings-storage-actions">
-                                <button
-                                  className="secondary-button"
-                                  type="button"
-                                  onClick={() => void handleCopyStoragePath(targetPath)}
-                                >
-                                  Copy
-                                </button>
-                                <button
-                                  className="secondary-button"
-                                  type="button"
-                                  onClick={() => void handleOpenStoragePath(targetPath)}
-                                >
-                                  Open
-                                </button>
-                              </div>
-                            </div>
-                          )
-                        })
-                      ) : (
-                        <p className="settings-helper-text">Loading storage paths...</p>
-                      )}
-                    </div>
-                    {storagePathStatus ? (
-                      <p className={`settings-about-status is-${storagePathStatus.tone}`}>{storagePathStatus.text}</p>
-                    ) : null}
-                  </section>
+                  {updateSettingsSection}
 
                   {languageSection}
                 </div>
               ) : activeSection === "appearance" ? (
                 <div className="settings-appearance-layout">
                   <section className="settings-panel">
-                    <div className="settings-section-header">
-                      <div>
-                        <span className="label">Brand</span>
-                        <h3>Accent Theme</h3>
-                      </div>
-                      <p>Switch between the new warm terra palette and the original cool sage shell.</p>
-                    </div>
-                    <div className="settings-theme-palette-group" role="group" aria-label="Accent theme">
-                      {brandThemeOptions.map((theme) => (
-                        <button
-                          key={theme.value}
-                          className={
-                            brandTheme === theme.value
-                              ? "settings-theme-palette-option is-active"
-                              : "settings-theme-palette-option"
-                          }
-                          role="radio"
-                          aria-checked={brandTheme === theme.value}
-                          type="button"
-                          onClick={() => onBrandThemeChange(theme.value)}
-                        >
-                          <span className={`settings-theme-palette-swatch is-${theme.value}`} aria-hidden="true">
-                            <span />
-                            <span />
-                            <span />
-                          </span>
-                          <span className="settings-theme-palette-copy">
-                            <strong>{theme.label}</strong>
-                            <small>{theme.description}</small>
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-
-                  <section className="settings-panel">
-                    <div className="settings-section-header">
-                      <div>
-                        <span className="label">Theme</span>
-                        <h3>Color Mode</h3>
-                      </div>
-                      <p>Choose between light, dark, or system-matched color scheme.</p>
-                    </div>
-                    <div className="settings-color-mode-group" role="group" aria-label="Color mode">
-                      {(["system", "light", "dark"] as const).map((mode) => (
-                        <button
-                          key={mode}
-                          className={colorMode === mode ? "settings-color-mode-option is-active" : "settings-color-mode-option"}
-                          role="radio"
-                          aria-checked={colorMode === mode}
-                          type="button"
-                          onClick={() => onColorModeChange(mode)}
-                        >
-                          <span className="settings-color-mode-icon" aria-hidden="true">
-                            {mode === "light" ? <SunIcon size={16} /> : mode === "dark" ? <MoonIcon size={16} /> : <MonitorIcon size={16} />}
-                          </span>
-                          <span>{mode === "system" ? "System" : mode === "light" ? "Light" : "Dark"}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-
-                  <section className="settings-panel">
-                    <div className="settings-section-header">
-                      <div>
-                        <span className="label">Typography</span>
-                        <h3>Interface Font</h3>
-                      </div>
-                      <p>Choose the font used across the desktop interface. Code blocks and terminals keep their monospace font.</p>
-                    </div>
-                    <div className="settings-font-family-group" role="radiogroup" aria-label="Interface font">
-                      {fontFamilyOptions.map((option) => (
-                        <button
-                          key={option.value}
-                          className={
-                            fontFamily === option.value
-                              ? "settings-font-family-option is-active"
-                              : "settings-font-family-option"
-                          }
-                          role="radio"
-                          aria-checked={fontFamily === option.value}
-                          type="button"
-                          onClick={() => onFontFamilyChange(option.value)}
-                        >
-                          <span
-                            className={`settings-font-family-sample ${option.previewClassName}`}
-                            aria-hidden="true"
+                    <div className="settings-select-list">
+                      <label className="settings-select-row">
+                        <span className="settings-select-copy">
+                          <span className="settings-select-title">{t("settings.appearance.colorMode")}</span>
+                          <span className="settings-select-description">{t("settings.appearance.colorModeCopy")}</span>
+                        </span>
+                        <span className="settings-select-control">
+                          <select
+                            aria-label={t("settings.appearance.colorMode")}
+                            value={colorMode}
+                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                              onColorModeChange(event.target.value as ColorMode)
+                            }
                           >
-                            Aa 汉
+                            {colorModeOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDownIcon aria-hidden="true" />
+                        </span>
+                      </label>
+
+                      <label className="settings-select-row">
+                        <span className="settings-select-copy">
+                          <span className="settings-select-title">Accent Theme</span>
+                          <span className="settings-select-description">
+                            Switch between the new warm terra palette and the original cool sage shell.
                           </span>
-                          <span className="settings-font-family-copy">
-                            <strong>{option.label}</strong>
-                            <small>{option.description}</small>
+                        </span>
+                        <span className="settings-select-control">
+                          <select
+                            aria-label="Accent Theme"
+                            value={brandTheme}
+                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                              onBrandThemeChange(event.target.value as BrandTheme)
+                            }
+                          >
+                            {brandThemeOptions.map((theme) => (
+                              <option key={theme.value} value={theme.value}>
+                                {theme.label}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDownIcon aria-hidden="true" />
+                        </span>
+                      </label>
+
+                      <label className="settings-select-row">
+                        <span className="settings-select-copy">
+                          <span className="settings-select-title">Interface Font</span>
+                          <span className="settings-select-description">
+                            Choose the font used across the desktop interface. Code blocks and terminals keep their monospace font.
                           </span>
-                        </button>
-                      ))}
+                        </span>
+                        <span className="settings-select-control">
+                          <select
+                            aria-label="Interface Font"
+                            value={fontFamily}
+                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                              onFontFamilyChange(event.target.value as AppearanceFontFamily)
+                            }
+                          >
+                            {fontFamilyOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDownIcon aria-hidden="true" />
+                        </span>
+                      </label>
                     </div>
                   </section>
 
@@ -2413,15 +2103,12 @@ export function SettingsPage({
                 </div>
               ) : activeSection === "developer" ? (
                 <div className="settings-developer-layout">
-                  <section className="settings-panel">
-                    <div className="settings-section-header">
-                      <div>
-                        <span className="label">Monitor</span>
-                        <h3>Agent Monitor</h3>
-                      </div>
-                      <p>Open the standalone monitor dashboard for local agent status, runtime sessions, and live logs.</p>
-                    </div>
-
+                  <SettingsDisclosurePanel
+                    panelID="developer-agent-monitor"
+                    label="Monitor"
+                    title="Agent Monitor"
+                    description="Open the standalone monitor dashboard for local agent status, runtime sessions, and live logs."
+                  >
                     <div className="settings-actions-row">
                       <span className="settings-helper-text">
                         Opens a dedicated desktop window and falls back to the bundled monitor build when the dev server is not running.
@@ -2435,89 +2122,71 @@ export function SettingsPage({
                         Open Monitor
                       </button>
                     </div>
-                  </section>
+                  </SettingsDisclosurePanel>
 
-                  <section className="settings-panel">
-                    <div className="settings-section-header">
-                      <div>
-                        <span className="label">Development</span>
-                        <h3>Debug Region Colors</h3>
-                      </div>
-                      <p>Toggle the temporary region background colors used during UI structure discussions and layout iteration.</p>
+                  <SettingsDisclosurePanel
+                    panelID="developer-debug-overlays"
+                    label="Development"
+                    title="Debug Overlays"
+                    description="Toggle temporary visual overlays used during UI structure discussions and layout iteration."
+                  >
+                    <div className="settings-section-summary">
+                      <button
+                        className={isDebugUiRegionsEnabled ? "settings-toggle-card is-active" : "settings-toggle-card"}
+                        role="switch"
+                        aria-checked={isDebugUiRegionsEnabled}
+                        aria-label="Show debug region colors"
+                        type="button"
+                        onClick={() => onDebugUiRegionsChange(!isDebugUiRegionsEnabled)}
+                      >
+                        <span className="settings-toggle-copy">
+                          <strong className="settings-toggle-title">
+                            <span className="settings-toggle-icon" aria-hidden="true">
+                              <PaletteIcon />
+                            </span>
+                            <span>Show debug region colors</span>
+                          </strong>
+                          <small>Fill major UI regions with temporary colors so layout discussions can refer to them directly.</small>
+                        </span>
+                        <span className="settings-toggle-control" aria-hidden="true">
+                          <span className="settings-toggle-thumb" />
+                        </span>
+                      </button>
+
+                      <button
+                        className={isDebugLineColorsEnabled ? "settings-toggle-card is-active" : "settings-toggle-card"}
+                        role="switch"
+                        aria-checked={isDebugLineColorsEnabled}
+                        aria-label="Show line debug colors"
+                        type="button"
+                        onClick={() => onDebugLineColorsChange(!isDebugLineColorsEnabled)}
+                      >
+                        <span className="settings-toggle-copy">
+                          <strong className="settings-toggle-title">
+                            <span className="settings-toggle-icon" aria-hidden="true">
+                              <MinimizeIcon />
+                            </span>
+                            <span>Show line debug colors</span>
+                          </strong>
+                          <small>Use separate highlight colors for the shell top border and the pane tab divider.</small>
+                        </span>
+                        <span className="settings-toggle-control" aria-hidden="true">
+                          <span className="settings-toggle-thumb" />
+                        </span>
+                      </button>
                     </div>
-
-                    <button
-                      className={isDebugUiRegionsEnabled ? "settings-toggle-card is-active" : "settings-toggle-card"}
-                      role="switch"
-                      aria-checked={isDebugUiRegionsEnabled}
-                      aria-label="Show debug region colors"
-                      type="button"
-                      onClick={() => onDebugUiRegionsChange(!isDebugUiRegionsEnabled)}
-                    >
-                      <span className="settings-toggle-copy">
-                        <strong className="settings-toggle-title">
-                          <span className="settings-toggle-icon" aria-hidden="true">
-                            <PaletteIcon />
-                          </span>
-                          <span>Show debug region colors</span>
-                        </strong>
-                        <small>Fill major UI regions with temporary colors so layout discussions can refer to them directly.</small>
-                      </span>
-                      <span className="settings-toggle-control" aria-hidden="true">
-                        <span className="settings-toggle-thumb" />
-                      </span>
-                    </button>
 
                     <p className="settings-helper-text">
-                      This development overlay follows the color mapping documented in the desktop UI structure guide and can be disabled once the layout is agreed.
+                      Debug region colors follow the desktop UI structure guide. Line colors keep the normal theme untouched until you need to inspect which thin divider is being painted in the top region.
                     </p>
-                  </section>
+                  </SettingsDisclosurePanel>
 
-                  <section className="settings-panel">
-                    <div className="settings-section-header">
-                      <div>
-                        <span className="label">Development</span>
-                        <h3>Debug Line Colors</h3>
-                      </div>
-                      <p>Color the remaining top-region dividers differently so it is obvious which line comes from the shell edge and which comes from the pane tabs.</p>
-                    </div>
-
-                    <button
-                      className={isDebugLineColorsEnabled ? "settings-toggle-card is-active" : "settings-toggle-card"}
-                      role="switch"
-                      aria-checked={isDebugLineColorsEnabled}
-                      aria-label="Show line debug colors"
-                      type="button"
-                      onClick={() => onDebugLineColorsChange(!isDebugLineColorsEnabled)}
-                    >
-                      <span className="settings-toggle-copy">
-                        <strong className="settings-toggle-title">
-                          <span className="settings-toggle-icon" aria-hidden="true">
-                            <MinimizeIcon />
-                          </span>
-                          <span>Show line debug colors</span>
-                        </strong>
-                        <small>Use separate highlight colors for the shell top border and the pane tab divider.</small>
-                      </span>
-                      <span className="settings-toggle-control" aria-hidden="true">
-                        <span className="settings-toggle-thumb" />
-                      </span>
-                    </button>
-
-                    <p className="settings-helper-text">
-                      This keeps the normal theme untouched until you need to inspect which remaining thin line is actually being painted in the top region.
-                    </p>
-                  </section>
-
-                  <section className="settings-panel">
-                    <div className="settings-section-header">
-                      <div>
-                        <span className="label">Agent</span>
-                        <h3>Trace Visibility</h3>
-                      </div>
-                      <p>Decide which trace categories get a seat in the main thread, from user-facing response text down to workflow markers and backend metadata.</p>
-                    </div>
-
+                  <SettingsDisclosurePanel
+                    panelID="developer-trace-visibility"
+                    label="Agent"
+                    title="Trace Visibility"
+                    description="Decide which trace categories get a seat in the main thread, from user-facing response text down to workflow markers and backend metadata."
+                  >
                     <div className="settings-section-summary">
                       {assistantTraceVisibilityOptions.map((option) => {
                         const enabled = assistantTraceVisibility[option.key]
@@ -2552,17 +2221,61 @@ export function SettingsPage({
                     <p className="settings-helper-text">
                       Tool calls stay visible through the main trace. The tool input and output switches control whether each tool entry reveals the streamed payloads behind that lifecycle item, while debug metadata adds backend-only identifiers and timing details to every entry.
                     </p>
-                  </section>
+                  </SettingsDisclosurePanel>
 
-                  <section className="settings-panel">
-                    <div className="settings-section-header">
-                      <div>
-                        <span className="label">Current</span>
-                        <h3>Developer State</h3>
-                      </div>
-                      <p>Region and line colors are development overlays, while the trace controls decide how much backend execution detail appears inside the main thread.</p>
+                  <SettingsDisclosurePanel
+                    panelID="developer-storage-locations"
+                    label="Storage"
+                    title="Storage Locations"
+                    description="Open or copy the folders used for app data, managed agent data, plugins, and caches."
+                  >
+                    <div className="settings-storage-list" aria-label="Storage locations">
+                      {storagePaths ? (
+                        storagePathItems.map((item) => {
+                          const targetPath = storagePaths[item.key]
+
+                          return (
+                            <div key={item.key} className="settings-storage-row">
+                              <div className="settings-storage-copy">
+                                <strong>{item.label}</strong>
+                                <span>{item.description}</span>
+                                <code title={targetPath}>{targetPath}</code>
+                              </div>
+                              <div className="settings-storage-actions">
+                                <button
+                                  className="secondary-button"
+                                  type="button"
+                                  onClick={() => void handleCopyStoragePath(targetPath)}
+                                >
+                                  Copy
+                                </button>
+                                <button
+                                  className="secondary-button"
+                                  type="button"
+                                  onClick={() => void handleOpenStoragePath(targetPath)}
+                                >
+                                  Open
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })
+                      ) : (
+                        <p className="settings-helper-text">Loading storage paths...</p>
+                      )}
                     </div>
+                    {storagePathStatus ? (
+                      <p className={`settings-about-status is-${storagePathStatus.tone}`}>{storagePathStatus.text}</p>
+                    ) : null}
+                  </SettingsDisclosurePanel>
 
+                  <SettingsDisclosurePanel
+                    panelID="developer-state"
+                    label="Current"
+                    title="Developer State"
+                    description="Region and line colors are development overlays, while the trace controls decide how much backend execution detail appears inside the main thread."
+                    defaultOpen
+                  >
                     <div className="settings-section-summary">
                       <article className="settings-summary-card">
                         <span className="label">Debug Regions</span>
@@ -2592,7 +2305,7 @@ export function SettingsPage({
                         </p>
                       </article>
                     </div>
-                  </section>
+                  </SettingsDisclosurePanel>
                 </div>
               ) : activeSection === "archive" ? (
                 isLoadingArchivedSessions ? null : (
@@ -3548,17 +3261,6 @@ export function SettingsPage({
             </div>
           </div>
         </div>
-        {isUpdateDialogOpen ? (
-          <UpdateDialog
-            state={appUpdateState}
-            status={appUpdateStatus}
-            isChecking={isCheckingAppUpdate}
-            isInstalling={isInstallingAppUpdate}
-            onCheck={() => void handleCheckForUpdates()}
-            onClose={() => setIsUpdateDialogOpen(false)}
-            onInstall={() => void handleInstallAppUpdate()}
-          />
-        ) : null}
       </section>
     )
   }

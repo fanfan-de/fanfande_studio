@@ -69,10 +69,12 @@ function normalizeSelection(selection?: {
     default_size?: string
     default_count?: number
   }
+  reasoning_effort?: ProjectModelSelection["reasoningEffort"]
 }): ProjectModelSelection {
   return {
     model: selection?.model ?? null,
     smallModel: selection?.small_model ?? null,
+    reasoningEffort: selection?.reasoning_effort ?? null,
     imageModel: selection?.image_model ?? null,
     imageDefaultSize: selection?.image_generation?.default_size ?? null,
     imageDefaultCount: selection?.image_generation?.default_count ?? null,
@@ -83,6 +85,7 @@ const EMPTY_BUILTIN_TOOL_SELECTION: BuiltinToolSelection = { tools: {} }
 const EMPTY_PROJECT_MODEL_SELECTION: ProjectModelSelection = {
   model: null,
   smallModel: null,
+  reasoningEffort: null,
   imageModel: null,
   imageDefaultSize: null,
   imageDefaultCount: null,
@@ -103,6 +106,9 @@ function buildModelSelectionUpdatePayload(
   return {
     model: nextSelection.model,
     small_model: nextSelection.smallModel,
+    ...(savedSelection.reasoningEffort !== nextSelection.reasoningEffort
+      ? { reasoning_effort: nextSelection.reasoningEffort }
+      : {}),
     ...(savedSelection.imageModel !== nextSelection.imageModel ? { image_model: nextSelection.imageModel } : {}),
     ...(imageGenerationChanged
       ? { image_generation: Object.keys(nextImageGeneration).length > 0 ? nextImageGeneration : null }

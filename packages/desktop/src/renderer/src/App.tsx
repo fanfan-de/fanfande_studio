@@ -49,7 +49,18 @@ import {
   getWorkbenchTabKey,
   workbenchPublishSnapshotsAreEqual,
 } from "./app/agent-workspace/workspace-derived-state"
-import type { WorkbenchSharedState, WorkbenchWindowContext } from "../../shared/desktop-ipc-contract"
+import type {
+  DesktopAppUpdateState,
+  WorkbenchSharedState,
+  WorkbenchWindowContext,
+} from "../../shared/desktop-ipc-contract"
+import {
+  checkForAppUpdates,
+  getAppUpdateState,
+  installAppUpdate,
+  setAutomaticUpdatesEnabled,
+} from "./app/settings/client"
+import { UpdateDialog, type AppUpdateStatus } from "./app/update/UpdateDialog"
 
 const GlobalSkillsPage = lazy(() => import("./app/skills/GlobalSkillsPage").then((module) => ({ default: module.GlobalSkillsPage })))
 const ConnectorsPage = lazy(() => import("./app/connectors/ConnectorsPage").then((module) => ({ default: module.ConnectorsPage })))
@@ -117,6 +128,28 @@ function rightSidebarSideChatPanelStatesAreEqual(
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
+}
+
+function getManualUpdateCheckStatusText(result: Awaited<ReturnType<typeof checkForAppUpdates>> | null) {
+  if (!result) return "Update check requested."
+  if (!result.ok) return result.error ? `Update check failed. ${result.error}` : "Update check failed."
+  if (result.reason === "not-packaged") return "Update checks run in packaged builds."
+  if (result.reason === "already-checking") return "An update check is already in progress."
+  return "Update check started."
+}
+
+function createFallbackAppUpdateState(enabled: boolean, version = "Unknown"): DesktopAppUpdateState {
+  return {
+    phase: "idle",
+    version,
+    automaticUpdates: enabled,
+    updateChecksSupported: false,
+    latestVersion: null,
+    downloadPercent: null,
+    error: null,
+    lastCheckedAt: null,
+    releaseNotes: null,
+  }
 }
 
 interface LocalFileLinkOpenInput {
@@ -704,6 +737,12 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
 
 function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContext }) {
   const surfaceID = getWorkbenchSurfaceID(workbenchContext)
+  const [appUpdateState, setAppUpdateState] = useState<DesktopAppUpdateState | null>(null)
+  const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus | null>(null)
+  const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false)
+  const [isCheckingAppUpdate, setIsCheckingAppUpdate] = useState(false)
+  const [isInstallingAppUpdate, setIsInstallingAppUpdate] = useState(false)
+  const [isSavingAutomaticUpdates, setIsSavingAutomaticUpdates] = useState(false)
   const {
     agentConnected,
     agentDefaultDirectory,
@@ -752,6 +791,50 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     sidebarWidth,
     windowControlsRef,
   } = useDesktopShell()
+
+  useEffect(() => {
+    let disposed = false
+
+    void getAppUpdateState()
+      .then((state) => {
+        if (disposed || !state) return
+        setAppUpdateState(state)
+      })
+      .catch((error: unknown) => {
+        if (disposed) return
+        const message = getErrorMessage(error)
+        setAppUpdateStatus({
+          tone: "error",
+          text: `Unable to load update settings. ${message}`,
+        })
+      })
+
+    const unsubscribe = window.desktop?.onAppUpdateStateChange?.((state) => {
+      if (!disposed) {
+        setAppUpdateState(state)
+      }
+    })
+
+    return () => {
+      disposed = true
+      unsubscribe?.()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isUpdateDialogOpen) return
+
+    function handleUpdateDialogKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Escape") return
+
+      event.preventDefault()
+      event.stopPropagation()
+      setIsUpdateDialogOpen(false)
+    }
+
+    window.addEventListener("keydown", handleUpdateDialogKeyDown, { capture: true })
+    return () => window.removeEventListener("keydown", handleUpdateDialogKeyDown, { capture: true })
+  }, [isUpdateDialogOpen])
 
   const {
     activeSession,
@@ -1104,6 +1187,111 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     onSkillsUpdated: refreshComposerSkills,
     onProviderModelsUpdated: refreshComposerModels,
   })
+
+  async function refreshAppUpdateState() {
+    const state = await getAppUpdateState()
+    if (state) {
+      setAppUpdateState(state)
+    }
+    return state
+  }
+
+  async function handleCheckForUpdates() {
+    if (isCheckingAppUpdate) return
+
+    setIsUpdateDialogOpen(true)
+    setIsCheckingAppUpdate(true)
+    setAppUpdateStatus(null)
+
+    try {
+      const result = await checkForAppUpdates()
+      if (result?.state) {
+        setAppUpdateState(result.state)
+      }
+      if (!result || result.ok === false || result.reason === "already-checking") {
+        setAppUpdateStatus({
+          tone: result?.ok === false ? "error" : "muted",
+          text: getManualUpdateCheckStatusText(result),
+        })
+      }
+      await refreshAppUpdateState()
+    } catch (error) {
+      const message = getErrorMessage(error)
+      setAppUpdateStatus({
+        tone: "error",
+        text: `Update check failed. ${message}`,
+      })
+    } finally {
+      setIsCheckingAppUpdate(false)
+    }
+  }
+
+  async function handleInstallAppUpdate() {
+    if (isInstallingAppUpdate) return
+
+    setIsInstallingAppUpdate(true)
+    setAppUpdateStatus(null)
+
+    try {
+      const result = await installAppUpdate()
+      if (!result?.ok) {
+        setAppUpdateStatus({
+          tone: "error",
+          text: result?.reason === "update-not-downloaded"
+            ? "The update has not finished downloading yet."
+            : "Unable to install the update.",
+        })
+      }
+    } catch (error) {
+      const message = getErrorMessage(error)
+      setAppUpdateStatus({
+        tone: "error",
+        text: `Unable to install the update. ${message}`,
+      })
+    } finally {
+      setIsInstallingAppUpdate(false)
+    }
+  }
+
+  async function handleAutomaticUpdatesToggle() {
+    if (!appUpdateState || isSavingAutomaticUpdates) return
+
+    const enabled = !appUpdateState.automaticUpdates
+    setIsSavingAutomaticUpdates(true)
+    setAppUpdateStatus(null)
+
+    try {
+      const settings = await setAutomaticUpdatesEnabled(enabled)
+      setAppUpdateState((current) => {
+        if (current) {
+          return {
+            ...current,
+            automaticUpdates: settings?.automaticUpdates ?? enabled,
+            updateChecksSupported: settings?.updateChecksSupported ?? current.updateChecksSupported,
+            version: settings?.version ?? current.version,
+          }
+        }
+
+        return createFallbackAppUpdateState(settings?.automaticUpdates ?? enabled, settings?.version)
+      })
+      setAppUpdateStatus({
+        tone: "success",
+        text: enabled ? "Automatic updates enabled." : "Automatic updates disabled.",
+      })
+    } catch (error) {
+      const message = getErrorMessage(error)
+      setAppUpdateStatus({
+        tone: "error",
+        text: `Unable to save automatic update setting. ${message}`,
+      })
+    } finally {
+      setIsSavingAutomaticUpdates(false)
+    }
+  }
+
+  function handleOpenUpdateCenter() {
+    setIsUpdateDialogOpen(true)
+  }
 
   const isCreatingSession = useWorkspaceStoreSelector(
     workspaceStore,
@@ -2189,6 +2377,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               isLoading={isLoading}
               isLoadingArchivedSessions={isLoadingArchivedSessions}
               isOpen={isOpen}
+              appUpdateState={appUpdateState}
+              appUpdateStatus={appUpdateStatus}
+              isCheckingAppUpdate={isCheckingAppUpdate}
+              isSavingAutomaticUpdates={isSavingAutomaticUpdates}
               isRefreshingProviderCatalog={isRefreshingProviderCatalog}
               installedPlugins={installedPlugins}
               loadError={loadError}
@@ -2214,6 +2406,8 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onAgentDebugTraceChange={handleAgentDebugTraceChange}
               onDebugLineColorsChange={handleDebugLineColorsChange}
               onDebugUiRegionsChange={handleDebugUiRegionsChange}
+              onAutomaticUpdatesToggle={() => void handleAutomaticUpdatesToggle()}
+              onCheckForUpdates={() => void handleCheckForUpdates()}
               onClose={closeSettings}
               onDismissMessage={dismissMessage}
               onDeleteArchivedSession={deleteArchivedSession}
@@ -2227,6 +2421,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onProviderDraftChange={setProviderDraftValue}
               onRefreshProviderCatalog={refreshProviderCatalog}
               onLoadArchivedSessions={loadArchivedSessions}
+              onOpenUpdateCenter={handleOpenUpdateCenter}
               onRestoreArchivedSession={restoreArchivedSession}
               onSaveMcpServer={saveMcpServer}
               onSaveProviderApiKey={saveProviderApiKey}
@@ -2238,6 +2433,18 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onCancelProviderAuthFlow={cancelProviderAuthFlow}
             />
           </Suspense>
+        ) : null}
+
+        {isUpdateDialogOpen ? (
+          <UpdateDialog
+            state={appUpdateState}
+            status={appUpdateStatus}
+            isChecking={isCheckingAppUpdate}
+            isInstalling={isInstallingAppUpdate}
+            onCheck={() => void handleCheckForUpdates()}
+            onClose={() => setIsUpdateDialogOpen(false)}
+            onInstall={() => void handleInstallAppUpdate()}
+          />
         ) : null}
         </main>
       </div>

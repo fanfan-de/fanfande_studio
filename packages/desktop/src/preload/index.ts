@@ -355,6 +355,8 @@ try {
       invokeDesktop("desktop:update-session-workflow", input) as Promise<DesktopIpcOutput<"desktop:update-session-workflow">>,
     updateSessionActiveMessage: (input: DesktopIpcInput<"desktop:update-session-active-message">) =>
       invokeDesktop("desktop:update-session-active-message", input) as Promise<DesktopIpcOutput<"desktop:update-session-active-message">>,
+    rollbackSessionToCheckpoint: (input: DesktopIpcInput<"desktop:rollback-session-to-checkpoint">) =>
+      invokeDesktop("desktop:rollback-session-to-checkpoint", input) as Promise<DesktopIpcOutput<"desktop:rollback-session-to-checkpoint">>,
     agentSession: {
       loadHistory: (input: { backendSessionID: string; view?: "active" | "all" }) =>
         invokeDesktop("desktop:agent-session-load-history", input) as Promise<AgentSessionHistoryMessage[]>,
@@ -481,6 +483,7 @@ try {
     updateGlobalModelSelection: (input: {
       model?: string | null
       small_model?: string | null
+      reasoning_effort?: AgentProjectModelSelection["reasoning_effort"] | null
       image_model?: string | null
       image_generation?: {
         default_size?: string
@@ -490,6 +493,7 @@ try {
       invokeDesktop("desktop:update-global-model-selection", input) as Promise<{
         model?: string
         small_model?: string
+        reasoning_effort?: AgentProjectModelSelection["reasoning_effort"]
         image_model?: string
         image_generation?: {
           default_size?: string
@@ -797,19 +801,23 @@ try {
       projectID: string
       model?: string | null
       small_model?: string | null
+      reasoning_effort?: AgentProjectModelSelection["reasoning_effort"] | null
     }) =>
       invokeDesktop("desktop:update-project-model-selection", input) as Promise<{
         model?: string
         small_model?: string
+        reasoning_effort?: AgentProjectModelSelection["reasoning_effort"]
       }>,
     updateSessionModelSelection: (input: {
       sessionID: string
       model?: string | null
       small_model?: string | null
+      reasoning_effort?: AgentProjectModelSelection["reasoning_effort"] | null
     }) =>
       invokeDesktop("desktop:update-session-model-selection", input) as Promise<{
         model?: string
         small_model?: string
+        reasoning_effort?: AgentProjectModelSelection["reasoning_effort"]
       }>,
     onAppUpdateStateChange: (listener: (state: DesktopAppUpdateState) => void) => {
       const wrappedListener = (_event: Electron.IpcRendererEvent, state: DesktopAppUpdateState) => {

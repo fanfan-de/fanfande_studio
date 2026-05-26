@@ -472,6 +472,24 @@ describe("RightSidebar", () => {
     expect(onMessageTreeNodeSelect).toHaveBeenCalledWith("session-1", "assistant-2")
   })
 
+  it("does not expose rollback controls in the message tree", () => {
+    renderRightSidebar({
+      messageTreeBySession: {
+        "session-1": createMessageTree(),
+      },
+      rightSidebar: {
+        activeTabID: "message-tree-tab",
+        tabs: [createMessageTreeTab()],
+      },
+    })
+
+    expect(screen.queryByRole("button", { name: /Rollback from/ })).toBeNull()
+
+    fireEvent.click(screen.getByText("Active answer"))
+    expect(screen.queryByRole("button", { name: /Rollback from/ })).toBeNull()
+    expect(screen.queryByRole("dialog", { name: "Active answer" })).toBeNull()
+  })
+
   it("does not render side chat controls in message tree nodes", () => {
     const onMessageTreeNodeSelect = vi.fn()
     const sideChatWorkspace: WorkspaceGroup = {

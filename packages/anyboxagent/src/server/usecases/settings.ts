@@ -342,6 +342,7 @@ export async function updateProvider(
       small_model: providerConfig.small_model,
       image_model: providerConfig.image_model,
       image_generation: providerConfig.image_generation,
+      reasoning_effort: providerConfig.reasoning_effort,
     },
   }
 }
@@ -357,6 +358,7 @@ export async function removeProvider(providerID: string) {
       small_model: providerConfig.small_model,
       image_model: providerConfig.image_model,
       image_generation: providerConfig.image_generation,
+      reasoning_effort: providerConfig.reasoning_effort,
     },
   }
 }
@@ -391,6 +393,7 @@ export async function updateModelSelection(input: z.infer<typeof UpdateGlobalMod
     small_model: selection.small_model,
     image_model: selection.image_model,
     image_generation: selection.image_generation,
+    reasoning_effort: selection.reasoning_effort,
   }
 }
 

@@ -485,12 +485,18 @@ describe("composer controller", () => {
     }))
     const updateSessionModelSelection = vi.fn(async () => ({
       model: "deepseek/deepseek-reasoner",
+      reasoning_effort: "high" as const,
+    }))
+    const updateProjectModelSelection = vi.fn(async () => ({
+      model: "deepseek/deepseek-reasoner",
+      reasoning_effort: "high" as const,
     }))
 
     Object.defineProperty(window, "desktop", {
       configurable: true,
       value: {
         createAgentSession: vi.fn(),
+        updateProjectModelSelection,
         updateSessionModelSelection,
         agentSession: {
           sendTurn,
@@ -511,15 +517,23 @@ describe("composer controller", () => {
       await act(async () => {
         await result.current.controller.handleSend({
           selectedModel: "deepseek/deepseek-reasoner",
+          selectedReasoningEffort: "high",
         })
       })
 
       expect(updateSessionModelSelection).toHaveBeenCalledWith({
         sessionID: "created-session-1",
         model: "deepseek/deepseek-reasoner",
+        reasoning_effort: "high",
+      })
+      expect(updateProjectModelSelection).toHaveBeenCalledWith({
+        projectID: "project-1",
+        model: "deepseek/deepseek-reasoner",
+        reasoning_effort: "high",
       })
       expect(sendTurn).toHaveBeenCalledWith(expect.objectContaining({
         backendSessionID: "created-session-1",
+        reasoningEffort: "high",
         model: {
           providerID: "deepseek",
           modelID: "deepseek-reasoner",

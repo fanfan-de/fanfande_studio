@@ -3,6 +3,7 @@ import type { DockviewApi } from "dockview-react"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { DesktopAppUpdateState } from "../../shared/desktop-ipc-contract"
 import type { PermissionRequestPrompt, PermissionResolveResult } from "../../shared/permission"
 import { App } from "./App"
 import {
@@ -27,6 +28,21 @@ function readBundledStyles() {
 }
 
 const styles = readBundledStyles()
+
+function createAppUpdateState(overrides: Partial<DesktopAppUpdateState> = {}): DesktopAppUpdateState {
+  return {
+    phase: "idle",
+    version: "1.2.3",
+    automaticUpdates: true,
+    updateChecksSupported: true,
+    latestVersion: null,
+    downloadPercent: null,
+    error: null,
+    lastCheckedAt: null,
+    releaseNotes: null,
+    ...overrides,
+  }
+}
 
 declare global {
   interface Window {
@@ -62,6 +78,13 @@ function openActivityRailConfigurationView(label: string | RegExp) {
     fireEvent.click(expandConfigurationButton)
   }
   fireEvent.click(screen.getByRole("button", { name: label }))
+}
+
+function expandSettingsDisclosure(label: string | RegExp) {
+  const disclosureButton = screen.getByRole("button", { name: label })
+  if (disclosureButton.getAttribute("aria-expanded") === "false") {
+    fireEvent.click(disclosureButton)
+  }
 }
 
 function setComposerDraftValue(input: HTMLElement, value: string) {
@@ -666,6 +689,21 @@ describe("App", () => {
         chrome: "130.0.0",
         electron: "39.0.0",
       }),
+      getAppUpdateState: vi.fn().mockResolvedValue(createAppUpdateState()),
+      setAutomaticUpdatesEnabled: vi.fn().mockImplementation(
+        ({ enabled }: { enabled: boolean }) => Promise.resolve({
+          version: "1.2.3",
+          automaticUpdates: enabled,
+          updateChecksSupported: true,
+        }),
+      ),
+      checkForAppUpdates: vi.fn().mockResolvedValue({
+        ok: true,
+        skipped: false,
+        reason: "started",
+        state: createAppUpdateState({ phase: "checking" }),
+      }),
+      installAppUpdate: vi.fn().mockResolvedValue({ ok: true }),
       getWindowState: vi.fn().mockResolvedValue({
         isMaximized: false,
       }),
@@ -1164,6 +1202,7 @@ describe("App", () => {
         url: "http://localhost:3000/",
       }),
       windowAction: vi.fn().mockResolvedValue(undefined),
+      onAppUpdateStateChange: vi.fn(() => vi.fn()),
       onPtyEvent: vi.fn(() => vi.fn()),
       onWindowStateChange: vi.fn(() => vi.fn()),
     }
@@ -7886,9 +7925,10 @@ describe("App", () => {
     expect(screen.queryByText("Global settings")).not.toBeInTheDocument()
     expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
     expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(6)
-    expect(screen.getByText("\u9009\u9879")).toBeInTheDocument()
+    expect(screen.getByText("Options")).toBeInTheDocument()
     const providerNavButton = screen.getByRole("button", { name: "Provider" })
     expect(providerNavButton).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Updates" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Models" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Tools" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Archived Sessions" })).toBeInTheDocument()
@@ -7939,6 +7979,42 @@ describe("App", () => {
       expect(window.desktop!.getGlobalProviderCatalog).toHaveBeenCalledTimes(1)
       expect(window.desktop!.getGlobalModels).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it("opens the update center as a global app modal from settings", async () => {
+    window.desktop!.getAppUpdateState = vi.fn().mockResolvedValue(createAppUpdateState({
+      phase: "downloaded",
+      latestVersion: "1.2.4",
+      downloadPercent: 100,
+      lastCheckedAt: 1,
+      releaseNotes: "Improved update experience.",
+    }))
+    window.desktop!.installAppUpdate = vi.fn().mockResolvedValue({ ok: true })
+
+    const { container } = render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+
+    fireEvent.click(await screen.findByRole("button", { name: /Open update center/i }))
+
+    const updateDialog = await screen.findByRole("dialog", { name: "Update ready to install" })
+    expect(updateDialog.closest(".settings-page")).toBeNull()
+    expect(container.querySelector(".app-shell > .update-center-overlay")).not.toBeNull()
+    expect(screen.getByText("1.2.4")).toBeInTheDocument()
+    expect(screen.getByText("Improved update experience.")).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: "Escape" })
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Update ready to install" })).not.toBeInTheDocument()
+    })
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Open update center/i }))
+    expect(await screen.findByRole("dialog", { name: "Update ready to install" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Restart to install/i }))
+    await waitFor(() => expect(window.desktop!.installAppUpdate).toHaveBeenCalledTimes(1))
   })
 
   it("edits prompt presets from the prompts page", async () => {
@@ -8658,6 +8734,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
+    expandSettingsDisclosure(/Debug Overlays/)
 
     const debugRegionsSwitch = screen.getByRole("switch", { name: "Show debug region colors" })
     expect(debugRegionsSwitch).toHaveAttribute("aria-checked", "false")
@@ -8685,6 +8762,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
+    expandSettingsDisclosure(/Debug Overlays/)
 
     const debugLineColorsSwitch = screen.getByRole("switch", { name: "Show line debug colors" })
     expect(debugLineColorsSwitch).toHaveAttribute("aria-checked", "false")
@@ -8708,6 +8786,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
+    expandSettingsDisclosure(/Trace Visibility/)
 
     const debugMetadataSwitch = screen.getByRole("switch", { name: "Show trace debug metadata" })
     expect(debugMetadataSwitch).toHaveAttribute("aria-checked", "false")
@@ -8730,8 +8809,9 @@ describe("App", () => {
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
 
-    expect(screen.getByRole("radio", { name: /Warm Terra & Sand/i })).toBeInTheDocument()
-    expect(screen.getByRole("radio", { name: /Sage \/ Slate/i })).toBeInTheDocument()
+    expect(screen.getByRole("combobox", { name: "Accent Theme" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "Warm Terra & Sand" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "Sage / Slate" })).toBeInTheDocument()
     expect(screen.getByText("Theme Config File")).toBeInTheDocument()
     expect(screen.getByLabelText("Current appearance config JSON")).toBeInTheDocument()
     expect(screen.getByLabelText("Accent States Accent Base Light brand-primary")).toBeInTheDocument()
@@ -8781,12 +8861,16 @@ describe("App", () => {
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
 
-    fireEvent.click(screen.getByRole("radio", { name: /Sage \/ Slate/i }))
+    fireEvent.change(screen.getByRole("combobox", { name: "Accent Theme" }), {
+      target: { value: "sage" },
+    })
 
     expect(document.documentElement).toHaveAttribute("data-brand-theme", "sage")
     expect(window.localStorage.getItem("desktop.brandTheme")).toBe("sage")
 
-    fireEvent.click(screen.getByRole("radio", { name: /Warm Terra & Sand/i }))
+    fireEvent.change(screen.getByRole("combobox", { name: "Accent Theme" }), {
+      target: { value: "terra" },
+    })
 
     expect(document.documentElement).toHaveAttribute("data-brand-theme", "terra")
     expect(window.localStorage.getItem("desktop.brandTheme")).toBe("terra")
@@ -8859,8 +8943,16 @@ describe("App", () => {
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
 
+    expect(screen.getByRole("button", { name: /Agent Monitor/ })).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getByRole("button", { name: /Debug Overlays/ })).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getByRole("button", { name: /Trace Visibility/ })).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getByRole("button", { name: /Storage Locations/ })).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getByRole("button", { name: /Developer State/ })).toHaveAttribute("aria-expanded", "true")
+
+    expandSettingsDisclosure(/Debug Overlays/)
     expect(screen.getByRole("switch", { name: "Show debug region colors" })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show line debug colors" })).toBeInTheDocument()
+    expandSettingsDisclosure(/Trace Visibility/)
     expect(screen.getByRole("switch", { name: "Show trace tool calls" })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show trace sources" })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show trace approvals" })).toBeInTheDocument()
@@ -8966,6 +9058,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
+    expandSettingsDisclosure(/Trace Visibility/)
     fireEvent.click(screen.getByRole("switch", { name: "Show trace workflow events" }))
     fireEvent.click(screen.getByRole("switch", { name: "Show trace debug metadata" }))
 
@@ -9071,6 +9164,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
+    expandSettingsDisclosure(/Trace Visibility/)
     fireEvent.click(screen.getByRole("switch", { name: "Show trace tool inputs" }))
 
     expect(screen.queryByText(new RegExp(inputMarker))).not.toBeInTheDocument()

@@ -14,6 +14,7 @@ import { GlobTool } from "#tool/glob.ts"
 import { GrepTool } from "#tool/grep.ts"
 import { GenerateImageTool } from "#tool/generate-image.ts"
 import { ListDirectoryTool } from "#tool/list-directory.ts"
+import { ListRollbackCheckpointsTool } from "#tool/list-rollback-checkpoints.ts"
 import { LspDefinitionTool, LspHoverTool, LspReferencesTool, LspWorkspaceSymbolsTool } from "#tool/lsp.ts"
 import { LoadSkillTool } from "#tool/load-skill.ts"
 import { ListMcpResourceTemplatesTool, ListMcpResourcesTool, ReadMcpResourceTool } from "#tool/mcp-resources.ts"
@@ -23,6 +24,7 @@ import { ReadFileTool } from "#tool/read-file.ts"
 import { ReadSubagentTool } from "#tool/read-subagent.ts"
 import { ReadSkillResourceTool } from "#tool/read-skill-resource.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
+import { RollbackToCheckpointTool } from "#tool/rollback-to-checkpoint.ts"
 import { SpawnSubagentTool } from "#tool/spawn-subagent.ts"
 import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
 import { TerminalReadTool, TerminalRunCommandTool, TerminalWriteInputTool } from "#tool/terminal-tools.ts"
@@ -104,6 +106,8 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     ReadMcpResourceTool,
     ParallelTool,
     LoadWorkspaceDependenciesTool,
+    ListRollbackCheckpointsTool,
+    RollbackToCheckpointTool,
     ReplaceTextTool,
     ApplyPatchTool,
     GlobTool,

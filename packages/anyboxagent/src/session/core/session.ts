@@ -49,6 +49,7 @@ export const SessionModelSelection = z
   .object({
     model: z.string().optional(),
     small_model: z.string().optional(),
+    reasoning_effort: Message.ReasoningEffort.optional(),
   })
   .meta({
     ref: "SessionModelSelection",
@@ -58,6 +59,7 @@ export type SessionModelSelection = z.output<typeof SessionModelSelection>
 export type SessionModelSelectionInput = {
   model?: string | null
   small_model?: string | null
+  reasoning_effort?: Message.ReasoningEffort | null
 }
 
 export const TurnStatus = z.enum(["running", "completed", "blocked", "failed", "cancelled"]).meta({
@@ -351,11 +353,13 @@ function normalizeSessionModelSelection(
 ): SessionInfo["modelSelection"] | undefined {
   const model = selection?.model?.trim()
   const smallModel = selection?.small_model?.trim()
-  if (!model && !smallModel) return undefined
+  const reasoningEffort = selection?.reasoning_effort
+  if (!model && !smallModel && !reasoningEffort) return undefined
 
   return {
     ...(model ? { model } : {}),
     ...(smallModel ? { small_model: smallModel } : {}),
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
   }
 }
 
@@ -1393,6 +1397,9 @@ function updateSessionModelSelection(
   const nextSelection = normalizeSessionModelSelection({
     model: input.model === null ? undefined : input.model ?? current.model,
     small_model: input.small_model === null ? undefined : input.small_model ?? current.small_model,
+    reasoning_effort: input.reasoning_effort === null
+      ? undefined
+      : input.reasoning_effort ?? current.reasoning_effort,
   })
   const now = Date.now()
   const next: SessionInfo = {

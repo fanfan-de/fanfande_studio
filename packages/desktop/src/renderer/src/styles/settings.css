@@ -323,6 +323,15 @@ body.is-dragging-settings-page {
   gap: 18px;
 }
 
+.settings-page-main-scroll-anchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
 .settings-toast-region {
   position: absolute;
   top: 18px;
@@ -414,6 +423,106 @@ body.is-dragging-settings-page {
   background: var(--seg-panel);
   display: grid;
   gap: 16px;
+}
+
+.settings-disclosure-panel {
+  padding: 0;
+  background: transparent;
+  gap: 10px;
+}
+
+.settings-disclosure-summary {
+  width: 100%;
+  min-height: 72px;
+  padding: 16px 18px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.settings-disclosure-summary:hover,
+.settings-disclosure-summary:focus-visible {
+  border-color: var(--mix-seg-accent-42-seg-border-58);
+  background: var(--mix-seg-panel-72-seg-panel-muted-28);
+  outline: none;
+}
+
+.settings-disclosure-summary:focus-visible {
+  box-shadow: 0 0 0 3px var(--mix-seg-accent-12-transparent-88);
+}
+
+.settings-disclosure-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.settings-disclosure-label {
+  color: var(--seg-text-3);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.settings-disclosure-title {
+  color: var(--seg-text-1);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.settings-disclosure-description {
+  color: var(--seg-text-2);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.settings-disclosure-chevron {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--seg-radius-xs);
+  background: var(--seg-panel-muted);
+  color: var(--seg-text-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 160ms ease,
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.settings-disclosure-chevron svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.settings-disclosure-panel.is-open .settings-disclosure-chevron {
+  transform: rotate(180deg);
+}
+
+.settings-disclosure-body {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
 }
 
 .settings-project-chip {
@@ -1012,20 +1121,33 @@ body.is-dragging-settings-page {
 }
 
 .settings-about-panel {
+  padding: 0 26px;
   gap: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 14px;
+  background: #fafafa;
+}
+
+.settings-general-layout > .settings-about-panel {
+  position: sticky;
+  top: 0;
+  z-index: 3;
 }
 
 .settings-about-row,
 .settings-about-toggle-row {
   width: 100%;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: 28px;
 }
 
 .settings-about-version-row {
-  min-height: 82px;
+  min-height: 116px;
+  padding: 24px 0 20px;
 }
 
 .settings-about-product {
@@ -1057,81 +1179,96 @@ body.is-dragging-settings-page {
 .settings-about-copy {
   min-width: 0;
   display: grid;
-  gap: 5px;
+  gap: 4px;
+}
+
+.settings-about-version-copy {
+  align-content: center;
 }
 
 .settings-about-copy h3 {
   margin: 0;
-  color: var(--seg-text-1);
-  font-size: 20px;
-  line-height: 1.25;
-  font-weight: 650;
+  color: #151f2b;
+  font-size: 23px;
+  line-height: 1.22;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .settings-about-copy p,
 .settings-about-description {
   margin: 0;
-  color: var(--seg-text-2);
-  font-size: 14px;
+  color: #40566a;
+  font-size: 16px;
   line-height: 1.45;
 }
 
-.settings-about-title {
-  color: var(--seg-text-1);
-  font-size: 18px;
-  line-height: 1.28;
-  font-weight: 640;
-}
-
-.settings-about-divider {
-  height: 1px;
-  margin: 16px 0 18px;
-  background: var(--seg-border);
-}
-
-.settings-about-check-button {
-  flex: 0 0 auto;
-  min-width: 148px;
-}
-
-.settings-about-update-summary {
-  width: 100%;
-  margin: 14px 0 0;
-  padding: 12px;
-  border: 1px solid var(--seg-border);
-  border-radius: var(--seg-radius-sm);
-  background: var(--mix-seg-panel-muted-74-seg-panel-26);
-  color: inherit;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
+.settings-about-release-link {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #8f63e9;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.25;
   text-align: left;
   cursor: pointer;
 }
 
-.settings-about-update-summary:hover,
-.settings-about-update-summary:focus-visible {
-  border-color: var(--mix-seg-accent-34-seg-border-66);
-  background:
-    linear-gradient(135deg, var(--mix-seg-accent-16-transparent-84), transparent),
-    var(--seg-panel);
+.settings-about-release-link:hover,
+.settings-about-release-link:focus-visible {
+  color: #7d4fe0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  outline: none;
 }
 
-.settings-about-update-summary:focus-visible {
-  outline: 2px solid var(--mix-seg-accent-42-seg-border-58);
-  outline-offset: 2px;
+.settings-about-release-link:focus-visible {
+  box-shadow: 0 0 0 3px rgba(143, 99, 233, 0.18);
 }
 
-.settings-about-update-summary > span:last-child {
-  min-width: 0;
-  color: var(--seg-text-2);
-  font-size: 13px;
-  line-height: 1.4;
+.settings-about-title {
+  color: #151f2b;
+  font-size: 21px;
+  line-height: 1.28;
+  font-weight: 500;
+}
+
+.settings-about-divider {
+  height: 1px;
+  margin: 0;
+  background: #dedede;
+}
+
+.settings-about-check-button {
+  flex: 0 0 auto;
+  min-width: 108px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-color: rgba(143, 99, 233, 0.42);
+  border-radius: 7px;
+  background: #8f63e9;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(81, 56, 145, 0.24);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.settings-about-check-button:hover,
+.settings-about-check-button:focus-visible {
+  border-color: rgba(124, 79, 224, 0.54);
+  background: #7f55de;
+  color: #ffffff;
+  box-shadow: 0 3px 8px rgba(81, 56, 145, 0.28);
 }
 
 .settings-about-toggle-row {
-  padding: 0;
+  min-height: 98px;
+  padding: 22px 0 24px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1146,17 +1283,32 @@ body.is-dragging-settings-page {
 }
 
 .settings-about-toggle-row:focus-visible {
-  outline: 2px solid var(--mix-seg-accent-42-seg-border-58);
-  outline-offset: 6px;
+  outline: 2px solid rgba(143, 99, 233, 0.36);
+  outline-offset: -2px;
+}
+
+.settings-about-toggle-row .settings-toggle-control {
+  width: 58px;
+  height: 32px;
+  border: 0;
+  background: #d7dce4;
+}
+
+.settings-about-toggle-row .settings-toggle-thumb {
+  top: 2px;
+  left: 2px;
+  width: 28px;
+  height: 28px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(28, 32, 38, 0.24);
 }
 
 .settings-about-toggle-row.is-active .settings-toggle-control {
-  border-color: var(--seg-accent);
-  background: var(--seg-accent);
+  background: #8f63e9;
 }
 
 .settings-about-toggle-row.is-active .settings-toggle-thumb {
-  transform: translateX(20px);
+  transform: translateX(26px);
 }
 
 .settings-about-status {
@@ -1175,9 +1327,9 @@ body.is-dragging-settings-page {
 }
 
 .update-center-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 18;
+  z-index: 80;
   padding: 24px;
   background: rgba(20, 28, 38, 0.28);
   display: flex;
@@ -3315,8 +3467,8 @@ body.is-dragging-settings-page {
 
   .settings-about-row,
   .settings-about-toggle-row {
+    grid-template-columns: minmax(0, 1fr);
     align-items: flex-start;
-    flex-direction: column;
   }
 
   .settings-about-check-button {
@@ -3327,7 +3479,6 @@ body.is-dragging-settings-page {
     align-items: flex-start;
   }
 
-  .settings-about-update-summary,
   .update-center-meta {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -4884,6 +5035,7 @@ body.is-dragging-settings-page {
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-section-summary,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-color-mode-group,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-font-family-group,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-list,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-theme-palette-group,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-theme-config-meta,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-theme-config-preview {
@@ -5000,6 +5152,372 @@ body.is-dragging-settings-page {
 
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-helper-text {
   padding: 0 2px;
+}
+
+.settings-select-list {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+}
+
+.settings-select-row {
+  min-height: 76px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--seg-border);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(156px, 220px);
+  align-items: center;
+  gap: 18px 32px;
+}
+
+.settings-select-row:last-child {
+  border-bottom: 0;
+}
+
+.settings-select-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.settings-select-title {
+  color: var(--seg-text-1);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.settings-select-description {
+  color: var(--seg-text-2);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.settings-select-control {
+  position: relative;
+  width: min(100%, 220px);
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+}
+
+.settings-select-control select {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 34px 0 10px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  appearance: none;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.settings-select-control select:hover {
+  border-color: var(--mix-seg-accent-22-seg-border-78);
+}
+
+.settings-select-control select:focus-visible {
+  border-color: var(--mix-seg-accent-42-seg-border-58);
+  box-shadow: inset 0 0 0 1px var(--mix-seg-accent-16-transparent-84);
+  outline: none;
+}
+
+.settings-select-control svg {
+  position: absolute;
+  right: 10px;
+  width: 14px;
+  height: 14px;
+  color: var(--seg-text-3);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  pointer-events: none;
+}
+
+@media (max-width: 720px) {
+  .settings-select-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .settings-select-control {
+    width: 100%;
+    justify-self: stretch;
+  }
+}
+
+/* Row-first settings standard */
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-panel,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-list,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-list,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-section-summary {
+  padding: 0 24px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 10px;
+  background: #fafafa;
+  box-shadow: none;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-disclosure-panel {
+  gap: 10px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-disclosure-summary {
+  min-height: 76px;
+  padding: 16px 24px;
+  border: 0;
+  border-radius: 10px;
+  background: #fafafa;
+  box-shadow: none;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-disclosure-summary:hover,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-disclosure-summary:focus-visible {
+  background: #f4f4f3;
+  box-shadow: none;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-disclosure-summary:focus-visible {
+  outline: 2px solid rgba(143, 99, 233, 0.26);
+  outline-offset: -2px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-disclosure-label {
+  color: #8d8984;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-disclosure-title {
+  color: #1f1f1f;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-disclosure-description {
+  color: #6d6a66;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-disclosure-chevron {
+  background: #eeeeee;
+  color: #77736d;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-disclosure-body {
+  gap: 10px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-panel {
+  display: grid;
+  gap: 0;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-divider {
+  display: none;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-row,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-toggle-row,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-row,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-row,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-section-summary > .settings-toggle-card,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-section-summary > .settings-summary-card {
+  min-height: 76px;
+  padding: 16px 0;
+  border: 0;
+  border-bottom: 1px solid #dedede;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(156px, 220px);
+  align-items: center;
+  gap: 18px 32px;
+  color: #1f1f1f;
+  transform: none;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-row:last-of-type,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-toggle-row:last-of-type,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-row:last-child,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-row:last-child,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-section-summary > :last-child {
+  border-bottom: 0;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-actions-row,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main)
+  .settings-panel:not(.settings-theme-token-panel):not(.provider-detail-card)
+  > .settings-toggle-card {
+  min-height: 76px;
+  padding: 16px 24px;
+  border: 0;
+  border-radius: 10px;
+  background: #fafafa;
+  box-shadow: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(156px, 220px);
+  align-items: center;
+  gap: 18px 32px;
+  color: #1f1f1f;
+  transform: none;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-toggle-card:hover,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-toggle-card:focus-visible,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-toggle-card.is-active {
+  border-color: transparent;
+  background: #fafafa;
+  box-shadow: none;
+  transform: none;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-toggle-card:focus-visible,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-toggle-row:focus-visible {
+  outline: 2px solid rgba(143, 99, 233, 0.26);
+  outline-offset: -2px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-copy,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-copy,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-copy,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-toggle-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-copy h3,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-title,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-title,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-copy strong,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-toggle-copy strong,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-summary-card strong {
+  margin: 0;
+  color: #1f1f1f;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-copy p,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-description,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-description,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-copy span,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-toggle-copy small,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-summary-card p {
+  margin: 0;
+  color: #6d6a66;
+  font-size: 13px;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-toggle-icon {
+  display: none;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-control,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-actions,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-inline-actions,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-toggle-control,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-check-button {
+  justify-self: end;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-control,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-inline-actions {
+  width: min(100%, 220px);
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-control select {
+  min-height: 34px;
+  border-color: #d9d9d9;
+  border-radius: 6px;
+  background: #eeeeee;
+  color: #1f1f1f;
+  font-size: 14px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-control svg {
+  color: #c69b83;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-check-button,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-actions-row .secondary-button,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-actions .secondary-button {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-check-button {
+  min-width: 104px;
+  border-color: rgba(143, 99, 233, 0.4);
+  background: #8f63e9;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(81, 56, 145, 0.2);
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-check-button:hover,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-check-button:focus-visible {
+  background: #7f55de;
+  color: #ffffff;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-actions {
+  width: min(100%, 220px);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-copy code {
+  color: #2c2c2c;
+  font-size: 12px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-status {
+  margin: 0;
+  padding: 12px 0 16px;
+  border-top: 1px solid #dedede;
+}
+
+@media (max-width: 720px) {
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-row,
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-toggle-row,
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-row,
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-row,
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-actions-row,
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-section-summary > .settings-toggle-card,
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-section-summary > .settings-summary-card,
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main)
+    .settings-panel:not(.settings-theme-token-panel):not(.provider-detail-card)
+    > .settings-toggle-card {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-control,
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-actions,
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-inline-actions,
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-check-button {
+    width: 100%;
+    justify-self: stretch;
+  }
 }
 
 /* Connections hub */

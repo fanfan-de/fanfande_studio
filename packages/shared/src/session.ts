@@ -25,6 +25,13 @@ export const CreateSideChatBodySchema = z.object({
   anchorMessageID: z.string().min(1),
 })
 
+export const RollbackSessionBodySchema = z.object({
+  targetMessageID: z.string().min(1),
+  reason: z.string().min(1),
+  correctivePrompt: z.string().min(1),
+  restoreWorkspace: z.boolean().optional(),
+})
+
 export const UpdateSessionWorkflowBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("enter-plan"),
@@ -82,6 +89,9 @@ export const AgentRouteSchemas = {
     createSideChat: {
       body: CreateSideChatBodySchema,
     },
+    rollback: {
+      body: RollbackSessionBodySchema,
+    },
     streamMessage: {
       body: StreamSessionMessageBodySchema,
     },
@@ -98,6 +108,7 @@ export type SessionAttachmentBody = z.infer<typeof SessionAttachmentBodySchema>
 export type SessionQuestionAnswerBody = z.infer<typeof SessionQuestionAnswerBodySchema>
 export type CreateSessionBody = z.infer<typeof CreateSessionBodySchema>
 export type CreateSideChatBody = z.infer<typeof CreateSideChatBodySchema>
+export type RollbackSessionBody = z.infer<typeof RollbackSessionBodySchema>
 export type UpdateSessionWorkflowBody = z.infer<typeof UpdateSessionWorkflowBodySchema>
 export type StreamSessionMessageBody = z.infer<typeof StreamSessionMessageBodySchema>
 export type SessionEvent = z.infer<typeof SessionEventSchema>

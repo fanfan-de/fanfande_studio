@@ -70,7 +70,7 @@ import type {
   PtyTransportIPCEvent,
   WindowAction,
 } from "../main/types"
-import type { DesktopOpenPathInput, DesktopOpenPathResult } from "@anybox/shared"
+import type { DesktopOpenPathInput, DesktopOpenPathResult, ReasoningEffort } from "@anybox/shared"
 import type { AppearanceConfigDocument, AppearanceConfigSnapshot } from "./appearance"
 import type { LocaleConfigDocument, LocaleConfigSnapshot } from "./locale"
 import type {
@@ -634,6 +634,24 @@ export interface DesktopSessionMutationResult {
   requestId?: string
 }
 
+export interface DesktopSessionRollbackInput {
+  sessionID: string
+  targetMessageID: string
+  reason: string
+  correctivePrompt: string
+  restoreWorkspace?: boolean
+}
+
+export interface DesktopSessionRollbackResult {
+  session: AgentSessionSummary
+  targetMessageID: string
+  correctiveMessageID: string
+  restoreWorkspace: boolean
+  targetSnapshot?: string
+  preRestoreSnapshot?: string
+  restoredFiles: string[]
+}
+
 export interface DesktopDeleteProjectWorkspaceResult extends AgentProjectDeleteResult {
   requestId?: string
 }
@@ -688,6 +706,7 @@ export interface DesktopProviderConnectionTestInput {
 export interface DesktopModelSelectionUpdateInput {
   model?: string | null
   small_model?: string | null
+  reasoning_effort?: ReasoningEffort | null
   image_model?: string | null
   image_generation?: {
     default_size?: string
@@ -1472,6 +1491,10 @@ export interface DesktopIpcContract {
     input: { sessionID: string; messageID: string }
     output: AgentWorkspaceSession
   }
+  "desktop:rollback-session-to-checkpoint": {
+    input: DesktopSessionRollbackInput
+    output: DesktopSessionRollbackResult
+  }
   "desktop:agent-session-send-turn": {
     input: AgentSessionTurnRequestInput
     output: DesktopAgentSessionTurnResult
@@ -1619,6 +1642,7 @@ export interface DesktopApiMethods {
   createSideChat(input: DesktopIpcInput<"desktop:create-side-chat">): Promise<DesktopIpcOutput<"desktop:create-side-chat">>
   updateSessionWorkflow(input: DesktopIpcInput<"desktop:update-session-workflow">): Promise<DesktopIpcOutput<"desktop:update-session-workflow">>
   updateSessionActiveMessage(input: DesktopIpcInput<"desktop:update-session-active-message">): Promise<DesktopIpcOutput<"desktop:update-session-active-message">>
+  rollbackSessionToCheckpoint(input: DesktopIpcInput<"desktop:rollback-session-to-checkpoint">): Promise<DesktopIpcOutput<"desktop:rollback-session-to-checkpoint">>
   listSideChats(input: DesktopIpcInput<"desktop:list-side-chats">): Promise<DesktopIpcOutput<"desktop:list-side-chats">>
   getSideChatLink(input: DesktopIpcInput<"desktop:get-side-chat-link">): Promise<DesktopIpcOutput<"desktop:get-side-chat-link">>
   deleteProjectWorkspace(input: DesktopIpcInput<"desktop:delete-project-workspace">): Promise<DesktopIpcOutput<"desktop:delete-project-workspace">>

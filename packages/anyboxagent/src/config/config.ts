@@ -4,6 +4,7 @@ import * as Log from "#util/log.ts"
 import * as db from "#database/Sqlite.ts"
 import { toCreateTableSQL, withPrimaryKey, zodObjectToColumnDefs } from "#database/parser.ts"
 import { DevModel, DevProvider } from "#provider/modelsdev.ts"
+import { ReasoningEffortSchema } from "@anybox/shared"
 
 const log = Log.create({ service: "config" })
 export const GLOBAL_CONFIG_ID = "__global__"
@@ -125,6 +126,7 @@ const ModelSelectionFields = {
   small_model: SmallModelField.nullable().optional(),
   image_model: ImageModelField.nullable().optional(),
   image_generation: ImageGenerationSettings.nullable().optional(),
+  reasoning_effort: ReasoningEffortSchema.nullable().optional(),
 }
 
 const SelectedMcpServersField = z
@@ -440,6 +442,7 @@ export const Info = z
       ),
     ...ProviderConfigFields,
     image_generation: ImageGenerationSettings.optional(),
+    reasoning_effort: ReasoningEffortSchema.optional(),
     default_agent: z
       .string()
       .optional()
@@ -858,6 +861,9 @@ export async function setModelSelection(configID: string, input: ModelSelection)
     image_generation: parsed.image_generation === null
       ? undefined
       : parsed.image_generation ?? current.image_generation,
+    reasoning_effort: parsed.reasoning_effort === null
+      ? undefined
+      : parsed.reasoning_effort ?? current.reasoning_effort,
   }
   return writeConfig(normalizedConfigID, Info.parse(next))
 }

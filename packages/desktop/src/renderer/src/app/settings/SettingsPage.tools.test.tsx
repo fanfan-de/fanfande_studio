@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import type { ComponentProps } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import type { DesktopAppUpdateState } from "../../../../shared/desktop-ipc-contract"
 import { I18nProvider } from "../i18n/I18nProvider"
 import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type McpServerDraftState } from "../types"
 import { SettingsPage } from "./SettingsPage"
@@ -34,6 +35,21 @@ function createMcpDraft(): McpServerDraftState {
   }
 }
 
+function createAppUpdateState(overrides: Partial<DesktopAppUpdateState> = {}): DesktopAppUpdateState {
+  return {
+    phase: "idle",
+    version: "1.2.3",
+    automaticUpdates: true,
+    updateChecksSupported: true,
+    latestVersion: null,
+    downloadPercent: null,
+    error: null,
+    lastCheckedAt: null,
+    releaseNotes: null,
+    ...overrides,
+  }
+}
+
 function createSettingsPageProps(
   overrides: Partial<ComponentProps<typeof SettingsPage>> = {},
 ): ComponentProps<typeof SettingsPage> {
@@ -62,6 +78,10 @@ function createSettingsPageProps(
     isLoading: false,
     isLoadingArchivedSessions: false,
     isOpen: true,
+    appUpdateState: createAppUpdateState(),
+    appUpdateStatus: null,
+    isCheckingAppUpdate: false,
+    isSavingAutomaticUpdates: false,
     isRefreshingProviderCatalog: false,
     loadError: null,
     mcpServerDraft: createMcpDraft(),
@@ -73,9 +93,11 @@ function createSettingsPageProps(
     onAppearancePaletteReset: vi.fn(),
     onAppearanceTokenChange: vi.fn(),
     onAppearanceTokenReset: vi.fn(),
+    onAutomaticUpdatesToggle: vi.fn(),
     onAssistantTraceVisibilityChange: vi.fn(),
     onBrandThemeChange: vi.fn(),
     onCancelProviderAuthFlow: vi.fn(),
+    onCheckForUpdates: vi.fn(),
     onClose: vi.fn(),
     onColorModeChange: vi.fn(),
     onFontFamilyChange: vi.fn(),
@@ -90,6 +112,7 @@ function createSettingsPageProps(
     onMcpToolPolicyChange: vi.fn(),
     onMcpServerSelect: vi.fn(),
     onLoadArchivedSessions: vi.fn(),
+    onOpenUpdateCenter: vi.fn(),
     onRefreshProviderCatalog: vi.fn(),
     onRestoreArchivedSession: vi.fn(),
     onSaveMcpServer: vi.fn(),
@@ -105,6 +128,7 @@ function createSettingsPageProps(
     selectionDraft: {
       model: null,
       smallModel: null,
+      reasoningEffort: null,
       imageModel: null,
       imageDefaultSize: null,
       imageDefaultCount: null,
@@ -187,93 +211,73 @@ describe("SettingsPage built-in tools", () => {
   })
 
   it("renders about update controls and saves the automatic update setting", async () => {
-    const initialUpdateState = {
-      phase: "idle",
-      version: "1.2.3",
-      automaticUpdates: true,
-      updateChecksSupported: true,
-      latestVersion: null,
-      downloadPercent: null,
-      error: null,
-      lastCheckedAt: null,
-      releaseNotes: null,
-    }
-    const unsupportedUpdateState = {
-      ...initialUpdateState,
-      phase: "unsupported",
-      automaticUpdates: false,
-      error: "Update checks run in packaged builds.",
-      lastCheckedAt: 1,
-    }
-    const getAppUpdateState = vi.fn().mockResolvedValueOnce(initialUpdateState).mockResolvedValue(unsupportedUpdateState)
-    const onAppUpdateStateChange = vi.fn(() => () => undefined)
-    const checkForAppUpdates = vi.fn().mockResolvedValue({
-      ok: true,
-      skipped: true,
-      reason: "not-packaged",
-      state: unsupportedUpdateState,
-    })
-    const setAutomaticUpdatesEnabled = vi.fn().mockResolvedValue({
-      version: "1.2.3",
-      automaticUpdates: false,
-      updateChecksSupported: true,
-    })
+    const onAutomaticUpdatesToggle = vi.fn()
+    const onCheckForUpdates = vi.fn()
 
-    setDesktopMock({
-      getAppUpdateState,
-      onAppUpdateStateChange,
-      checkForAppUpdates,
-      setAutomaticUpdatesEnabled,
-    })
+    render(<SettingsPage {...createSettingsPageProps({ onAutomaticUpdatesToggle, onCheckForUpdates })} />)
 
-    render(<SettingsPage {...createSettingsPageProps()} />)
-
-    expect(await screen.findByText("Version 1.2.3")).toBeInTheDocument()
+    expect(screen.getByText("Version 1.2.3")).toBeInTheDocument()
+    expect(screen.getByText("Installer version: 1.2.3")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Read release notes" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Check for updates" })).toBeInTheDocument()
 
     const automaticUpdatesSwitch = screen.getByRole("switch", { name: /Automatic updates/i })
     expect(automaticUpdatesSwitch).toHaveAttribute("aria-checked", "true")
 
     fireEvent.click(automaticUpdatesSwitch)
-    await waitFor(() => expect(setAutomaticUpdatesEnabled).toHaveBeenCalledWith({ enabled: false }))
-    await waitFor(() =>
-      expect(screen.getByRole("switch", { name: /Automatic updates/i })).toHaveAttribute("aria-checked", "false"),
-    )
+    expect(onAutomaticUpdatesToggle).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole("button", { name: "Check for updates" }))
-    await waitFor(() => expect(checkForAppUpdates).toHaveBeenCalledTimes(1))
-    expect(await screen.findByRole("dialog", { name: "Updates unavailable" })).toBeInTheDocument()
+    expect(onCheckForUpdates).toHaveBeenCalledTimes(1)
   })
 
-  it("renders downloaded update state and routes restart installs through IPC", async () => {
-    const getAppUpdateState = vi.fn().mockResolvedValue({
-      phase: "downloaded",
-      version: "1.2.3",
-      automaticUpdates: true,
-      updateChecksSupported: true,
-      latestVersion: "1.2.4",
-      downloadPercent: 100,
-      error: null,
-      lastCheckedAt: 1,
-      releaseNotes: "Improved update experience.",
-    })
-    const installAppUpdate = vi.fn().mockResolvedValue({ ok: true })
-
-    setDesktopMock({
-      getAppUpdateState,
-      onAppUpdateStateChange: vi.fn(() => () => undefined),
-      installAppUpdate,
-    })
-
+  it("does not expose a duplicate dedicated updates settings section", () => {
     render(<SettingsPage {...createSettingsPageProps()} />)
 
-    fireEvent.click(await screen.findByRole("button", { name: /Ready to install/i }))
-    expect(await screen.findByRole("dialog", { name: "Update ready to install" })).toBeInTheDocument()
-    expect(screen.getByText("1.2.4")).toBeInTheDocument()
-    expect(screen.getByText("Improved update experience.")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Updates" })).not.toBeInTheDocument()
+    expect(screen.getByText("Version 1.2.3")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Check for updates" })).toBeInTheDocument()
+    expect(screen.getByRole("switch", { name: /Automatic updates/i })).toBeInTheDocument()
+  })
 
-    fireEvent.click(screen.getByRole("button", { name: /Restart to install/i }))
-    await waitFor(() => expect(installAppUpdate).toHaveBeenCalledTimes(1))
+  it("routes downloaded update entry points to the global update center", () => {
+    const onOpenUpdateCenter = vi.fn()
+
+    render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          appUpdateState: createAppUpdateState({
+            phase: "downloaded",
+            latestVersion: "1.2.4",
+            downloadPercent: 100,
+            lastCheckedAt: 1,
+            releaseNotes: "Improved update experience.",
+          }),
+          onOpenUpdateCenter,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /Open update center/i }))
+    expect(onOpenUpdateCenter).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole("button", { name: /Read release notes/i }))
+    expect(onOpenUpdateCenter).toHaveBeenCalledTimes(2)
+  })
+
+  it("scrolls the active settings section back to the top when its nav item is clicked again", () => {
+    const { container } = render(<SettingsPage {...createSettingsPageProps()} />)
+    const overlay = container.querySelector(".settings-page-overlay") as HTMLElement | null
+    const mainPanel = container.querySelector(".settings-page-main") as HTMLDivElement | null
+    expect(overlay).not.toBeNull()
+    expect(mainPanel).not.toBeNull()
+
+    overlay!.scrollTop = 80
+    mainPanel!.scrollTop = 120
+    fireEvent.click(screen.getByRole("button", { name: "General" }))
+
+    expect(overlay!.scrollTop).toBe(0)
+    expect(mainPanel!.scrollTop).toBe(0)
   })
 
   it("renders a dismiss button for settings messages", () => {
@@ -314,11 +318,44 @@ describe("SettingsPage built-in tools", () => {
     render(<SettingsPage {...createSettingsPageProps()} />)
 
     fireEvent.click(screen.getByRole("button", { name: "Developer Mode" }))
+    fireEvent.click(screen.getByRole("button", { name: /Agent Monitor/ }))
     fireEvent.click(screen.getByRole("button", { name: "Open monitor" }))
 
     await waitFor(() => {
       expect(openMonitorWindow).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it("keeps storage paths inside the developer mode storage disclosure", async () => {
+    const getStoragePaths = vi.fn().mockResolvedValue({
+      appData: "C:\\Users\\tester\\AppData\\Roaming\\anybox-desktop-agent",
+      agentRoot: "C:\\Users\\tester\\AppData\\Roaming\\anybox-desktop-agent\\agent",
+      agentData: "C:\\Users\\tester\\AppData\\Roaming\\anybox-desktop-agent\\agent\\data",
+      installedPlugins: "C:\\Users\\tester\\AppData\\Roaming\\anybox-desktop-agent\\agent\\data\\plugins\\installed",
+      pluginRegistryCache: "C:\\Users\\tester\\AppData\\Roaming\\anybox-desktop-agent\\agent\\data\\plugins\\registry-cache",
+      agentCache: "C:\\Users\\tester\\AppData\\Roaming\\anybox-desktop-agent\\agent\\cache",
+      pluginInstallTemp: "C:\\Users\\tester\\AppData\\Roaming\\anybox-desktop-agent\\agent\\cache\\plugin-installs",
+    })
+    setDesktopMock({ getStoragePaths })
+
+    render(<SettingsPage {...createSettingsPageProps()} />)
+
+    expect(screen.queryByText("Storage Locations")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Developer Mode" }))
+
+    const storageDisclosure = screen.getByRole("button", { name: /Storage Locations/ })
+    expect(storageDisclosure).toHaveAttribute("aria-expanded", "false")
+    expect(screen.queryByText("Application data")).not.toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(getStoragePaths).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.click(storageDisclosure)
+
+    expect(await screen.findByText("Application data")).toBeInTheDocument()
+    expect(screen.getByText("Plugin install temp")).toBeInTheDocument()
+    expect(screen.getByTitle("C:\\Users\\tester\\AppData\\Roaming\\anybox-desktop-agent")).toBeInTheDocument()
   })
 
   it("switches the display language from general settings", async () => {
@@ -352,14 +389,18 @@ describe("SettingsPage built-in tools", () => {
       </I18nProvider>,
     )
 
-    expect(await screen.findByRole("heading", { name: "Display Language" })).toBeInTheDocument()
+    expect(await screen.findByRole("combobox", { name: "Display Language" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "About" })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
-    expect(screen.queryByRole("heading", { name: "Display Language" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("combobox", { name: "Display Language" })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "General" }))
 
-    fireEvent.click(screen.getByRole("radio", { name: /中文/ }))
+    fireEvent.change(screen.getByRole("combobox", { name: "Display Language" }), {
+      target: {
+        value: "zh-CN",
+      },
+    })
 
     await waitFor(() => {
       expect(saveLocaleConfig).toHaveBeenCalledWith({
@@ -369,7 +410,7 @@ describe("SettingsPage built-in tools", () => {
         }),
       })
     })
-    expect(await screen.findByRole("heading", { name: "显示语言" })).toBeInTheDocument()
+    expect(await screen.findByText("显示语言")).toBeInTheDocument()
   })
 
   it("selects the interface font from appearance settings", () => {
@@ -385,9 +426,13 @@ describe("SettingsPage built-in tools", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
-    expect(screen.getByRole("heading", { name: "Interface Font" })).toBeInTheDocument()
+    expect(screen.getByText("Interface Font")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("radio", { name: /微软雅黑/ }))
+    fireEvent.change(screen.getByRole("combobox", { name: "Interface Font" }), {
+      target: {
+        value: "microsoft-yahei",
+      },
+    })
 
     expect(onFontFamilyChange).toHaveBeenCalledWith("microsoft-yahei")
   })
@@ -407,6 +452,7 @@ describe("SettingsPage built-in tools", () => {
           selectionDraft: {
             model: "deepseek/deepseek-reasoner",
             smallModel: null,
+            reasoningEffort: null,
             imageModel: null,
             imageDefaultSize: null,
             imageDefaultCount: null,

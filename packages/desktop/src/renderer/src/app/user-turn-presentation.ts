@@ -268,15 +268,36 @@ export function persistUserTurns(sessionID: string, turns: Turn[]) {
   writePersistedPresentationMap(prunePersistedPresentationMap(nextMap))
 }
 
+function isLocalGeneratedUserTurn(turn: UserTurn) {
+  return turn.id.startsWith("user-")
+}
+
 export function mergeUserTurnPresentationState(previousTurns: Turn[], nextTurns: Turn[]) {
   const previousUserTurns = previousTurns.filter((turn): turn is UserTurn => turn.kind === "user")
-  let previousUserTurnIndex = 0
+  const previousUserTurnByID = new Map(previousUserTurns.map((turn) => [turn.id, turn]))
+  const usedPreviousUserTurnIDs = new Set<string>()
+  let fallbackPreviousUserTurnIndex = 0
+
+  function takeFallbackUserTurn() {
+    while (fallbackPreviousUserTurnIndex < previousUserTurns.length) {
+      const candidate = previousUserTurns[fallbackPreviousUserTurnIndex++]
+      if (!candidate || usedPreviousUserTurnIDs.has(candidate.id)) continue
+      if (!isLocalGeneratedUserTurn(candidate)) continue
+
+      usedPreviousUserTurnIDs.add(candidate.id)
+      return candidate
+    }
+
+    return undefined
+  }
 
   const mergedTurns = nextTurns.map((turn) => {
     if (turn.kind !== "user") return turn
 
-    const previousTurn = previousUserTurns[previousUserTurnIndex++]
+    const exactPreviousTurn = previousUserTurnByID.get(turn.id)
+    const previousTurn = exactPreviousTurn ?? takeFallbackUserTurn()
     if (!previousTurn) return turn
+    usedPreviousUserTurnIDs.add(previousTurn.id)
 
     const mergedDisplayText = previousTurn.displayText ?? turn.displayText
     const mergedAttachments = previousTurn.attachments?.length ? previousTurn.attachments : turn.attachments

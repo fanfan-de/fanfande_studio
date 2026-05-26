@@ -286,6 +286,7 @@ export async function updateProjectProvider(
     selection: {
       model: providerConfig.model,
       small_model: providerConfig.small_model,
+      reasoning_effort: providerConfig.reasoning_effort,
     },
   }
 }
@@ -300,6 +301,7 @@ export async function removeProjectProvider(projectID: string, providerID: strin
     selection: {
       model: providerConfig.model,
       small_model: providerConfig.small_model,
+      reasoning_effort: providerConfig.reasoning_effort,
     },
   }
 }
@@ -324,6 +326,7 @@ export async function updateProjectModelSelection(
   return {
     model: selection.model,
     small_model: selection.small_model,
+    reasoning_effort: selection.reasoning_effort,
   }
 }
 

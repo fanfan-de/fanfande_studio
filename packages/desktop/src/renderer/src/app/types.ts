@@ -154,6 +154,7 @@ export interface SessionSubagentOrigin {
 export interface SessionModelSelection {
   model?: string
   small_model?: string
+  reasoning_effort?: ReasoningEffort
 }
 
 export interface SideChatSource {
@@ -1239,6 +1240,7 @@ export interface ProviderModel {
 export interface ProjectModelSelection {
   model: string | null
   smallModel: string | null
+  reasoningEffort: ReasoningEffort | null
   imageModel: string | null
   imageDefaultSize: string | null
   imageDefaultCount: number | null

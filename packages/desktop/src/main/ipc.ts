@@ -14,6 +14,8 @@ import type {
   DesktopRendererErrorReport,
   DesktopRendererMemoryDiagnosticsRecord,
   DesktopRendererMemoryDiagnosticsSnapshot,
+  DesktopSessionRollbackInput,
+  DesktopSessionRollbackResult,
   McpServerInput,
 } from "../shared/desktop-ipc-contract"
 import {
@@ -2333,6 +2335,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
       input: {
         model?: string | null
         small_model?: string | null
+        reasoning_effort?: AgentProjectModelSelection["reasoning_effort"] | null
         image_model?: string | null
         image_generation?: {
           default_size?: string
@@ -2348,6 +2351,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
         body: JSON.stringify({
           model: input.model,
           small_model: input.small_model,
+          ...(input.reasoning_effort !== undefined ? { reasoning_effort: input.reasoning_effort } : {}),
           ...(input.image_model !== undefined ? { image_model: input.image_model } : {}),
           ...(input.image_generation !== undefined ? { image_generation: input.image_generation } : {}),
         }),
@@ -3242,6 +3246,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
         projectID: string
         model?: string | null
         small_model?: string | null
+        reasoning_effort?: AgentProjectModelSelection["reasoning_effort"] | null
       },
     ) => {
       const projectID = input.projectID.trim()
@@ -3255,6 +3260,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
         body: JSON.stringify({
           model: input.model,
           small_model: input.small_model,
+          ...(input.reasoning_effort !== undefined ? { reasoning_effort: input.reasoning_effort } : {}),
         }),
       },
       )
@@ -3271,6 +3277,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
         sessionID: string
         model?: string | null
         small_model?: string | null
+        reasoning_effort?: AgentProjectModelSelection["reasoning_effort"] | null
       },
     ) => {
       const sessionID = input.sessionID.trim()
@@ -3284,6 +3291,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
           body: JSON.stringify({
             model: input.model,
             small_model: input.small_model,
+            ...(input.reasoning_effort !== undefined ? { reasoning_effort: input.reasoning_effort } : {}),
           }),
         },
       )
@@ -3488,6 +3496,27 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
           method: "PATCH",
           body: JSON.stringify({
             messageID: input.messageID.trim(),
+          }),
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:rollback-session-to-checkpoint",
+    async (_event, input: DesktopSessionRollbackInput) => {
+      const sessionID = input.sessionID.trim()
+      const result = await requestAgentJSON<DesktopSessionRollbackResult>(
+        `/api/sessions/${encodeURIComponent(sessionID)}/rollback`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            targetMessageID: input.targetMessageID.trim(),
+            reason: input.reason.trim(),
+            correctivePrompt: input.correctivePrompt.trim(),
+            restoreWorkspace: input.restoreWorkspace === true,
           }),
         },
       )

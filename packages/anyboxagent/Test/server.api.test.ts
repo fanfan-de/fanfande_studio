@@ -823,12 +823,6 @@ describe("server api", () => {
         },
       })
       expect(JSON.stringify(listBody.data?.items.find((tool) => tool.id === "git_bash_command")?.inputSchema)).toContain("command")
-      expect(listBody.data?.items.find((tool) => tool.id === "apply_patch")).toMatchObject({
-        inputSchema: {
-          type: "string",
-          minLength: 1,
-        },
-      })
       expect(listBody.data?.items.find((tool) => tool.id === "powershell_command")).toMatchObject({
         enabled: true,
         capabilities: {

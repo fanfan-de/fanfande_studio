@@ -28,13 +28,13 @@ import {
 import type { LeftSidebarView, SessionDiffSummary, SessionModelSelection, Turn, WorkspaceGroup } from "./types"
 import type { ThreadScrollSnapshot } from "./thread/ThreadView"
 import { persistUserTurns } from "./user-turn-presentation"
-import { findSession, updateSessionModelSelectionInWorkspaces } from "./workspace"
+import { findSession, updateSessionInWorkspaces, updateSessionModelSelectionInWorkspaces } from "./workspace"
 import {
   createInitialDockviewLayout,
   writePersistedDockviewLayout,
   type WorkbenchDockviewCommands,
 } from "./workbench/dockview-state"
-import type { WorkbenchSharedState } from "../../../shared/desktop-ipc-contract"
+import type { DesktopIpcInput, WorkbenchSharedState } from "../../../shared/desktop-ipc-contract"
 
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
@@ -915,6 +915,50 @@ export function useAgentWorkspace({
     refreshWorkspaceForSession(sessionID)
   }
 
+  async function handleSessionRollbackToCheckpoint(input: {
+    sessionID?: string | null
+    targetMessageID: string
+    reason: string
+    correctivePrompt: string
+    restoreWorkspace?: boolean
+  }) {
+    const sessionID = input.sessionID ?? activeSessionID
+    const targetMessageID = input.targetMessageID.trim()
+    const reason = input.reason.trim()
+    const correctivePrompt = input.correctivePrompt.trim()
+    if (!sessionID || !targetMessageID || !reason || !correctivePrompt) {
+      return
+    }
+    if (!window.desktop?.rollbackSessionToCheckpoint) {
+      throw new Error("Rollback bridge is unavailable.")
+    }
+
+    const backendSessionID = resolveBackendSessionID(sessionID)
+    const payload: DesktopIpcInput<"desktop:rollback-session-to-checkpoint"> = {
+      sessionID: backendSessionID,
+      targetMessageID,
+      reason,
+      correctivePrompt,
+      restoreWorkspace: input.restoreWorkspace === true,
+    }
+    const result = await window.desktop.rollbackSessionToCheckpoint(payload)
+
+    setWorkspaces((current) => updateSessionInWorkspaces(current, sessionID, (session) => ({
+      ...session,
+      title: result.session.title,
+      updated: result.session.updated,
+      workflow: result.session.workflow,
+      modelSelection: result.session.modelSelection,
+    })))
+    await reloadSessionHistoryForSession(sessionID, backendSessionID, {
+      force: true,
+      mode: "silent",
+      preserveUserPresentation: false,
+      reason: "manual",
+    })
+    refreshWorkspaceForSession(sessionID)
+  }
+
   return {
     activeCreateSessionTabID,
     activePreviewState,
@@ -1025,6 +1069,7 @@ export function useAgentWorkspace({
     handlePlanModeToggle,
     handleSessionDelete,
     handleSessionBranchSelect,
+    handleSessionRollbackToCheckpoint,
     handleSessionSelect,
     handleSelectSideChatTab,
     handleSidebarAction,

@@ -263,6 +263,7 @@ type ProviderFunctionOverrides = {
     small_model?: string
     image_model?: string
     image_generation?: Config.ImageGenerationSettings
+    reasoning_effort?: Config.Info["reasoning_effort"]
   }>
   getDefaultModelRef?: (configID?: string) => Promise<ModelReference>
   getModel?: (providerID: string, modelID: string, configID?: string) => Promise<Model>
@@ -1704,6 +1705,7 @@ export async function getSelection(configID = resolveConfigID()) {
     small_model: config.small_model,
     image_model: config.image_model,
     image_generation: config.image_generation,
+    reasoning_effort: config.reasoning_effort,
   }
 }
 

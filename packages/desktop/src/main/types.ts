@@ -905,6 +905,7 @@ export interface AgentProviderModel {
 export interface AgentProjectModelSelection {
   model?: string
   small_model?: string
+  reasoning_effort?: ReasoningEffort
   image_model?: string
   image_generation?: {
     default_size?: string

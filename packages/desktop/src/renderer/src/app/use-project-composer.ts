@@ -249,6 +249,7 @@ interface ComposerModelsPayload {
   selection?: {
     model?: string
     small_model?: string
+    reasoning_effort?: ReasoningEffort
   }
 }
 
@@ -275,6 +276,23 @@ const projectComposerPluginsPayloadCache = new Map<string, ComposerPluginsPayloa
 
 function getComposerResourceCacheKey(scopeID: string, refreshToken: number) {
   return `${refreshToken}\u0000${scopeID}`
+}
+
+function updateCachedProjectComposerModelSelection(
+  projectID: string,
+  refreshToken: number,
+  selection: ComposerModelsPayload["selection"],
+) {
+  if (!shouldUseComposerResourceCache) return
+
+  const cacheKey = getComposerResourceCacheKey(projectID, refreshToken)
+  const cachedPayload = projectComposerModelsPayloadCache.get(cacheKey)
+  if (!cachedPayload) return
+
+  projectComposerModelsPayloadCache.set(cacheKey, {
+    ...cachedPayload,
+    selection,
+  })
 }
 
 export interface UseProjectComposerOptions {
@@ -322,9 +340,11 @@ export function useProjectComposer({
   const mcpRequestRef = useRef(0)
   const mcpSelectionRequestRef = useRef(0)
   const pendingModelSelectionRef = useRef<Promise<void> | null>(null)
+  const pendingModelSelectionTasksRef = useRef(new Set<Promise<void>>())
   const currentModelScopeRef = useRef({ projectID, sessionID })
   const sessionSelectionModel = sessionModelSelection?.model?.trim() || null
   const sessionSelectionSmallModel = sessionModelSelection?.small_model?.trim() || null
+  const sessionSelectionReasoningEffort = sessionModelSelection?.reasoning_effort ?? null
 
   currentModelScopeRef.current = { projectID, sessionID }
 
@@ -339,11 +359,15 @@ export function useProjectComposer({
     modelsRequestRef.current += 1
     modelSelectionRequestRef.current += 1
     pendingModelSelectionRef.current = null
+    pendingModelSelectionTasksRef.current.clear()
 
     setModels(cachedPayload?.items ?? (projectID ? projectComposerModelItemsCache.get(projectID) ?? [] : []))
     setDefaultModel(cachedPayload?.effectiveModel ?? null)
     setSelectedModel(sessionID ? sessionSelectionModel : cachedPayload?.selection?.model ?? null)
     setSmallModel(sessionID ? sessionSelectionSmallModel : cachedPayload?.selection?.small_model ?? null)
+    setSelectedReasoningEffort(
+      sessionID ? sessionSelectionReasoningEffort : cachedPayload?.selection?.reasoning_effort ?? null,
+    )
     setIsLoadingModels(Boolean(
       !cachedPayload &&
       projectID &&
@@ -355,7 +379,8 @@ export function useProjectComposer({
     if (!sessionID) return
     setSelectedModel(sessionSelectionModel)
     setSmallModel(sessionSelectionSmallModel)
-  }, [sessionID, sessionSelectionModel, sessionSelectionSmallModel])
+    setSelectedReasoningEffort(sessionSelectionReasoningEffort)
+  }, [sessionID, sessionSelectionModel, sessionSelectionSmallModel, sessionSelectionReasoningEffort])
 
   useEffect(() => {
     const getProjectModels = window.desktop?.getProjectModels
@@ -365,6 +390,7 @@ export function useProjectComposer({
       setDefaultModel(null)
       setSelectedModel(null)
       setSmallModel(null)
+      setSelectedReasoningEffort(null)
       setIsLoadingModels(false)
       return
     }
@@ -381,9 +407,11 @@ export function useProjectComposer({
       if (sessionID) {
         setSelectedModel(sessionSelectionModel)
         setSmallModel(sessionSelectionSmallModel)
+        setSelectedReasoningEffort(sessionSelectionReasoningEffort)
       } else {
         setSelectedModel(cachedPayload.selection?.model ?? null)
         setSmallModel(cachedPayload.selection?.small_model ?? null)
+        setSelectedReasoningEffort(cachedPayload.selection?.reasoning_effort ?? null)
       }
       setIsLoadingModels(false)
       return
@@ -426,16 +454,20 @@ export function useProjectComposer({
         if (isSessionModelRequest && requestSessionID) {
           setSelectedModel(payload.selection?.model ?? null)
           setSmallModel(payload.selection?.small_model ?? null)
+          setSelectedReasoningEffort(payload.selection?.reasoning_effort ?? null)
           onSessionModelSelectionChange?.(requestSessionID, {
             ...(payload.selection?.model ? { model: payload.selection.model } : {}),
             ...(payload.selection?.small_model ? { small_model: payload.selection.small_model } : {}),
+            ...(payload.selection?.reasoning_effort ? { reasoning_effort: payload.selection.reasoning_effort } : {}),
           })
         } else if (requestSessionID) {
           setSelectedModel(sessionSelectionModel)
           setSmallModel(sessionSelectionSmallModel)
+          setSelectedReasoningEffort(sessionSelectionReasoningEffort)
         } else {
           setSelectedModel(payload.selection?.model ?? null)
           setSmallModel(payload.selection?.small_model ?? null)
+          setSelectedReasoningEffort(payload.selection?.reasoning_effort ?? null)
         }
       })
       .catch((error) => {
@@ -687,12 +719,29 @@ export function useProjectComposer({
   }, [reasoningEffortOptions, selectedReasoningEffort])
 
   async function awaitPendingModelSelection() {
-    await pendingModelSelectionRef.current?.catch(() => undefined)
+    while (pendingModelSelectionTasksRef.current.size > 0) {
+      await Promise.all([...pendingModelSelectionTasksRef.current]).catch(() => undefined)
+    }
+  }
+
+  function trackPendingModelSelectionTask(saveTask: Promise<void>) {
+    let trackedTask!: Promise<void>
+    trackedTask = saveTask.finally(() => {
+      pendingModelSelectionTasksRef.current.delete(trackedTask)
+      if (pendingModelSelectionRef.current === trackedTask) {
+        pendingModelSelectionRef.current = null
+      }
+    })
+    pendingModelSelectionTasksRef.current.add(trackedTask)
+    pendingModelSelectionRef.current = trackedTask
+    return trackedTask
   }
 
   async function handleModelChange(value: string | null) {
+    const updateProjectModelSelection = window.desktop?.updateProjectModelSelection
     const updateSessionModelSelection = window.desktop?.updateSessionModelSelection
     const targetSessionID = sessionID
+    const targetProjectID = projectID
     const previousSelection = selectedModel
     const previousSmallModel = smallModel
     const requestID = ++modelSelectionRequestRef.current
@@ -702,10 +751,50 @@ export function useProjectComposer({
       onSessionModelSelectionChange?.(targetSessionID, {
         ...(value ? { model: value } : {}),
         ...(previousSmallModel ? { small_model: previousSmallModel } : {}),
+        ...(selectedReasoningEffort ? { reasoning_effort: selectedReasoningEffort } : {}),
       })
     }
 
-    if (!targetSessionID || !updateSessionModelSelection) {
+    if (!targetSessionID) {
+      if (!targetProjectID || !updateProjectModelSelection) {
+        return
+      }
+
+      const saveTask = (async () => {
+        try {
+          const result = await updateProjectModelSelection({
+            projectID: targetProjectID,
+            model: value,
+          })
+          if (modelSelectionRequestRef.current !== requestID) return
+          if (currentModelScopeRef.current.projectID !== targetProjectID) return
+          if (currentModelScopeRef.current.sessionID) return
+
+          setSelectedModel(result.model ?? null)
+          setSmallModel(result.small_model ?? null)
+          updateCachedProjectComposerModelSelection(targetProjectID, refreshToken, {
+            ...(result.model ? { model: result.model } : {}),
+            ...(result.small_model ? { small_model: result.small_model } : {}),
+            ...(result.reasoning_effort ? { reasoning_effort: result.reasoning_effort } : {}),
+          })
+        } catch (error) {
+          if (modelSelectionRequestRef.current !== requestID) return
+          if (currentModelScopeRef.current.projectID !== targetProjectID) return
+          if (currentModelScopeRef.current.sessionID) return
+          console.error("[desktop] updateProjectComposerModelSelection failed:", error)
+          setSelectedModel(previousSelection)
+          setSmallModel(previousSmallModel)
+          throw error
+        }
+      })()
+
+      const trackedTask = trackPendingModelSelectionTask(saveTask)
+
+      await trackedTask
+      return
+    }
+
+    if (!updateSessionModelSelection) {
       return
     }
 
@@ -723,6 +812,7 @@ export function useProjectComposer({
         onSessionModelSelectionChange?.(targetSessionID, {
           ...(result.model ? { model: result.model } : {}),
           ...(result.small_model ? { small_model: result.small_model } : {}),
+          ...(result.reasoning_effort ? { reasoning_effort: result.reasoning_effort } : {}),
         })
       } catch (error) {
         if (modelSelectionRequestRef.current !== requestID) return
@@ -733,17 +823,13 @@ export function useProjectComposer({
         onSessionModelSelectionChange?.(targetSessionID, {
           ...(previousSelection ? { model: previousSelection } : {}),
           ...(previousSmallModel ? { small_model: previousSmallModel } : {}),
+          ...(selectedReasoningEffort ? { reasoning_effort: selectedReasoningEffort } : {}),
         })
         throw error
       }
     })()
 
-    const trackedTask = saveTask.finally(() => {
-      if (pendingModelSelectionRef.current === trackedTask) {
-        pendingModelSelectionRef.current = null
-      }
-    })
-    pendingModelSelectionRef.current = trackedTask
+    const trackedTask = trackPendingModelSelectionTask(saveTask)
 
     await trackedTask
   }
@@ -855,7 +941,85 @@ export function useProjectComposer({
   }
 
   function handleReasoningEffortChange(value: ReasoningEffort | null) {
+    const updateProjectModelSelection = window.desktop?.updateProjectModelSelection
+    const updateSessionModelSelection = window.desktop?.updateSessionModelSelection
+    const targetProjectID = projectID
+    const targetSessionID = sessionID
+    const previousReasoningEffort = selectedReasoningEffort
+    const requestID = ++modelSelectionRequestRef.current
     setSelectedReasoningEffort(value)
+
+    if (!targetSessionID) {
+      if (!targetProjectID || !updateProjectModelSelection) return
+
+      const saveTask = (async () => {
+        try {
+          const result = await updateProjectModelSelection({
+            projectID: targetProjectID,
+            reasoning_effort: value,
+          })
+          if (modelSelectionRequestRef.current !== requestID) return
+          if (currentModelScopeRef.current.projectID !== targetProjectID) return
+          if (currentModelScopeRef.current.sessionID) return
+
+          setSelectedReasoningEffort(result.reasoning_effort ?? null)
+          updateCachedProjectComposerModelSelection(targetProjectID, refreshToken, {
+            ...(result.model ? { model: result.model } : {}),
+            ...(result.small_model ? { small_model: result.small_model } : {}),
+            ...(result.reasoning_effort ? { reasoning_effort: result.reasoning_effort } : {}),
+          })
+        } catch (error) {
+          if (modelSelectionRequestRef.current !== requestID) return
+          if (currentModelScopeRef.current.projectID !== targetProjectID) return
+          if (currentModelScopeRef.current.sessionID) return
+          console.error("[desktop] updateProjectComposerReasoningEffort failed:", error)
+          setSelectedReasoningEffort(previousReasoningEffort)
+          throw error
+        }
+      })()
+
+      void trackPendingModelSelectionTask(saveTask).catch(() => undefined)
+      return
+    }
+
+    if (!updateSessionModelSelection) return
+
+    onSessionModelSelectionChange?.(targetSessionID, {
+      ...(selectedModel ? { model: selectedModel } : {}),
+      ...(smallModel ? { small_model: smallModel } : {}),
+      ...(value ? { reasoning_effort: value } : {}),
+    })
+
+    const saveTask = (async () => {
+      try {
+        const result = await updateSessionModelSelection({
+          sessionID: targetSessionID,
+          reasoning_effort: value,
+        })
+        if (modelSelectionRequestRef.current !== requestID) return
+        if (currentModelScopeRef.current.sessionID !== targetSessionID) return
+
+        setSelectedReasoningEffort(result.reasoning_effort ?? null)
+        onSessionModelSelectionChange?.(targetSessionID, {
+          ...(result.model ? { model: result.model } : {}),
+          ...(result.small_model ? { small_model: result.small_model } : {}),
+          ...(result.reasoning_effort ? { reasoning_effort: result.reasoning_effort } : {}),
+        })
+      } catch (error) {
+        if (modelSelectionRequestRef.current !== requestID) return
+        if (currentModelScopeRef.current.sessionID !== targetSessionID) return
+        console.error("[desktop] updateSessionComposerReasoningEffort failed:", error)
+        setSelectedReasoningEffort(previousReasoningEffort)
+        onSessionModelSelectionChange?.(targetSessionID, {
+          ...(selectedModel ? { model: selectedModel } : {}),
+          ...(smallModel ? { small_model: smallModel } : {}),
+          ...(previousReasoningEffort ? { reasoning_effort: previousReasoningEffort } : {}),
+        })
+        throw error
+      }
+    })()
+
+    void trackPendingModelSelectionTask(saveTask).catch(() => undefined)
   }
 
   return {

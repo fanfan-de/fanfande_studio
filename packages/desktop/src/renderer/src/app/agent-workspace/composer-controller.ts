@@ -262,6 +262,30 @@ export function useComposerController({
     })
   }
 
+  async function rememberProjectModelSelection(
+    workspace: WorkspaceGroup,
+    selection: SessionSummary["modelSelection"] | undefined,
+  ) {
+    const updateProjectModelSelection = window.desktop?.updateProjectModelSelection
+    if (!updateProjectModelSelection) return
+
+    const model = selection?.model?.trim()
+    const smallModel = selection?.small_model?.trim()
+    const reasoningEffort = selection?.reasoning_effort
+    if (!model && !smallModel && !reasoningEffort) return
+
+    try {
+      await updateProjectModelSelection({
+        projectID: workspace.project.id,
+        ...(model ? { model } : {}),
+        ...(smallModel ? { small_model: smallModel } : {}),
+        ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+      })
+    } catch (error) {
+      console.error("[desktop] rememberProjectModelSelection failed:", error)
+    }
+  }
+
   async function handleSend(input?: {
     attachmentError?: string | null
     attachmentsOverride?: ComposerAttachment[]
@@ -377,10 +401,11 @@ export function useComposerController({
     if (!created) return
 
     let createdSession = created.session
-    if (input?.selectedModel) {
+    if (input?.selectedModel || input?.selectedReasoningEffort) {
       const selection = await window.desktop?.updateSessionModelSelection?.({
         sessionID: created.session.id,
-        model: input.selectedModel,
+        ...(input.selectedModel ? { model: input.selectedModel } : {}),
+        ...(input.selectedReasoningEffort ? { reasoning_effort: input.selectedReasoningEffort } : {}),
       }).catch((error) => {
         console.error("[desktop] updateSessionModelSelection for new session failed:", error)
         return null
@@ -395,6 +420,7 @@ export function useComposerController({
         setWorkspaces((current) =>
           updateSessionModelSelectionInWorkspaces(current, created.session.id, modelSelection),
         )
+        await rememberProjectModelSelection(created.workspace, modelSelection)
       }
     }
 

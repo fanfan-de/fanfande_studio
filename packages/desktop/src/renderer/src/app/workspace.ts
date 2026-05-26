@@ -9,15 +9,17 @@ export function isSideChatSession(session: Pick<SessionSummary, "kind"> | null |
 }
 
 export function normalizeSessionModelSelection(
-  selection?: { model?: string | null; small_model?: string | null } | null,
+  selection?: { model?: string | null; small_model?: string | null; reasoning_effort?: SessionModelSelection["reasoning_effort"] | null } | null,
 ): SessionModelSelection | undefined {
   const model = selection?.model?.trim()
   const smallModel = selection?.small_model?.trim()
-  if (!model && !smallModel) return undefined
+  const reasoningEffort = selection?.reasoning_effort ?? undefined
+  if (!model && !smallModel && !reasoningEffort) return undefined
 
   return {
     ...(model ? { model } : {}),
     ...(smallModel ? { small_model: smallModel } : {}),
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
   }
 }
 

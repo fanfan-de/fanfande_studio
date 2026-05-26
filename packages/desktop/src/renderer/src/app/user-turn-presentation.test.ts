@@ -175,4 +175,40 @@ describe("user turn presentation persistence", () => {
       },
     })
   })
+
+  it("does not copy stale user presentation onto a different active branch message", () => {
+    const previousTurns = [
+      buildUserTurn({
+        id: "msg-root-user",
+        displayText: "Plan a Tokyo trip",
+        timestamp: 10,
+      }),
+      buildUserTurn({
+        id: "msg-old-branch-user",
+        displayText: "Use rollback and fix the route order",
+        timestamp: 20,
+      }),
+    ]
+    const nextTurns = [
+      buildUserTurn({
+        id: "msg-root-user",
+        displayText: "Plan a Tokyo trip",
+        timestamp: 10,
+      }),
+      buildUserTurn({
+        id: "msg-rollback-user",
+        displayText: "Rollback: route order was wrong",
+        timestamp: 30,
+      }),
+    ]
+
+    const mergedTurns = mergeUserTurnPresentationState(previousTurns, nextTurns)
+
+    expect(mergedTurns[1]).toMatchObject({
+      id: "msg-rollback-user",
+      kind: "user",
+      displayText: "Rollback: route order was wrong",
+      text: "Rollback: route order was wrong",
+    })
+  })
 })

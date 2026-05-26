@@ -63,7 +63,7 @@ const models = [
   createModel("anthropic", "claude-sonnet-4.5"),
 ]
 
-function createModelsPayload(selection?: { model?: string; small_model?: string }) {
+function createModelsPayload(selection?: { model?: string; small_model?: string; reasoning_effort?: "high" | "medium" | "low" | "max" }) {
   return {
     effectiveModel: null,
     items: models,
@@ -110,6 +110,93 @@ describe("useProjectComposer model selection", () => {
     expect(result.current.selectedModelLabel).toBe("anthropic/claude-sonnet-4.5")
     expect(getProjectModels).toHaveBeenCalledWith({ projectID: "project-1" })
     expect(getSessionModels).not.toHaveBeenCalled()
+  })
+
+  it("persists create-session model changes to the project selection", async () => {
+    const getProjectModels = vi.fn(async () =>
+      createModelsPayload({
+        model: "anthropic/claude-sonnet-4.5",
+      }),
+    )
+    const updateProjectModelSelection = vi.fn(async () => ({
+      model: "openai/gpt-5.4",
+    }))
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        getProjectModels,
+        updateProjectModelSelection,
+      } as unknown as typeof window.desktop,
+    })
+
+    const { result } = renderHook(() =>
+      useProjectComposer({
+        attachmentPaths: [],
+        projectID: "project-1",
+      }),
+    )
+
+    await waitFor(() => expect(result.current.selectedModel).toBe("anthropic/claude-sonnet-4.5"))
+
+    await act(async () => {
+      await result.current.handleModelChange("openai/gpt-5.4")
+    })
+
+    expect(updateProjectModelSelection).toHaveBeenCalledWith({
+      projectID: "project-1",
+      model: "openai/gpt-5.4",
+    })
+    expect(result.current.selectedModel).toBe("openai/gpt-5.4")
+  })
+
+  it("uses and persists the project reasoning effort for create-session composers", async () => {
+    const reasoningModel = createModel("deepseek", "deepseek-v4-pro", { reasoning: true })
+    const getProjectModels = vi.fn(async () => ({
+      effectiveModel: reasoningModel,
+      items: [reasoningModel],
+      selection: {
+        model: "deepseek/deepseek-v4-pro",
+        reasoning_effort: "max" as const,
+      },
+    }))
+    const updateProjectModelSelection = vi.fn(async () => ({
+      model: "deepseek/deepseek-v4-pro",
+      reasoning_effort: "high" as const,
+    }))
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        getProjectModels,
+        updateProjectModelSelection,
+      } as unknown as typeof window.desktop,
+    })
+
+    const { result } = renderHook(() =>
+      useProjectComposer({
+        attachmentPaths: [],
+        projectID: "project-1",
+      }),
+    )
+
+    await waitFor(() => expect(result.current.selectedReasoningEffort).toBe("max"))
+
+    act(() => {
+      result.current.handleReasoningEffortChange("high")
+    })
+
+    await waitFor(() =>
+      expect(updateProjectModelSelection).toHaveBeenCalledWith({
+        projectID: "project-1",
+        reasoning_effort: "high",
+      }),
+    )
+    await act(async () => {
+      await result.current.awaitPendingModelSelection()
+    })
+
+    expect(result.current.selectedReasoningEffort).toBe("high")
   })
 
   it("shows the current session selection while stale model requests are still pending", async () => {
