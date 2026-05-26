@@ -12,6 +12,10 @@ export async function getAppUpdateSettings(): Promise<DesktopIpcOutput<"desktop:
   return window.desktop?.getAppUpdateSettings?.() ?? null
 }
 
+export async function getAppUpdateState(): Promise<DesktopIpcOutput<"desktop:get-app-update-state"> | null> {
+  return window.desktop?.getAppUpdateState?.() ?? null
+}
+
 export async function setAutomaticUpdatesEnabled(
   enabled: boolean,
 ): Promise<DesktopIpcOutput<"desktop:set-automatic-updates-enabled"> | null> {
@@ -21,6 +25,10 @@ export async function setAutomaticUpdatesEnabled(
 
 export async function checkForAppUpdates(): Promise<DesktopIpcOutput<"desktop:check-for-app-updates"> | null> {
   return window.desktop?.checkForAppUpdates?.() ?? null
+}
+
+export async function installAppUpdate(): Promise<DesktopIpcOutput<"desktop:install-app-update"> | null> {
+  return window.desktop?.installAppUpdate?.() ?? null
 }
 
 export async function getStoragePaths(): Promise<DesktopIpcOutput<"desktop:get-storage-paths"> | null> {

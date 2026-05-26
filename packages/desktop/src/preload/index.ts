@@ -29,6 +29,7 @@ import type {
   ConnectorStatus,
   DesktopAppUpdateCheckResult,
   DesktopAppUpdateSettings,
+  DesktopAppUpdateState,
   DesktopIpcChannel,
   DesktopIpcInput,
   DesktopIpcOutput,
@@ -84,6 +85,7 @@ import type {
   WorkspaceDiffPatchReverseApplyResult,
 } from "../shared/desktop-ipc-contract"
 import {
+  DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL,
   DESKTOP_AGENT_SESSION_EVENT_CHANNEL,
   DESKTOP_PTY_EVENT_CHANNEL,
   DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL,
@@ -132,10 +134,14 @@ try {
       }>,
     getAppUpdateSettings: () =>
       invokeDesktop("desktop:get-app-update-settings") as Promise<DesktopAppUpdateSettings>,
+    getAppUpdateState: () =>
+      invokeDesktop("desktop:get-app-update-state") as Promise<DesktopAppUpdateState>,
     setAutomaticUpdatesEnabled: (input: { enabled: boolean }) =>
       invokeDesktop("desktop:set-automatic-updates-enabled", input) as Promise<DesktopAppUpdateSettings>,
     checkForAppUpdates: () =>
       invokeDesktop("desktop:check-for-app-updates") as Promise<DesktopAppUpdateCheckResult>,
+    installAppUpdate: () =>
+      invokeDesktop("desktop:install-app-update") as Promise<DesktopIpcOutput<"desktop:install-app-update">>,
     getStoragePaths: () =>
       invokeDesktop("desktop:get-storage-paths") as Promise<DesktopIpcOutput<"desktop:get-storage-paths">>,
     getWindowState: () =>
@@ -805,6 +811,17 @@ try {
         model?: string
         small_model?: string
       }>,
+    onAppUpdateStateChange: (listener: (state: DesktopAppUpdateState) => void) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, state: DesktopAppUpdateState) => {
+        listener(state)
+      }
+
+      ipcRenderer.on(DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL, wrappedListener)
+
+      return () => {
+        ipcRenderer.removeListener(DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL, wrappedListener)
+      }
+    },
     onWorkspaceFileChange: (listener: (event: WorkspaceFileChangeIPCEvent) => void) => {
       const wrappedListener = (_event: Electron.IpcRendererEvent, workspaceEvent: WorkspaceFileChangeIPCEvent) => {
         listener(workspaceEvent)

@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a reproducible Anybox problem.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please include enough detail for maintainers to reproduce the issue.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: List the exact steps, commands, or UI actions.
+      placeholder: |
+        1. Open ...
+        2. Run ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Anybox version, Node/pnpm/Bun versions, and relevant model/provider setup.
+      placeholder: |
+        - OS:
+        - Anybox:
+        - Node:
+        - pnpm:
+        - Bun:
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste relevant logs or attach screenshots. Remove tokens, API keys, local secrets, and private project data.
+    validations:
+      required: false

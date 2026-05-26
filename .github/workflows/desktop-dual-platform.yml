@@ -42,34 +42,34 @@ jobs:
         run: pnpm verify:versions
 
       - name: Typecheck shared contracts
-        run: pnpm --filter @fanfande/shared typecheck
+        run: pnpm --filter @anybox/shared typecheck
 
       - name: Typecheck platform adapter
-        run: pnpm --filter @fanfande/platform typecheck
+        run: pnpm --filter @anybox/platform typecheck
 
       - name: Typecheck desktop
-        run: pnpm --filter fanfande-desktop-agent typecheck
+        run: pnpm --filter anybox-desktop-agent typecheck
 
       - name: Typecheck agent
-        run: pnpm --filter fanfandeagent exec tsc --noEmit -p tsconfig.json
+        run: pnpm --filter anyboxagent exec tsc --noEmit -p tsconfig.json
 
       - name: Test desktop
-        run: pnpm --filter fanfande-desktop-agent test
+        run: pnpm --filter anybox-desktop-agent test
 
       - name: Test shared contracts
-        run: pnpm --filter @fanfande/shared test
+        run: pnpm --filter @anybox/shared test
 
       - name: Test platform adapter
-        run: pnpm --filter @fanfande/platform test
+        run: pnpm --filter @anybox/platform test
 
       - name: Test agent server
-        working-directory: packages/fanfandeagent
+        working-directory: packages/anyboxagent
         run: bun test Test/server.api.test.ts
 
       - name: Package macOS
         if: runner.os == 'macOS'
-        run: pnpm --filter fanfande-desktop-agent dist -- --mac --publish never
+        run: pnpm --filter anybox-desktop-agent dist -- --mac --publish never
 
       - name: Package Windows
         if: runner.os == 'Windows'
-        run: pnpm --filter fanfande-desktop-agent dist -- --win --publish never
+        run: pnpm --filter anybox-desktop-agent dist -- --win --publish never

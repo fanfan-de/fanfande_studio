@@ -186,14 +186,14 @@ export function App() {
               href={installerFallbackUrls.windows}
               onClick={(event) => void downloadLatestInstaller(event, "windows")}
             >
-              win下载
+              Windows 下载
             </a>
             <a
               className="button button-secondary"
               href={installerFallbackUrls.mac}
               onClick={(event) => void downloadLatestInstaller(event, "mac")}
             >
-              mac下载
+              macOS 下载
             </a>
             <p className="hero-platform-note">
               当前提供 Windows x64 与 macOS Apple Silicon；Linux 版本开发中

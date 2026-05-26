@@ -187,12 +187,32 @@ describe("SettingsPage built-in tools", () => {
   })
 
   it("renders about update controls and saves the automatic update setting", async () => {
-    const getAppUpdateSettings = vi.fn().mockResolvedValue({
+    const initialUpdateState = {
+      phase: "idle",
       version: "1.2.3",
       automaticUpdates: true,
       updateChecksSupported: true,
+      latestVersion: null,
+      downloadPercent: null,
+      error: null,
+      lastCheckedAt: null,
+      releaseNotes: null,
+    }
+    const unsupportedUpdateState = {
+      ...initialUpdateState,
+      phase: "unsupported",
+      automaticUpdates: false,
+      error: "Update checks run in packaged builds.",
+      lastCheckedAt: 1,
+    }
+    const getAppUpdateState = vi.fn().mockResolvedValueOnce(initialUpdateState).mockResolvedValue(unsupportedUpdateState)
+    const onAppUpdateStateChange = vi.fn(() => () => undefined)
+    const checkForAppUpdates = vi.fn().mockResolvedValue({
+      ok: true,
+      skipped: true,
+      reason: "not-packaged",
+      state: unsupportedUpdateState,
     })
-    const checkForAppUpdates = vi.fn().mockResolvedValue({ ok: true })
     const setAutomaticUpdatesEnabled = vi.fn().mockResolvedValue({
       version: "1.2.3",
       automaticUpdates: false,
@@ -200,7 +220,8 @@ describe("SettingsPage built-in tools", () => {
     })
 
     setDesktopMock({
-      getAppUpdateSettings,
+      getAppUpdateState,
+      onAppUpdateStateChange,
       checkForAppUpdates,
       setAutomaticUpdatesEnabled,
     })
@@ -210,9 +231,6 @@ describe("SettingsPage built-in tools", () => {
     expect(await screen.findByText("Version 1.2.3")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Check for updates" })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }))
-    await waitFor(() => expect(checkForAppUpdates).toHaveBeenCalledTimes(1))
-
     const automaticUpdatesSwitch = screen.getByRole("switch", { name: /Automatic updates/i })
     expect(automaticUpdatesSwitch).toHaveAttribute("aria-checked", "true")
 
@@ -221,6 +239,41 @@ describe("SettingsPage built-in tools", () => {
     await waitFor(() =>
       expect(screen.getByRole("switch", { name: /Automatic updates/i })).toHaveAttribute("aria-checked", "false"),
     )
+
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }))
+    await waitFor(() => expect(checkForAppUpdates).toHaveBeenCalledTimes(1))
+    expect(await screen.findByRole("dialog", { name: "Updates unavailable" })).toBeInTheDocument()
+  })
+
+  it("renders downloaded update state and routes restart installs through IPC", async () => {
+    const getAppUpdateState = vi.fn().mockResolvedValue({
+      phase: "downloaded",
+      version: "1.2.3",
+      automaticUpdates: true,
+      updateChecksSupported: true,
+      latestVersion: "1.2.4",
+      downloadPercent: 100,
+      error: null,
+      lastCheckedAt: 1,
+      releaseNotes: "Improved update experience.",
+    })
+    const installAppUpdate = vi.fn().mockResolvedValue({ ok: true })
+
+    setDesktopMock({
+      getAppUpdateState,
+      onAppUpdateStateChange: vi.fn(() => () => undefined),
+      installAppUpdate,
+    })
+
+    render(<SettingsPage {...createSettingsPageProps()} />)
+
+    fireEvent.click(await screen.findByRole("button", { name: /Ready to install/i }))
+    expect(await screen.findByRole("dialog", { name: "Update ready to install" })).toBeInTheDocument()
+    expect(screen.getByText("1.2.4")).toBeInTheDocument()
+    expect(screen.getByText("Improved update experience.")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Restart to install/i }))
+    await waitFor(() => expect(installAppUpdate).toHaveBeenCalledTimes(1))
   })
 
   it("renders a dismiss button for settings messages", () => {

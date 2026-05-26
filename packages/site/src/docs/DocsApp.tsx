@@ -138,14 +138,14 @@ function DocsHeader() {
           href={installerFallbackUrls.windows}
           onClick={(event) => void downloadLatestInstaller(event, "windows")}
         >
-          win下载
+          Windows 下载
         </a>
         <a
           className="button button-secondary docs-download-button"
           href={installerFallbackUrls.mac}
           onClick={(event) => void downloadLatestInstaller(event, "mac")}
         >
-          mac下载
+          macOS 下载
         </a>
       </nav>
     </header>

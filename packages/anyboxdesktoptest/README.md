@@ -1,4 +1,4 @@
-# anyboxdesktop
+# Anybox Desktop Test
 
 Electron frontend workspace for Anybox.
 

@@ -6,7 +6,7 @@ const latestReleaseApiUrl =
   "https://api.github.com/repos/fanfan-de/fanfande_studio/releases/latest"
 
 export const installerFallbackUrls: Record<InstallerPlatform, string> = {
-  windows: `${repositoryUrl}/releases/download/v0.1.7/Anybox-0.1.7-x64.exe`,
+  windows: `${repositoryUrl}/releases/latest`,
   mac: `${repositoryUrl}/releases/latest`,
 }
 
@@ -25,13 +25,11 @@ const installerMatchers: Record<
 > = {
   windows: (normalizedName) =>
     normalizedName.endsWith(".exe") &&
-    (normalizedName.includes("anybox") ||
-      normalizedName.includes("fanfande-studio")) &&
+    normalizedName.includes("anybox") &&
     normalizedName.includes("x64"),
   mac: (normalizedName) =>
     normalizedName.endsWith(".dmg") &&
-    (normalizedName.includes("anybox") ||
-      normalizedName.includes("fanfande-studio")) &&
+    normalizedName.includes("anybox") &&
     normalizedName.includes("arm64"),
 }
 

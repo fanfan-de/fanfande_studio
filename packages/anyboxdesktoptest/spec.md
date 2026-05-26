@@ -2,7 +2,7 @@
 
 ## 定位
 
-`packages/anyboxdesktop` 是 `anybox_studio` 的 Electron 前端工程目录。  
+`packages/anyboxdesktoptest` 是 Anybox 的 Electron 前端实验工程目录。  
 该目录负责桌面端 UI、交互流程、前端状态与网关适配，不承载后端业务实现。
 
 ## 核心原则
@@ -53,5 +53,5 @@ bun run test:e2e
 
 ## 当前状态
 
-- 当前文档用于确认 `anyboxdesktop` 为 Electron 前端工作区。
+- 当前文档用于确认 `anybox-desktop-test` 为 Electron 前端实验工作区。
 - 下一步按该 spec 初始化目录结构与脚手架。

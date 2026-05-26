@@ -1,7 +1,8 @@
 {
-  "name": "anybox_studio",
-  "version": "0.1.5",
-  "description": "",
+  "name": "anybox",
+  "version": "0.1.8",
+  "private": true,
+  "description": "Anybox desktop AI agent workspace",
   "main": "index.js",
   "scripts": {
     "dev": "corepack pnpm --filter anybox-desktop-agent dev",

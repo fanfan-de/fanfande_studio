@@ -17,6 +17,7 @@ import type {
   McpServerInput,
 } from "../shared/desktop-ipc-contract"
 import {
+  DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL,
   DESKTOP_AGENT_SESSION_EVENT_CHANNEL,
 } from "../shared/desktop-ipc-contract"
 import { getAgentConfig, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
@@ -44,6 +45,9 @@ import { sendWebContentsSafely } from "./safe-web-contents-send"
 import {
   checkForAppUpdates,
   getAppUpdateSettingsSnapshot,
+  getAppUpdateStateSnapshot,
+  installDownloadedAppUpdate,
+  onAppUpdateStateChanged,
   setAutomaticAppUpdatesEnabled,
 } from "./updater"
 import type {
@@ -126,6 +130,7 @@ import { WorkspaceWatchManager } from "./workspace-watch"
 import type { WorkbenchWindowManager } from "./workbench-window-manager"
 
 const AGENT_SESSION_EVENT_CHANNEL = DESKTOP_AGENT_SESSION_EVENT_CHANNEL
+let appUpdateStateBridgeRegistered = false
 
 const GIT_DIFF_SCOPES = new Set<AgentSessionDiffScope>([
   "git:unstaged",
@@ -1048,6 +1053,15 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   const externalEditorMenuIconLoadCache = new Map<string, Promise<NativeImage | undefined>>()
   let cachedAvailableExternalEditors: ReturnType<typeof listAvailableExternalEditors> | null = null
 
+  if (!appUpdateStateBridgeRegistered) {
+    appUpdateStateBridgeRegistered = true
+    onAppUpdateStateChanged((state) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        sendDesktopIpcEvent(window.webContents, DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL, state)
+      }
+    })
+  }
+
   function getCachedAvailableExternalEditors() {
     if (!cachedAvailableExternalEditors) {
       cachedAvailableExternalEditors = listAvailableExternalEditors()
@@ -1285,11 +1299,15 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
 
   handleDesktopIpc("desktop:get-app-update-settings", async () => getAppUpdateSettingsSnapshot())
 
+  handleDesktopIpc("desktop:get-app-update-state", async () => getAppUpdateStateSnapshot())
+
   handleDesktopIpc("desktop:set-automatic-updates-enabled", async (_event, input: { enabled: boolean }) =>
     setAutomaticAppUpdatesEnabled(input.enabled),
   )
 
   handleDesktopIpc("desktop:check-for-app-updates", async () => checkForAppUpdates({ manual: true }))
+
+  handleDesktopIpc("desktop:install-app-update", async () => installDownloadedAppUpdate())
 
   handleDesktopIpc("desktop:get-storage-paths", async () => {
     const appData = app.getPath("userData")

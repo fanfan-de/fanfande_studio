@@ -9,13 +9,14 @@ export const navigationItems = [
     external: true,
   },
   {
-    href: "/resume.html",
-    label: "关于我",
+    href: "https://github.com/fanfan-de/fanfande_studio/releases/latest",
+    label: "Releases",
+    external: true,
   },
 ]
 
 export const proofPoints = [
-  "高可配置，高自由度",
-  "多供应商支持",
-  "Skills 创建与管理",
+  "本地项目工作区",
+  "多模型供应商",
+  "可审计工具调用",
 ]

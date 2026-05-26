@@ -5,6 +5,11 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { readTrimmedDesktopEnv } from "./env-compat"
 import { safeError, safeLog, safeWarn } from "./safe-console"
+import type {
+  DesktopAppUpdatePhase,
+  DesktopAppUpdateState,
+  DesktopAppUpdateInstallResult,
+} from "../shared/desktop-ipc-contract"
 
 type CheckOptions = {
   manual?: boolean
@@ -25,6 +30,21 @@ export interface AppUpdateCheckResult {
   skipped?: boolean
   reason?: string
   error?: string
+  state?: DesktopAppUpdateState
+}
+
+type AppUpdateRuntimeState = {
+  phase: DesktopAppUpdatePhase
+  latestVersion: string | null
+  downloadPercent: number | null
+  error: string | null
+  lastCheckedAt: number | null
+  releaseNotes: string | null
+}
+
+type AppUpdateInfo = {
+  version?: string
+  releaseNotes?: unknown
 }
 
 const APP_UPDATE_SETTINGS_FILE_NAME = "app-update-settings.json"
@@ -53,6 +73,19 @@ let initialized = false
 let checking = false
 let manualCheckActive = false
 let lastLoggedProgressBucket = -1
+let appUpdateRuntimeState: AppUpdateRuntimeState = createInitialAppUpdateRuntimeState()
+const appUpdateStateListeners = new Set<(state: DesktopAppUpdateState) => void>()
+
+function createInitialAppUpdateRuntimeState(): AppUpdateRuntimeState {
+  return {
+    phase: "idle",
+    latestVersion: null,
+    downloadPercent: null,
+    error: null,
+    lastCheckedAt: null,
+    releaseNotes: null,
+  }
+}
 
 function isUpdateCheckEnabled() {
   return app.isPackaged || isForcedDevUpdateCheck()
@@ -103,11 +136,43 @@ export async function getAppUpdateSettingsSnapshot(): Promise<AppUpdateSettingsS
   }
 }
 
+export async function getAppUpdateStateSnapshot(): Promise<DesktopAppUpdateState> {
+  const settings = await getAppUpdateSettingsSnapshot()
+  return {
+    ...settings,
+    ...appUpdateRuntimeState,
+  }
+}
+
+async function emitAppUpdateStateChanged() {
+  const snapshot = await getAppUpdateStateSnapshot()
+  for (const listener of appUpdateStateListeners) {
+    listener(snapshot)
+  }
+}
+
+function setAppUpdateRuntimeState(update: Partial<AppUpdateRuntimeState>) {
+  appUpdateRuntimeState = {
+    ...appUpdateRuntimeState,
+    ...update,
+  }
+  void emitAppUpdateStateChanged()
+}
+
+export function onAppUpdateStateChanged(listener: (state: DesktopAppUpdateState) => void) {
+  appUpdateStateListeners.add(listener)
+  return () => {
+    appUpdateStateListeners.delete(listener)
+  }
+}
+
 export async function setAutomaticAppUpdatesEnabled(enabled: boolean): Promise<AppUpdateSettingsSnapshot> {
   await writeAppUpdateSettingsDocument({
     automaticUpdates: enabled,
   })
-  return getAppUpdateSettingsSnapshot()
+  const snapshot = await getAppUpdateSettingsSnapshot()
+  await emitAppUpdateStateChanged()
+  return snapshot
 }
 
 function getDialogWindow() {
@@ -123,6 +188,38 @@ function describeVersion(info: { version?: string } | null | undefined) {
   return info?.version ? `v${info.version}` : "the latest version"
 }
 
+function normalizeReleaseNotes(releaseNotes: unknown) {
+  if (typeof releaseNotes === "string") {
+    const notes = releaseNotes.trim()
+    return notes || null
+  }
+
+  if (!Array.isArray(releaseNotes)) return null
+
+  const notes = releaseNotes
+    .map((item) => {
+      if (typeof item === "string") return item
+      if (typeof item !== "object" || item === null) return null
+      const partial = item as { note?: unknown; version?: unknown }
+      const note = typeof partial.note === "string" ? partial.note.trim() : ""
+      const version = typeof partial.version === "string" ? partial.version.trim() : ""
+      if (version && note) return `${version}\n${note}`
+      return note || version || null
+    })
+    .filter((item): item is string => Boolean(item))
+
+  return notes.length > 0 ? notes.join("\n\n") : null
+}
+
+function hasRendererWindow() {
+  return BrowserWindow.getAllWindows().some((window) => !window.isDestroyed())
+}
+
+function showFallbackMessageBox(options: Electron.MessageBoxOptions) {
+  if (hasRendererWindow()) return null
+  return showMessageBox(options)
+}
+
 function consumeManualCheck() {
   const wasManual = manualCheckActive
   manualCheckActive = false
@@ -132,10 +229,16 @@ function consumeManualCheck() {
 function handleUpdaterError(error: Error) {
   checking = false
   lastLoggedProgressBucket = -1
+  setAppUpdateRuntimeState({
+    phase: "error",
+    downloadPercent: null,
+    error: error.message,
+    lastCheckedAt: Date.now(),
+  })
   safeError("[desktop][updater] update check failed", error)
 
   if (consumeManualCheck()) {
-    void showMessageBox({
+    showFallbackMessageBox({
       type: "error",
       title: "Update Check Failed",
       message: "Unable to check for updates.",
@@ -148,20 +251,41 @@ function registerUpdaterEvents() {
   autoUpdater.on("checking-for-update", () => {
     checking = true
     lastLoggedProgressBucket = -1
+    setAppUpdateRuntimeState({
+      phase: "checking",
+      downloadPercent: null,
+      error: null,
+      lastCheckedAt: Date.now(),
+    })
     safeLog("[desktop][updater] checking for updates")
   })
 
-  autoUpdater.on("update-available", (info) => {
+  autoUpdater.on("update-available", (info: AppUpdateInfo) => {
+    setAppUpdateRuntimeState({
+      phase: "available",
+      latestVersion: info.version ?? null,
+      downloadPercent: null,
+      error: null,
+      releaseNotes: normalizeReleaseNotes(info.releaseNotes),
+    })
     safeLog("[desktop][updater] update available", describeVersion(info))
   })
 
-  autoUpdater.on("update-not-available", (info) => {
+  autoUpdater.on("update-not-available", (info: AppUpdateInfo) => {
     checking = false
     lastLoggedProgressBucket = -1
+    setAppUpdateRuntimeState({
+      phase: "up-to-date",
+      latestVersion: info.version ?? app.getVersion(),
+      downloadPercent: null,
+      error: null,
+      lastCheckedAt: Date.now(),
+      releaseNotes: normalizeReleaseNotes(info.releaseNotes),
+    })
     safeLog("[desktop][updater] no update available", describeVersion(info))
 
     if (consumeManualCheck()) {
-      void showMessageBox({
+      showFallbackMessageBox({
         type: "info",
         title: "No Updates Available",
         message: "Anybox is up to date.",
@@ -175,16 +299,28 @@ function registerUpdaterEvents() {
     if (bucket === lastLoggedProgressBucket) return
 
     lastLoggedProgressBucket = bucket
+    setAppUpdateRuntimeState({
+      phase: "downloading",
+      downloadPercent: Math.max(0, Math.min(100, percent)),
+      error: null,
+    })
     safeLog("[desktop][updater] download progress", `${Math.round(percent)}%`)
   })
 
-  autoUpdater.on("update-downloaded", (info) => {
+  autoUpdater.on("update-downloaded", (info: AppUpdateInfo) => {
     checking = false
     lastLoggedProgressBucket = -1
     consumeManualCheck()
+    setAppUpdateRuntimeState({
+      phase: "downloaded",
+      latestVersion: info.version ?? appUpdateRuntimeState.latestVersion,
+      downloadPercent: 100,
+      error: null,
+      releaseNotes: normalizeReleaseNotes(info.releaseNotes) ?? appUpdateRuntimeState.releaseNotes,
+    })
     safeLog("[desktop][updater] update downloaded", describeVersion(info))
 
-    void showMessageBox({
+    showFallbackMessageBox({
       type: "info",
       title: "Update Ready",
       message: `Anybox ${describeVersion(info)} is ready to install.`,
@@ -192,7 +328,7 @@ function registerUpdaterEvents() {
       buttons: ["Restart Now", "Later"],
       defaultId: 0,
       cancelId: 1,
-    }).then((result) => {
+    })?.then((result) => {
       if (result.response === 0) {
         autoUpdater.quitAndInstall(false, true)
       }
@@ -223,14 +359,21 @@ export async function checkForAppUpdates(options: CheckOptions = {}) {
         ok: true,
         skipped: true,
         reason: "automatic-updates-disabled",
+        state: await getAppUpdateStateSnapshot(),
       } satisfies AppUpdateCheckResult
     }
   }
 
   if (!isUpdateCheckEnabled()) {
     safeWarn("[desktop][updater] skipped update check because app is not packaged")
+    setAppUpdateRuntimeState({
+      phase: "unsupported",
+      downloadPercent: null,
+      error: "Update checks run in packaged builds.",
+      lastCheckedAt: Date.now(),
+    })
     if (options.manual) {
-      await showMessageBox({
+      showFallbackMessageBox({
         type: "info",
         title: "Updates Unavailable",
         message: "Update checks run in packaged builds.",
@@ -241,12 +384,13 @@ export async function checkForAppUpdates(options: CheckOptions = {}) {
       ok: true,
       skipped: true,
       reason: "not-packaged",
+      state: await getAppUpdateStateSnapshot(),
     } satisfies AppUpdateCheckResult
   }
 
   if (checking) {
     if (options.manual) {
-      await showMessageBox({
+      showFallbackMessageBox({
         type: "info",
         title: "Update Check In Progress",
         message: "Anybox is already checking for updates.",
@@ -256,15 +400,24 @@ export async function checkForAppUpdates(options: CheckOptions = {}) {
       ok: true,
       skipped: true,
       reason: "already-checking",
+      state: await getAppUpdateStateSnapshot(),
     } satisfies AppUpdateCheckResult
   }
 
   manualCheckActive = options.manual === true
+  checking = true
+  setAppUpdateRuntimeState({
+    phase: "checking",
+    downloadPercent: null,
+    error: null,
+    lastCheckedAt: Date.now(),
+  })
 
   try {
     await autoUpdater.checkForUpdates()
     return {
       ok: true,
+      state: await getAppUpdateStateSnapshot(),
     } satisfies AppUpdateCheckResult
   } catch (error) {
     const updateError = error instanceof Error ? error : new Error(String(error))
@@ -272,6 +425,30 @@ export async function checkForAppUpdates(options: CheckOptions = {}) {
     return {
       ok: false,
       error: updateError.message,
+      state: await getAppUpdateStateSnapshot(),
     } satisfies AppUpdateCheckResult
   }
+}
+
+export function installDownloadedAppUpdate(): DesktopAppUpdateInstallResult {
+  if (appUpdateRuntimeState.phase !== "downloaded") {
+    return {
+      ok: false,
+      reason: "update-not-downloaded",
+    }
+  }
+
+  autoUpdater.quitAndInstall(false, true)
+  return { ok: true }
+}
+
+export const internal = {
+  resetAppUpdateRuntimeStateForTests() {
+    initialized = false
+    checking = false
+    manualCheckActive = false
+    lastLoggedProgressBucket = -1
+    appUpdateRuntimeState = createInitialAppUpdateRuntimeState()
+    appUpdateStateListeners.clear()
+  },
 }

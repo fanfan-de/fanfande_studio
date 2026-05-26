@@ -5,13 +5,15 @@ import {
   type AppearanceTokenMap,
   type AppearanceTokenName,
 } from "../../../../shared/appearance"
-import type { DesktopAppUpdateSettings, DesktopStoragePaths } from "../../../../shared/desktop-ipc-contract"
+import type { DesktopAppUpdateState, DesktopStoragePaths } from "../../../../shared/desktop-ipc-contract"
 import {
   ArchiveIcon,
   CloseIcon,
+  CheckIcon,
   ConnectedStatusIcon,
   DisconnectedStatusIcon,
   ChevronDownIcon,
+  DownloadIcon,
   EyeIcon,
   EyeOffIcon,
   FileTextIcon,
@@ -61,7 +63,8 @@ import { clamp, formatTime } from "../utils"
 import {
   checkForAppUpdates,
   getStoragePaths,
-  getAppUpdateSettings,
+  getAppUpdateState,
+  installAppUpdate,
   openExternalUrl,
   openMonitorWindow,
   setAutomaticUpdatesEnabled,
@@ -773,6 +776,130 @@ type AppUpdateStatus = {
   text: string
 }
 
+interface UpdateDialogProps {
+  state: DesktopAppUpdateState | null
+  status: AppUpdateStatus | null
+  isChecking: boolean
+  isInstalling: boolean
+  onCheck: () => void
+  onClose: () => void
+  onInstall: () => void
+}
+
+function UpdateDialog({
+  state,
+  status,
+  isChecking,
+  isInstalling,
+  onCheck,
+  onClose,
+  onInstall,
+}: UpdateDialogProps) {
+  const phase = state?.phase ?? "idle"
+  const progressPercent = getUpdateProgressPercent(state)
+  const showProgress = phase === "downloading" || phase === "downloaded"
+  const canCheck = phase !== "checking" && phase !== "downloading" && !isChecking
+  const canInstall = phase === "downloaded"
+
+  function handleOverlayClick(event: MouseEvent<HTMLElement>) {
+    if (event.target === event.currentTarget) {
+      onClose()
+    }
+  }
+
+  return (
+    <section className="update-center-overlay" role="presentation" onClick={handleOverlayClick}>
+      <article className="update-center-dialog" role="dialog" aria-modal="true" aria-labelledby="update-center-title">
+        <header className="update-center-header">
+          <div className="update-center-brand">
+            <span className="update-center-app-icon" aria-hidden="true">
+              A
+            </span>
+            <div>
+              <span className="label">Anybox Desktop</span>
+              <h2 id="update-center-title">{getUpdateDialogTitle(state)}</h2>
+            </div>
+          </div>
+          <button className="settings-page-close-button" type="button" aria-label="Close update center" onClick={onClose}>
+            <CloseIcon size={18} />
+          </button>
+        </header>
+
+        <div className="update-center-status-card">
+          <div className={`update-center-status-badge is-${phase}`}>
+            <span className="update-center-status-dot" aria-hidden="true" />
+            {getAppUpdatePhaseLabel(state)}
+          </div>
+          <p>{getAppUpdateSummary(state)}</p>
+
+          {showProgress ? (
+            <div className="update-center-progress" aria-label={`Download progress ${Math.round(progressPercent)}%`}>
+              <span className="update-center-progress-track">
+                <span className="update-center-progress-fill" style={{ width: `${progressPercent}%` }} />
+              </span>
+              <strong>{Math.round(progressPercent)}%</strong>
+            </div>
+          ) : null}
+        </div>
+
+        <dl className="update-center-meta">
+          <div>
+            <dt>Current version</dt>
+            <dd>{state?.version ?? "Unknown"}</dd>
+          </div>
+          <div>
+            <dt>Latest version</dt>
+            <dd>{state?.latestVersion ?? (phase === "up-to-date" ? state?.version ?? "Unknown" : "Not checked")}</dd>
+          </div>
+          <div>
+            <dt>Last checked</dt>
+            <dd>{formatUpdateCheckTime(state?.lastCheckedAt)}</dd>
+          </div>
+          <div>
+            <dt>Automatic updates</dt>
+            <dd>{state?.automaticUpdates === false ? "Off" : "On"}</dd>
+          </div>
+        </dl>
+
+        {state?.releaseNotes ? (
+          <section className="update-center-release-notes" aria-label="Release notes">
+            <div>
+              <FileTextIcon size={16} />
+              <h3>Release notes</h3>
+            </div>
+            <p>{state.releaseNotes}</p>
+          </section>
+        ) : null}
+
+        {phase === "unsupported" ? (
+          <p className="update-center-helper">
+            Build and install the app, or use the configured development update feed, to test updates locally.
+          </p>
+        ) : null}
+
+        {status ? <p className={`update-center-message is-${status.tone}`}>{status.text}</p> : null}
+
+        <footer className="update-center-actions">
+          <button className="secondary-button" type="button" onClick={onClose}>
+            Later
+          </button>
+          {canInstall ? (
+            <button className="primary-button" type="button" disabled={isInstalling} onClick={onInstall}>
+              <CheckIcon size={16} />
+              {isInstalling ? "Restarting..." : "Restart to install"}
+            </button>
+          ) : (
+            <button className="primary-button" type="button" disabled={!canCheck} onClick={onCheck}>
+              <DownloadIcon size={16} />
+              {isChecking || phase === "checking" ? "Checking..." : "Check for updates"}
+            </button>
+          )}
+        </footer>
+      </article>
+    </section>
+  )
+}
+
 const storagePathItems: Array<{
   key: keyof DesktopStoragePaths
   label: string
@@ -814,6 +941,95 @@ const storagePathItems: Array<{
     description: "Temporary plugin zip extraction directory.",
   },
 ]
+
+function getAppUpdatePhaseLabel(state: DesktopAppUpdateState | null) {
+  switch (state?.phase) {
+    case "checking":
+      return "Checking"
+    case "available":
+      return "Update available"
+    case "downloading":
+      return "Downloading"
+    case "downloaded":
+      return "Ready to install"
+    case "up-to-date":
+      return "Up to date"
+    case "error":
+      return "Needs attention"
+    case "unsupported":
+      return "Unavailable"
+    default:
+      return "Ready"
+  }
+}
+
+function getAppUpdateSummary(state: DesktopAppUpdateState | null) {
+  if (!state) return "Loading update status..."
+
+  switch (state.phase) {
+    case "checking":
+      return "Checking for the latest Anybox desktop release."
+    case "available":
+      return state.latestVersion
+        ? `Anybox ${state.latestVersion} is available and will download automatically.`
+        : "A new Anybox desktop update is available."
+    case "downloading": {
+      const percent = typeof state.downloadPercent === "number" ? ` ${Math.round(state.downloadPercent)}%` : ""
+      return `Downloading the update.${percent}`
+    }
+    case "downloaded":
+      return state.latestVersion
+        ? `Anybox ${state.latestVersion} is ready. Restart to finish installing.`
+        : "An update is ready. Restart to finish installing."
+    case "up-to-date":
+      return "Anybox is running the latest available version."
+    case "error":
+      return state.error ? `Update check failed. ${state.error}` : "Update check failed."
+    case "unsupported":
+      return "Update checks run in packaged builds."
+    default:
+      return "Open Update Center to check for a new version."
+  }
+}
+
+function shouldOpenUpdateCenterOnly(state: DesktopAppUpdateState | null) {
+  return state?.phase === "checking" || state?.phase === "available" || state?.phase === "downloading" || state?.phase === "downloaded"
+}
+
+function getUpdateDialogTitle(state: DesktopAppUpdateState | null) {
+  switch (state?.phase) {
+    case "checking":
+      return "Checking for updates"
+    case "available":
+      return "A new version is available"
+    case "downloading":
+      return "Downloading update"
+    case "downloaded":
+      return "Update ready to install"
+    case "up-to-date":
+      return "Anybox is up to date"
+    case "error":
+      return "Unable to check for updates"
+    case "unsupported":
+      return "Updates unavailable"
+    default:
+      return "Update Center"
+  }
+}
+
+function formatUpdateCheckTime(value: number | null | undefined) {
+  if (!value) return "Not checked yet"
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value))
+}
+
+function getUpdateProgressPercent(state: DesktopAppUpdateState | null) {
+  if (state?.phase === "downloaded") return 100
+  if (typeof state?.downloadPercent !== "number") return 0
+  return Math.max(0, Math.min(100, state.downloadPercent))
+}
 
 const SETTINGS_PAGE_DRAG_MARGIN = 16
 
@@ -1033,11 +1249,13 @@ export function SettingsPage({
   {
     const { error: localeError, locale, setLocale, t } = useI18n()
     const [activeSection, setActiveSection] = useState<SettingsSectionKey>("general")
-    const [appUpdateSettings, setAppUpdateSettings] = useState<DesktopAppUpdateSettings | null>(null)
+    const [appUpdateState, setAppUpdateState] = useState<DesktopAppUpdateState | null>(null)
     const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus | null>(null)
     const [storagePaths, setStoragePaths] = useState<DesktopStoragePaths | null>(null)
     const [storagePathStatus, setStoragePathStatus] = useState<AppUpdateStatus | null>(null)
     const [isCheckingAppUpdate, setIsCheckingAppUpdate] = useState(false)
+    const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false)
+    const [isInstallingAppUpdate, setIsInstallingAppUpdate] = useState(false)
     const [isSavingAutomaticUpdates, setIsSavingAutomaticUpdates] = useState(false)
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
     const [providerSearch, setProviderSearch] = useState("")
@@ -1150,13 +1368,19 @@ export function SettingsPage({
     const mcpServerCanSave = !mcpServerValidationError
     const showLoadedState = !isLoading && !loadError
     const showProviderSections = activeSection === "services" || activeSection === "defaults" || activeSection === "mcp"
-    const appVersionLabel = appUpdateSettings?.version ? `Version ${appUpdateSettings.version}` : "Version ..."
-    const automaticUpdatesEnabled = appUpdateSettings?.automaticUpdates ?? true
+    const appVersionLabel = appUpdateState?.version ? `Version ${appUpdateState.version}` : "Version ..."
+    const automaticUpdatesEnabled = appUpdateState?.automaticUpdates ?? true
+    const aboutUpdateActionLabel = shouldOpenUpdateCenterOnly(appUpdateState)
+      ? "Open update center"
+      : isCheckingAppUpdate
+        ? "Checking..."
+        : "Check for updates"
     useEffect(() => {
       if (!isOpen) {
         setActiveSection("general")
         setSelectedProviderID(null)
         setProviderSearch("")
+        setIsUpdateDialogOpen(false)
         setAppUpdateStatus(null)
       }
     }, [isOpen])
@@ -1171,10 +1395,10 @@ export function SettingsPage({
       if (!isOpen) return
 
       let disposed = false
-      void getAppUpdateSettings()
-        .then((settings) => {
-          if (disposed || !settings) return
-          setAppUpdateSettings(settings)
+      void getAppUpdateState()
+        .then((state) => {
+          if (disposed || !state) return
+          setAppUpdateState(state)
         })
         .catch((error: unknown) => {
           if (disposed) return
@@ -1185,8 +1409,15 @@ export function SettingsPage({
           })
         })
 
+      const unsubscribe = window.desktop?.onAppUpdateStateChange?.((state) => {
+        if (!disposed) {
+          setAppUpdateState(state)
+        }
+      })
+
       return () => {
         disposed = true
+        unsubscribe?.()
       }
     }, [isOpen])
 
@@ -1247,12 +1478,17 @@ export function SettingsPage({
         if (event.key !== "Escape") return
 
         event.preventDefault()
+        if (isUpdateDialogOpen) {
+          setIsUpdateDialogOpen(false)
+          return
+        }
+
         onClose()
       }
 
       window.addEventListener("keydown", handleWindowKeyDown)
       return () => window.removeEventListener("keydown", handleWindowKeyDown)
-    }, [isOpen, onClose])
+    }, [isOpen, isUpdateDialogOpen, onClose])
 
     useEffect(() => {
       if (isOpen) return
@@ -1372,12 +1608,12 @@ export function SettingsPage({
       onClose()
     }
 
-    async function refreshAppUpdateSettings() {
-      const settings = await getAppUpdateSettings()
-      if (settings) {
-        setAppUpdateSettings(settings)
+    async function refreshAppUpdateState() {
+      const state = await getAppUpdateState()
+      if (state) {
+        setAppUpdateState(state)
       }
-      return settings
+      return state
     }
 
     function getManualUpdateCheckStatusText(result: Awaited<ReturnType<typeof checkForAppUpdates>> | null) {
@@ -1391,19 +1627,22 @@ export function SettingsPage({
     async function handleCheckForUpdates() {
       if (isCheckingAppUpdate) return
 
+      setIsUpdateDialogOpen(true)
       setIsCheckingAppUpdate(true)
-      setAppUpdateStatus({
-        tone: "muted",
-        text: "Checking for updates...",
-      })
+      setAppUpdateStatus(null)
 
       try {
         const result = await checkForAppUpdates()
-        setAppUpdateStatus({
-          tone: result?.ok === false ? "error" : "success",
-          text: getManualUpdateCheckStatusText(result),
-        })
-        await refreshAppUpdateSettings()
+        if (result?.state) {
+          setAppUpdateState(result.state)
+        }
+        if (!result || result.ok === false || result.reason === "already-checking") {
+          setAppUpdateStatus({
+            tone: result?.ok === false ? "error" : "muted",
+            text: getManualUpdateCheckStatusText(result),
+          })
+        }
+        await refreshAppUpdateState()
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         setAppUpdateStatus({
@@ -1415,20 +1654,74 @@ export function SettingsPage({
       }
     }
 
-    async function handleAutomaticUpdatesToggle() {
-      if (!appUpdateSettings || isSavingAutomaticUpdates) return
+    async function handleInstallAppUpdate() {
+      if (isInstallingAppUpdate) return
 
-      const enabled = !appUpdateSettings.automaticUpdates
+      setIsInstallingAppUpdate(true)
+      setAppUpdateStatus(null)
+
+      try {
+        const result = await installAppUpdate()
+        if (!result?.ok) {
+          setAppUpdateStatus({
+            tone: "error",
+            text: result?.reason === "update-not-downloaded"
+              ? "The update has not finished downloading yet."
+              : "Unable to install the update.",
+          })
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setAppUpdateStatus({
+          tone: "error",
+          text: `Unable to install the update. ${message}`,
+        })
+      } finally {
+        setIsInstallingAppUpdate(false)
+      }
+    }
+
+    function handleAboutUpdateAction() {
+      if (shouldOpenUpdateCenterOnly(appUpdateState)) {
+        setIsUpdateDialogOpen(true)
+        return
+      }
+
+      void handleCheckForUpdates()
+    }
+
+    async function handleAutomaticUpdatesToggle() {
+      if (!appUpdateState || isSavingAutomaticUpdates) return
+
+      const enabled = !appUpdateState.automaticUpdates
       setIsSavingAutomaticUpdates(true)
       setAppUpdateStatus(null)
 
       try {
         const settings = await setAutomaticUpdatesEnabled(enabled)
-        if (settings) {
-          setAppUpdateSettings(settings)
-        } else {
-          setAppUpdateSettings({
-            ...appUpdateSettings,
+        setAppUpdateState((current) =>
+          current
+            ? {
+                ...current,
+                automaticUpdates: settings?.automaticUpdates ?? enabled,
+                updateChecksSupported: settings?.updateChecksSupported ?? current.updateChecksSupported,
+                version: settings?.version ?? current.version,
+              }
+            : {
+                phase: "idle",
+                version: settings?.version ?? "Unknown",
+                automaticUpdates: settings?.automaticUpdates ?? enabled,
+                updateChecksSupported: settings?.updateChecksSupported ?? false,
+                latestVersion: null,
+                downloadPercent: null,
+                error: null,
+                lastCheckedAt: null,
+                releaseNotes: null,
+              },
+        )
+        if (!settings) {
+          setAppUpdateState((current) => current && {
+            ...current,
             automaticUpdates: enabled,
           })
         }
@@ -1718,20 +2011,33 @@ export function SettingsPage({
                 <div className="settings-general-layout">
                   <section className="settings-panel settings-about-panel" aria-label="About Anybox">
                     <div className="settings-about-row settings-about-version-row">
-                      <div className="settings-about-copy">
-                        <span className="label">About</span>
-                        <h3>{appVersionLabel}</h3>
-                        <p>Anybox desktop application.</p>
+                      <div className="settings-about-product">
+                        <span className="settings-about-app-icon" aria-hidden="true">
+                          A
+                        </span>
+                        <div className="settings-about-copy">
+                          <span className="label">About</span>
+                          <h3>Anybox Desktop</h3>
+                          <p>{appVersionLabel}</p>
+                        </div>
                       </div>
                       <button
                         className="primary-button settings-about-check-button"
                         type="button"
-                        disabled={isCheckingAppUpdate}
-                        onClick={() => void handleCheckForUpdates()}
+                        disabled={!appUpdateState && isCheckingAppUpdate}
+                        onClick={handleAboutUpdateAction}
                       >
-                        {isCheckingAppUpdate ? "Checking..." : "Check for updates"}
+                        {aboutUpdateActionLabel}
                       </button>
                     </div>
+
+                    <button className="settings-about-update-summary" type="button" onClick={() => setIsUpdateDialogOpen(true)}>
+                      <span className={`update-center-status-badge is-${appUpdateState?.phase ?? "idle"}`}>
+                        <span className="update-center-status-dot" aria-hidden="true" />
+                        {getAppUpdatePhaseLabel(appUpdateState)}
+                      </span>
+                      <span>{getAppUpdateSummary(appUpdateState)}</span>
+                    </button>
 
                     <div className="settings-about-divider" />
 
@@ -1744,7 +2050,7 @@ export function SettingsPage({
                       type="button"
                       role="switch"
                       aria-checked={automaticUpdatesEnabled}
-                      disabled={!appUpdateSettings || isSavingAutomaticUpdates}
+                      disabled={!appUpdateState || isSavingAutomaticUpdates}
                       onClick={() => void handleAutomaticUpdatesToggle()}
                     >
                       <span className="settings-about-copy">
@@ -3242,6 +3548,17 @@ export function SettingsPage({
             </div>
           </div>
         </div>
+        {isUpdateDialogOpen ? (
+          <UpdateDialog
+            state={appUpdateState}
+            status={appUpdateStatus}
+            isChecking={isCheckingAppUpdate}
+            isInstalling={isInstallingAppUpdate}
+            onCheck={() => void handleCheckForUpdates()}
+            onClose={() => setIsUpdateDialogOpen(false)}
+            onInstall={() => void handleInstallAppUpdate()}
+          />
+        ) : null}
       </section>
     )
   }

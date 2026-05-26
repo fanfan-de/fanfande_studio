@@ -84,6 +84,7 @@ export const DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL = "desktop:workspace-fi
 export const DESKTOP_PTY_EVENT_CHANNEL = "desktop:pty-event"
 export const DESKTOP_WINDOW_STATE_EVENT_CHANNEL = "desktop:window-state-changed"
 export const DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL = "desktop:workbench-state-changed"
+export const DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL = "desktop:app-update-state-changed"
 
 export interface DesktopPluginCatalogInput {
   freshness?: "cached" | "fresh"
@@ -283,11 +284,36 @@ export interface DesktopAppUpdateSettings {
   updateChecksSupported: boolean
 }
 
+export type DesktopAppUpdatePhase =
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "up-to-date"
+  | "error"
+  | "unsupported"
+
+export interface DesktopAppUpdateState extends DesktopAppUpdateSettings {
+  phase: DesktopAppUpdatePhase
+  latestVersion: string | null
+  downloadPercent: number | null
+  error: string | null
+  lastCheckedAt: number | null
+  releaseNotes: string | null
+}
+
 export interface DesktopAppUpdateCheckResult {
   ok: boolean
   skipped?: boolean
   reason?: string
   error?: string
+  state?: DesktopAppUpdateState
+}
+
+export interface DesktopAppUpdateInstallResult {
+  ok: boolean
+  reason?: string
 }
 
 export interface DesktopStoragePaths {
@@ -723,6 +749,10 @@ export interface DesktopIpcContract {
     input: void
     output: DesktopAppUpdateSettings
   }
+  "desktop:get-app-update-state": {
+    input: void
+    output: DesktopAppUpdateState
+  }
   "desktop:set-automatic-updates-enabled": {
     input: { enabled: boolean }
     output: DesktopAppUpdateSettings
@@ -730,6 +760,10 @@ export interface DesktopIpcContract {
   "desktop:check-for-app-updates": {
     input: void
     output: DesktopAppUpdateCheckResult
+  }
+  "desktop:install-app-update": {
+    input: void
+    output: DesktopAppUpdateInstallResult
   }
   "desktop:get-storage-paths": {
     input: void
@@ -1477,6 +1511,7 @@ export interface DesktopIpcContract {
 }
 
 export interface DesktopIpcEventPayloads {
+  [DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL]: DesktopAppUpdateState
   [DESKTOP_AGENT_SESSION_EVENT_CHANNEL]: AgentSessionBridgeIPCEvent
   [DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL]: WorkspaceFileChangeIPCEvent
   [DESKTOP_PTY_EVENT_CHANNEL]: PtyTransportIPCEvent
@@ -1513,10 +1548,15 @@ export interface DesktopApiBase {
 export interface DesktopApiMethods {
   getInfo(): Promise<DesktopIpcOutput<"desktop:get-info">>
   getAppUpdateSettings(): Promise<DesktopIpcOutput<"desktop:get-app-update-settings">>
+  getAppUpdateState(): Promise<DesktopIpcOutput<"desktop:get-app-update-state">>
   setAutomaticUpdatesEnabled(
     input: DesktopIpcInput<"desktop:set-automatic-updates-enabled">,
   ): Promise<DesktopIpcOutput<"desktop:set-automatic-updates-enabled">>
   checkForAppUpdates(): Promise<DesktopIpcOutput<"desktop:check-for-app-updates">>
+  installAppUpdate(): Promise<DesktopIpcOutput<"desktop:install-app-update">>
+  onAppUpdateStateChange(
+    listener: (state: DesktopIpcEventPayload<typeof DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL>) => void,
+  ): () => void
   getStoragePaths(): Promise<DesktopIpcOutput<"desktop:get-storage-paths">>
   getWindowState(): Promise<DesktopIpcOutput<"desktop:get-window-state">>
   reportRendererError(input: DesktopIpcInput<"desktop:report-renderer-error">): Promise<DesktopIpcOutput<"desktop:report-renderer-error">>
