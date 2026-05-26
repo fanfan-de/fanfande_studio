@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import type { MouseEvent } from "react"
 import { marked, Renderer } from "marked"
 import {
   docsArticles,
@@ -7,12 +6,8 @@ import {
   getDocsArticle,
   type DocsArticle,
 } from "./docsContent"
-import {
-  installerFallbackUrls,
-  navigateToLatestInstaller,
-  repositoryUrl,
-  type InstallerPlatform,
-} from "../releaseDownloads"
+import { InstallerDownloadButton } from "../InstallerDownloadButton"
+import { repositoryUrl } from "../releaseDownloads"
 
 const brandLogoBlack = "/brand-logo-black.svg"
 
@@ -20,14 +15,6 @@ type DocsHeading = {
   id: string
   level: number
   text: string
-}
-
-async function downloadLatestInstaller(
-  event: MouseEvent<HTMLAnchorElement>,
-  platform: InstallerPlatform,
-) {
-  event.preventDefault()
-  await navigateToLatestInstaller(platform)
 }
 
 function getSlugFromUrl() {
@@ -133,20 +120,18 @@ function DocsHeader() {
         <a href={repositoryUrl} target="_blank" rel="noreferrer">
           GitHub
         </a>
-        <a
+        <InstallerDownloadButton
           className="button button-primary docs-download-button"
-          href={installerFallbackUrls.windows}
-          onClick={(event) => void downloadLatestInstaller(event, "windows")}
+          platform="windows"
         >
           Windows 下载
-        </a>
-        <a
+        </InstallerDownloadButton>
+        <InstallerDownloadButton
           className="button button-secondary docs-download-button"
-          href={installerFallbackUrls.mac}
-          onClick={(event) => void downloadLatestInstaller(event, "mac")}
+          platform="mac"
         >
           macOS 下载
-        </a>
+        </InstallerDownloadButton>
       </nav>
     </header>
   )

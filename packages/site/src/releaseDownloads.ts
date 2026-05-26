@@ -1,3 +1,5 @@
+import productPackage from "../../../package.json"
+
 export type InstallerPlatform = "windows" | "mac"
 
 export const repositoryUrl = "https://github.com/fanfan-de/fanfande_studio"
@@ -17,7 +19,23 @@ type GitHubReleaseAsset = {
 
 type GitHubRelease = {
   assets?: unknown
+  tag_name?: unknown
 }
+
+let latestReleasePromise: Promise<GitHubRelease> | undefined
+
+function normalizeVersionLabel(version: string) {
+  const normalizedVersion = version.trim()
+
+  if (!normalizedVersion) return undefined
+
+  return normalizedVersion.startsWith("v")
+    ? normalizedVersion
+    : `v${normalizedVersion}`
+}
+
+export const currentProductVersion =
+  normalizeVersionLabel(productPackage.version) ?? ""
 
 const installerMatchers: Record<
   InstallerPlatform,
@@ -54,20 +72,44 @@ function getInstallerUrl(release: GitHubRelease, platform: InstallerPlatform) {
     : undefined
 }
 
-async function resolveLatestInstallerUrl(platform: InstallerPlatform) {
-  const response = await fetch(latestReleaseApiUrl, {
-    cache: "no-store",
-    headers: {
-      Accept: "application/vnd.github+json",
-    },
-  })
+function fetchLatestRelease() {
+  if (!latestReleasePromise) {
+    latestReleasePromise = fetch(latestReleaseApiUrl, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/vnd.github+json",
+      },
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`GitHub release request failed: ${response.status}`)
+        }
 
-  if (!response.ok) {
-    throw new Error(`GitHub release request failed: ${response.status}`)
+        return response.json() as Promise<GitHubRelease>
+      })
+      .catch((error: unknown) => {
+        latestReleasePromise = undefined
+        throw error
+      })
   }
 
+  return latestReleasePromise
+}
+
+export async function resolveLatestReleaseVersion() {
+  const release = await fetchLatestRelease()
+  const tagName =
+    typeof release.tag_name === "string"
+      ? normalizeVersionLabel(release.tag_name)
+      : undefined
+
+  return tagName ?? currentProductVersion
+}
+
+async function resolveLatestInstallerUrl(platform: InstallerPlatform) {
+  const release = await fetchLatestRelease()
   const downloadUrl = getInstallerUrl(
-    (await response.json()) as GitHubRelease,
+    release,
     platform,
   )
 

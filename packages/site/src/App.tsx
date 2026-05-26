@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react"
-import type { MouseEvent } from "react"
 import { navigationItems, proofPoints } from "./content"
 import { GitActivitySection } from "./GitActivity"
-import {
-  installerFallbackUrls,
-  navigateToLatestInstaller,
-  repositoryUrl,
-  type InstallerPlatform,
-} from "./releaseDownloads"
+import { InstallerDownloadButton } from "./InstallerDownloadButton"
+import { repositoryUrl } from "./releaseDownloads"
 
 const brandLogoBlack = "/brand-logo-black.svg"
 const wechatCommunityQrImage = "/wechat-community-qr-20260525.png"
@@ -18,14 +13,6 @@ function getGitHubRepoApiUrl(href: string) {
   if (!match) return undefined
 
   return `https://api.github.com/repos/${match[1]}/${match[2]}`
-}
-
-async function downloadLatestInstaller(
-  event: MouseEvent<HTMLAnchorElement>,
-  platform: InstallerPlatform,
-) {
-  event.preventDefault()
-  await navigateToLatestInstaller(platform)
 }
 
 function formatStarCount(count: number) {
@@ -181,20 +168,18 @@ export function App() {
           </div>
           <p>开源，灵活的通用agent</p>
           <div className="hero-actions">
-            <a
+            <InstallerDownloadButton
               className="button button-primary"
-              href={installerFallbackUrls.windows}
-              onClick={(event) => void downloadLatestInstaller(event, "windows")}
+              platform="windows"
             >
               Windows 下载
-            </a>
-            <a
+            </InstallerDownloadButton>
+            <InstallerDownloadButton
               className="button button-secondary"
-              href={installerFallbackUrls.mac}
-              onClick={(event) => void downloadLatestInstaller(event, "mac")}
+              platform="mac"
             >
               macOS 下载
-            </a>
+            </InstallerDownloadButton>
             <p className="hero-platform-note">
               当前提供 Windows x64 与 macOS Apple Silicon；Linux 版本开发中
             </p>
