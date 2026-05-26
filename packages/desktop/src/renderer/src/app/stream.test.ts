@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { applyAgentStreamEventToTurn, buildStreamingAssistantTurn, buildTurnsFromHistory, buildUserTurn, buildUserTurnText } from "./stream"
+import { applyAgentStreamEventToTurn, buildSessionStreamingAssistantTurn, buildStreamingAssistantTurn, buildTurnsFromHistory, buildUserTurn, buildUserTurnText } from "./stream"
 
 describe("stream trace reducer", () => {
   it("trusts backend order when history includes parent metadata", () => {
@@ -162,6 +162,66 @@ describe("stream trace reducer", () => {
     expect(turn.messageID).toBe("message-runtime")
     expect(turn.isStreaming).toBe(false)
     expect(turn.items.some((item) => item.kind === "text" && item.text === "Runtime answer")).toBe(true)
+  })
+
+  it("uses canonical runtime timestamps for replayed turn duration", () => {
+    let turn = buildSessionStreamingAssistantTurn("Replaying backend activity")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      id: "10000:turn-runtime:1",
+      event: "runtime",
+      data: {
+        eventID: "event-started",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 10_000,
+        type: "turn.started",
+        payload: {},
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      id: "70000:turn-runtime:2",
+      event: "runtime",
+      data: {
+        eventID: "event-text",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 70_000,
+        type: "text.part.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "part-runtime-text",
+          kind: "text",
+          delta: "Runtime answer",
+          text: "Runtime answer",
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      id: "130000:turn-runtime:3",
+      event: "runtime",
+      data: {
+        eventID: "event-completed",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 3,
+        timestamp: 130_000,
+        type: "turn.completed",
+        payload: {
+          status: "completed",
+          finishReason: "stop",
+          parts: [{ id: "part-runtime-text", type: "text", text: "Runtime answer" }],
+        },
+      },
+    })
+
+    expect(turn.runtime.startedAt).toBe(10_000)
+    expect(turn.runtime.updatedAt).toBe(130_000)
+    expect(turn.runtime.updatedAt - turn.runtime.startedAt).toBe(120_000)
   })
 
   it("marks runtime cancelled turns as stopped streams", () => {

@@ -27,7 +27,7 @@ async function withApplyPatchTool(
 
         await fn({
           root,
-          executePatch: async (patch) => await runtime.execute({ patch }, ctx),
+          executePatch: async (patch) => await runtime.execute(patch, ctx),
         })
       },
     })

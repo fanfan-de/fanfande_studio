@@ -866,6 +866,7 @@ function updateAssistantTurnLifecycle(
   input: {
     phase?: AssistantTurnPhase
     state?: string
+    startedAt?: number
     updatedAt?: number
     toolName?: string | null
     approvalRequestID?: string | null
@@ -874,8 +875,14 @@ function updateAssistantTurnLifecycle(
   items = turn.items,
 ): AssistantTurn {
   const updatedAt = input.updatedAt ?? Date.now()
+  const startedAt = input.startedAt ?? (
+    input.updatedAt !== undefined && input.updatedAt < turn.runtime.startedAt
+      ? input.updatedAt
+      : turn.runtime.startedAt
+  )
   const nextRuntime: AssistantTurnRuntime = {
     ...turn.runtime,
+    startedAt,
     ...(input.phase ? { phase: input.phase } : {}),
     updatedAt,
     ...("toolName" in input ? { toolName: input.toolName ?? undefined } : {}),
@@ -2267,12 +2274,14 @@ export function finalizeStreamAssistantTurn(
     finishReason?: string
     message?: unknown
     debugEntries?: AssistantTraceDebugEntry[]
+    updatedAt?: number
   },
 ): AssistantTurn {
   const items = clearStreamingItems(settleQueuedPrompt(turn.items, turn.id))
   const waitingQuestion = items.find((item) => item.kind === "question")
   const messageTurn = applyAssistantMessageMetadata(turn, input?.message)
   const nextMessageID = messageTurn.messageID
+  const lifecycleClock = input?.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }
 
   if (turn.runtime.phase === "failed") {
     return updateAssistantTurnLifecycle(
@@ -2284,6 +2293,7 @@ export function finalizeStreamAssistantTurn(
       {
         phase: "failed",
         state: turn.state,
+        ...lifecycleClock,
       },
       items,
     )
@@ -2302,6 +2312,7 @@ export function finalizeStreamAssistantTurn(
         toolName: null,
         approvalRequestID: null,
         errorMessage: null,
+        ...lifecycleClock,
       },
       items,
     )
@@ -2329,6 +2340,7 @@ export function finalizeStreamAssistantTurn(
         phase: "waiting_approval",
         state: "Waiting for permission approval",
         toolName: waitingTool?.title ?? null,
+        ...lifecycleClock,
       },
       nextItems,
     )
@@ -2347,6 +2359,7 @@ export function finalizeStreamAssistantTurn(
         toolName: null,
         approvalRequestID: null,
         errorMessage: null,
+        ...lifecycleClock,
       },
       items,
     )
@@ -2364,6 +2377,7 @@ export function finalizeStreamAssistantTurn(
       toolName: null,
       approvalRequestID: null,
       errorMessage: null,
+      ...lifecycleClock,
     },
     upsertTraceItem(
       items,
@@ -2492,9 +2506,25 @@ function applyRuntimeEventToTurn(
   const payload = event.payload
   const preparedItems = settleQueuedPrompt(turn.items, turn.id)
   const debugEntries = buildRuntimeEventDebugEntries(event, item.id)
+  const eventTimestamp = event.timestamp > 0 ? event.timestamp : undefined
+  const updateRuntimeTurnLifecycle = (
+    nextTurn: AssistantTurn,
+    input: Parameters<typeof updateAssistantTurnLifecycle>[1],
+    items = nextTurn.items,
+  ) => updateAssistantTurnLifecycle(
+    nextTurn,
+    eventTimestamp === undefined
+      ? input
+      : {
+          ...input,
+          startedAt: input.startedAt ?? (event.type === "turn.started" ? eventTimestamp : undefined),
+          updatedAt: input.updatedAt ?? eventTimestamp,
+        },
+    items,
+  )
 
   if (event.type === "turn.started") {
-    return updateAssistantTurnLifecycle(
+    return updateRuntimeTurnLifecycle(
       {
         ...turn,
         isStreaming: true,
@@ -2520,7 +2550,7 @@ function applyRuntimeEventToTurn(
     const runtimePhase = readString(payload.phase)
     const messageID = resolvePayloadMessageID(payload) || turn.messageID
 
-    return updateAssistantTurnLifecycle(
+    return updateRuntimeTurnLifecycle(
       {
         ...turn,
         messageID,
@@ -2539,7 +2569,7 @@ function applyRuntimeEventToTurn(
     if (!canInferModelWaitFromRuntimePhase(turn.runtime.phase)) return turn
     const messageID = resolvePayloadMessageID(payload) || turn.messageID
 
-    return updateAssistantTurnLifecycle(
+    return updateRuntimeTurnLifecycle(
       {
         ...turn,
         messageID,
@@ -2557,7 +2587,7 @@ function applyRuntimeEventToTurn(
   if (event.type === "text.part.started" || event.type === "text.part.delta") {
     const messageID = resolvePayloadMessageID(payload) || turn.messageID
 
-    return updateAssistantTurnLifecycle(
+    return updateRuntimeTurnLifecycle(
       {
         ...turn,
         messageID,
@@ -2583,7 +2613,7 @@ function applyRuntimeEventToTurn(
   if (event.type === "reasoning.part.started" || event.type === "reasoning.part.delta") {
     const messageID = resolvePayloadMessageID(payload) || turn.messageID
 
-    return updateAssistantTurnLifecycle(
+    return updateRuntimeTurnLifecycle(
       {
         ...turn,
         messageID,
@@ -2617,7 +2647,7 @@ function applyRuntimeEventToTurn(
     const isAlreadyCancelled = turn.runtime.phase === "cancelled"
     const cancelledDetail = "Prompt cancellation requested."
 
-    return updateAssistantTurnLifecycle(
+    return updateRuntimeTurnLifecycle(
       {
         ...turn,
         messageID,
@@ -2650,7 +2680,7 @@ function applyRuntimeEventToTurn(
     const partID = readString(payload.partID)
     if (!partID) return turn
 
-    return updateAssistantTurnLifecycle(
+    return updateRuntimeTurnLifecycle(
       {
         ...turn,
         isStreaming: true,
@@ -2676,7 +2706,7 @@ function applyRuntimeEventToTurn(
       }),
     )
 
-    return updateAssistantTurnLifecycle(
+    return updateRuntimeTurnLifecycle(
       {
         ...turn,
         isStreaming: !isSettledAssistantPhase(turn.runtime.phase),
@@ -2697,7 +2727,7 @@ function applyRuntimeEventToTurn(
 
     const nextItems = upsertTraceItems(clearStreamingItems(preparedItems), traceItems)
 
-    return updateAssistantTurnLifecycle(
+    return updateRuntimeTurnLifecycle(
       {
         ...turn,
         isStreaming: !isSettledAssistantPhase(turn.runtime.phase),
@@ -2735,7 +2765,7 @@ function applyRuntimeEventToTurn(
     if (primaryItem?.kind === "tool") {
       const inferredLifecycle = inferToolLifecycleFromTraceItem(turn, primaryItem, approvalRequestID)
 
-      return updateAssistantTurnLifecycle(
+      return updateRuntimeTurnLifecycle(
         {
           ...turn,
           messageID,
@@ -2750,7 +2780,7 @@ function applyRuntimeEventToTurn(
       )
     }
 
-    return updateAssistantTurnLifecycle(
+    return updateRuntimeTurnLifecycle(
       {
         ...turn,
         messageID,
@@ -2769,6 +2799,13 @@ function applyRuntimeEventToTurn(
 
     return finalizeStreamAssistantTurn({
       ...turn,
+      runtime: eventTimestamp === undefined
+        ? turn.runtime
+        : {
+            ...turn.runtime,
+            startedAt: eventTimestamp < turn.runtime.startedAt ? eventTimestamp : turn.runtime.startedAt,
+            updatedAt: eventTimestamp,
+          },
       state: "Backend response received",
       items: nextItems,
     }, {
@@ -2776,6 +2813,7 @@ function applyRuntimeEventToTurn(
       finishReason: readString(payload.finishReason) || undefined,
       message: payload.message,
       debugEntries,
+      updatedAt: eventTimestamp,
     })
   }
 
@@ -2798,7 +2836,7 @@ function applyRuntimeEventToTurn(
       }),
     )
 
-    return updateAssistantTurnLifecycle(
+    return updateRuntimeTurnLifecycle(
       {
         ...messageTurn,
         messageID,
@@ -2834,7 +2872,7 @@ function applyRuntimeEventToTurn(
       }),
     )
 
-    return updateAssistantTurnLifecycle(
+    return updateRuntimeTurnLifecycle(
       {
         ...cancelledTurn,
         messageID,

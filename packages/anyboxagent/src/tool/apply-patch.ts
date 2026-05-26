@@ -473,11 +473,9 @@ export const ApplyPatchTool = Tool.define(
     return {
       title: "Apply Patch",
       description: `Use for structured *** Begin Patch edits, especially coordinated multi-file edits, creating/deleting/moving files, or changes where patch context is clearer. Prefer replace_text for one small exact single-file replacement.\n\n${APPLY_PATCH_FORMAT}`,
-      parameters: z.object({
-        patch: z.string().min(1).describe(APPLY_PATCH_FORMAT),
-      }),
+      parameters: z.string().min(1).describe(APPLY_PATCH_FORMAT),
       describeApproval: (parameters, ctx) => {
-        const filePatches = parseBeginPatch(parameters.patch)
+        const filePatches = parseBeginPatch(parameters)
         const touched = filePatches.flatMap((filePatch) => [filePatch.oldPath, filePatch.newPath])
           .filter((value): value is string => typeof value === "string" && value.length > 0)
         const uniquePaths = [...new Set(touched)]
@@ -492,7 +490,7 @@ export const ApplyPatchTool = Tool.define(
         }
       },
       execute: async (parameters) => {
-        const filePatches = parseBeginPatch(parameters.patch)
+        const filePatches = parseBeginPatch(parameters)
         const actions: ApplyAction[] = []
 
         for (const filePatch of filePatches) {
