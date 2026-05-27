@@ -1,14 +1,17 @@
 import {
   Archive,
+  ArchiveRestore,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
   ArrowUpRight,
+  BrainCircuit,
   Check,
   ChevronDown,
   ChevronRight,
   CircleCheck,
   CircleX,
+  CloudCog,
   Code2,
   Copy,
   Download,
@@ -46,6 +49,7 @@ import {
   RotateCcw,
   Search,
   Settings,
+  SlidersHorizontal,
   SortAsc,
   Square,
   Sun,
@@ -107,6 +111,7 @@ export const EyeOffIcon = createIcon(EyeOff)
 export const DeleteIcon = createIcon(Trash2)
 export const MoreIcon = createIcon(MoreHorizontal)
 export const ArchiveIcon = createIcon(Archive)
+export const ArchiveRestoreIcon = createIcon(ArchiveRestore)
 export const MinimizeIcon = createIcon(Minus)
 export const MaximizeIcon = createIcon(Square)
 export const RestoreIcon = createIcon(Copy)
@@ -121,3 +126,6 @@ export const SearchIcon = createIcon(Search)
 export const SunIcon = createIcon(Sun)
 export const MoonIcon = createIcon(Moon)
 export const MonitorIcon = createIcon(Monitor)
+export const GeneralSettingsIcon = createIcon(SlidersHorizontal)
+export const ProviderSettingsIcon = createIcon(CloudCog)
+export const ModelSettingsIcon = createIcon(BrainCircuit)

@@ -1908,6 +1908,21 @@ describe("server api", () => {
             available: true,
           })
 
+          const invalidSelectionResponse = await app.request("http://localhost/api/model-selection", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              model: "deepseek/deepseek-reasoner",
+              small_model: "anybox/deepseek-v4-flash",
+            }),
+          })
+          const invalidSelectionBody = (await invalidSelectionResponse.json()) as JsonEnvelope
+
+          expect(invalidSelectionResponse.status).toBe(400)
+          expect(invalidSelectionBody.success).toBe(false)
+          expect(invalidSelectionBody.error?.code).toBe("MODEL_NOT_FOUND")
+          expect(invalidSelectionBody.error?.message).toBe("Model 'anybox/deepseek-v4-flash' is not available")
+
           const selectionResponse = await app.request("http://localhost/api/model-selection", {
             method: "PATCH",
             headers: { "content-type": "application/json" },

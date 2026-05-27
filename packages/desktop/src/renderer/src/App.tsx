@@ -66,7 +66,19 @@ const GlobalSkillsPage = lazy(() => import("./app/skills/GlobalSkillsPage").then
 const ConnectorsPage = lazy(() => import("./app/connectors/ConnectorsPage").then((module) => ({ default: module.ConnectorsPage })))
 const PluginsPage = lazy(() => import("./app/plugins/PluginsPage").then((module) => ({ default: module.PluginsPage })))
 const PromptPresetsPage = lazy(() => import("./app/prompts/PromptPresetsPage").then((module) => ({ default: module.PromptPresetsPage })))
-const SettingsPage = lazy(() => import("./app/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })))
+
+function importSettingsPage() {
+  return import("./app/settings/SettingsPage").then((module) => ({ default: module.SettingsPage }))
+}
+
+let settingsPageImportPromise: ReturnType<typeof importSettingsPage> | null = null
+
+function loadSettingsPage() {
+  settingsPageImportPromise ??= importSettingsPage()
+  return settingsPageImportPromise
+}
+
+const SettingsPage = lazy(loadSettingsPage)
 
 const WORKBENCH_TERMINAL_STORAGE_KEY = "desktop.terminal.workspace.v3:workbench"
 const EMPTY_CONNECTION_SEARCH_QUERIES: Record<ConnectionsTab, string> = {
@@ -743,6 +755,16 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
   const [isCheckingAppUpdate, setIsCheckingAppUpdate] = useState(false)
   const [isInstallingAppUpdate, setIsInstallingAppUpdate] = useState(false)
   const [isSavingAutomaticUpdates, setIsSavingAutomaticUpdates] = useState(false)
+  const [isPreparingSettingsPage, setIsPreparingSettingsPage] = useState(false)
+
+  useEffect(() => {
+    const preloadTimer = window.setTimeout(() => {
+      void loadSettingsPage()
+    }, 0)
+
+    return () => window.clearTimeout(preloadTimer)
+  }, [])
+
   const {
     agentConnected,
     agentDefaultDirectory,
@@ -1187,6 +1209,23 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     onSkillsUpdated: refreshComposerSkills,
     onProviderModelsUpdated: refreshComposerModels,
   })
+
+  function handleOpenSettings() {
+    if (isOpen || isPreparingSettingsPage) return
+
+    setIsPreparingSettingsPage(true)
+    void loadSettingsPage()
+      .then(() => {
+        openSettings()
+      })
+      .catch((error) => {
+        console.error("[desktop] Failed to preload settings page:", error)
+        openSettings()
+      })
+      .finally(() => {
+        setIsPreparingSettingsPage(false)
+      })
+  }
 
   async function refreshAppUpdateState() {
     const state = await getAppUpdateState()
@@ -1777,7 +1816,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
             activeView={leftSidebarView}
             isSettingsOpen={isOpen}
             isSidebarCollapsed={isSidebarCollapsed}
-            onOpenSettings={openSettings}
+            onOpenSettings={handleOpenSettings}
             onViewChange={handleLeftSidebarViewChange}
             onToggleSidebar={handleSidebarToggle}
             side="left"
@@ -1858,7 +1897,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               workspaces={workspaces}
               pinnedWorkspaceIDs={pinnedWorkspaceIDs}
               onHoveredFolderChange={setHoveredFolderID}
-              onOpenSettings={openSettings}
+              onOpenSettings={handleOpenSettings}
               onProjectArchiveSessions={handleProjectArchiveSessions}
               onProjectCreateSession={handleProjectCreateSession}
               onProjectClick={handleProjectClick}

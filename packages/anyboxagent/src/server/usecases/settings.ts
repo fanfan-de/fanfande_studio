@@ -167,6 +167,20 @@ function parseModelReference(value: string) {
   }
 }
 
+async function resolveSelectableModel(value: string) {
+  const ref = parseModelReference(value)
+
+  try {
+    return await Provider.getModel(ref.providerID, ref.modelID)
+  } catch (error) {
+    if (Provider.ModelNotFoundError.isInstance(error)) {
+      throw new ApiError(400, "MODEL_NOT_FOUND", `Model '${value}' is not available`)
+    }
+
+    throw error
+  }
+}
+
 function toSkillApiError(error: unknown) {
   if (error instanceof SkillManager.SkillManagerError) {
     if (error.code === "SKILL_FILE_NOT_FOUND" || error.code === "SKILL_NOT_FOUND") {
@@ -365,18 +379,15 @@ export async function removeProvider(providerID: string) {
 
 export async function updateModelSelection(input: z.infer<typeof UpdateGlobalModelSelectionBody>) {
   if (input.model) {
-    const ref = parseModelReference(input.model)
-    await Provider.getModel(ref.providerID, ref.modelID)
+    await resolveSelectableModel(input.model)
   }
 
   if (input.small_model) {
-    const ref = parseModelReference(input.small_model)
-    await Provider.getModel(ref.providerID, ref.modelID)
+    await resolveSelectableModel(input.small_model)
   }
 
   if (input.image_model) {
-    const ref = parseModelReference(input.image_model)
-    const model = await Provider.getModel(ref.providerID, ref.modelID)
+    const model = await resolveSelectableModel(input.image_model)
     if (!model.capabilities.output.image) {
       throw new ApiError(
         400,

@@ -17,8 +17,9 @@ import {
 } from "../../../../shared/appearance"
 import type { DesktopAppUpdateState, DesktopStoragePaths } from "../../../../shared/desktop-ipc-contract"
 import {
-  ArchiveIcon,
+  ArchiveRestoreIcon,
   CloseIcon,
+  CodeModeIcon,
   ConnectedStatusIcon,
   DisconnectedStatusIcon,
   ChevronDownIcon,
@@ -27,16 +28,17 @@ import {
   FileTextIcon,
   LayoutSidebarLeftIcon,
   MinimizeIcon,
-  MonitorIcon,
+  GeneralSettingsIcon,
+  ModelSettingsIcon,
   PaletteIcon,
   PlusIcon,
+  ProviderSettingsIcon,
   ResetIcon,
-  SearchIcon,
-  SettingsIcon,
-  TerminalIcon
+  SearchIcon
 } from "../icons"
 import { normalizeAppearanceColorInputValue } from "../appearance-theme"
 import { useI18n } from "../i18n/I18nProvider"
+import type { TranslationKey } from "../i18n/translations"
 import { writeTextToClipboard } from "../shared-ui"
 import type {
   ArchivedSessionSummary,
@@ -181,11 +183,20 @@ function formatContextWindow(value: number) {
   return String(value)
 }
 
+type SettingsTranslate = (key: TranslationKey, params?: Record<string, string | number>) => string
+
 function providerSourceLabel(provider: ProviderCatalogItem) {
   if (provider.source === "config") return "Saved config"
   if (provider.source === "env") return "Environment"
   if (provider.source === "custom") return "Custom"
   return "Catalog"
+}
+
+function getProviderSourceLabel(provider: ProviderCatalogItem, t: SettingsTranslate) {
+  if (provider.source === "config") return t("settings.provider.sourceSavedConfig")
+  if (provider.source === "env") return t("settings.provider.sourceEnvironment")
+  if (provider.source === "custom") return t("settings.provider.sourceCustom")
+  return t("settings.provider.sourceCatalog")
 }
 
 const providerLogoBaseURL = "https://models.dev/logos"
@@ -265,13 +276,13 @@ function AppearanceColorTextInput({
   )
 }
 
-function buildModelTags(model: ProviderModel) {
+function buildModelTags(model: ProviderModel, t?: SettingsTranslate) {
   const tags = [`${formatContextWindow(model.limit.context)} ctx`]
 
-  if (model.capabilities.reasoning) tags.push("Reasoning")
-  if (model.capabilities.toolcall) tags.push("Tools")
-  if (model.capabilities.input.image) tags.push("Vision")
-  if (model.capabilities.output.image) tags.push("Image Out")
+  if (model.capabilities.reasoning) tags.push(t ? t("settings.models.tagReasoning") : "Reasoning")
+  if (model.capabilities.toolcall) tags.push(t ? t("settings.models.tagTools") : "Tools")
+  if (model.capabilities.input.image) tags.push(t ? t("settings.models.tagVision") : "Vision")
+  if (model.capabilities.output.image) tags.push(t ? t("settings.models.tagImageOut") : "Image Out")
   if (model.capabilities.attachment && model.capabilities.input.pdf) tags.push("PDF")
 
   return tags
@@ -286,21 +297,21 @@ function toModelOptionLabel(model: ProviderModel, providers: ProviderCatalogItem
   return `${providerName} / ${model.name}`
 }
 
-function getProviderConnectionLabel(provider: ProviderCatalogItem) {
+function getProviderConnectionLabel(provider: ProviderCatalogItem, t?: SettingsTranslate) {
   const label = provider.connectionLabel ?? provider.authState.connectionLabel
 
   switch (provider.authState.status) {
     case "connected":
-      return label ?? "Connected"
+      return label ?? (t ? t("app.connected") : "Connected")
     case "pending":
-      return label ?? "Pending"
+      return label ?? (t ? t("settings.provider.statusPending") : "Pending")
     case "expired":
-      return label ?? "Expired"
+      return label ?? (t ? t("settings.provider.statusExpired") : "Expired")
     case "error":
-      return label ?? "Error"
+      return label ?? (t ? t("settings.provider.statusError") : "Error")
     case "not_connected":
-      if (provider.apiKeyConfigured) return "Configured"
-      return label ?? "Not connected"
+      if (provider.apiKeyConfigured) return t ? t("app.configured") : "Configured"
+      return label ?? (t ? t("app.notConnected") : "Not connected")
   }
 }
 
@@ -312,24 +323,6 @@ function isAnyboxProvider(provider: ProviderCatalogItem) {
   return provider.id === "anybox"
 }
 
-function getProviderCredentialSummary(provider: ProviderCatalogItem) {
-  const activeCredential =
-    provider.authState.credentials.find((credential) => credential.method === provider.authState.activeMethod) ??
-    provider.authState.credentials[0]
-
-  if (!activeCredential?.configured) return null
-  if (activeCredential.label) return activeCredential.label
-  if (activeCredential.email) return activeCredential.email
-  if (activeCredential.kind === "api_key") {
-    return activeCredential.source === "environment" ? "Configured from environment" : "Stored API key"
-  }
-  if (activeCredential.source === "external_cache") {
-    return "Using shared Codex login"
-  }
-
-  return "Stored session"
-}
-
 function getProviderAuthCapability(provider: ProviderCatalogItem, method: string | null | undefined) {
   if (!method) return null
   return provider.authCapabilities.find((capability) => capability.method === method) ?? null
@@ -339,17 +332,18 @@ function isProviderFlowTerminal(status?: string | null) {
   return !status || ["connected", "error", "expired", "cancelled"].includes(status)
 }
 
-function getProviderKeyPlaceholder(provider: ProviderCatalogItem) {
+function getProviderKeyPlaceholder(provider: ProviderCatalogItem, t?: SettingsTranslate) {
   const apiKeyCredential = provider.authState.credentials.find((credential) => credential.kind === "api_key")
   if (apiKeyCredential?.configured || provider.apiKeyConfigured) {
-    return "Stored key detected. Leave blank to keep it."
+    return t ? t("settings.provider.storedKeyPlaceholder") : "Stored key detected. Leave blank to keep it."
   }
 
   if (provider.env.length > 0) {
-    return `Or rely on ${provider.env.join(", ")}`
+    const env = provider.env.join(", ")
+    return t ? t("settings.provider.environmentKeyPlaceholder", { env }) : `Or rely on ${env}`
   }
 
-  return "Enter API key"
+  return t ? t("settings.provider.enterApiKey") : "Enter API key"
 }
 
 type ProviderApiKeyMode = "environment" | "manual"
@@ -382,40 +376,40 @@ function getProviderApiKeyMode(provider: ProviderCatalogItem): ProviderApiKeyMod
   return "manual"
 }
 
-function getProviderStatusText(provider: ProviderCatalogItem) {
+function getProviderStatusText(provider: ProviderCatalogItem, t: SettingsTranslate) {
   switch (provider.authState.status) {
     case "connected":
-      return "已连接"
+      return t("app.connected")
     case "pending":
-      return "连接中"
+      return t("settings.provider.statusPending")
     case "expired":
-      return "已过期"
+      return t("settings.provider.statusExpired")
     case "error":
-      return "连接异常"
+      return t("settings.provider.statusError")
     case "not_connected":
-      return provider.apiKeyConfigured ? "已配置" : "未连接"
+      return provider.apiKeyConfigured ? t("app.configured") : t("app.notConnected")
   }
 }
 
-function getProviderSourceText(provider: ProviderCatalogItem) {
+function getProviderSourceText(provider: ProviderCatalogItem, t: SettingsTranslate) {
   const activeCredential = getProviderActiveCredential(provider)
-  if (isAnyboxProvider(provider) && activeCredential?.kind === "oauth_session") return "来自 Anybox 账号"
-  if (activeCredential?.source === "environment" || provider.source === "env") return "来自环境变量"
-  if (activeCredential?.source === "credential_store") return "来自已保存密钥"
-  if (activeCredential?.source === "external_cache") return "来自共享登录"
-  if (activeCredential?.source === "legacy_config") return "来自历史配置"
-  return provider.configured ? "来自已保存配置" : "未配置凭据"
+  if (isAnyboxProvider(provider) && activeCredential?.kind === "oauth_session") return t("settings.provider.sourceAnyboxAccount")
+  if (activeCredential?.source === "environment" || provider.source === "env") return t("settings.provider.sourceFromEnvironment")
+  if (activeCredential?.source === "credential_store") return t("settings.provider.sourceSavedKey")
+  if (activeCredential?.source === "external_cache") return t("settings.provider.sourceSharedLogin")
+  if (activeCredential?.source === "legacy_config") return t("settings.provider.sourceLegacyConfig")
+  return provider.configured ? t("settings.provider.sourceFromSavedConfig") : t("settings.provider.sourceNoCredential")
 }
 
-function getProviderHeaderSummary(provider: ProviderCatalogItem) {
-  return `${getProviderStatusText(provider)} · 全应用共享 · ${getProviderSourceText(provider)}`
+function getProviderHeaderSummary(provider: ProviderCatalogItem, t: SettingsTranslate) {
+  return `${getProviderStatusText(provider, t)} · ${t("settings.provider.sharedAcrossApp")} · ${getProviderSourceText(provider, t)}`
 }
 
-function getProviderAuthMethodOptionLabel(provider: ProviderCatalogItem, capability: ProviderAuthCapability) {
-  if (isAnyboxProvider(provider) && capability.kind === "browser_oauth") return "Anybox 账号（浏览器登录）"
-  if (provider.id === "openai" && capability.kind === "browser_oauth") return "ChatGPT Pro/Plus（浏览器登录）"
-  if (provider.id === "openai" && capability.kind === "device_code") return "ChatGPT Pro/Plus（设备码登录）"
-  return capability.recommended ? `${capability.label}（推荐）` : capability.label
+function getProviderAuthMethodOptionLabel(provider: ProviderCatalogItem, capability: ProviderAuthCapability, t: SettingsTranslate) {
+  if (isAnyboxProvider(provider) && capability.kind === "browser_oauth") return t("settings.provider.anyboxBrowserLogin")
+  if (provider.id === "openai" && capability.kind === "browser_oauth") return t("settings.provider.openaiBrowserLogin")
+  if (provider.id === "openai" && capability.kind === "device_code") return t("settings.provider.openaiDeviceLogin")
+  return capability.recommended ? `${capability.label} (${t("settings.provider.recommended")})` : capability.label
 }
 
 function formatProviderBalance(account: ProviderCatalogItem["authState"]["account"]) {
@@ -474,6 +468,7 @@ interface ModelListViewProps {
   catalog: ProviderCatalogItem[]
   models: ProviderModel[]
   selectionDraft: ProjectModelSelection
+  t: SettingsTranslate
 }
 
 interface ProviderModelPickerProps {
@@ -704,7 +699,20 @@ function ProviderModelPicker({
   )
 }
 
-function ModelListView({ catalog, models, selectionDraft }: ModelListViewProps) {
+function getModelStatusLabel(status: string, t: SettingsTranslate) {
+  switch (status.toLowerCase()) {
+    case "active":
+      return t("settings.models.statusActive")
+    case "inactive":
+      return t("settings.models.statusInactive")
+    case "deprecated":
+      return t("settings.models.statusDeprecated")
+    default:
+      return status
+  }
+}
+
+function ModelListView({ catalog, models, selectionDraft, t }: ModelListViewProps) {
   return (
     <div className="model-list">
       {models.map((model) => {
@@ -724,16 +732,16 @@ function ModelListView({ catalog, models, selectionDraft }: ModelListViewProps) 
                 </div>
 
                 <div className="model-row-statuses">
-                  <span className="settings-badge">{model.status}</span>
-                  <span className="settings-badge">{model.available ? "Visible" : "Catalog"}</span>
-                  {selectionDraft.model === modelValue ? <span className="settings-badge is-highlight">Primary</span> : null}
-                  {selectionDraft.smallModel === modelValue ? <span className="settings-badge is-highlight">Small</span> : null}
-                  {selectionDraft.imageModel === modelValue ? <span className="settings-badge is-highlight">Image</span> : null}
+                  <span className="settings-badge">{getModelStatusLabel(model.status, t)}</span>
+                  <span className="settings-badge">{model.available ? t("settings.models.statusVisible") : t("settings.models.statusCatalog")}</span>
+                  {selectionDraft.model === modelValue ? <span className="settings-badge is-highlight">{t("app.primary")}</span> : null}
+                  {selectionDraft.smallModel === modelValue ? <span className="settings-badge is-highlight">{t("app.small")}</span> : null}
+                  {selectionDraft.imageModel === modelValue ? <span className="settings-badge is-highlight">{t("settings.models.imageBadge")}</span> : null}
                 </div>
               </div>
 
               <div className="model-row-tags">
-                {buildModelTags(model).map((tag) => (
+                {buildModelTags(model, t).map((tag) => (
                   <span key={`${modelValue}-${tag}`} className="settings-badge">
                     {tag}
                   </span>
@@ -1177,7 +1185,6 @@ export function SettingsPage({
     const activeProviderCanSave =
       activeProviderConfigDirty || activeProviderApiKeyDirty || activeProviderCredentialModeDirty
     const activeProviderIsTesting = activeProvider ? testingProviderID === activeProvider.id : false
-    const activeProviderCredentialSummary = activeProvider ? getProviderCredentialSummary(activeProvider) : null
     const activeProviderAccountSummary =
       activeProvider?.authState.account?.label ??
       activeProvider?.authState.account?.email ??
@@ -1591,13 +1598,11 @@ export function SettingsPage({
     const brandThemeOptions = [
       {
         value: "terra" as const,
-        label: "Warm Terra & Sand",
-        description: "Muted pale red, warm stone surfaces, and a softer trust-first feel.",
+        label: t("settings.appearance.accentThemeTerra"),
       },
       {
         value: "sage" as const,
-        label: "Sage / Slate",
-        description: "Cool sage accents with the existing slate-driven shell.",
+        label: t("settings.appearance.accentThemeSage"),
       },
     ]
     const colorModeOptions: Array<{ value: ColorMode; label: string }> = [
@@ -1623,12 +1628,12 @@ export function SettingsPage({
       {
         label: t("settings.options"),
         items: [
-          { key: "general" as const, label: t("settings.nav.general"), Icon: MonitorIcon },
-          { key: "services" as const, label: t("settings.nav.provider"), Icon: SettingsIcon },
-          { key: "defaults" as const, label: t("settings.nav.models"), Icon: ConnectedStatusIcon },
-          { key: "appearance" as const, label: t("settings.nav.appearance"), Icon: LayoutSidebarLeftIcon },
-          { key: "developer" as const, label: t("settings.nav.developer"), Icon: TerminalIcon },
-          { key: "archive" as const, label: t("settings.nav.archive"), Icon: ArchiveIcon },
+          { key: "general" as const, label: t("settings.nav.general"), Icon: GeneralSettingsIcon },
+          { key: "services" as const, label: t("settings.nav.provider"), Icon: ProviderSettingsIcon },
+          { key: "defaults" as const, label: t("settings.nav.models"), Icon: ModelSettingsIcon },
+          { key: "appearance" as const, label: t("settings.nav.appearance"), Icon: PaletteIcon },
+          { key: "developer" as const, label: t("settings.nav.developer"), Icon: CodeModeIcon },
+          { key: "archive" as const, label: t("settings.nav.archive"), Icon: ArchiveRestoreIcon },
         ],
       },
     ] as const
@@ -1727,40 +1732,44 @@ export function SettingsPage({
       >
         <div
           ref={settingsPageRef}
-          className={isSettingsPageDragging ? "settings-page is-dragging" : "settings-page"}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Settings"
+          className={isSettingsPageDragging ? "settings-page-positioner is-dragging" : "settings-page-positioner"}
           style={{ transform: `translate3d(${settingsPageOffset.x}px, ${settingsPageOffset.y}px, 0)` }}
         >
-          <header className="settings-page-header" title="Drag settings" onPointerDown={handleSettingsHeaderPointerDown}>
-            <button className="settings-page-close-button" aria-label="Close settings" title="Close settings" onClick={onClose}>
-              <CloseIcon />
-            </button>
-          </header>
-
-          {message ? (
-            <div className="settings-toast-region">
-              <div
-                className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}
-                role={message.tone === "success" ? "status" : "alert"}
-              >
-                <span className="settings-banner-text">{message.text}</span>
-                <button
-                  className="settings-banner-dismiss"
-                  type="button"
-                  aria-label="Dismiss settings message"
-                  title="Dismiss"
-                  onClick={onDismissMessage}
-                >
+          <div className="settings-page-motion">
+            <div
+              className={isSettingsPageDragging ? "settings-page is-dragging" : "settings-page"}
+              role="dialog"
+              aria-modal="true"
+              aria-label={t("settings.title")}
+            >
+              <header className="settings-page-header" title={t("settings.dragSettings")} onPointerDown={handleSettingsHeaderPointerDown}>
+                <button className="settings-page-close-button" aria-label={t("settings.close")} title={t("settings.close")} onClick={onClose}>
                   <CloseIcon />
                 </button>
-              </div>
-            </div>
-          ) : null}
+              </header>
 
-          <div className="settings-page-shell">
-            <aside className="settings-page-primary-nav" aria-label="Settings sections">
+              {message ? (
+                <div className="settings-toast-region">
+                  <div
+                    className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}
+                    role={message.tone === "success" ? "status" : "alert"}
+                  >
+                    <span className="settings-banner-text">{message.text}</span>
+                    <button
+                      className="settings-banner-dismiss"
+                      type="button"
+                      aria-label={t("settings.dismissMessage")}
+                      title={t("app.dismiss")}
+                      onClick={onDismissMessage}
+                    >
+                      <CloseIcon />
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="settings-page-shell">
+            <aside className="settings-page-primary-nav" aria-label={t("settings.sections")}>
               {primarySectionGroups.map((group) => (
                 <section key={group.label} className="settings-primary-nav-group" aria-label={group.label}>
                   <p className="settings-primary-nav-group-label">{group.label}</p>
@@ -1839,7 +1848,6 @@ export function SettingsPage({
                       <label className="settings-select-row">
                         <span className="settings-select-copy">
                           <span className="settings-select-title">{t("settings.appearance.colorMode")}</span>
-                          <span className="settings-select-description">{t("settings.appearance.colorModeCopy")}</span>
                         </span>
                         <span className="settings-select-control">
                           <select
@@ -1861,14 +1869,11 @@ export function SettingsPage({
 
                       <label className="settings-select-row">
                         <span className="settings-select-copy">
-                          <span className="settings-select-title">Accent Theme</span>
-                          <span className="settings-select-description">
-                            Switch between the new warm terra palette and the original cool sage shell.
-                          </span>
+                          <span className="settings-select-title">{t("settings.appearance.accentTheme")}</span>
                         </span>
                         <span className="settings-select-control">
                           <select
-                            aria-label="Accent Theme"
+                            aria-label={t("settings.appearance.accentTheme")}
                             value={brandTheme}
                             onChange={(event: ChangeEvent<HTMLSelectElement>) =>
                               onBrandThemeChange(event.target.value as BrandTheme)
@@ -1886,14 +1891,11 @@ export function SettingsPage({
 
                       <label className="settings-select-row">
                         <span className="settings-select-copy">
-                          <span className="settings-select-title">Interface Font</span>
-                          <span className="settings-select-description">
-                            Choose the font used across the desktop interface. Code blocks and terminals keep their monospace font.
-                          </span>
+                          <span className="settings-select-title">{t("settings.appearance.interfaceFont")}</span>
                         </span>
                         <span className="settings-select-control">
                           <select
-                            aria-label="Interface Font"
+                            aria-label={t("settings.appearance.interfaceFont")}
                             value={fontFamily}
                             onChange={(event: ChangeEvent<HTMLSelectElement>) =>
                               onFontFamilyChange(event.target.value as AppearanceFontFamily)
@@ -1914,8 +1916,8 @@ export function SettingsPage({
                   <section className="settings-panel">
                     <div className="settings-section-header">
                       <div>
-                        <span className="label">Config</span>
-                        <h3>Theme Config File</h3>
+                        <span className="label">{t("settings.appearance.config")}</span>
+                        <h3>{t("settings.appearance.themeConfigFile")}</h3>
                       </div>
                       <div className="settings-inline-actions">
                         <button
@@ -1924,19 +1926,18 @@ export function SettingsPage({
                           disabled={!hasCustomAppearanceOverrides}
                           onClick={onAppearancePaletteReset}
                         >
-                          Reset Custom Colors
+                          {t("settings.appearance.resetPalette")}
                         </button>
                       </div>
                     </div>
 
                     <div className="settings-theme-config-meta">
                       <div className="settings-theme-config-path">
-                        <span className="label">Saved To</span>
-                        <code>{appearanceConfigPath ?? "Appearance config bridge unavailable."}</code>
+                        <span className="label">{t("settings.appearance.savedTo")}</span>
+                        <code>{appearanceConfigPath ?? t("settings.appearance.configUnavailable")}</code>
                       </div>
                       <p className="settings-helper-text">
-                        This file is saved automatically. After you tune the palette here, you can ask the coding agent to
-                        read this JSON and continue building UI against the exact same color scheme.
+                        {t("settings.appearance.configAutoSavedCopy")}
                       </p>
                       {appearanceConfigError ? (
                         <p className="settings-helper-text settings-theme-config-error">{appearanceConfigError}</p>
@@ -1944,9 +1945,9 @@ export function SettingsPage({
                     </div>
 
                     <label className="settings-theme-config-preview">
-                      <span className="label">Current JSON</span>
+                      <span className="label">{t("settings.appearance.currentJson")}</span>
                       <textarea
-                        aria-label="Current appearance config JSON"
+                        aria-label={t("settings.appearance.currentJsonLabel")}
                         readOnly
                         value={appearanceConfigPreview}
                       />
@@ -1986,7 +1987,7 @@ export function SettingsPage({
 
                               <div className="settings-theme-token-controls">
                                 <div className="settings-theme-token-mode">
-                                  <span>Light</span>
+                                  <span>{t("settings.appearance.light")}</span>
                                   <input
                                     aria-label={lightColorLabel}
                                     className="settings-theme-color-picker"
@@ -2001,7 +2002,7 @@ export function SettingsPage({
                                   />
                                 </div>
                                 <div className="settings-theme-token-mode">
-                                  <span>Dark</span>
+                                  <span>{t("settings.appearance.dark")}</span>
                                   <input
                                     aria-label={darkColorLabel}
                                     className="settings-theme-color-picker"
@@ -2016,11 +2017,13 @@ export function SettingsPage({
                                   />
                                 </div>
                                 <button
-                                  aria-label={`Use preset for ${group.label} ${row.label}`}
+                                  aria-label={t("settings.appearance.usePresetFor", {
+                                    name: `${group.label} ${row.label}`,
+                                  })}
                                   className="secondary-button settings-theme-token-reset"
                                   type="button"
                                   disabled={!isCustomized}
-                                  title="Use Preset"
+                                  title={t("settings.appearance.usePreset")}
                                   onClick={() => {
                                     onAppearanceTokenReset(row.lightToken)
                                     onAppearanceTokenReset(row.darkToken)
@@ -2039,17 +2042,17 @@ export function SettingsPage({
                   <section className="settings-panel">
                     <div className="settings-section-header">
                       <div>
-                        <span className="label">Shell</span>
-                        <h3>Layout Visibility</h3>
+                        <span className="label">{t("settings.appearance.shell")}</span>
+                        <h3>{t("settings.appearance.layoutVisibility")}</h3>
                       </div>
-                      <p>Control whether the narrow navigation rail is shown on the left edge of the desktop shell.</p>
+                      <p>{t("settings.appearance.layoutVisibilityCopy")}</p>
                     </div>
 
                     <button
                       className={isActivityRailVisible ? "settings-toggle-card is-active" : "settings-toggle-card"}
                       role="switch"
                       aria-checked={isActivityRailVisible}
-                      aria-label="Show left rail"
+                      aria-label={t("settings.appearance.showLeftRail")}
                       type="button"
                       onClick={() => onActivityRailVisibilityChange(!isActivityRailVisible)}
                     >
@@ -2058,9 +2061,9 @@ export function SettingsPage({
                           <span className="settings-toggle-icon" aria-hidden="true">
                             <LayoutSidebarLeftIcon />
                           </span>
-                          <span>Show left rail</span>
+                          <span>{t("settings.appearance.showLeftRail")}</span>
                         </strong>
-                        <small>Display the narrow rail and keep the sidebar toggle inside it.</small>
+                        <small>{t("settings.appearance.showLeftRailCopy")}</small>
                       </span>
                       <span className="settings-toggle-control" aria-hidden="true">
                         <span className="settings-toggle-thumb" />
@@ -2068,35 +2071,35 @@ export function SettingsPage({
                     </button>
 
                     <p className="settings-helper-text">
-                      When the left rail is hidden, its toggle moves into the left sidebar header or the left side of the canvas top menu. The right inspector has no rail, so its toggle always switches between the inspector header and the right side of the canvas top menu.
+                      {t("settings.appearance.leftRailHiddenCopy")}
                     </p>
                   </section>
 
                   <section className="settings-panel">
                     <div className="settings-section-header">
                       <div>
-                        <span className="label">Current</span>
-                        <h3>Appearance State</h3>
+                        <span className="label">{t("settings.appearance.current")}</span>
+                        <h3>{t("settings.appearance.state")}</h3>
                       </div>
-                      <p>The left rail is optional. The right inspector stays toggle-only and does not use a dedicated rail.</p>
+                      <p>{t("settings.appearance.stateCopy")}</p>
                     </div>
 
                     <div className="settings-section-summary">
                       <article className="settings-summary-card">
-                        <span className="label">Left</span>
-                        <strong>{isActivityRailVisible ? "Shown" : "Hidden"}</strong>
+                        <span className="label">{t("settings.appearance.left")}</span>
+                        <strong>
+                          {isActivityRailVisible ? t("settings.appearance.shown") : t("settings.appearance.hidden")}
+                        </strong>
                         <p>
                           {isActivityRailVisible
-                            ? "The narrow rail is visible and always contains the sidebar toggle."
-                            : "The rail is hidden, and the toggle appears in the sidebar header or canvas top menu depending on the current layout."}
+                            ? t("settings.appearance.leftRailShownSummary")
+                            : t("settings.appearance.leftRailHiddenSummary")}
                         </p>
                       </article>
                       <article className="settings-summary-card">
-                        <span className="label">Right</span>
-                        <strong>No rail</strong>
-                        <p>
-                          The inspector toggle lives in the right sidebar header while the sidebar is open, and moves to the canvas top menu when the inspector is collapsed.
-                        </p>
+                        <span className="label">{t("settings.appearance.right")}</span>
+                        <strong>{t("settings.appearance.noRail")}</strong>
+                        <p>{t("settings.appearance.rightNoRailSummary")}</p>
                       </article>
                     </div>
                   </section>
@@ -2382,12 +2385,13 @@ export function SettingsPage({
                   <section className="settings-services-layout" aria-label="Provider layout">
                     <div className="settings-service-list-panel settings-provider-list-panel">
                       <div className="settings-provider-search-row">
-                        <div className="settings-field settings-search-field">
+                        <div className="settings-provider-search-control" role="search">
+                          <SearchIcon />
                           <input
-                            aria-label="Search providers"
-                            type="text"
+                            aria-label={t("settings.provider.searchProviders")}
+                            type="search"
                             value={providerSearch}
-                            placeholder="Search providers"
+                            placeholder={t("settings.provider.searchProviders")}
                             onChange={(event: ChangeEvent<HTMLInputElement>) => setProviderSearch(event.target.value)}
                           />
                         </div>
@@ -2398,7 +2402,7 @@ export function SettingsPage({
                           disabled={isRefreshingProviderCatalog}
                           onClick={() => void onRefreshProviderCatalog()}
                         >
-                          {isRefreshingProviderCatalog ? "Refreshing..." : "Refresh"}
+                          {isRefreshingProviderCatalog ? t("settings.provider.refreshingCatalog") : t("app.refresh")}
                         </button>
                       </div>
 
@@ -2407,8 +2411,8 @@ export function SettingsPage({
                           <div className="settings-service-list" role="list" aria-label="Provider list">
                             {filteredCatalog.map((provider) => {
                               const isActive = provider.id === activeProvider?.id
-                              const connectionLabel = getProviderConnectionLabel(provider)
-                              const sourceLabel = providerSourceLabel(provider)
+                              const connectionLabel = getProviderConnectionLabel(provider, t)
+                              const sourceLabel = getProviderSourceLabel(provider, t)
 
                               return (
                                 <button
@@ -2435,7 +2439,7 @@ export function SettingsPage({
                                       {isProviderConnected(provider) ? <ConnectedStatusIcon /> : <DisconnectedStatusIcon />}
                                     </span>
                                   </div>
-                                  {sourceLabel !== "Catalog" ? <span className="settings-service-item-copy">{sourceLabel}</span> : null}
+                                  {provider.source !== "api" ? <span className="settings-service-item-copy">{sourceLabel}</span> : null}
                                 </button>
                               )
                             })}
@@ -2467,7 +2471,7 @@ export function SettingsPage({
                                     }
                                     aria-hidden="true"
                                   />
-                                  {getProviderHeaderSummary(activeProvider)}
+                                  {getProviderHeaderSummary(activeProvider, t)}
                                 </p>
                               </div>
                             </div>
@@ -2475,10 +2479,16 @@ export function SettingsPage({
                             <div className="provider-detail-divider" />
 
                             <div className="provider-detail-body">
-                              <div className="provider-detail-field">
-                                <span className="settings-field-label">连接方式</span>
+                              <div className="provider-detail-row">
+                                <div className="provider-detail-row-copy">
+                                  <span className="settings-field-label">{t("settings.provider.connectionMethod")}</span>
+                                </div>
 
-                                <div className="provider-radio-stack" role="radiogroup" aria-label={`${activeProvider.name} connection method`}>
+                                <div
+                                  className="provider-radio-stack provider-detail-row-control"
+                                  role="radiogroup"
+                                  aria-label={`${activeProvider.name} connection method`}
+                                >
                                   {activeProvider.authCapabilities
                                     .filter((capability) => capability.kind !== "api_key")
                                     .map((capability) => (
@@ -2489,7 +2499,7 @@ export function SettingsPage({
                                           checked={activeProviderSelectedMethod === capability.method}
                                           onChange={() => selectProviderAuthOption(activeProvider.id, capability.method)}
                                         />
-                                        <span>{getProviderAuthMethodOptionLabel(activeProvider, capability)}</span>
+                                        <span>{getProviderAuthMethodOptionLabel(activeProvider, capability, t)}</span>
                                       </label>
                                     ))}
                                   {activeProviderApiKeyCapability && activeProvider.env.length > 0 ? (
@@ -2505,7 +2515,7 @@ export function SettingsPage({
                                           selectProviderAuthOption(activeProvider.id, activeProviderApiKeyCapability.method, "environment")
                                         }
                                       />
-                                      <span>使用环境变量 {activeProvider.env.join(", ")}</span>
+                                      <span>{t("settings.provider.useEnvironmentVariable", { env: activeProvider.env.join(", ") })}</span>
                                     </label>
                                   ) : null}
                                   {activeProviderApiKeyCapability ? (
@@ -2521,16 +2531,19 @@ export function SettingsPage({
                                           selectProviderAuthOption(activeProvider.id, activeProviderApiKeyCapability.method, "manual")
                                         }
                                       />
-                                      <span>手动输入 API key</span>
+                                      <span>{t("settings.provider.enterApiKeyManually")}</span>
                                     </label>
                                   ) : null}
                                 </div>
                               </div>
 
                               {activeProviderSelectedCapability?.kind === "api_key" ? (
-                                <div className="provider-detail-field">
-                                  <label className="settings-field provider-key-field">
-                                    <span className="settings-field-label">API key</span>
+                                <div className="provider-detail-row">
+                                  <div className="provider-detail-row-copy">
+                                    <span className="settings-field-label">{t("settings.provider.apiKeyLabel")}</span>
+                                  </div>
+
+                                  <label className="provider-key-field provider-detail-row-control">
                                     <span className="provider-key-input-wrap">
                                       <input
                                         aria-label={`API key for ${activeProvider.name}`}
@@ -2541,7 +2554,7 @@ export function SettingsPage({
                                             ? "••••••••••••••••••••••••"
                                             : activeProviderDraft.apiKey
                                         }
-                                        placeholder={getProviderKeyPlaceholder(activeProvider)}
+                                        placeholder={getProviderKeyPlaceholder(activeProvider, t)}
                                         onChange={(event) =>
                                           onProviderDraftChange(activeProvider.id, "apiKey", event.target.value)
                                         }
@@ -2549,18 +2562,15 @@ export function SettingsPage({
                                       <button
                                         className="provider-key-visibility-button"
                                         type="button"
-                                        aria-label={activeProviderApiKeyVisible ? "隐藏 API key" : "显示 API key"}
+                                        aria-label={
+                                          activeProviderApiKeyVisible ? t("settings.provider.hideApiKey") : t("settings.provider.showApiKey")
+                                        }
                                         onClick={() => toggleProviderApiKeyVisibility(activeProvider.id)}
                                       >
                                         {activeProviderApiKeyVisible ? <EyeIcon /> : <EyeOffIcon />}
                                       </button>
                                     </span>
                                   </label>
-                                  <p className="provider-detail-helper">
-                                    {activeProviderUsesEnvironment
-                                      ? "当前连接来自环境变量，修改需更新本地环境变量。"
-                                      : activeProviderCredentialSummary ?? "API key 会保存到全应用共享凭据中。"}
-                                  </p>
                                 </div>
                               ) : null}
 
@@ -2713,7 +2723,7 @@ export function SettingsPage({
 
                               <details className="provider-advanced-settings">
                                 <summary>
-                                  <span>高级设置</span>
+                                  <span>{t("settings.provider.advancedSettings")}</span>
                                   <ChevronDownIcon />
                                 </summary>
                                 <div className="provider-advanced-settings-body">
@@ -2725,7 +2735,7 @@ export function SettingsPage({
                                       aria-label={`Base URL for ${activeProvider.name}`}
                                       type="text"
                                       value={activeProviderDraft.baseURL}
-                                      placeholder={activeProvider.baseURL ?? "Optional custom endpoint"}
+                                      placeholder={activeProvider.baseURL ?? t("settings.provider.optionalCustomEndpoint")}
                                       onChange={(event) =>
                                         onProviderDraftChange(activeProvider.id, "baseURL", event.target.value)
                                       }
@@ -2743,7 +2753,7 @@ export function SettingsPage({
                                   disabled={activeProviderBusy || activeProviderIsTesting}
                                   onClick={handleActiveProviderTest}
                                 >
-                                  {activeProviderIsTesting ? "测试中..." : "测试连接"}
+                                  {activeProviderIsTesting ? t("settings.provider.testingConnection") : t("settings.provider.testConnection")}
                                 </button>
                                 <button
                                   className="primary-button"
@@ -2752,7 +2762,7 @@ export function SettingsPage({
                                   disabled={activeProviderBusy || activeProviderIsTesting || !activeProviderCanSave}
                                   onClick={() => void handleActiveProviderSave()}
                                 >
-                                  {savingProviderID === activeProvider.id ? "保存中..." : "保存"}
+                                  {savingProviderID === activeProvider.id ? t("app.saving") : t("app.save")}
                                 </button>
                               </div>
                             </div>
@@ -2761,12 +2771,12 @@ export function SettingsPage({
                           <div className="settings-panel">
                             <div className="settings-section-header">
                               <div>
-                                <h3>Provider Models</h3>
+                                <h3>{t("settings.provider.providerModels")}</h3>
                               </div>
                             </div>
 
                             {activeProviderModels.length > 0 ? (
-                              <ModelListView catalog={catalog} models={activeProviderModels} selectionDraft={selectionDraft} />
+                              <ModelListView catalog={catalog} models={activeProviderModels} selectionDraft={selectionDraft} t={t} />
                             ) : (
                               <article className="settings-empty-state">
                                 <span className="label">No Models</span>
@@ -3161,7 +3171,6 @@ export function SettingsPage({
                           <span className="label">Routing</span>
                           <h3>Models</h3>
                         </div>
-                        <p>Choose the preferred primary and small models from the providers already connected in the app.</p>
                       </div>
 
                       <div className="settings-field-grid">
@@ -3242,11 +3251,10 @@ export function SettingsPage({
                           <span className="label">Available</span>
                           <h3>Connected Models</h3>
                         </div>
-                        <p>Every row below comes from a provider that is already configured and available in the app.</p>
                       </div>
 
                       {visibleModels.length > 0 ? (
-                        <ModelListView catalog={catalog} models={visibleModels} selectionDraft={selectionDraft} />
+                        <ModelListView catalog={catalog} models={visibleModels} selectionDraft={selectionDraft} t={t} />
                       ) : (
                         <article className="settings-empty-state">
                           <span className="label">No Models</span>
@@ -3258,8 +3266,10 @@ export function SettingsPage({
                   </div>
                 )
               ) : null}
+              </div>
             </div>
           </div>
+        </div>
         </div>
       </section>
     )
@@ -3476,7 +3486,7 @@ export function SettingsPage({
                                   providerModels.slice(0, 3).map((model) => (
                                     <div key={`${model.providerID}/${model.id}`} className="provider-model-chip">
                                       <strong>{model.name}</strong>
-                                      <span>{buildModelTags(model).join(" / ")}</span>
+                                      <span>{buildModelTags(model, t).join(" / ")}</span>
                                     </div>
                                   ))
                                 ) : (
@@ -3517,7 +3527,6 @@ export function SettingsPage({
                         <span className="label">Routing</span>
                         <h3>Default Model Selection</h3>
                       </div>
-                      <p>Choose the preferred primary and small models from the providers already connected to this project.</p>
                     </div>
 
                     <div className="settings-field-grid">
@@ -3567,7 +3576,6 @@ export function SettingsPage({
                         <span className="label">Available</span>
                         <h3>Connected Models</h3>
                       </div>
-                      <p>Every row below comes from a provider that is already configured and available in this project.</p>
                     </div>
 
                   {visibleModels.length > 0 ? (
@@ -3596,7 +3604,7 @@ export function SettingsPage({
                               </div>
 
                               <div className="model-row-tags">
-                                {buildModelTags(model).map((tag) => (
+                                {buildModelTags(model, t).map((tag) => (
                                   <span key={`${modelValue}-${tag}`} className="settings-badge">
                                     {tag}
                                   </span>
@@ -3652,7 +3660,7 @@ export function SettingsPage({
                               providerModels.slice(0, 3).map((model) => (
                                 <div key={`${model.providerID}/${model.id}`} className="provider-model-chip">
                                   <strong>{model.name}</strong>
-                                  <span>{buildModelTags(model).join(" · ")}</span>
+                                  <span>{buildModelTags(model, t).join(" · ")}</span>
                                 </div>
                               ))
                             ) : (

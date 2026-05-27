@@ -437,6 +437,29 @@ describe("SettingsPage built-in tools", () => {
     expect(onFontFamilyChange).toHaveBeenCalledWith("microsoft-yahei")
   })
 
+  it("uses localized appearance labels without helper descriptions in Chinese", () => {
+    window.localStorage.setItem("desktop.locale", "zh-CN")
+
+    render(
+      <I18nProvider>
+        <SettingsPage
+          {...createSettingsPageProps({
+            brandTheme: "terra",
+            fontFamily: "microsoft-yahei",
+          })}
+        />
+      </I18nProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "外观" }))
+
+    expect(screen.getByRole("combobox", { name: "强调主题" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "暖色 Terra 与沙色" })).toBeInTheDocument()
+    expect(screen.getByRole("combobox", { name: "界面字体" })).toBeInTheDocument()
+    expect(screen.queryByText("选择亮色、暗色或跟随系统的配色方案。")).not.toBeInTheDocument()
+    expect(screen.queryByText(/Choose the font used across the desktop interface/i)).not.toBeInTheDocument()
+  })
+
   it("selects the primary model through the provider model picker", () => {
     const onSelectionChange = vi.fn()
 

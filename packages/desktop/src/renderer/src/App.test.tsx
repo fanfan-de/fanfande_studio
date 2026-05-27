@@ -7940,16 +7940,21 @@ describe("App", () => {
     expect(screen.queryByText("Search providers")).not.toBeInTheDocument()
     fireEvent.click(providerNavButton)
     expect(await screen.findByRole("button", { name: "Refresh provider catalog" })).toBeInTheDocument()
-    expect(await screen.findByRole("textbox", { name: "Search providers" })).toBeInTheDocument()
+    expect(await screen.findByRole("searchbox", { name: "Search providers" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /DeepSeek.*Connected/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()
     expect(screen.queryByText("Catalog")).not.toBeInTheDocument()
     expect(screen.queryByText("No known models yet")).not.toBeInTheDocument()
     expect(screen.queryByText("1 known models")).not.toBeInTheDocument()
     expect(await screen.findByRole("heading", { name: "DeepSeek" })).toBeInTheDocument()
-    expect(screen.getByText("连接方式")).toBeInTheDocument()
-    expect(screen.getByText("使用环境变量 DEEPSEEK_API_KEY")).toBeInTheDocument()
-    expect(screen.getByText("高级设置")).toBeInTheDocument()
+    expect(screen.getByText("Connection method")).toBeInTheDocument()
+    expect(screen.queryByText("Choose how this provider authenticates.")).not.toBeInTheDocument()
+    expect(screen.getByText("Use environment variable DEEPSEEK_API_KEY")).toBeInTheDocument()
+    expect(
+      screen.queryByText("Current connection comes from environment variables. Update the local environment to change it."),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText("Advanced settings")).toBeInTheDocument()
+    expect(screen.queryByText("Override the provider default endpoint.")).not.toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Provider Models" })).toBeInTheDocument()
     expect(settingsDialog.querySelector(".settings-detail-hero")).toBeNull()
     expect(screen.queryByText("Provider ID")).not.toBeInTheDocument()
@@ -7958,8 +7963,8 @@ describe("App", () => {
     expect(screen.queryByText("Edit the shared credentials and endpoint the app should use when routing to DeepSeek.")).not.toBeInTheDocument()
     expect(screen.queryByText("Reset removes the saved provider configuration and falls back to environment or catalog defaults.")).not.toBeInTheDocument()
     expect(screen.getByLabelText("API key for DeepSeek")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "测试连接" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Save DeepSeek settings" })).toHaveTextContent("保存")
+    expect(screen.getByRole("button", { name: "Test connection" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Save DeepSeek settings" })).toHaveTextContent("Save")
 
     const providerList = screen.getByRole("list", { name: "Provider list" })
     const providerButtons = within(providerList).getAllByRole("button")
@@ -9209,13 +9214,15 @@ describe("App", () => {
       within(detailPanel as HTMLElement).queryByText("This provider can also inherit credentials from the current environment."),
     ).not.toBeInTheDocument()
     expect(
-      within(detailPanel as HTMLElement).getByText("当前连接来自环境变量，修改需更新本地环境变量。"),
-    ).toBeInTheDocument()
+      within(detailPanel as HTMLElement).queryByText(
+        "Current connection comes from environment variables. Update the local environment to change it.",
+      ),
+    ).not.toBeInTheDocument()
     expect((detailPanel as HTMLElement).querySelector(".provider-advanced-settings")).not.toHaveAttribute("open")
     expect(
       within(detailPanel as HTMLElement).queryByText("保存全局 provider 的非敏感设置。连接凭据使用全应用共享连接。"),
     ).not.toBeInTheDocument()
-    expect(within(detailPanel as HTMLElement).getByRole("button", { name: "测试连接" })).toBeInTheDocument()
+    expect(within(detailPanel as HTMLElement).getByRole("button", { name: "Test connection" })).toBeInTheDocument()
   })
 
   it("keeps Anybox network settings product-level and does not send proxy fields", async () => {
@@ -9281,7 +9288,7 @@ describe("App", () => {
     expect(screen.queryByText("代理模式")).not.toBeInTheDocument()
     expect(screen.queryByLabelText("Anybox proxy URL")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "测试连接" }))
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }))
     await waitFor(() => {
       const payload = testProviderConnection.mock.calls[0]?.[0]
       expect(payload).toMatchObject({
@@ -9338,7 +9345,7 @@ describe("App", () => {
 
     await openProviderSettingsSection()
     await screen.findByRole("heading", { name: "DeepSeek" })
-    fireEvent.click(screen.getByRole("button", { name: "测试连接" }))
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }))
 
     await waitFor(() => {
       expect(window.desktop!.testGlobalProviderConnection).toHaveBeenCalledWith(
@@ -9395,7 +9402,7 @@ describe("App", () => {
         value: "https://draft.deepseek.test/v1",
       },
     })
-    fireEvent.click(screen.getByRole("button", { name: "测试连接" }))
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }))
 
     await waitFor(() => {
       expect(window.desktop!.testGlobalProviderConnection).toHaveBeenCalledWith(
@@ -9464,15 +9471,15 @@ describe("App", () => {
     await screen.findByRole("heading", { name: "OpenAI" })
 
     expect(screen.queryByLabelText("Authentication method for OpenAI")).not.toBeInTheDocument()
-    expect(screen.getByRole("radio", { name: "ChatGPT Pro/Plus（浏览器登录）" })).toBeChecked()
-    expect(screen.getByRole("radio", { name: "ChatGPT Pro/Plus（设备码登录）" })).toBeInTheDocument()
-    expect(screen.getByRole("radio", { name: "使用环境变量 OPENAI_API_KEY" })).toBeInTheDocument()
-    expect(screen.getByRole("radio", { name: "手动输入 API key" })).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: "ChatGPT Pro/Plus (browser sign-in)" })).toBeChecked()
+    expect(screen.getByRole("radio", { name: "ChatGPT Pro/Plus (device code sign-in)" })).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: "Use environment variable OPENAI_API_KEY" })).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: "Enter API key manually" })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("radio", { name: "ChatGPT Pro/Plus（设备码登录）" }))
+    fireEvent.click(screen.getByRole("radio", { name: "ChatGPT Pro/Plus (device code sign-in)" }))
     expect(screen.getByRole("button", { name: "开始设备登录" })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("radio", { name: "手动输入 API key" }))
+    fireEvent.click(screen.getByRole("radio", { name: "Enter API key manually" }))
     expect(screen.getByLabelText("API key for OpenAI")).toBeInTheDocument()
   })
 
@@ -9742,8 +9749,10 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     const dialog = await screen.findByRole("dialog", { name: "Settings" })
+    const settingsPositioner = dialog.closest(".settings-page-positioner") as HTMLElement | null
     const settingsOverlay = container.querySelector(".settings-page-overlay")
     const settingsHeader = container.querySelector(".settings-page-header")
+    expect(settingsPositioner).not.toBeNull()
     expect(settingsOverlay).not.toBeNull()
     expect(settingsHeader).not.toBeNull()
 
@@ -9761,7 +9770,7 @@ describe("App", () => {
         toJSON: () => ({}),
       }),
     })
-    Object.defineProperty(dialog, "getBoundingClientRect", {
+    Object.defineProperty(settingsPositioner!, "getBoundingClientRect", {
       configurable: true,
       value: () => ({
         bottom: 500,
@@ -9794,7 +9803,7 @@ describe("App", () => {
     })
 
     await waitFor(() => {
-      expect(dialog).toHaveStyle({ transform: "translate3d(100px, 50px, 0)" })
+      expect(settingsPositioner).toHaveStyle({ transform: "translate3d(100px, 50px, 0)" })
     })
 
     fireEvent.pointerUp(window, {
@@ -12579,6 +12588,12 @@ describe("App", () => {
     )
   })
 
+  it("lets sidebar-hosted skills and MCP pages use the full canvas width", () => {
+    expect(styles).toMatch(
+      /\.settings-page-main\.is-services\s+\.settings-services-layout\.global-skills-page-layout\.is-sidebar-hosted,\s*\.settings-page-main\.is-services\s+\.settings-services-layout\.mcp-servers-page-layout\.is-sidebar-hosted\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s,
+    )
+  })
+
   it("keeps the global skills search row pinned to the top of the tree", () => {
     expect(styles).toMatch(/\.skills-tree-search-row\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;/s)
   })
@@ -12609,7 +12624,7 @@ describe("App", () => {
       /\.settings-page-main:not\(\.is-services\):not\(\.prompt-presets-page-main\)\s+\.settings-actions-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;[^}]*align-items:\s*center;/s,
     )
     expect(styles).toMatch(
-      /\.settings-page-main:not\(\.is-services\):not\(\.prompt-presets-page-main\)\s+\.provider-model-picker-panel\s*\{[^}]*right:\s*0;[^}]*left:\s*auto;[^}]*width:\s*min\(560px,\s*calc\(100vw - var\(--settings-nav-width\) - 112px\)\);/s,
+      /\.settings-page-main:not\(\.is-services\):not\(\.prompt-presets-page-main\)\s+\.provider-model-picker-panel\s*\{[^}]*right:\s*0;[^}]*left:\s*auto;[^}]*width:\s*min\(320px,\s*calc\(100vw - var\(--settings-nav-width\) - 112px\)\);/s,
     )
   })
 

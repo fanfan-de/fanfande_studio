@@ -91,7 +91,7 @@ const EMPTY_PROJECT_MODEL_SELECTION: ProjectModelSelection = {
   imageDefaultCount: null,
 }
 
-function buildModelSelectionUpdatePayload(
+export function buildModelSelectionUpdatePayload(
   savedSelection: ProjectModelSelection,
   nextSelection: ProjectModelSelection,
 ) {
@@ -104,8 +104,8 @@ function buildModelSelectionUpdatePayload(
   }
 
   return {
-    model: nextSelection.model,
-    small_model: nextSelection.smallModel,
+    ...(savedSelection.model !== nextSelection.model ? { model: nextSelection.model } : {}),
+    ...(savedSelection.smallModel !== nextSelection.smallModel ? { small_model: nextSelection.smallModel } : {}),
     ...(savedSelection.reasoningEffort !== nextSelection.reasoningEffort
       ? { reasoning_effort: nextSelection.reasoningEffort }
       : {}),
