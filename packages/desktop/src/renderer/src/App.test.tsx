@@ -9937,8 +9937,10 @@ describe("App", () => {
     fireEvent.click(within(modelPicker).getByRole("option", { name: "DeepSeek Reasoner" }))
 
     await waitFor(() => {
-      expect(window.desktop!.updateGlobalModelSelection).toHaveBeenCalledWith({
+      expect(window.desktop!.updateGlobalModelSelection).toHaveBeenNthCalledWith(1, {
         model: "openai/gpt-4o-mini",
+      })
+      expect(window.desktop!.updateGlobalModelSelection).toHaveBeenNthCalledWith(2, {
         small_model: "deepseek/deepseek-reasoner",
       })
     })
@@ -10365,7 +10367,7 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Select project skills: layout-review" })).toBeInTheDocument()
   })
 
-  it("omits the separate project plugin selector from the session canvas top menu", async () => {
+  it("renders the project plugin selector in the session canvas top menu", async () => {
     window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
       ok: true,
       baseURL: "http://127.0.0.1:4096",
@@ -10420,7 +10422,7 @@ describe("App", () => {
       })
     })
 
-    expect(screen.queryByRole("button", { name: /^Select project plugins:/ })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Select project plugins:/ })).toBeInTheDocument()
     expect(screen.queryByRole("menu", { name: "Project plugin selection" })).not.toBeInTheDocument()
     expect(window.desktop!.updateProjectPluginSelection).not.toHaveBeenCalled()
   })
@@ -11412,8 +11414,9 @@ describe("App", () => {
 
     fireEvent.click(appFolder)
 
-    expect(appFolder).toHaveAttribute("aria-expanded", "true")
+    expect(appFolder).toHaveAttribute("aria-expanded", "false")
     expect(srcFolder).toHaveAttribute("aria-expanded", "true")
+    expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
     expect(appFolder.closest(".project-row")).toHaveClass("is-active")
     expect(srcFolder.closest(".project-row")).not.toHaveClass("is-active")
     expect(document.querySelectorAll(".project-row.is-active")).toHaveLength(1)

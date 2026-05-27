@@ -151,7 +151,6 @@ async function writeConnectorBuildConfig() {
 async function main() {
   const bunBinary = resolveBunBinary()
   const runtimeNodeModulesDir = path.join(runtimeDir, "node_modules")
-  const bundledServerOutput = path.join(runtimeDir, "agent-server.js")
 
   await fsp.rm(runtimeDir, { recursive: true, force: true })
   await fsp.mkdir(runtimeNodeModulesDir, { recursive: true })
@@ -159,7 +158,15 @@ async function main() {
   console.log(`[desktop][build] bundling agent server with ${bunBinary}`)
   run(
     bunBinary,
-    ["build", path.join(agentDir, "src", "server", "start.ts"), "--target=bun", "--outfile", bundledServerOutput],
+    [
+      "build",
+      path.join(agentDir, "src", "server", "start.ts"),
+      "--target=bun",
+      "--outdir",
+      runtimeDir,
+      "--entry-naming",
+      "agent-server.js",
+    ],
     { cwd: repoRoot },
   )
 
