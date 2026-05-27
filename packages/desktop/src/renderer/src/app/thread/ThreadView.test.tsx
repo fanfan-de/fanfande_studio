@@ -3667,6 +3667,82 @@ describe("ThreadView scroll restoration", () => {
     }
   })
 
+  it("keeps the active streaming response at the bottom when trailing trace rows render below it", () => {
+    const layoutSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("thread-column")) return createElementRect({ top: 0, height: 400 })
+      if (this.getAttribute("data-trace-item-id") === "response-1") return createElementRect({ top: 64, height: 960 })
+
+      return createElementRect()
+    })
+    const buildStreamingTurn = (text: string) => assistantTraceTurn("assistant-1", [
+      {
+        id: "response-1",
+        kind: "text",
+        timestamp: 1,
+        label: "Assistant",
+        text,
+        status: "running",
+        isStreaming: true,
+      },
+      {
+        id: "tool-1",
+        kind: "tool",
+        timestamp: 2,
+        label: "Tool",
+        title: "ssh_shell_command",
+        detail: "completed",
+        status: "completed",
+      },
+      {
+        id: "backend-fallback",
+        kind: "system",
+        timestamp: 3,
+        label: "System",
+        title: "No visible output",
+        detail: "The backend stored this assistant turn without replayable trace items.",
+        status: "completed",
+        section: "response",
+        visibilityKey: "response",
+      },
+    ], true)
+
+    try {
+      const { rerender, props, threadColumn } = renderThread([
+        userTurn("user-1", "Prompt"),
+        buildStreamingTurn("First chunk"),
+      ], {
+        scrollStateKey: "session:streaming-response-before-trace",
+      })
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 800,
+        scrollTop: 400,
+      })
+
+      fireEvent.wheel(threadColumn, { deltaY: 120 })
+      fireEvent.scroll(threadColumn)
+
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 1600,
+        scrollTop: 400,
+      })
+      rerender(
+        <ThreadView
+          {...props}
+          activeTurns={[
+            userTurn("user-1", "Prompt"),
+            buildStreamingTurn("First chunk\nSecond chunk"),
+          ]}
+        />,
+      )
+
+      expect(threadColumn.scrollTop).toBe(1024)
+    } finally {
+      layoutSpy.mockRestore()
+    }
+  })
+
   it("smoothly follows small streaming height changes while pinned to the bottom", () => {
     const originalRequestAnimationFrame = window.requestAnimationFrame
     const originalCancelAnimationFrame = window.cancelAnimationFrame

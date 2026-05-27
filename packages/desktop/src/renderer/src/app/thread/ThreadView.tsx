@@ -200,6 +200,7 @@ const THREAD_FOLLOW_SMOOTH_SCROLL_MAX_DELTA_PX = 420
 const THREAD_FOLLOW_SMOOTH_SCROLL_MIN_DURATION_MS = 90
 const THREAD_FOLLOW_SMOOTH_SCROLL_MAX_DURATION_MS = 220
 const THREAD_FOLLOW_SMOOTH_SCROLL_PX_PER_MS = 2.4
+const THREAD_STREAMING_RESPONSE_SELECTOR = ".assistant-section.is-response .trace-item.is-streaming[data-kind=\"text\"]"
 const THREAD_AUTO_COLLAPSE_MOTION_MS = 240
 const THREAD_VIRTUALIZATION_MIN_ROWS = 80
 const THREAD_VIRTUAL_OVERSCAN_PX = 900
@@ -349,6 +350,15 @@ function getThreadSmoothFollowScrollDuration(delta: number) {
   )
 }
 
+function isUsableThreadLayoutRect(rect: DOMRect) {
+  return (
+    Number.isFinite(rect.top) &&
+    Number.isFinite(rect.bottom) &&
+    Number.isFinite(rect.height) &&
+    rect.height > 0
+  )
+}
+
 function prefersReducedThreadMotion() {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false
 
@@ -392,6 +402,33 @@ function readThreadColumnPaddingBottom(threadColumn: HTMLDivElement) {
 
   const value = Number.parseFloat(window.getComputedStyle(threadColumn).paddingBottom)
   return Number.isFinite(value) ? value : 0
+}
+
+function getStreamingResponseScrollTarget(threadColumn: HTMLDivElement): ThreadFollowScrollTarget | null {
+  const columnRect = threadColumn.getBoundingClientRect()
+  if (!isUsableThreadLayoutRect(columnRect)) return null
+
+  const candidates = Array.from(
+    threadColumn.querySelectorAll<HTMLElement>(THREAD_STREAMING_RESPONSE_SELECTOR),
+  ).reverse()
+
+  for (const element of candidates) {
+    if (element.closest(".thread-column") !== threadColumn) continue
+    if (!element.closest(".assistant-turn[data-turn-id]")) continue
+
+    const elementRect = element.getBoundingClientRect()
+    if (!isUsableThreadLayoutRect(elementRect)) continue
+
+    const viewportBottom = columnRect.bottom - readThreadColumnPaddingBottom(threadColumn)
+    const scrollTop = Math.max(0, threadColumn.scrollTop + elementRect.bottom - viewportBottom)
+
+    return {
+      scrollTop,
+      visualScrollTop: scrollTop,
+    }
+  }
+
+  return null
 }
 
 function buildThreadVirtualLayout(rows: ThreadDisplayRow[], measuredHeights: Map<string, number>): ThreadVirtualLayout {
@@ -3710,7 +3747,7 @@ function GenericTraceItemView({
   const selectableFilePaths = showFileActions ? item.filePaths?.filter(Boolean) ?? [] : []
 
   return (
-    <article className={className} data-kind={item.kind}>
+    <article className={className} data-kind={item.kind} data-trace-item-id={item.id}>
       <TraceItemHeader item={item} />
       <TraceItemTextBody
         item={item}
@@ -5455,6 +5492,9 @@ function VisibleThreadView({
   }
 
   function getLatestThreadContentScrollTarget(threadColumn: HTMLDivElement): ThreadFollowScrollTarget {
+    const streamingResponseTarget = getStreamingResponseScrollTarget(threadColumn)
+    if (streamingResponseTarget) return streamingResponseTarget
+
     if (shouldVirtualizeThreadRows) {
       const scrollTop = getThreadVirtualScrollMaxTop(threadColumn)
       return {

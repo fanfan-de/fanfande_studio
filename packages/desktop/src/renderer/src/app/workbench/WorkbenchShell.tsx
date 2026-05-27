@@ -1076,7 +1076,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
               panel?.api.setActive()
               return
             }
-            props.onOpenCreateSessionTab(pane?.workspaceID ?? null, paneID)
+            props.onOpenCreateSessionTab(null, paneID)
           }}
         >
           <PlusIcon />

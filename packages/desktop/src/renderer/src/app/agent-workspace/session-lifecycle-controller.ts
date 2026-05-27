@@ -596,35 +596,15 @@ export function useSessionLifecycleController({
   }
 
   function handleProjectClick(workspace: WorkspaceGroup) {
-    const isSelected = selectedFolderID === workspace.id
     const isExpanded = expandedFolderIDs.includes(workspace.id)
     setSelectedFolderID(workspace.id)
 
-    if (isSelected && isExpanded) {
+    if (isExpanded) {
       setExpandedFolderIDs((current) => removeExpandedFolderID(current, workspace.id))
-      const primarySessions = getPrimaryWorkspaceSessions(workspace.sessions)
-      if (primarySessions.length === 0) {
-        return
-      }
-
-      if (isCreateSessionTabActive || !workspace.sessions.some((session) => session.id === activeSessionID)) {
-        focusSession(workspace.id, primarySessions[0]!.id)
-      }
       return
     }
 
     setExpandedFolderIDs((current) => ensureExpandedFolderID(current, workspace.id))
-    const currentSessionInWorkspace = workspace.sessions.some((session) => session.id === activeSessionID)
-    const primarySessions = getPrimaryWorkspaceSessions(workspace.sessions)
-    if (primarySessions.length === 0) {
-      return
-    }
-
-    if (currentSessionInWorkspace && !isCreateSessionTabActive && activeSessionID) {
-      return
-    }
-
-    focusSession(workspace.id, primarySessions[0]!.id)
   }
 
   function handleSessionSelect(workspaceID: string, sessionID: string) {
