@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import type { ComponentProps } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { PluginsPage } from "./PluginsPage"
@@ -183,6 +183,7 @@ function createInstalledPlugin(overrides: Partial<InstalledPlugin> = {}): Instal
     updatedAt: overrides.updatedAt ?? 2,
     lastDiagnostic: overrides.lastDiagnostic,
     lastConnectorDiagnostics: overrides.lastConnectorDiagnostics,
+    missingPackage: overrides.missingPackage,
   }
 }
 
@@ -257,6 +258,46 @@ describe("PluginsPage", () => {
     expect(onInstallPlugin).toHaveBeenCalledWith("filesystem")
   })
 
+  it("lists installed plugins in the installed sidebar", () => {
+    const onPluginSelect = vi.fn()
+
+    render(
+      <PluginsPage
+        {...createProps({
+          installedPlugins: [createInstalledPlugin()],
+          onPluginSelect,
+        })}
+      />,
+    )
+
+    const installedSidebar = screen.getByRole("complementary", { name: "Installed plugins" })
+    expect(installedSidebar).toBeInTheDocument()
+    const installedButton = within(installedSidebar).getByRole("button", { name: "Filesystem installed enabled" })
+    fireEvent.click(installedButton)
+
+    expect(onPluginSelect).toHaveBeenCalledWith("filesystem")
+  })
+
+  it("shows installed plugins even when catalog metadata is missing", () => {
+    render(
+      <PluginsPage
+        {...createProps({
+          installedPlugins: [
+            createInstalledPlugin({
+              pluginID: "local-helper",
+              version: "2.1.0",
+            }),
+          ],
+          pluginCatalog: [],
+        })}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: "Local Helper installed enabled" })).toBeInTheDocument()
+    expect(screen.getByText("v2.1.0")).toBeInTheDocument()
+    expect(screen.queryByText("Enabled - v2.1.0")).not.toBeInTheDocument()
+  })
+
   it("opens selected plugin details as a second-level view and returns to the marketplace", () => {
     const onInstallPlugin = vi.fn()
     const onPluginDeselect = vi.fn()
@@ -291,6 +332,9 @@ describe("PluginsPage", () => {
     expect(breadcrumb).toHaveTextContent("插件")
     expect(screen.getByLabelText("Plugins top menu")).not.toContainElement(breadcrumb)
     expect(breadcrumb.closest(".plugins-page-main")).not.toBeNull()
+    const detailColumn = breadcrumb.closest(".plugins-marketplace-content")
+    expect(detailColumn).not.toBeNull()
+    expect(screen.getByRole("complementary", { name: "Installed plugins" })).not.toContainElement(breadcrumb)
     expect(screen.getByRole("heading", { name: "Filesystem", level: 1 })).toBeInTheDocument()
     expect(screen.queryByLabelText("Filesystem example prompts")).not.toBeInTheDocument()
     const installButton = screen.getByRole("button", { name: "Install Filesystem" })

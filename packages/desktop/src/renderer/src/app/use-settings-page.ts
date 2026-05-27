@@ -29,7 +29,7 @@ import type {
 } from "./types"
 import { mergeMcpToolPolicyDefaults } from "./mcp/mcp-tool-policies"
 import { parseMcpConfigJson } from "./mcp/mcp-config-import"
-import { arePluginCatalogsEqual } from "./plugin-catalog"
+import { arePluginCatalogsEqual, mergePluginCatalogWithInstalled } from "./plugin-catalog"
 
 interface SettingsMessage {
   tone: "success" | "error"
@@ -1370,7 +1370,9 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     nextInstalled: InstalledPlugin[],
     nextConnectorStatuses: Record<string, PluginConnectorStatus[]>,
   ) {
-    setPluginCatalog(nextCatalog)
+    const nextDisplayCatalog = mergePluginCatalogWithInstalled(nextCatalog, nextInstalled)
+
+    setPluginCatalog(nextDisplayCatalog)
     setInstalledPlugins(nextInstalled)
     setPluginConnectorStatuses(nextConnectorStatuses)
     setPluginDiagnostics((current) =>
@@ -1383,11 +1385,11 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     const currentActivePluginID = activePluginIDRef.current
     const preferredPluginID =
-      currentActivePluginID && nextCatalog.some((plugin) => plugin.id === currentActivePluginID)
+      currentActivePluginID && nextDisplayCatalog.some((plugin) => plugin.id === currentActivePluginID)
         ? currentActivePluginID
         : null
     setActivePluginSelection(preferredPluginID)
-    const nextActivePlugin = nextCatalog.find((plugin) => plugin.id === preferredPluginID)
+    const nextActivePlugin = nextDisplayCatalog.find((plugin) => plugin.id === preferredPluginID)
     const nextInstalledPlugin = nextInstalled.find((plugin) => plugin.pluginID === preferredPluginID) ?? null
     setPluginDraft(buildPluginDraft(nextActivePlugin, nextInstalledPlugin))
   }

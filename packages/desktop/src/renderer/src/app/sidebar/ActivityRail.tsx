@@ -7,7 +7,6 @@ import {
   LayoutSidebarLeftIcon,
   SettingsIcon,
   SideChatIcon,
-  TerminalIcon,
   ToolsIcon,
 } from "../icons"
 import { joinClassNames, SidebarToggleButton, type SidebarSide } from "../shared-ui"
@@ -17,10 +16,8 @@ interface ActivityRailProps {
   activeView: LeftSidebarView
   bottomSlotRef?: (node: HTMLDivElement | null) => void
   isSettingsOpen?: boolean
-  isSshConnectionsActive?: boolean
   isSidebarCollapsed: boolean
   onOpenSettings?: () => void
-  onOpenSshConnections?: () => void
   onViewChange: (view: LeftSidebarView) => void
   onToggleSidebar: () => void
   side: SidebarSide
@@ -68,10 +65,8 @@ export function ActivityRail({
   activeView,
   bottomSlotRef,
   isSettingsOpen = false,
-  isSshConnectionsActive = false,
   isSidebarCollapsed,
   onOpenSettings,
-  onOpenSshConnections,
   onViewChange,
   onToggleSidebar,
   side,
@@ -119,14 +114,6 @@ export function ActivityRail({
                 />
               )
             })}
-            {onOpenSshConnections ? (
-              <ActivityRailViewButton
-                Icon={TerminalIcon}
-                isActive={isSshConnectionsActive}
-                label="Open SSH"
-                onClick={onOpenSshConnections}
-              />
-            ) : null}
           </div>
         ) : null}
       </div>

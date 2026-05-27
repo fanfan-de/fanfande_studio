@@ -4884,6 +4884,7 @@ body.is-dragging-settings-page {
 }
 
 .session-canvas-top-menu .canvas-top-menu-permission-trigger,
+.session-canvas-top-menu .canvas-top-menu-plugin-trigger,
 .session-canvas-top-menu .canvas-top-menu-mcp-trigger,
 .session-canvas-top-menu .canvas-top-menu-skill-trigger {
   max-width: min(180px, 24vw);
@@ -7202,32 +7203,240 @@ body.is-dragging-settings-page {
 }
 
 .plugins-page-main {
-  overflow: auto;
-  scrollbar-gutter: stable;
-  padding: 0 20px 72px;
+  overflow: hidden;
+  padding: 30px 34px 34px;
   background: #ffffff;
-  display: block;
+  display: flex;
+  flex-direction: column;
 }
 
 .plugins-page-main > .settings-banner {
-  width: min(920px, calc(100% - 32px));
-  margin: 16px auto 0;
+  width: 100%;
+  margin: 0 0 16px;
   border-radius: 10px;
 }
 
 .plugins-marketplace-shell {
-  width: min(920px, calc(100% - 32px));
-  margin: 42px auto 0;
+  width: 100%;
+  margin: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
   display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  justify-items: stretch;
+  gap: 24px;
+}
+
+.plugins-marketplace-shell.is-detail-view {
+  width: 100%;
+  margin-top: 0;
+}
+
+.plugins-marketplace-content {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 28px 0 72px;
+  scrollbar-gutter: stable;
+  display: grid;
+  align-content: start;
   justify-items: center;
   gap: 28px;
 }
 
-.plugins-marketplace-shell.is-detail-view {
-  width: min(700px, calc(100% - 32px));
-  margin-top: 28px;
-  justify-items: stretch;
-  gap: 34px;
+.plugins-marketplace-content.is-detail-view {
+  justify-items: center;
+  gap: 14px;
+  padding-top: 18px;
+}
+
+.plugins-marketplace-sidebar-column {
+  min-width: 0;
+  min-height: 0;
+  padding-top: 18px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
+}
+
+.plugins-marketplace-content .plugins-detail-breadcrumb {
+  width: min(700px, 100%);
+  margin: 0;
+}
+
+.plugins-installed-sidebar {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
+}
+
+.plugins-installed-sidebar-header {
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 10px;
+  border-bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.plugins-installed-sidebar-header h2 {
+  margin: 0;
+  color: #22211f;
+  font-size: 15px;
+  font-weight: 680;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.plugins-installed-sidebar-header span {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #f1f1f0;
+  color: #6f6a64;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.plugins-installed-list {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 0;
+  scrollbar-gutter: stable;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
+.plugins-installed-item {
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.plugins-installed-item:hover,
+.plugins-installed-item:focus-visible,
+.plugins-installed-item.is-active {
+  border-color: transparent;
+  background: #f7f6f4;
+  outline: none;
+}
+
+.plugins-installed-item:hover .plugins-installed-copy strong,
+.plugins-installed-item:focus-visible .plugins-installed-copy strong,
+.plugins-installed-item.is-active .plugins-installed-copy strong {
+  color: #0f766e;
+}
+
+.plugins-installed-item .plugins-icon-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.plugins-icon-mark.is-installed-placeholder svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.plugins-installed-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.plugins-installed-title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.plugins-installed-title strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #202020;
+  font-size: 15px;
+  font-weight: 690;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugins-installed-version {
+  flex: 0 0 auto;
+  color: #aaa59f;
+  font-size: 12px;
+  font-weight: 520;
+  line-height: 1.15;
+}
+
+.plugins-installed-state,
+.plugins-installed-empty {
+  color: #7b7772;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.plugins-installed-state {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugins-installed-empty {
+  margin: 0;
+}
+
+.plugins-installed-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #c7c2bc;
+}
+
+.plugins-installed-status-dot.is-enabled {
+  background: #0f766e;
+}
+
+.plugins-installed-status-dot.is-missing {
+  background: #d97706;
 }
 
 .plugins-marketplace-header {
@@ -7600,7 +7809,7 @@ body.is-dragging-settings-page {
 }
 
 .plugins-management-detail {
-  width: 100%;
+  width: min(700px, 100%);
   min-width: 0;
   margin-top: 0;
   padding-top: 0;
@@ -8692,7 +8901,7 @@ body.is-dragging-settings-page {
   }
 
   .plugins-page-main {
-    padding: 0 12px 48px;
+    padding: 18px 16px 28px;
   }
 
   .plugins-marketplace-shell,
@@ -8701,12 +8910,34 @@ body.is-dragging-settings-page {
   }
 
   .plugins-marketplace-shell {
-    margin-top: 28px;
+    margin-top: 0;
   }
 
   .plugins-marketplace-shell.is-detail-view {
     width: 100%;
-    margin-top: 22px;
+    margin-top: 0;
+  }
+
+  .plugins-marketplace-shell,
+  .plugins-marketplace-shell.is-detail-view {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .plugins-marketplace-sidebar-column {
+    max-height: min(320px, 40vh);
+    padding-top: 0;
+  }
+
+  .plugins-marketplace-content,
+  .plugins-marketplace-content.is-detail-view {
+    padding-top: 0;
+  }
+
+  .plugins-installed-list {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 6px 10px;
   }
 
   .plugins-filter-row {

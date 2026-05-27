@@ -6,10 +6,8 @@ function renderActivityRail() {
   const props = {
     activeView: "workspace" as const,
     isSettingsOpen: false,
-    isSshConnectionsActive: false,
     isSidebarCollapsed: false,
     onOpenSettings: vi.fn(),
-    onOpenSshConnections: vi.fn(),
     onToggleSidebar: vi.fn(),
     onViewChange: vi.fn(),
     side: "left" as const,
@@ -50,19 +48,12 @@ describe("ActivityRail", () => {
     expect(expandedToggle.querySelector(".lucide-chevron-down")).not.toBeNull()
   })
 
-  it("opens SSH connections from the primary rail", () => {
-    const { props } = renderActivityRail()
-
-    fireEvent.click(screen.getByRole("button", { name: "Open SSH" }))
-
-    expect(props.onOpenSshConnections).toHaveBeenCalledTimes(1)
-  })
-
   it("collapses external capability shortcuts into one connections entry", () => {
     const { props } = renderActivityRail()
 
     fireEvent.click(screen.getByRole("button", { name: "Show configuration shortcuts" }))
 
+    expect(screen.queryByRole("button", { name: "Open SSH" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Open MCP" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Open plugins" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Open connectors" })).not.toBeInTheDocument()

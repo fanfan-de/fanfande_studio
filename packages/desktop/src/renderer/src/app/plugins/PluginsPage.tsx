@@ -12,6 +12,7 @@ import {
   SettingsIcon,
 } from "../icons"
 import { ShellTopMenu } from "../shared-ui"
+import { installedPluginDisplayName } from "../plugin-catalog"
 import type {
   ConnectorStatus,
   InstalledPlugin,
@@ -304,6 +305,103 @@ function PluginMarketItem({
   )
 }
 
+interface InstalledPluginsSidebarProps {
+  installedPlugins: InstalledPlugin[]
+  pluginCatalog: PluginCatalogItem[]
+  selectedPluginID: string | null
+  onPluginSelect: (pluginID: string) => void
+}
+
+function installedPluginStatusText(installed: InstalledPlugin) {
+  if (installed.missingPackage) return "Package missing"
+  return installed.enabled ? "Enabled" : "Disabled"
+}
+
+function installedPluginAriaStatus(installed: InstalledPlugin) {
+  if (installed.missingPackage) return "package missing"
+  return installed.enabled ? "installed enabled" : "installed disabled"
+}
+
+function installedPluginStatusClassName(installed: InstalledPlugin) {
+  if (installed.missingPackage) return "is-missing"
+  return installed.enabled ? "is-enabled" : ""
+}
+
+function InstalledPluginsSidebar({
+  installedPlugins,
+  pluginCatalog,
+  selectedPluginID,
+  onPluginSelect,
+}: InstalledPluginsSidebarProps) {
+  const catalogByPluginID = useMemo(
+    () => new Map(pluginCatalog.map((plugin) => [plugin.id, plugin])),
+    [pluginCatalog],
+  )
+  const installedRows = useMemo(
+    () => installedPlugins
+      .map((installed) => ({
+        installed,
+        plugin: catalogByPluginID.get(installed.pluginID) ?? null,
+      }))
+      .sort((left, right) => {
+        const leftName = left.plugin?.name ?? installedPluginDisplayName(left.installed.pluginID)
+        const rightName = right.plugin?.name ?? installedPluginDisplayName(right.installed.pluginID)
+
+        return leftName.localeCompare(rightName)
+      }),
+    [catalogByPluginID, installedPlugins],
+  )
+
+  return (
+    <aside className="plugins-installed-sidebar" aria-label="Installed plugins">
+      <div className="plugins-installed-sidebar-header">
+        <h2>Installed</h2>
+        <span>{installedPlugins.length}</span>
+      </div>
+
+      {installedRows.length > 0 ? (
+        <div className="plugins-installed-list" role="list" aria-label="Installed plugins list">
+          {installedRows.map(({ installed, plugin }) => {
+            const name = plugin?.name ?? installedPluginDisplayName(installed.pluginID)
+            const isActive = selectedPluginID === installed.pluginID
+            const visibleStatus = installed.missingPackage || !installed.enabled ? installedPluginStatusText(installed) : null
+
+            return (
+              <div key={installed.pluginID} role="listitem">
+                <button
+                  className={isActive ? "plugins-installed-item is-active" : "plugins-installed-item"}
+                  type="button"
+                  aria-label={`${name} ${installedPluginAriaStatus(installed)}`}
+                  aria-pressed={isActive}
+                  onClick={() => onPluginSelect(installed.pluginID)}
+                >
+                  {plugin ? (
+                    <PluginMark plugin={plugin} />
+                  ) : (
+                    <span className="plugins-icon-mark is-installed-placeholder" aria-hidden="true">
+                      <PluginIcon />
+                    </span>
+                  )}
+                  <span className="plugins-installed-copy">
+                    <span className="plugins-installed-title">
+                      <strong>{name}</strong>
+                      <span className="plugins-installed-version">v{installed.version}</span>
+                    </span>
+                    {visibleStatus ? <span className="plugins-installed-state">{visibleStatus}</span> : null}
+                  </span>
+                  <span className={`plugins-installed-status-dot ${installedPluginStatusClassName(installed)}`} aria-hidden="true" />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <p className="plugins-installed-empty">No installed plugins yet.</p>
+      )}
+    </aside>
+  )
+}
+
 interface PluginSectionProps {
   canInstallPlugin: (plugin: PluginCatalogItem) => boolean
   installedByPluginID: Map<string, InstalledPlugin>
@@ -550,8 +648,6 @@ export function PluginsPage({
       ) : null}
 
       <div className="plugins-page-main">
-        {pluginDetailBreadcrumb}
-
         {message ? (
           <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>
             <span className="settings-banner-text">{message.text}</span>
@@ -577,7 +673,18 @@ export function PluginsPage({
           </article>
         ) : (
           <div className={isPluginDetailView ? "plugins-marketplace-shell is-detail-view" : "plugins-marketplace-shell"}>
-            {!activePlugin ? (
+            <div className="settings-service-list-panel plugins-list-panel plugins-marketplace-sidebar-column">
+              <InstalledPluginsSidebar
+                installedPlugins={installedPlugins}
+                pluginCatalog={pluginCatalog}
+                selectedPluginID={selectedPluginID}
+                onPluginSelect={onPluginSelect}
+              />
+            </div>
+
+            <div className={isPluginDetailView ? "settings-service-detail-panel plugins-marketplace-content is-detail-view" : "settings-service-detail-panel plugins-marketplace-content"}>
+              {pluginDetailBreadcrumb}
+              {!activePlugin ? (
               <>
                 <header className="plugins-marketplace-header">
                   <h1>让 Anybox 按你的方式工作</h1>
@@ -1215,6 +1322,7 @@ export function PluginsPage({
                 </>
               </section>
             ) : null}
+            </div>
           </div>
         )}
       </div>

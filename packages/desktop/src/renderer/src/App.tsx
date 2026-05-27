@@ -1822,10 +1822,8 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
           <ActivityRail
             activeView={leftSidebarView}
             isSettingsOpen={isOpen}
-            isSshConnectionsActive={leftSidebarView === "connections" && activeConnectionsTab === "ssh"}
             isSidebarCollapsed={isSidebarCollapsed}
             onOpenSettings={handleOpenSettings}
-            onOpenSshConnections={handleOpenRemoteFolderConfig}
             onViewChange={handleLeftSidebarViewChange}
             onToggleSidebar={handleSidebarToggle}
             side="left"
