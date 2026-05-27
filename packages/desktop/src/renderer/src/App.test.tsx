@@ -10365,7 +10365,7 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Select project skills: layout-review" })).toBeInTheDocument()
   })
 
-  it("renders the project plugin selector in the session canvas top menu and persists selected plugins", async () => {
+  it("omits the separate project plugin selector from the session canvas top menu", async () => {
     window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
       ok: true,
       baseURL: "http://127.0.0.1:4096",
@@ -10420,22 +10420,9 @@ describe("App", () => {
       })
     })
 
-    const pluginButton = await screen.findByRole("button", { name: "Select project plugins: Plugins" })
-    expect(pluginButton.closest(".session-canvas-top-menu")).not.toBeNull()
-
-    fireEvent.click(pluginButton)
-
-    const pluginMenu = screen.getByRole("menu", { name: "Project plugin selection" })
-    fireEvent.click(await within(pluginMenu).findByRole("menuitemcheckbox", { name: /Build Web Apps/i }))
-
-    await waitFor(() => {
-      expect(window.desktop!.updateProjectPluginSelection).toHaveBeenCalledWith({
-        projectID: "project-2",
-        pluginIDs: ["build-web-apps"],
-      })
-    })
-
-    expect(await screen.findByRole("button", { name: "Select project plugins: Build Web Apps" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^Select project plugins:/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("menu", { name: "Project plugin selection" })).not.toBeInTheDocument()
+    expect(window.desktop!.updateProjectPluginSelection).not.toHaveBeenCalled()
   })
 
   it("renders the project MCP selector in the session canvas top menu and persists selected servers", async () => {

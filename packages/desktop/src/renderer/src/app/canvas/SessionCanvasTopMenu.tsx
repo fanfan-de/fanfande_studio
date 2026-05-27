@@ -5,7 +5,6 @@ import { CheckIcon, ChevronDownIcon, CopyIcon, DownloadIcon, InfoIcon, SessionRu
 import { ShellTopMenu, SideChatBadge, writeTextToClipboard } from "../shared-ui"
 import type {
   ComposerMcpOption,
-  ComposerPluginOption,
   ComposerSkillOption,
   PermissionRequest,
   SessionTaskListView,
@@ -47,14 +46,10 @@ interface SessionCanvasTopMenuProps {
   showGitControls?: boolean
   isSavingToolPermissionMode: boolean
   mcpOptions: ComposerMcpOption[]
-  pluginOptions: ComposerPluginOption[]
   pendingPermissionRequests: PermissionRequest[]
   selectedMcpServerIDs: string[]
   selectedMcpServerLabel: string
   onMcpServerToggle: (value: string) => void | Promise<void>
-  selectedPluginIDs: string[]
-  selectedPluginLabel: string
-  onPluginToggle: (value: string) => void | Promise<void>
   toolPermissionMode: ToolPermissionMode
   toolPermissionModeError: string | null
   onToolPermissionModeChange: (mode: ToolPermissionMode) => void | Promise<void>
@@ -255,101 +250,6 @@ function ProjectMcpMenuButton({
             })
           ) : (
             <p className="composer-menu-empty">No global MCP servers are available yet.</p>
-          )}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function ProjectPluginsMenuButton({
-  pluginOptions,
-  selectedPluginIDs,
-  selectedPluginLabel,
-  onPluginToggle,
-}: {
-  pluginOptions: ComposerPluginOption[]
-  selectedPluginIDs: string[]
-  selectedPluginLabel: string
-  onPluginToggle: (value: string) => void | Promise<void>
-}) {
-  const menuRef = useRef<HTMLDivElement | null>(null)
-  const buttonRef = useRef<HTMLButtonElement | null>(null)
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
-
-  useEffect(() => {
-    if (!isMenuOpen) return
-
-    const handlePointerDown = (event: globalThis.PointerEvent) => {
-      const target = event.target as Node | null
-      if (!target) return
-      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return
-      setIsMenuOpen(false)
-    }
-
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsMenuOpen(false)
-      }
-    }
-
-    document.addEventListener("pointerdown", handlePointerDown)
-    document.addEventListener("keydown", handleKeyDown)
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown)
-      document.removeEventListener("keydown", handleKeyDown)
-    }
-  }, [isMenuOpen])
-
-  return (
-    <div className="canvas-top-menu-selector-anchor">
-      <button
-        ref={buttonRef}
-        type="button"
-        className={isMenuOpen ? "canvas-top-menu-button canvas-top-menu-plugin-trigger is-active" : "canvas-top-menu-button canvas-top-menu-plugin-trigger"}
-        aria-controls="canvas-top-menu-plugin-menu"
-        aria-expanded={isMenuOpen}
-        aria-haspopup="menu"
-        aria-label={`Select project plugins: ${selectedPluginLabel}`}
-        title={`Project plugins: ${selectedPluginLabel}`}
-        onClick={() => setIsMenuOpen((current) => !current)}
-      >
-        <span>{selectedPluginLabel}</span>
-        <ChevronDownIcon />
-      </button>
-
-      {isMenuOpen ? (
-        <div
-          ref={menuRef}
-          id="canvas-top-menu-plugin-menu"
-          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel canvas-top-menu-context-panel canvas-top-menu-plugin-panel"
-          role="menu"
-          aria-label="Project plugin selection"
-        >
-          {pluginOptions.length > 0 ? (
-            pluginOptions.map((option) => {
-              const isSelected = selectedPluginIDs.includes(option.value)
-
-              return (
-                <button
-                  key={option.value}
-                  aria-checked={isSelected}
-                  className={isSelected ? "canvas-top-menu-context-option canvas-top-menu-plugin-option is-selected" : "canvas-top-menu-context-option canvas-top-menu-plugin-option"}
-                  onClick={() => void onPluginToggle(option.value)}
-                  role="menuitemcheckbox"
-                  title={option.description}
-                  type="button"
-                >
-                  <span className="canvas-top-menu-context-option-label">
-                    <strong>{option.label}</strong>
-                  </span>
-                  <span className="canvas-top-menu-context-option-status">{isSelected ? "Enabled" : "Enable"}</span>
-                </button>
-              )
-            })
-          ) : (
-            <p className="composer-menu-empty">No installed plugins are enabled yet.</p>
           )}
         </div>
       ) : null}
@@ -852,13 +752,9 @@ export function SessionCanvasTopMenu({
   showGitControls = true,
   isSavingToolPermissionMode,
   mcpOptions,
-  pluginOptions,
   selectedMcpServerIDs,
   selectedMcpServerLabel,
   onMcpServerToggle,
-  selectedPluginIDs,
-  selectedPluginLabel,
-  onPluginToggle,
   toolPermissionMode,
   toolPermissionModeError,
   onToolPermissionModeChange,
@@ -898,12 +794,6 @@ export function SessionCanvasTopMenu({
                 isSaving={isSavingToolPermissionMode}
                 mode={toolPermissionMode}
                 onModeChange={onToolPermissionModeChange}
-              />
-              <ProjectPluginsMenuButton
-                pluginOptions={pluginOptions}
-                selectedPluginIDs={selectedPluginIDs}
-                selectedPluginLabel={selectedPluginLabel}
-                onPluginToggle={onPluginToggle}
               />
               <ProjectMcpMenuButton
                 mcpOptions={mcpOptions}

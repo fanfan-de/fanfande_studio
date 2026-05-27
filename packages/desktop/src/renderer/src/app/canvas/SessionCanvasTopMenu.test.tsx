@@ -96,14 +96,10 @@ function createTopMenuProps(
     gitDirectory: null,
     isSavingToolPermissionMode: false,
     mcpOptions: [],
-    pluginOptions: [],
     pendingPermissionRequests: [],
     selectedMcpServerIDs: [],
     selectedMcpServerLabel: "MCP",
     onMcpServerToggle: vi.fn(),
-    selectedPluginIDs: [],
-    selectedPluginLabel: "Plugins",
-    onPluginToggle: vi.fn(),
     toolPermissionMode: "default",
     toolPermissionModeError: null,
     onToolPermissionModeChange: vi.fn(),
@@ -237,38 +233,10 @@ describe("SessionCanvasTopMenu project MCP servers", () => {
 })
 
 describe("SessionCanvasTopMenu project plugins", () => {
-  const pluginOptions = [
-    {
-      value: "build-web-apps",
-      label: "Build Web Apps",
-      description: "Frontend workflows - 1 MCP, 3 skills",
-    },
-    {
-      value: "browser",
-      label: "Browser",
-      description: "Browser automation - 1 MCP",
-    },
-  ]
+  it("does not render a separate project plugin entry in the top menu", () => {
+    renderTopMenu()
 
-  it("renders installed plugin rows and toggles project plugin selection", () => {
-    const onPluginToggle = vi.fn()
-    renderTopMenu({
-      onPluginToggle,
-      pluginOptions,
-      selectedPluginIDs: ["build-web-apps"],
-      selectedPluginLabel: "Build Web Apps",
-    })
-
-    fireEvent.click(screen.getByRole("button", { name: "Select project plugins: Build Web Apps" }))
-
-    const menu = screen.getByRole("menu", { name: "Project plugin selection" })
-    const selectedOption = within(menu).getByRole("menuitemcheckbox", { name: /Build Web Apps/ })
-    expect(selectedOption).toHaveAttribute("aria-checked", "true")
-    expect(selectedOption).toHaveAttribute("title", "Frontend workflows - 1 MCP, 3 skills")
-
-    fireEvent.click(within(menu).getByRole("menuitemcheckbox", { name: /Browser/ }))
-
-    expect(onPluginToggle).toHaveBeenCalledWith("browser")
+    expect(screen.queryByRole("button", { name: /^Select project plugins:/ })).not.toBeInTheDocument()
   })
 })
 
