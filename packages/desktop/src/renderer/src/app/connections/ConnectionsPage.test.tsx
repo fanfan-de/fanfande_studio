@@ -10,6 +10,7 @@ function ConnectionsPageHarness() {
     plugins: "",
     connectors: "",
     mcp: "",
+    ssh: "",
   })
 
   return (
@@ -39,6 +40,7 @@ describe("ConnectionsPage", () => {
     expect(screen.getByRole("tab", { name: "插件 14" })).toHaveAttribute("aria-selected", "true")
     expect(screen.getByRole("tab", { name: "连接器 2" })).toHaveAttribute("aria-selected", "false")
     expect(screen.getByRole("tab", { name: "MCP 1" })).toHaveAttribute("aria-selected", "false")
+    expect(screen.getByRole("tab", { name: "SSH 0" })).toHaveAttribute("aria-selected", "false")
     expect(screen.getByText("plugins content")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("tab", { name: "连接器 2" }))

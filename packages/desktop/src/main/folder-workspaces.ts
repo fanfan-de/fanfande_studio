@@ -1,9 +1,15 @@
 import fs from "node:fs"
 import { normalizeComparablePath } from "@anybox/platform"
+import { createSshWorkspaceUri, getWorkspaceBasename, isSshWorkspaceUri, parseWorkspaceLocation } from "@anybox/shared"
 import path from "node:path"
 import type { AgentFolderWorkspace, AgentProjectInfo, AgentProjectWorkspace } from "./types"
 
 function normalizePath(input: string) {
+  if (isSshWorkspaceUri(input)) {
+    const location = parseWorkspaceLocation(input)
+    if (location.kind === "ssh") return createSshWorkspaceUri(location.profileID, location.remotePath)
+  }
+
   const resolved = path.resolve(input)
   const normalized = path.normalize(resolved)
   return normalizeComparablePath(normalized)
@@ -17,11 +23,14 @@ function getProjectName(project: { name?: string; worktree: string }) {
   const trimmed = project.name?.trim()
   if (trimmed) return trimmed
 
+  if (isSshWorkspaceUri(project.worktree)) return getWorkspaceBasename(project.worktree)
+
   const fallback = project.worktree.split(/[\\/]/).filter(Boolean).pop()
   return fallback || project.worktree
 }
 
 function getFolderName(directory: string) {
+  if (isSshWorkspaceUri(directory)) return getWorkspaceBasename(directory)
   const normalized = directory.replace(/[\\/]+$/, "")
   const fallback = normalized.split(/[\\/]/).filter(Boolean).pop()
   return fallback || directory
@@ -34,6 +43,7 @@ function getSessionsForDirectory(workspace: AgentProjectWorkspace, directory: st
 }
 
 function checkDirectoryExists(directory: string, existsSync: (path: string) => boolean) {
+  if (isSshWorkspaceUri(directory)) return true
   try {
     return existsSync(directory)
   } catch {

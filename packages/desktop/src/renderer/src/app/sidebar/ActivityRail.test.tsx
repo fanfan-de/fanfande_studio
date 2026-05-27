@@ -6,8 +6,10 @@ function renderActivityRail() {
   const props = {
     activeView: "workspace" as const,
     isSettingsOpen: false,
+    isSshConnectionsActive: false,
     isSidebarCollapsed: false,
     onOpenSettings: vi.fn(),
+    onOpenSshConnections: vi.fn(),
     onToggleSidebar: vi.fn(),
     onViewChange: vi.fn(),
     side: "left" as const,
@@ -46,6 +48,14 @@ describe("ActivityRail", () => {
     const expandedToggle = screen.getByRole("button", { name: "Hide configuration shortcuts" })
     expect(expandedToggle.querySelector(".lucide-settings")).toBeNull()
     expect(expandedToggle.querySelector(".lucide-chevron-down")).not.toBeNull()
+  })
+
+  it("opens SSH connections from the primary rail", () => {
+    const { props } = renderActivityRail()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open SSH" }))
+
+    expect(props.onOpenSshConnections).toHaveBeenCalledTimes(1)
   })
 
   it("collapses external capability shortcuts into one connections entry", () => {

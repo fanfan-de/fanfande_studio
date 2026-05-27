@@ -1,5 +1,6 @@
 import path from "node:path"
 import { realpath } from "node:fs/promises"
+import { containsWorkspaceLocation, isSshWorkspaceUri } from "@anybox/shared"
 import z from "zod"
 import * as db from "#database/Sqlite.ts"
 import * as Config from "#config/config.ts"
@@ -77,11 +78,13 @@ function safeReadProject(projectID: string) {
 }
 
 function normalizeProjectDirectory(input: string) {
+  if (isSshWorkspaceUri(input)) return input
   const normalized = path.normalize(input)
   return process.platform === "win32" ? normalized.toLowerCase() : normalized
 }
 
 async function canonicalizeProjectDirectory(input: string) {
+  if (isSshWorkspaceUri(input)) return input
   const resolved = path.resolve(input)
 
   try {
@@ -92,6 +95,10 @@ async function canonicalizeProjectDirectory(input: string) {
 }
 
 function isDirectoryInsideProjectRoot(directory: string, root: string) {
+  if (isSshWorkspaceUri(directory) || isSshWorkspaceUri(root)) {
+    return containsWorkspaceLocation(root, directory)
+  }
+
   const normalizedRoot = normalizeProjectDirectory(root)
   const normalizedDirectory = normalizeProjectDirectory(directory)
   const relative = path.relative(normalizedRoot, normalizedDirectory)
@@ -125,6 +132,13 @@ async function resolveProjectGitDirectory(
   const directory = rawDirectory.trim()
   if (!directory) {
     throw new ApiError(400, "INVALID_PAYLOAD", "Body must include a non-empty 'directory'")
+  }
+
+  if (isSshWorkspaceUri(project.worktree) || isSshWorkspaceUri(directory)) {
+    if (!containsWorkspaceLocation(project.worktree, directory)) {
+      throw new ApiError(400, "DIRECTORY_NOT_IN_PROJECT", `Directory '${directory}' does not belong to project '${projectID}'`)
+    }
+    throw new ApiError(409, "GIT_UNAVAILABLE_FOR_SSH", "Git shortcuts are not available for SSH workspaces yet")
   }
 
   const [projectRoots, canonicalDirectory] = await Promise.all([
@@ -421,6 +435,7 @@ export async function createProjectGitPullRequest(
 
 export async function listProjectSkills(projectID: string) {
   const project = safeReadProject(projectID)
+  if (isSshWorkspaceUri(project.worktree)) return []
   return Skill.list(project.worktree, {
     pluginIDs: await Config.getSelectedPluginIDs(projectID),
   })
@@ -428,6 +443,9 @@ export async function listProjectSkills(projectID: string) {
 
 export async function getProjectSkillSelection(projectID: string) {
   const project = safeReadProject(projectID)
+  if (isSshWorkspaceUri(project.worktree)) {
+    return { skillIDs: [] }
+  }
   const pluginIDs = await Config.getSelectedPluginIDs(projectID)
   return {
     skillIDs: await Skill.resolveSelectedSkillIDs(project.worktree, await Config.getSelectedSkillIDs(projectID), {
@@ -441,6 +459,10 @@ export async function updateProjectSkillSelection(
   input: z.infer<typeof UpdateProjectSkillSelectionBody>,
 ) {
   const project = safeReadProject(projectID)
+  if (isSshWorkspaceUri(project.worktree)) {
+    const config = await Config.setSelectedSkillIDs(projectID, [])
+    return { skillIDs: config.selected_skills ?? [] }
+  }
   const pluginIDs = await Config.getSelectedPluginIDs(projectID)
   const skillIDs = await Skill.resolveSelectedSkillIDs(project.worktree, input.skillIDs, {
     pluginIDs,

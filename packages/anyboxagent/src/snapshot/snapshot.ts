@@ -7,6 +7,7 @@ import z from "zod"
 import * as  Config from "#config/config.ts"
 import { Instance } from "../project/instance"
 import { Scheduler } from "../scheduler"
+import { isSshWorkspaceUri } from "@anybox/shared"
 
 
 const log = Log.create({ service: "snapshot" })
@@ -137,6 +138,7 @@ export function init() {
 }
 
 export async function cleanup() {
+  if (isSshWorkspaceUri(Instance.directory)) return
   const cfg = await Config.get()
   if (cfg.snapshot === false) return
   const git = gitdir()
@@ -206,6 +208,7 @@ async function ensureSnapshotRepository(git: string) {
 }
 
 export async function track() {
+  if (isSshWorkspaceUri(Instance.directory)) return
   const cfg = await Config.get()
   if (cfg.snapshot === false) return
   const git = gitdir()
@@ -249,6 +252,7 @@ export const Patch = z.object({
 export type Patch = z.infer<typeof Patch>
 
 export async function patch(hash: string): Promise<Patch> {
+  if (isSshWorkspaceUri(Instance.directory)) return { hash, files: [] }
   const git = gitdir()
   return withSnapshotGitLock(git, async () => {
     await stageSnapshot(git)
@@ -287,6 +291,7 @@ export async function patch(hash: string): Promise<Patch> {
 }
 
 export async function restore(snapshot: string) {
+  if (isSshWorkspaceUri(Instance.directory)) return
   log.info("restore", { commit: snapshot })
   const git = gitdir()
   const result =
@@ -306,6 +311,7 @@ export async function restore(snapshot: string) {
 }
 
 export async function revert(patches: Patch[]) {
+  if (isSshWorkspaceUri(Instance.directory)) return
   const files = new Set<string>()
   const git = gitdir()
   for (const item of patches) {
@@ -338,6 +344,7 @@ export async function revert(patches: Patch[]) {
 }
 
 export async function diff(hash: string) {
+  if (isSshWorkspaceUri(Instance.directory)) return ""
   const git = gitdir()
   return withSnapshotGitLock(git, async () => {
     await stageSnapshot(git)
@@ -390,6 +397,7 @@ export async function diffFull(
     maxPatchBytes?: number
   } = {},
 ): Promise<FileDiff[]> {
+  if (isSshWorkspaceUri(Instance.directory)) return []
   const git = gitdir()
   const result: FileDiff[] = []
   const includeContent = options.includeContent ?? true

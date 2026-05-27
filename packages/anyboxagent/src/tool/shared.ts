@@ -1,8 +1,19 @@
 import path from "node:path"
 import { createReadStream, realpathSync } from "node:fs"
-import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, open, readFile, readdir, rename, rm, stat as localStat, writeFile } from "node:fs/promises"
+import {
+  containsSshRemotePath,
+  containsWorkspaceLocation,
+  createSshWorkspaceUri,
+  isSshWorkspaceUri,
+  joinSshRemotePath,
+  normalizeSshRemotePath,
+  parseWorkspaceLocation,
+  relativeSshRemotePath,
+} from "@anybox/shared"
 import { Instance } from "#project/instance.ts"
 import * as Filesystem from "#util/filesystem.ts"
+import * as Ssh from "#remote/ssh/index.ts"
 
 const FAST_TEXT_READ_BYTES = 1024 * 1024
 const TEXT_SAMPLE_BYTES = 8192
@@ -87,6 +98,79 @@ export interface WriteTextFileTarget {
   exists: boolean
 }
 
+export interface WorkspacePathStat {
+  isFile(): boolean
+  isDirectory(): boolean
+  isSymbolicLink(): boolean
+  size: number
+  mtimeMs: number
+}
+
+export interface WorkspaceDirectoryEntry {
+  name: string
+  path: string
+  displayPath: string
+  kind: ProjectEntryKind
+  size: number
+  modifiedAt: number
+}
+
+function isRemoteWorkspace() {
+  return isSshWorkspaceUri(Instance.directory)
+}
+
+function currentSshLocation() {
+  const location = parseWorkspaceLocation(Instance.directory)
+  if (location.kind !== "ssh") throw new Error("Current workspace is not an SSH workspace")
+  return location
+}
+
+function toWorkspaceStat(info: Ssh.RemoteFileStat): WorkspacePathStat {
+  return {
+    isFile: () => info.isFile,
+    isDirectory: () => info.isDirectory,
+    isSymbolicLink: () => info.isSymbolicLink,
+    size: info.size,
+    mtimeMs: info.mtimeMs,
+  }
+}
+
+function extnameForPath(resolvedPath: string) {
+  if (isSshWorkspaceUri(resolvedPath)) {
+    const location = parseWorkspaceLocation(resolvedPath)
+    return location.kind === "ssh" ? path.posix.extname(location.remotePath) : path.extname(resolvedPath)
+  }
+
+  return path.extname(resolvedPath)
+}
+
+function dirnameForPath(resolvedPath: string) {
+  if (isSshWorkspaceUri(resolvedPath)) {
+    const location = parseWorkspaceLocation(resolvedPath)
+    if (location.kind === "ssh") return createSshWorkspaceUri(location.profileID, path.posix.dirname(location.remotePath))
+  }
+
+  return path.dirname(resolvedPath)
+}
+
+function basenameForPath(resolvedPath: string) {
+  if (isSshWorkspaceUri(resolvedPath)) {
+    const location = parseWorkspaceLocation(resolvedPath)
+    if (location.kind === "ssh") return path.posix.basename(location.remotePath)
+  }
+
+  return path.basename(resolvedPath)
+}
+
+function joinWorkspacePath(base: string, child: string) {
+  if (isSshWorkspaceUri(base)) {
+    const location = parseWorkspaceLocation(base)
+    if (location.kind === "ssh") return createSshWorkspaceUri(location.profileID, joinSshRemotePath(location.remotePath, child))
+  }
+
+  return path.join(base, child)
+}
+
 function isUncPath(targetPath: string) {
   return targetPath.startsWith("\\\\") || targetPath.startsWith("//")
 }
@@ -119,6 +203,31 @@ function resolveDeepestExistingPath(targetPath: string): string {
 }
 
 export function resolveToolPath(inputPath: string): string {
+  if (isRemoteWorkspace()) {
+    const root = currentSshLocation()
+    const target =
+      isSshWorkspaceUri(inputPath)
+        ? parseWorkspaceLocation(inputPath)
+        : {
+            kind: "ssh" as const,
+            profileID: root.profileID,
+            remotePath: inputPath.startsWith("/")
+              ? normalizeSshRemotePath(inputPath)
+              : joinSshRemotePath(root.remotePath, inputPath),
+          }
+
+    if (target.kind !== "ssh" || target.profileID !== root.profileID) {
+      throw new Error(`Path is outside the active SSH profile: ${inputPath}`)
+    }
+
+    const targetUri = createSshWorkspaceUri(root.profileID, target.remotePath)
+    if (!containsWorkspaceLocation(Instance.directory, targetUri) && !containsWorkspaceLocation(Instance.worktree, targetUri)) {
+      throw new Error(`Path is outside the active project boundary: ${inputPath}`)
+    }
+
+    return targetUri
+  }
+
   if (isUncPath(inputPath)) {
     throw new Error(`UNC paths are not supported: ${inputPath}`)
   }
@@ -150,6 +259,8 @@ export function resolveToolPath(inputPath: string): string {
 }
 
 export function resolveReadableTextFilePath(inputPath: string): string {
+  if (isRemoteWorkspace()) return resolveToolPath(inputPath)
+
   if (!path.isAbsolute(inputPath)) {
     return resolveToolPath(inputPath)
   }
@@ -162,8 +273,73 @@ export function resolveReadableTextFilePath(inputPath: string): string {
 }
 
 export function toDisplayPath(resolvedPath: string): string {
+  if (isSshWorkspaceUri(resolvedPath)) {
+    const root = currentSshLocation()
+    const target = parseWorkspaceLocation(resolvedPath)
+    if (target.kind !== "ssh" || target.profileID !== root.profileID) return resolvedPath
+    return relativeSshRemotePath(root.remotePath, target.remotePath) ?? target.remotePath
+  }
+
   const relative = path.relative(Instance.directory, resolvedPath)
   return relative ? relative : "."
+}
+
+export async function statResolvedPath(resolvedPath: string): Promise<WorkspacePathStat> {
+  if (isSshWorkspaceUri(resolvedPath)) return toWorkspaceStat(await Ssh.stat(resolvedPath))
+  return localStat(resolvedPath)
+}
+
+export async function listDirectoryEntries(resolvedPath: string): Promise<WorkspaceDirectoryEntry[]> {
+  if (isSshWorkspaceUri(resolvedPath)) {
+    return (await Ssh.listDirectory(resolvedPath))
+      .filter((entry) => entry.type === "file" || entry.type === "directory")
+      .map((entry) => ({
+        name: entry.name,
+        path: entry.uri,
+        displayPath: toDisplayPath(entry.uri),
+        kind: entry.type as ProjectEntryKind,
+        size: entry.size,
+        modifiedAt: entry.modifiedAt,
+      }))
+  }
+
+  const entries = await readdir(resolvedPath, { withFileTypes: true })
+  entries.sort((left, right) => left.name.localeCompare(right.name))
+  const result: WorkspaceDirectoryEntry[] = []
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue
+    const kind = entry.isDirectory() ? "directory" : entry.isFile() ? "file" : undefined
+    if (!kind) continue
+    const fullPath = path.join(resolvedPath, entry.name)
+    const info = await localStat(fullPath).catch(() => undefined)
+    result.push({
+      name: entry.name,
+      path: fullPath,
+      displayPath: toDisplayPath(fullPath),
+      kind,
+      size: info?.size ?? 0,
+      modifiedAt: info?.mtimeMs ?? 0,
+    })
+  }
+  return result
+}
+
+export async function removeResolvedFile(resolvedPath: string) {
+  if (isSshWorkspaceUri(resolvedPath)) {
+    await Ssh.unlink(resolvedPath)
+    return
+  }
+
+  await rm(resolvedPath, { force: true })
+}
+
+export function workspacePathBasename(resolvedPath: string) {
+  return basenameForPath(resolvedPath)
+}
+
+export function workspacePathMatchesGlob(resolvedPath: string, pattern: string) {
+  const candidate = isSshWorkspaceUri(resolvedPath) ? toDisplayPath(resolvedPath) : resolvedPath
+  return path.matchesGlob(candidate, pattern)
 }
 
 export async function walkProjectEntries(
@@ -173,7 +349,7 @@ export async function walkProjectEntries(
     visit: (entry: ProjectEntry) => boolean | void | Promise<boolean | void>
   },
 ) {
-  const info = await stat(root)
+  const info = await statResolvedPath(root)
   if (!info.isDirectory()) return
 
   let stopped = false
@@ -181,27 +357,28 @@ export async function walkProjectEntries(
   const walk = async (current: string): Promise<void> => {
     if (stopped) return
 
-    const items = await readdir(current, { withFileTypes: true })
-    items.sort((left, right) => left.name.localeCompare(right.name))
-
-    for (const item of items) {
+    for (const item of await listDirectoryEntries(current)) {
       if (stopped) return
       if (!options.includeHidden && item.name.startsWith(".")) continue
-      if (item.isSymbolicLink()) continue
 
-      const fullPath = path.join(current, item.name)
-      const kind = item.isDirectory()
-        ? "directory"
-        : item.isFile()
-          ? "file"
-          : undefined
+      const fullPath = item.path
+      const kind = item.kind
 
       if (!kind) continue
       if (kind === "directory" && DEFAULT_SKIPPED_DIRECTORY_NAMES.has(item.name)) continue
 
       const entry: ProjectEntry = {
         path: fullPath,
-        relativePath: path.relative(root, fullPath) || item.name,
+        relativePath: isSshWorkspaceUri(fullPath)
+          ? (() => {
+              const rootLocation = parseWorkspaceLocation(root)
+              const targetLocation = parseWorkspaceLocation(fullPath)
+              if (rootLocation.kind === "ssh" && targetLocation.kind === "ssh") {
+                return relativeSshRemotePath(rootLocation.remotePath, targetLocation.remotePath) || item.name
+              }
+              return item.name
+            })()
+          : path.relative(root, fullPath) || item.name,
         displayPath: toDisplayPath(fullPath),
         kind,
       }
@@ -260,7 +437,7 @@ function isProbablyBinarySample(sample: Buffer): boolean {
 
 async function statIfExists(resolvedPath: string) {
   try {
-    return await stat(resolvedPath)
+    return await statResolvedPath(resolvedPath)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return undefined
@@ -271,9 +448,17 @@ async function statIfExists(resolvedPath: string) {
 }
 
 async function assertTextFileContent(resolvedPath: string, action: TextFileAction) {
-  const extension = path.extname(resolvedPath).toLowerCase()
+  const extension = extnameForPath(resolvedPath).toLowerCase()
   if (BINARY_EXTENSIONS.has(extension)) {
     throw new Error(formatTextFileAccessError(action, resolvedPath, "it appears to be a binary file"))
+  }
+
+  if (isSshWorkspaceUri(resolvedPath)) {
+    const sample = (await Ssh.readFileBuffer(resolvedPath)).subarray(0, TEXT_SAMPLE_BYTES)
+    if (isProbablyBinarySample(sample)) {
+      throw new Error(formatTextFileAccessError(action, resolvedPath, "it appears to be a binary file"))
+    }
+    return
   }
 
   const file = await open(resolvedPath, "r")
@@ -294,7 +479,7 @@ async function assertReadableTextFile(resolvedPath: string) {
     throw new Error(formatTextFileAccessError("read", resolvedPath, "it is a blocked device path"))
   }
 
-  const info = await stat(resolvedPath)
+  const info = await statResolvedPath(resolvedPath)
 
   if (info.isDirectory()) {
     throw new Error(formatTextFileAccessError("read", resolvedPath, "it is a directory"))
@@ -310,12 +495,14 @@ async function assertReadableTextFile(resolvedPath: string) {
 export async function readTextFile(inputPath: string): Promise<string> {
   const resolved = resolveToolPath(inputPath)
   await assertReadableTextFile(resolved)
+  if (isSshWorkspaceUri(resolved)) return await Ssh.readText(resolved)
   return await readFile(resolved, "utf8")
 }
 
 export async function readSearchableTextFile(resolvedPath: string): Promise<string | undefined> {
   try {
     await assertReadableTextFile(resolvedPath)
+    if (isSshWorkspaceUri(resolvedPath)) return await Ssh.readText(resolvedPath)
     return await readFile(resolvedPath, "utf8")
   } catch (error) {
     const message = error instanceof Error ? error.message : ""
@@ -363,6 +550,21 @@ export async function prepareWriteTextFile(inputPath: string): Promise<WriteText
 }
 
 async function writeResolvedTextFile(resolvedPath: string, content: string) {
+  if (isSshWorkspaceUri(resolvedPath)) {
+    const tempPath = joinWorkspacePath(
+      dirnameForPath(resolvedPath),
+      `.${basenameForPath(resolvedPath)}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    )
+    await Ssh.writeText(tempPath, content)
+    try {
+      await Ssh.rename(tempPath, resolvedPath)
+    } catch {
+      await Ssh.writeText(resolvedPath, content)
+      await Ssh.unlink(tempPath).catch(() => undefined)
+    }
+    return
+  }
+
   await mkdir(path.dirname(resolvedPath), { recursive: true })
 
   const tempPath = path.join(
@@ -456,10 +658,15 @@ export async function readResolvedTextFileRange(
   startLine = 1,
   endLine?: number,
 ) {
+  if (isSshWorkspaceUri(resolvedPath)) {
+    await assertReadableTextFile(resolvedPath)
+    return formatLineRange(await Ssh.readText(resolvedPath), startLine, endLine)
+  }
+
   const resolved = Filesystem.normalizePath(path.resolve(resolvedPath))
   await assertReadableTextFile(resolved)
 
-  const info = await stat(resolved)
+  const info = await localStat(resolved)
   if (info.size <= FAST_TEXT_READ_BYTES) {
     const text = await readFile(resolved, "utf8")
     return formatLineRange(text, startLine, endLine)

@@ -236,7 +236,7 @@ export function BuiltinToolsPage({
   }
 
   return (
-    <section className="builtin-tools-page" aria-label="Built-in tools">
+    <section className="builtin-tools-page tools-page" aria-label="Built-in tools">
       <ShellTopMenu
         as="header"
         ariaLabel="Tools top menu"

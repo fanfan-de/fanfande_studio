@@ -11,9 +11,9 @@ import {
   FolderOpenIcon,
   NewItemIcon,
   PinIcon,
+  ProviderSettingsIcon,
   SessionRunningIcon,
-  SettingsIcon,
-  SortIcon
+  SettingsIcon
 } from "../icons"
 import { PromptPresetsSidebarView, type PromptPresetsSidebarViewProps } from "../prompts/PromptPresetsPage"
 import { joinClassNames, ShellTopMenu, SidebarToggleButton } from "../shared-ui"
@@ -84,6 +84,7 @@ interface SidebarProps {
   pinnedWorkspaceIDs: string[]
   onHoveredFolderChange: Dispatch<SetStateAction<string | null>>
   onOpenSettings: () => void
+  onOpenRemoteFolderConfig?: () => void
   onProjectArchiveSessions: (workspace: WorkspaceGroup) => void | Promise<void>
   onProjectClick: (workspace: WorkspaceGroup) => void
   onProjectCreateSession: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void | Promise<void>
@@ -99,6 +100,7 @@ interface SidebarProps {
 interface LeftSidebarTopMenuProps {
   activeView: LeftSidebarView
   isCreatingProject: boolean
+  onOpenRemoteFolderConfig?: () => void
   showSidebarToggleButton: boolean
   onSidebarAction: (action: SidebarActionKey) => void | Promise<void>
   onToggleSidebar: () => void
@@ -115,6 +117,7 @@ function containsSkillTreePath(node: GlobalSkillTreeNode, targetPath: string | n
 function LeftSidebarTopMenu({
   activeView,
   isCreatingProject,
+  onOpenRemoteFolderConfig,
   showSidebarToggleButton,
   onSidebarAction,
   onToggleSidebar,
@@ -128,19 +131,28 @@ function LeftSidebarTopMenu({
       content={(
         activeView === "workspace" ? (
           <div className="panel-toolbar-actions left-sidebar-top-menu-buttons" aria-label="Workspace view actions">
+            {onOpenRemoteFolderConfig ? (
+              <button
+                className="sidebar-action"
+                aria-label="Open remote folder"
+                title="Open remote folder"
+                type="button"
+                onClick={() => onOpenRemoteFolderConfig()}
+              >
+                <ProviderSettingsIcon />
+              </button>
+            ) : null}
             {sidebarActions.map((action) => (
               <button
                 key={action.key}
                 className="sidebar-action"
                 aria-label={action.label}
                 title={action.label}
-                disabled={action.key === "project" ? isCreatingProject : false}
+                disabled={isCreatingProject}
                 type="button"
                 onClick={() => void onSidebarAction(action.key)}
               >
-                {action.key === "project" ? <FolderIcon /> : null}
-                {action.key === "sort" ? <SortIcon /> : null}
-                {action.key === "new" ? <NewItemIcon /> : null}
+                <FolderIcon />
               </button>
             ))}
           </div>
@@ -892,6 +904,7 @@ export function Sidebar({
   isCreatingProject,
   isCreatingSession,
   isSettingsOpen,
+  onOpenRemoteFolderConfig,
   promptPresetsSidebarProps,
   showSettingsButton = true,
   showSidebarToggleButton,
@@ -921,6 +934,7 @@ export function Sidebar({
       <LeftSidebarTopMenu
         activeView={activeView}
         isCreatingProject={isCreatingProject}
+        onOpenRemoteFolderConfig={onOpenRemoteFolderConfig}
         showSidebarToggleButton={showSidebarToggleButton}
         onSidebarAction={onSidebarAction}
         onToggleSidebar={onToggleSidebar}

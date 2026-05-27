@@ -8,7 +8,8 @@
     "./api": "./src/api.ts",
     "./desktop-ipc": "./src/desktop-ipc.ts",
     "./reasoning": "./src/reasoning.ts",
-    "./session": "./src/session.ts"
+    "./session": "./src/session.ts",
+    "./workspace-location": "./src/workspace-location.ts"
   },
   "dependencies": {
     "zod": "^4.3.6"

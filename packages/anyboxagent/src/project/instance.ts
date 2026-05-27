@@ -7,6 +7,7 @@ import { iife } from "#util/iife.ts"
 import { GlobalBus } from "#bus/global.ts"
 import * as Filesystem from "#util/filesystem.ts"
 import * as State from "#project/state.ts"
+import { containsWorkspaceLocation, isSshWorkspaceUri } from "@anybox/shared"
 
 interface Context {
   directory: string
@@ -68,6 +69,10 @@ const Instance = {
   },
 
   containsPath(filepath: string) {
+    if (isSshWorkspaceUri(Instance.directory) || isSshWorkspaceUri(filepath)) {
+      return containsWorkspaceLocation(Instance.directory, filepath) || containsWorkspaceLocation(Instance.worktree, filepath)
+    }
+
     if (Filesystem.contains(Instance.directory, filepath)) return true
     return Filesystem.contains(Instance.worktree, filepath)
   },

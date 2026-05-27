@@ -133,8 +133,8 @@ describe("Sidebar", () => {
     const leftSidebarTopMenu = screen.getByLabelText("Left sidebar top menu")
 
     expect(within(leftSidebarTopMenu).getByRole("button", { name: "Open folder" })).toBeInTheDocument()
-    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Sort sessions" })).toBeInTheDocument()
-    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Create session" })).toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).queryByRole("button", { name: "Sort sessions" })).not.toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).queryByRole("button", { name: "Create session" })).not.toBeInTheDocument()
     expect(screen.queryByRole("group", { name: "Workspace mode" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Chat" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Code" })).not.toBeInTheDocument()
@@ -145,12 +145,9 @@ describe("Sidebar", () => {
     renderSidebar({ onSidebarAction })
 
     fireEvent.click(screen.getByRole("button", { name: "Open folder" }))
-    fireEvent.click(screen.getByRole("button", { name: "Sort sessions" }))
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
 
     expect(onSidebarAction).toHaveBeenNthCalledWith(1, "project")
-    expect(onSidebarAction).toHaveBeenNthCalledWith(2, "sort")
-    expect(onSidebarAction).toHaveBeenNthCalledWith(3, "new")
+    expect(onSidebarAction).toHaveBeenCalledTimes(1)
   })
 
   it("renders the workspace tree", () => {

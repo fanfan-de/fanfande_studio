@@ -199,7 +199,6 @@ interface UseSessionLifecycleControllerOptions {
   handleCreateSessionWorkspaceChange: (workspaceID: string, createSessionTabID?: string | null) => void
   historyRequestRef: MutableRefObject<Record<string, number>>
   selectedFolderID: string | null
-  selectedWorkspace: WorkspaceGroup | null
   skipNextHistoryLoadRef: MutableRefObject<Record<string, boolean>>
   subscribedSessionStreamsRef: MutableRefObject<Record<string, string>>
   workbenchDockviewCommandsRef: MutableRefObject<WorkbenchDockviewCommands | null>
@@ -273,7 +272,6 @@ export function useSessionLifecycleController({
   clearRuntimeDebugRefreshTimer,
   clearSessionDiffRefreshTimer,
   selectedFolderID,
-  selectedWorkspace,
   skipNextHistoryLoadRef,
   subscribedSessionStreamsRef,
   workbenchDockviewCommandsRef,
@@ -595,19 +593,6 @@ export function useSessionLifecycleController({
       return
     }
 
-    if (action === "sort") {
-      setWorkspaces((prev) =>
-        prev.map((workspace) => ({
-          ...workspace,
-          sessions: [...workspace.sessions].sort((left, right) => right.updated - left.updated),
-        })),
-      )
-      return
-    }
-
-    const preferredWorkspaceID = selectedWorkspace?.id ?? workspaces[0]?.id ?? null
-    if (focusExistingCreateSessionTabAcrossPanes(preferredWorkspaceID)) return
-    openCreateSessionTab(preferredWorkspaceID)
   }
 
   function handleProjectClick(workspace: WorkspaceGroup) {

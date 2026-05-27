@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises"
 import { basename, extname } from "node:path"
-import { AgentRouteSchemas, SessionAttachmentBodySchema } from "@anybox/shared"
+import { AgentRouteSchemas, SessionAttachmentBodySchema, isSshWorkspaceUri } from "@anybox/shared"
 import z from "zod"
 import * as Config from "#config/config.ts"
 import * as Project from "#project/project.ts"
@@ -574,12 +574,18 @@ export async function rollbackSessionToCheckpoint(
 }
 
 export function getSessionPty(sessionID: string, options: { ptyRegistry: PtyRegistry }) {
-  requireMainSession(sessionID)
+  const session = requireMainSession(sessionID)
+  if (isSshWorkspaceUri(session.directory)) {
+    throw new ApiError(409, "PTY_UNAVAILABLE_FOR_SSH", "Interactive terminal sessions are not available for SSH workspaces")
+  }
   return options.ptyRegistry.infoBySession(sessionID)
 }
 
 export async function createSessionPty(sessionID: string, options: { ptyRegistry: PtyRegistry }) {
   const session = requireMainSession(sessionID)
+  if (isSshWorkspaceUri(session.directory)) {
+    throw new ApiError(409, "PTY_UNAVAILABLE_FOR_SSH", "Interactive terminal sessions are not available for SSH workspaces")
+  }
   return await options.ptyRegistry.create({
     sessionID: session.id,
     cwd: session.directory,

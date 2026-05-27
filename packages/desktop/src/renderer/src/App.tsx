@@ -3,6 +3,7 @@ import type { SerializedDockview } from "dockview-react"
 import { ActivityRail } from "./app/sidebar/ActivityRail"
 import { BuiltinToolsPage } from "./app/tools/BuiltinToolsPage"
 import { ConnectionsPage } from "./app/connections/ConnectionsPage"
+import { SshConnectionsPage } from "./app/connections/SshConnectionsPage"
 import { McpServersPage } from "./app/mcp/McpServersPage"
 import { RightSidebar } from "./app/sidebar/RightSidebar"
 import { Sidebar } from "./app/sidebar/Sidebar"
@@ -85,6 +86,7 @@ const EMPTY_CONNECTION_SEARCH_QUERIES: Record<ConnectionsTab, string> = {
   plugins: "",
   connectors: "",
   mcp: "",
+  ssh: "",
 }
 const EMPTY_SIDE_CHAT_DRAFT_STATE = createEmptyComposerDraftState()
 const EMPTY_SIDE_CHAT_ATTACHMENTS: ComposerAttachment[] = []
@@ -1776,6 +1778,11 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     }))
   }
 
+  function handleOpenRemoteFolderConfig() {
+    setActiveConnectionsTab("ssh")
+    handleLeftSidebarViewChange("connections")
+  }
+
   const windowShellClassName = [
     "window-shell",
     isDebugLineColorsEnabled ? "debug-line-colors" : "",
@@ -1815,8 +1822,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
           <ActivityRail
             activeView={leftSidebarView}
             isSettingsOpen={isOpen}
+            isSshConnectionsActive={leftSidebarView === "connections" && activeConnectionsTab === "ssh"}
             isSidebarCollapsed={isSidebarCollapsed}
             onOpenSettings={handleOpenSettings}
+            onOpenSshConnections={handleOpenRemoteFolderConfig}
             onViewChange={handleLeftSidebarViewChange}
             onToggleSidebar={handleSidebarToggle}
             side="left"
@@ -1898,6 +1907,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               pinnedWorkspaceIDs={pinnedWorkspaceIDs}
               onHoveredFolderChange={setHoveredFolderID}
               onOpenSettings={handleOpenSettings}
+              onOpenRemoteFolderConfig={handleOpenRemoteFolderConfig}
               onProjectArchiveSessions={handleProjectArchiveSessions}
               onProjectCreateSession={handleProjectCreateSession}
               onProjectClick={handleProjectClick}
@@ -2055,6 +2065,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               connectorCount={connectorCatalog.length}
               mcpCount={mcpServers.length}
               pluginCount={pluginCatalog.length}
+              sshCount={0}
               searchQuery={connectionSearchQueries[activeConnectionsTab]}
               windowControls={windowControls}
               onSearchQueryChange={handleConnectionSearchQueryChange}
@@ -2130,7 +2141,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                     onStartConnectorAuthFlow={startConnectorAuthFlow}
                   />
                 </Suspense>
-              ) : (
+              ) : activeConnectionsTab === "mcp" ? (
                 <McpServersPage
                   activeMcpServerID={activeMcpServerID}
                   activeMcpServerDiagnostic={activeMcpServerDiagnostic}
@@ -2155,6 +2166,13 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                   onSaveMcpServer={saveMcpServer}
                   onSearchQueryChange={handleConnectionSearchQueryChange}
                   onStartNewMcpServer={startNewMcpServer}
+                />
+              ) : (
+                <SshConnectionsPage
+                  searchQuery={connectionSearchQueries.ssh}
+                  onWorkspaceOpened={async (workspace) => {
+                    await refreshWorkspaceFromDirectory(workspace.directory)
+                  }}
                 />
               )}
             </ConnectionsPage>

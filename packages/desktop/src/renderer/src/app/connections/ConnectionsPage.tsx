@@ -9,6 +9,7 @@ interface ConnectionsPageProps {
   connectorCount: number
   mcpCount: number
   pluginCount: number
+  sshCount?: number
   searchQuery: string
   windowControls?: ReactNode
   onSearchQueryChange: (value: string) => void
@@ -22,11 +23,13 @@ const CONNECTION_TABS: Array<{
   { key: "plugins", label: "插件" },
   { key: "connectors", label: "连接器" },
   { key: "mcp", label: "MCP" },
+  { key: "ssh", label: "SSH" },
 ]
 
 function getSearchPlaceholder(tab: ConnectionsTab) {
   if (tab === "connectors") return "搜索连接器"
   if (tab === "mcp") return "搜索 MCP"
+  if (tab === "ssh") return "搜索 SSH"
   return "搜索插件"
 }
 
@@ -36,6 +39,7 @@ export function ConnectionsPage({
   connectorCount,
   mcpCount,
   pluginCount,
+  sshCount = 0,
   searchQuery,
   windowControls,
   onSearchQueryChange,
@@ -45,6 +49,7 @@ export function ConnectionsPage({
     plugins: pluginCount,
     connectors: connectorCount,
     mcp: mcpCount,
+    ssh: sshCount,
   }
 
   return (

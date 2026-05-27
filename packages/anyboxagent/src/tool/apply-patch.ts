@@ -1,7 +1,13 @@
-import { stat, unlink } from "node:fs/promises"
 import z from "zod"
 import * as Tool from "#tool/tool.ts"
-import { readTextFile, resolveToolPath, toDisplayPath, writeTextFile } from "#tool/shared.ts"
+import {
+  readTextFile,
+  removeResolvedFile,
+  resolveToolPath,
+  statResolvedPath,
+  toDisplayPath,
+  writeTextFile,
+} from "#tool/shared.ts"
 
 type HunkLine = {
   type: "context" | "add" | "remove"
@@ -439,7 +445,7 @@ function deletionsOf(hunks: Hunk[]) {
 }
 
 async function pathExists(filepath: string): Promise<boolean> {
-  return await stat(filepath).then(() => true).catch(() => false)
+  return await statResolvedPath(filepath).then(() => true).catch(() => false)
 }
 
 function samePath(left: string, right: string) {
@@ -528,7 +534,7 @@ export const ApplyPatchTool = Tool.define(
             const originalText = await readTextFile(filePatch.oldPath)
             const source = splitContent(originalText)
 
-            await unlink(sourceResolved)
+            await removeResolvedFile(sourceResolved)
             actions.push({
               kind: "deleted",
               path: toDisplayPath(sourceResolved),
@@ -561,7 +567,7 @@ export const ApplyPatchTool = Tool.define(
 
           if (rename) {
             await writeTextFile(filePatch.newPath, updatedText)
-            await unlink(sourceResolved)
+            await removeResolvedFile(sourceResolved)
             actions.push({
               kind: "moved",
               from: toDisplayPath(sourceResolved),

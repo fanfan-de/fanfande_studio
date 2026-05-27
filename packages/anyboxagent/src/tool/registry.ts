@@ -27,6 +27,7 @@ import { ReplaceTextTool } from "#tool/replace-text.ts"
 import { RollbackToCheckpointTool } from "#tool/rollback-to-checkpoint.ts"
 import { SpawnSubagentTool } from "#tool/spawn-subagent.ts"
 import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
+import { SshShellCommandTool } from "#tool/ssh-shell-command.ts"
 import { TerminalReadTool, TerminalRunCommandTool, TerminalWriteInputTool } from "#tool/terminal-tools.ts"
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "#tool/task-tools.ts"
 import { ViewImageTool } from "#tool/view-image.ts"
@@ -34,6 +35,7 @@ import { WaitSubagentTool } from "#tool/wait-subagent.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
 import { LoadWorkspaceDependenciesTool } from "#tool/workspace-dependencies.ts"
 import * as Mcp from "#mcp/manager.ts"
+import { isSshWorkspaceUri } from "@anybox/shared"
 
 function exposedNames(tool: Tool.ToolInfo): string[] {
   return [tool.id, ...(tool.aliases ?? [])]
@@ -89,7 +91,14 @@ export function builtinShellToolsForPlatform(platform: NodeJS.Platform): Tool.To
 }
 
 export async function builtinTools(): Promise<Tool.ToolInfo[]> {
-  return [
+  let isRemoteWorkspace = false
+  try {
+    isRemoteWorkspace = isSshWorkspaceUri(Instance.directory)
+  } catch {
+    isRemoteWorkspace = false
+  }
+
+  const commonTools = [
     AskUserQuestionTool,
     TaskCreateTool,
     TaskGetTool,
@@ -119,6 +128,17 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     SpawnSubagentTool,
     CancelSubagentTool,
     StopBackgroundTaskTool,
+  ]
+
+  if (isRemoteWorkspace) {
+    return [
+      ...commonTools,
+      SshShellCommandTool,
+    ]
+  }
+
+  return [
+    ...commonTools,
     TerminalRunCommandTool,
     TerminalReadTool,
     TerminalWriteInputTool,

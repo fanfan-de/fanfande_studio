@@ -510,6 +510,52 @@ export interface AgentWorkspaceFileDocument {
   unsupportedReason?: string
 }
 
+export interface AgentSshProfile {
+  id: string
+  name: string
+  host: string
+  port: number
+  username: string
+  privateKeyPath: string
+  defaultRemotePath: string
+  createdAt: number
+  updatedAt: number
+  lastConnectedAt?: number
+  hasPassphrase: boolean
+}
+
+export interface AgentSshProfileInput {
+  id?: string
+  name: string
+  host: string
+  port?: number
+  username: string
+  privateKeyPath: string
+  defaultRemotePath?: string
+  passphrase?: string | null
+}
+
+export interface AgentSshDirectoryEntry {
+  name: string
+  path: string
+  uri: string
+  type: "file" | "directory" | "other"
+  size: number
+  modifiedAt: number
+}
+
+export interface AgentSshDirectoryListing {
+  profileID: string
+  path: string
+  entries: AgentSshDirectoryEntry[]
+}
+
+export interface AgentSshConnectionTestResult {
+  ok: true
+  profileID: string
+  remotePath: string
+}
+
 export interface AgentSessionRuntimeEventSummary {
   eventID: string
   type: string

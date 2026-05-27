@@ -1,8 +1,6 @@
-import path from "node:path"
-import { readdir, stat } from "node:fs/promises"
 import z from "zod"
 import * as Tool from "#tool/tool.ts"
-import { resolveToolPath, toDisplayPath } from "#tool/shared.ts"
+import { listDirectoryEntries, resolveToolPath, statResolvedPath, toDisplayPath } from "#tool/shared.ts"
 
 type Entry = {
   path: string
@@ -21,20 +19,19 @@ async function readEntries(
   if (output.length >= limit) return
   if (depth > maxDepth) return
 
-  const items = await readdir(directory, { withFileTypes: true })
+  const items = await listDirectoryEntries(directory)
   for (const item of items) {
     if (output.length >= limit) break
     if (!includeHidden && item.name.startsWith(".")) continue
 
-    const fullPath = path.join(directory, item.name)
     output.push({
-      path: fullPath,
+      path: item.path,
       depth,
-      isDirectory: item.isDirectory(),
+      isDirectory: item.kind === "directory",
     })
 
-    if (item.isDirectory()) {
-      await readEntries(fullPath, depth + 1, maxDepth, includeHidden, limit, output)
+    if (item.kind === "directory") {
+      await readEntries(item.path, depth + 1, maxDepth, includeHidden, limit, output)
     }
   }
 }
@@ -67,7 +64,7 @@ export const ListDirectoryTool = Tool.define(
       },
       execute: async (parameters) => {
         const resolved = resolveToolPath(parameters.path ?? ".")
-        const stats = await stat(resolved)
+        const stats = await statResolvedPath(resolved)
 
         if (!stats.isDirectory()) {
           return {

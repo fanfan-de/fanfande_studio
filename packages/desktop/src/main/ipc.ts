@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type OpenDialogOptions, type OpenDialogReturnValue, type SaveDialogOptions, type SaveDialogReturnValue, type WebContents } from "electron"
 import { createPlatformAdapter } from "@anybox/platform"
-import { DesktopIpcSchemas } from "@anybox/shared"
+import { DesktopIpcSchemas, createSshWorkspaceUri, isSshWorkspaceUri } from "@anybox/shared"
 import { appendFile, mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { AppearanceConfigDocument } from "../shared/appearance"
@@ -60,6 +60,7 @@ import type {
   AgentConnectorDefinition,
   AgentConnectorStatus,
   AgentEnvelope,
+  AgentFolderWorkspace,
   AgentGlobalSkillFileDocument,
   AgentGlobalSkillFolderRenameResult,
   AgentGlobalSkillFolderResult,
@@ -108,6 +109,10 @@ import type {
   AgentSessionTurnRequestInput,
   AgentSessionWorkflowUpdateInput,
   AgentSideChatLink,
+  AgentSshConnectionTestResult,
+  AgentSshDirectoryListing,
+  AgentSshProfile,
+  AgentSshProfileInput,
   AgentSkillInfo,
   AgentToolPermissionModePayload,
   AgentWorkspaceSession,
@@ -1039,6 +1044,37 @@ function isAbortError(error: unknown) {
   return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"
 }
 
+function queryString(params: Record<string, string | undefined | null>) {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null) continue
+    search.set(key, value)
+  }
+  const value = search.toString()
+  return value ? `?${value}` : ""
+}
+
+async function requestRemoteWorkspaceSearch(directory: string, query: string) {
+  const result = await requestAgentJSON<AgentWorkspaceFileSearchResult[]>(
+    `/api/workspace-files/search${queryString({ directory, query })}`,
+  )
+  return result.data
+}
+
+async function requestRemoteWorkspaceDirectory(directory: string, directoryPath?: string | null) {
+  const result = await requestAgentJSON<AgentWorkspaceDirectoryEntry[]>(
+    `/api/workspace-files/directory${queryString({ directory, path: directoryPath ?? undefined })}`,
+  )
+  return result.data
+}
+
+async function requestRemoteWorkspaceFile(directory: string, filePath: string) {
+  const result = await requestAgentJSON<AgentWorkspaceFileDocument>(
+    `/api/workspace-files/file${queryString({ directory, path: filePath })}`,
+  )
+  return result.data
+}
+
 export interface IpcHandlerOptions {
   onLocaleChanged?: (locale: AppLocale) => void
   workbenchWindowManager?: WorkbenchWindowManager
@@ -1539,6 +1575,21 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     if (!targetPath) {
       throw new Error("A workspace directory is required.")
     }
+    if (isSshWorkspaceUri(targetPath)) {
+      Menu.buildFromTemplate([{
+        label: "External editors are not available for SSH workspaces",
+        enabled: false,
+      }]).popup({
+        window: win,
+        ...(input.anchor
+          ? {
+              x: Math.round(input.anchor.x),
+              y: Math.round(input.anchor.y),
+            }
+          : {}),
+      })
+      return
+    }
 
     const availableEditors = filterAvailableExternalEditorsForTarget(getCachedAvailableExternalEditors(), targetPath)
     const menuItems: MenuItemConstructorOptions[] =
@@ -1585,6 +1636,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     if (!targetPath) {
       throw new Error("A workspace directory is required.")
     }
+    if (isSshWorkspaceUri(targetPath)) return []
 
     return filterAvailableExternalEditorsForTarget(getCachedAvailableExternalEditors(), targetPath).map((editor) => {
       const iconPath = editor.iconPath ?? editor.executablePath
@@ -1600,9 +1652,12 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     })
   })
 
-  handleDesktopIpc("desktop:open-in-external-editor", async (_event, input: { editorID?: string; targetPath: string }) =>
-    openInExternalEditor(input, { openPath: shell.openPath }),
-  )
+  handleDesktopIpc("desktop:open-in-external-editor", async (_event, input: { editorID?: string; targetPath: string }) => {
+    if (isSshWorkspaceUri(input.targetPath)) {
+      throw new Error("External editors are not available for SSH workspaces.")
+    }
+    return openInExternalEditor(input, { openPath: shell.openPath })
+  })
 
   handleDesktopIpc("desktop:get-agent-config", () => getAgentConfig())
 
@@ -1628,7 +1683,10 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   handleDesktopIpc("desktop:list-folder-workspaces", async () => listFolderWorkspaces())
   handleDesktopIpc("desktop:list-project-workspaces", async () => listProjectWorkspaces())
   handleDesktopIpc("desktop:update-workspace-watch-directories", async (event, input: { directories: string[] }) => ({
-    directories: workspaceWatchManager.updateDirectories(event.sender, input.directories),
+    directories: workspaceWatchManager.updateDirectories(
+      event.sender,
+      input.directories.filter((directory) => !isSshWorkspaceUri(directory)),
+    ),
   }))
 
   handleDesktopIpc(
@@ -1780,12 +1838,47 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   })
 
   handleDesktopIpc("desktop:detect-local-preview-services", async () => detectLocalPreviewServices())
-  handleDesktopIpc("desktop:resolve-preview-target", async (_event, input) => resolvePreviewTarget(input))
-  handleDesktopIpc("desktop:read-preview-text", async (_event, input) => readPreviewText(input))
+  handleDesktopIpc("desktop:resolve-preview-target", async (_event, input) => {
+    if (input.workspaceRoot && isSshWorkspaceUri(input.workspaceRoot)) {
+      return {
+        input: input.value,
+        normalizedInput: input.value,
+        kind: "file" as const,
+        mime: "text/plain",
+        renderer: "system-open" as const,
+        textReadable: false,
+        title: input.value,
+        workspaceRoot: input.workspaceRoot,
+        error: "Local preview is not available for SSH workspaces.",
+      }
+    }
+    return resolvePreviewTarget(input)
+  })
+  handleDesktopIpc("desktop:read-preview-text", async (_event, input) => {
+    if (input.workspaceRoot && isSshWorkspaceUri(input.workspaceRoot)) {
+      throw new Error("Local preview is not available for SSH workspaces.")
+    }
+    return readPreviewText(input)
+  })
 
-  handleDesktopIpc("desktop:git-get-capabilities", async (_event, input) =>
-    getGitCapabilities(input),
-  )
+  handleDesktopIpc("desktop:git-get-capabilities", async (_event, input) => {
+    if (isSshWorkspaceUri(input.directory)) {
+      const disabled = { enabled: false, reason: "Git shortcuts are not available for SSH workspaces yet." }
+      return {
+        directory: input.directory,
+        root: null,
+        branch: null,
+        defaultBranch: null,
+        isGitRepo: false,
+        canCommit: disabled,
+        canStageAllCommit: disabled,
+        canPush: disabled,
+        canCreatePullRequest: disabled,
+        canCreateBranch: disabled,
+      }
+    }
+    return getGitCapabilities(input)
+  })
 
   handleDesktopIpc(
     "desktop:git-commit",
@@ -1837,6 +1930,70 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     const projectWorkspace = await loadProjectWorkspace(result.data)
     return buildFolderWorkspaceForDirectory(result.data, projectWorkspace, directory)
   })
+
+  handleDesktopIpc("desktop:list-ssh-profiles", async (): Promise<AgentSshProfile[]> => {
+    const result = await requestAgentJSON<AgentSshProfile[]>("/api/remote/ssh/profiles")
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:save-ssh-profile", async (_event, input: AgentSshProfileInput): Promise<AgentSshProfile> => {
+    const result = await requestAgentJSON<AgentSshProfile>("/api/remote/ssh/profiles", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
+    })
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:delete-ssh-profile", async (_event, input: { profileID: string }) => {
+    const profileID = input.profileID.trim()
+    const result = await requestAgentJSON<{ profileID: string; removed: boolean }>(
+      `/api/remote/ssh/profiles/${encodeURIComponent(profileID)}`,
+      { method: "DELETE" },
+    )
+    return result.data
+  })
+
+  handleDesktopIpc(
+    "desktop:test-ssh-profile",
+    async (_event, input: { profileID: string }): Promise<AgentSshConnectionTestResult> => {
+      const profileID = input.profileID.trim()
+      const result = await requestAgentJSON<AgentSshConnectionTestResult>(
+        `/api/remote/ssh/profiles/${encodeURIComponent(profileID)}/test`,
+        { method: "POST" },
+      )
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:list-ssh-directory",
+    async (_event, input: { profileID: string; path?: string | null }): Promise<AgentSshDirectoryListing> => {
+      const profileID = input.profileID.trim()
+      const result = await requestAgentJSON<AgentSshDirectoryListing>(
+        `/api/remote/ssh/profiles/${encodeURIComponent(profileID)}/directories${queryString({ path: input.path ?? undefined })}`,
+      )
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:open-ssh-folder-workspace",
+    async (_event, input: { profileID: string; path: string }): Promise<AgentFolderWorkspace> => {
+      const directory = createSshWorkspaceUri(input.profileID.trim(), input.path.trim())
+      const result = await requestAgentJSON<AgentProjectInfo>("/api/projects", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ directory }),
+      })
+      const projectWorkspace = await loadProjectWorkspace(result.data)
+      return buildFolderWorkspaceForDirectory(result.data, projectWorkspace, directory)
+    },
+  )
 
   handleDesktopIpc("desktop:agent-create-session", async (_event, input?: { directory?: string }) => {
     const config = getAgentConfig()
@@ -2017,6 +2174,13 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   handleDesktopIpc("desktop:get-session-diff", async (_event, input: { sessionID: string; scope?: AgentSessionDiffScope }) => {
     const sessionID = input.sessionID.trim()
     const sessionResult = await requestAgentJSON<AgentSessionInfo>(`/api/sessions/${encodeURIComponent(sessionID)}`)
+    if (isSshWorkspaceUri(sessionResult.data.directory)) {
+      const result = await requestAgentJSON<AgentSessionDiffSummary>(
+        `/api/sessions/${encodeURIComponent(sessionID)}/diff?scope=latest-turn`,
+      )
+      return withLastTurnScope(result.data, createNonGitScopeOptions(result.data), "none")
+    }
+
     const requestedScope = input.scope
     const gitScope = requestedScope && GIT_DIFF_SCOPES.has(requestedScope) ? requestedScope as Extract<AgentSessionDiffScope, `git:${string}`> : "git:unstaged"
     const workspaceDiff = await getWorkspaceGitDiff(sessionResult.data.directory, { scope: gitScope }).catch((error) => {
@@ -2954,19 +3118,25 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   handleDesktopIpc(
     "desktop:search-workspace-files",
     async (_event, input: { directory: string; query: string }): Promise<AgentWorkspaceFileSearchResult[]> =>
-      searchWorkspaceFiles(input.directory, input.query),
+      isSshWorkspaceUri(input.directory)
+        ? requestRemoteWorkspaceSearch(input.directory, input.query)
+        : searchWorkspaceFiles(input.directory, input.query),
   )
 
   handleDesktopIpc(
     "desktop:list-workspace-directory",
     async (_event, input: { directory: string; path?: string | null }): Promise<AgentWorkspaceDirectoryEntry[]> =>
-      listWorkspaceDirectory(input.directory, input.path),
+      isSshWorkspaceUri(input.directory)
+        ? requestRemoteWorkspaceDirectory(input.directory, input.path)
+        : listWorkspaceDirectory(input.directory, input.path),
   )
 
   handleDesktopIpc(
     "desktop:read-workspace-file",
     async (_event, input: { directory: string; path: string }): Promise<AgentWorkspaceFileDocument> =>
-      readWorkspaceFile(input.directory, input.path),
+      isSshWorkspaceUri(input.directory)
+        ? requestRemoteWorkspaceFile(input.directory, input.path)
+        : readWorkspaceFile(input.directory, input.path),
   )
 
   handleDesktopIpc("desktop:update-global-skill-file", async (_event, input: { path: string; content: string }) => {

@@ -1,8 +1,13 @@
-import path from "node:path"
-import { stat } from "node:fs/promises"
 import z from "zod"
 import * as Tool from "#tool/tool.ts"
-import { resolveToolPath, toDisplayPath, walkProjectEntries } from "#tool/shared.ts"
+import {
+  resolveToolPath,
+  statResolvedPath,
+  toDisplayPath,
+  walkProjectEntries,
+  workspacePathBasename,
+  workspacePathMatchesGlob,
+} from "#tool/shared.ts"
 
 type GlobMatch = {
   path: string
@@ -48,7 +53,7 @@ export const GlobTool = Tool.define(
       },
       execute: async (parameters) => {
         const resolved = resolveToolPath(parameters.path ?? ".")
-        const info = await stat(resolved)
+        const info = await statResolvedPath(resolved)
         const requestedType = parameters.type ?? "files"
         const maxResults = parameters.maxResults ?? 200
         const matches: GlobMatch[] = []
@@ -66,12 +71,12 @@ export const GlobTool = Tool.define(
 
         const maybeMatch = (relativePath: string, candidate: GlobMatch) => {
           if (!matchesRequestedKind(requestedType, candidate.kind)) return true
-          if (!path.matchesGlob(relativePath, parameters.pattern)) return true
+          if (!workspacePathMatchesGlob(relativePath, parameters.pattern)) return true
           return pushMatch(candidate)
         }
 
         if (info.isFile()) {
-          maybeMatch(path.basename(resolved), {
+          maybeMatch(workspacePathBasename(resolved), {
             path: toDisplayPath(resolved),
             kind: "file",
           })

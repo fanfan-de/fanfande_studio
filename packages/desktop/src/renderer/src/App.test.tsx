@@ -243,8 +243,14 @@ async function moveDockviewPanelToPane(
   })
 }
 
+function getAddSessionTabButton() {
+  const button = screen.getAllByRole("button", { name: "Add session tab" })[0]
+  if (!button) throw new Error("Add session tab button not found.")
+  return button
+}
+
 async function createSiblingPaneFromCreateTab() {
-  fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+  fireEvent.click(getAddSessionTabButton())
   await screen.findByRole("combobox", { name: "Session project" })
 
   const panes = await moveDockviewPanelToNewGroup("create-session:", "right")
@@ -252,7 +258,7 @@ async function createSiblingPaneFromCreateTab() {
 }
 
 async function createStackedPaneFromCreateTab() {
-  fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+  fireEvent.click(getAddSessionTabButton())
   await screen.findByRole("combobox", { name: "Session project" })
 
   const panes = await moveDockviewPanelToNewGroup("create-session:", "bottom")
@@ -1284,7 +1290,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".dockview-workbench-header-trailing")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Create session" })).toBeInTheDocument()
+    expect(getAddSessionTabButton()).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "app" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "\u79FB\u9664 app" })).not.toBeInTheDocument()
     fireEvent.contextMenu(screen.getByRole("button", { name: "app" }), {
@@ -1304,8 +1310,8 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Switch to session Chat 1" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
     expect(await screen.findByRole("button", { name: "Git" })).toBeInTheDocument()
     expect(within(leftSidebarTopMenu).getByRole("button", { name: "Open folder" })).toBeInTheDocument()
-    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Sort sessions" })).toBeInTheDocument()
-    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Create session" })).toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).queryByRole("button", { name: "Sort sessions" })).not.toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).queryByRole("button", { name: "Create session" })).not.toBeInTheDocument()
     expect(within(leftSidebarTopMenu).queryByRole("group", { name: "Workspace mode" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Code" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Chat" })).not.toBeInTheDocument()
@@ -1450,8 +1456,8 @@ describe("App", () => {
     const leftSidebarTopMenu = screen.getByLabelText("Left sidebar top menu")
 
     expect(within(leftSidebarTopMenu).getByRole("button", { name: "Open folder" })).toBeInTheDocument()
-    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Sort sessions" })).toBeInTheDocument()
-    expect(within(leftSidebarTopMenu).getByRole("button", { name: "Create session" })).toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).queryByRole("button", { name: "Sort sessions" })).not.toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).queryByRole("button", { name: "Create session" })).not.toBeInTheDocument()
     expect(screen.queryByRole("group", { name: "Workspace mode" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Chat" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Code" })).not.toBeInTheDocument()
@@ -6990,7 +6996,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
     expect(await screen.findByRole("combobox", { name: "Session project" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Open folder" }))
@@ -7250,7 +7256,7 @@ describe("App", () => {
   it("reuses open session tabs while preserving create session tabs in the focused pane", async () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
     await screen.findByRole("combobox", { name: "Session project" })
 
     expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
@@ -7294,7 +7300,7 @@ describe("App", () => {
   it("drags a create-session tab out of the focused pane to create a sibling pane", async () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
     await screen.findByRole("combobox", { name: "Session project" })
 
     const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
@@ -7315,7 +7321,7 @@ describe("App", () => {
   it("lets Dockview own split previews instead of rendering legacy pane split hints", async () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
     await screen.findByRole("combobox", { name: "Session project" })
 
     const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
@@ -7339,7 +7345,7 @@ describe("App", () => {
   it("splits a create-session panel into a sibling Dockview group", async () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
     await screen.findByRole("combobox", { name: "Session project" })
 
     await moveDockviewPanelToNewGroup("create-session:", "right")
@@ -7349,7 +7355,7 @@ describe("App", () => {
   it("creates a vertical Dockview split from a create-session panel", async () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
     await screen.findByRole("combobox", { name: "Session project" })
 
     await moveDockviewPanelToNewGroup("create-session:", "bottom")
@@ -7476,7 +7482,7 @@ describe("App", () => {
   it("focuses the existing create session tab when the pane tab bar add button is clicked", async () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
     await screen.findByRole("combobox", { name: "Session project" })
 
     const { panel } = await findDockviewPanel("session:session-chat-1")
@@ -7518,10 +7524,10 @@ describe("App", () => {
     expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
   })
 
-  it("reuses the existing create session tab when the sidebar create action is clicked again", async () => {
+  it("reuses the existing create session tab when the add tab button is clicked again", async () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
     await screen.findByRole("combobox", { name: "Session project" })
     expect(screen.queryByRole("textbox", { name: "Session title" })).not.toBeInTheDocument()
 
@@ -7530,7 +7536,7 @@ describe("App", () => {
     })
     expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
 
     expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.queryByRole("button", { name: "Switch to create session tab 2" })).toBeNull()
@@ -7540,7 +7546,7 @@ describe("App", () => {
   it("shows the session canvas top menu while a create session tab is active", async () => {
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
 
     await screen.findByRole("combobox", { name: "Session project" })
 
@@ -7565,7 +7571,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
     expect(await screen.findByRole("combobox", { name: "Session project" })).toBeInTheDocument()
     expect(screen.queryByRole("textbox", { name: "Session title" })).not.toBeInTheDocument()
 
@@ -7602,7 +7608,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "app" }).closest(".project-row")).not.toHaveClass("is-active")
     expect(document.querySelectorAll(".project-row.is-active")).toHaveLength(1)
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
     await screen.findByRole("combobox", { name: "Session project" })
 
     setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Create session for src")
@@ -7682,7 +7688,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
     await screen.findByRole("combobox", { name: "Session project" })
 
     expect(screen.getByRole("textbox", { name: "Task draft" })).toBeInTheDocument()
@@ -7797,7 +7803,7 @@ describe("App", () => {
       expect(window.desktop!.agentSession!.onEvent).toHaveBeenCalledTimes(1)
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    fireEvent.click(getAddSessionTabButton())
     await screen.findByRole("combobox", { name: "Session project" })
 
     setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Stream the first session prompt")

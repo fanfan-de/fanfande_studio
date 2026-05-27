@@ -1,8 +1,14 @@
-import path from "node:path"
-import { stat } from "node:fs/promises"
 import z from "zod"
 import * as Tool from "#tool/tool.ts"
-import { readSearchableTextFile, resolveToolPath, toDisplayPath, walkProjectEntries } from "#tool/shared.ts"
+import {
+  readSearchableTextFile,
+  resolveToolPath,
+  statResolvedPath,
+  toDisplayPath,
+  walkProjectEntries,
+  workspacePathBasename,
+  workspacePathMatchesGlob,
+} from "#tool/shared.ts"
 
 type GrepHit = {
   path: string
@@ -78,7 +84,7 @@ export const GrepTool = Tool.define(
       },
       execute: async (parameters) => {
         const resolved = resolveToolPath(parameters.path ?? ".")
-        const info = await stat(resolved)
+        const info = await statResolvedPath(resolved)
         const matcher = createMatcher(parameters.pattern, {
           literal: parameters.literal ?? false,
           caseSensitive: parameters.caseSensitive ?? false,
@@ -89,7 +95,7 @@ export const GrepTool = Tool.define(
         let truncated = false
 
         const scanFile = async (filePath: string, relativePath: string, displayPath: string) => {
-          if (!path.matchesGlob(relativePath, filePattern)) return true
+          if (!workspacePathMatchesGlob(relativePath, filePattern)) return true
 
           const text = await readSearchableTextFile(filePath)
           if (typeof text !== "string") return true
@@ -117,7 +123,7 @@ export const GrepTool = Tool.define(
         }
 
         if (info.isFile()) {
-          await scanFile(resolved, path.basename(resolved), toDisplayPath(resolved))
+          await scanFile(resolved, workspacePathBasename(resolved), toDisplayPath(resolved))
         } else {
           await walkProjectEntries(resolved, {
             includeHidden: parameters.includeHidden ?? false,

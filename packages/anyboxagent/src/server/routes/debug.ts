@@ -46,6 +46,16 @@ function toSSE(event: string, data: unknown, id?: string) {
   return `${lines.join("\n")}\n\n`
 }
 
+function createSSEHeaders(requestId?: string) {
+  const headers: Record<string, string> = {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
+  }
+  if (requestId) headers["x-request-id"] = requestId
+  return headers
+}
+
 function buildStatusPayload() {
   const runningSessions = RunningState.snapshot()
   const memory = process.memoryUsage()
@@ -155,12 +165,7 @@ function createLogStream(input: {
   })
 
   return new Response(stream, {
-    headers: {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-request-id": input.requestId,
-    },
+    headers: createSSEHeaders(input.requestId),
   })
 }
 
@@ -222,12 +227,7 @@ function createStatusStream(input: {
   })
 
   return new Response(stream, {
-    headers: {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-request-id": input.requestId,
-    },
+    headers: createSSEHeaders(input.requestId),
   })
 }
 

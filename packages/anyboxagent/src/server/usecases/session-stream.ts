@@ -31,6 +31,16 @@ function toSSE(event: string, data: unknown, id?: string) {
   return `${lines.join("\n")}\n\n`
 }
 
+function createSSEHeaders(requestId?: string) {
+  const headers: Record<string, string> = {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
+  }
+  if (requestId) headers["x-request-id"] = requestId
+  return headers
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -176,12 +186,7 @@ export function createSessionExecutionErrorStream(input: {
   })
 
   return new Response(toSSE("runtime", event, runtimeEventSSEID(event)), {
-    headers: {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-request-id": input.requestId,
-    },
+    headers: createSSEHeaders(input.requestId),
   })
 }
 
@@ -325,12 +330,7 @@ export function createSessionEventStream(input: {
   })
 
   return new Response(stream, {
-    headers: {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-request-id": input.requestId,
-    },
+    headers: createSSEHeaders(input.requestId),
   })
 }
 
@@ -570,11 +570,6 @@ export function createSessionExecutionStream(input: {
   })
 
   return new Response(stream, {
-    headers: {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-request-id": input.requestId,
-    },
+    headers: createSSEHeaders(input.requestId),
   })
 }

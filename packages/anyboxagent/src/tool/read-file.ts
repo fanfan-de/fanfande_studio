@@ -1,8 +1,7 @@
-import { stat } from "node:fs/promises"
 import type { JSONValue } from "@ai-sdk/provider"
 import z from "zod"
 import * as Tool from "#tool/tool.ts"
-import { readResolvedTextFileRange, resolveReadableTextFilePath, toDisplayPath } from "#tool/shared.ts"
+import { readResolvedTextFileRange, resolveReadableTextFilePath, statResolvedPath, toDisplayPath } from "#tool/shared.ts"
 import { Instance } from "#project/instance.ts"
 
 const DEFAULT_MAX_LINES = 250
@@ -115,7 +114,7 @@ export const ReadFileTool = Tool.define(
         const requestedEndLine = normalized.requestedEndLine ?? startLine + DEFAULT_MAX_LINES - 1
         const endLine = computeEffectiveEndLine(normalized)
         const excerpt = await readResolvedTextFileRange(resolved, startLine, endLine)
-        const info = await stat(resolved)
+        const info = await statResolvedPath(resolved)
         const hasMoreLinesAfterRange = !excerpt.outOfRange && excerpt.totalLines > excerpt.endLine
         const truncatedByLineBudget = requestedEndLine > endLine || (!hasExplicitEndLine && hasMoreLinesAfterRange)
         const truncatedContent = truncateContent(excerpt.rendered || "", normalized.maxOutputChars)

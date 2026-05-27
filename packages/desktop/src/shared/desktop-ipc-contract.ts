@@ -64,6 +64,11 @@ import type {
   AgentWorkspaceFileDocument,
   AgentWorkspaceDirectoryEntry,
   AgentWorkspaceFileSearchResult,
+  AgentSshConnectionTestResult,
+  AgentSshDirectoryEntry,
+  AgentSshDirectoryListing,
+  AgentSshProfile,
+  AgentSshProfileInput,
   AgentWorkspaceSession,
   MenuAnchor,
   MenuKey,
@@ -154,6 +159,11 @@ export type {
   AgentWorkspaceFileDocument,
   AgentWorkspaceDirectoryEntry,
   AgentWorkspaceFileSearchResult,
+  AgentSshConnectionTestResult,
+  AgentSshDirectoryEntry,
+  AgentSshDirectoryListing,
+  AgentSshProfile,
+  AgentSshProfileInput,
   AgentWorkspaceSession,
   AppearanceConfigDocument,
   AppearanceConfigSnapshot,
@@ -1011,6 +1021,30 @@ export interface DesktopIpcContract {
     input: { directory: string }
     output: AgentFolderWorkspace
   }
+  "desktop:list-ssh-profiles": {
+    input: void
+    output: AgentSshProfile[]
+  }
+  "desktop:save-ssh-profile": {
+    input: AgentSshProfileInput
+    output: AgentSshProfile
+  }
+  "desktop:delete-ssh-profile": {
+    input: { profileID: string }
+    output: { profileID: string; removed: boolean }
+  }
+  "desktop:test-ssh-profile": {
+    input: { profileID: string }
+    output: AgentSshConnectionTestResult
+  }
+  "desktop:list-ssh-directory": {
+    input: { profileID: string; path?: string | null }
+    output: AgentSshDirectoryListing
+  }
+  "desktop:open-ssh-folder-workspace": {
+    input: { profileID: string; path: string }
+    output: AgentFolderWorkspace
+  }
   "desktop:agent-create-session": {
     input: { directory?: string } | undefined
     output: DesktopSessionMutationResult
@@ -1635,6 +1669,12 @@ export interface DesktopApiMethods {
   listFolderWorkspaces(): Promise<DesktopIpcOutput<"desktop:list-folder-workspaces">>
   listProjectWorkspaces(): Promise<DesktopIpcOutput<"desktop:list-project-workspaces">>
   openFolderWorkspace(input: DesktopIpcInput<"desktop:open-folder-workspace">): Promise<DesktopIpcOutput<"desktop:open-folder-workspace">>
+  listSshProfiles(): Promise<DesktopIpcOutput<"desktop:list-ssh-profiles">>
+  saveSshProfile(input: DesktopIpcInput<"desktop:save-ssh-profile">): Promise<DesktopIpcOutput<"desktop:save-ssh-profile">>
+  deleteSshProfile(input: DesktopIpcInput<"desktop:delete-ssh-profile">): Promise<DesktopIpcOutput<"desktop:delete-ssh-profile">>
+  testSshProfile(input: DesktopIpcInput<"desktop:test-ssh-profile">): Promise<DesktopIpcOutput<"desktop:test-ssh-profile">>
+  listSshDirectory(input: DesktopIpcInput<"desktop:list-ssh-directory">): Promise<DesktopIpcOutput<"desktop:list-ssh-directory">>
+  openSshFolderWorkspace(input: DesktopIpcInput<"desktop:open-ssh-folder-workspace">): Promise<DesktopIpcOutput<"desktop:open-ssh-folder-workspace">>
   createProjectWorkspace(input: DesktopIpcInput<"desktop:create-project-workspace">): Promise<DesktopIpcOutput<"desktop:create-project-workspace">>
   createAgentSession(input?: DesktopIpcInput<"desktop:agent-create-session">): Promise<DesktopIpcOutput<"desktop:agent-create-session">>
   createFolderSession(input: DesktopIpcInput<"desktop:create-folder-session">): Promise<DesktopIpcOutput<"desktop:create-folder-session">>

@@ -1,6 +1,14 @@
 import z from "zod"
 import fs from "fs/promises"
 import { normalizeComparablePath } from "@anybox/platform"
+import {
+  containsWorkspaceLocation,
+  createSshWorkspaceUri,
+  getWorkspaceBasename,
+  isSshWorkspaceUri,
+  normalizeSshRemotePath,
+  parseWorkspaceLocation,
+} from "@anybox/shared"
 import * as Filesystem from "#util/filesystem.ts"
 import path from "path"
 import { $ } from "bun"
@@ -12,6 +20,7 @@ import { GlobalBus } from "#bus/global.ts"
 import { existsSync, realpathSync } from "fs"
 import * as Session from "#session/core/session.ts"
 import * as Identifier from "#id/id.ts"
+import * as Ssh from "#remote/ssh/index.ts"
 
 const log = Log.create({ service: "project" })
 const ProjectKind = z.enum(["directory", "git"])
@@ -79,6 +88,11 @@ type ResolvedProjectIdentity =
     }
 
 function normalizeProjectPath(input: string) {
+  if (isSshWorkspaceUri(input)) {
+    const location = parseWorkspaceLocation(input)
+    if (location.kind === "ssh") return createSshWorkspaceUri(location.profileID, location.remotePath)
+  }
+
   const resolved = path.resolve(input)
   let realPath = resolved
   try {
@@ -95,6 +109,13 @@ function normalizeProjectPath(input: string) {
 }
 
 async function resolveExistingProjectPath(input: string) {
+  if (isSshWorkspaceUri(input)) {
+    const location = parseWorkspaceLocation(input)
+    if (location.kind !== "ssh") return input
+    const remotePath = await Ssh.realpath(input).catch(() => location.remotePath)
+    return createSshWorkspaceUri(location.profileID, remotePath)
+  }
+
   const resolved = path.resolve(input)
   return fs.realpath(resolved).catch(() => resolved)
 }
@@ -104,6 +125,7 @@ function resolveProjectKind(project: Pick<ProjectInfo, "kind" | "vcs">) {
 }
 
 function resolveProjectName(worktree: string) {
+  if (isSshWorkspaceUri(worktree)) return getWorkspaceBasename(worktree)
   const folderName = worktree.split(/[\\/]/).filter(Boolean).pop()
   return folderName || worktree
 }
@@ -114,6 +136,10 @@ function resolveStoredProjectName(worktree: string, currentName?: string) {
 }
 
 function isPathInsideProject(directory: string, worktree: string) {
+  if (isSshWorkspaceUri(directory) || isSshWorkspaceUri(worktree)) {
+    return containsWorkspaceLocation(worktree, directory)
+  }
+
   const relative = path.relative(normalizeProjectPath(worktree), normalizeProjectPath(directory))
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
@@ -154,7 +180,11 @@ function normalizeProjectRecord(project: ProjectInfo): ProjectInfo {
   const sandboxes =
     kind === "git"
       ? uniqueProjectPaths(project.sandboxes ?? []).filter(
-          (item) => existsSync(item) && isAdditionalSandboxDirectory(item, project.worktree),
+          (item) =>
+            !isSshWorkspaceUri(item) &&
+            !isSshWorkspaceUri(project.worktree) &&
+            existsSync(item) &&
+            isAdditionalSandboxDirectory(item, project.worktree),
         )
       : []
 
@@ -292,7 +322,11 @@ function buildProjectRecord(input: ResolvedProjectIdentity, seed?: ProjectInfo) 
   const sandboxes =
     input.kind === "git"
       ? uniqueProjectPaths([...(normalizedSeed?.sandboxes ?? []), input.sandbox]).filter(
-          (item) => existsSync(item) && isAdditionalSandboxDirectory(item, input.worktree),
+          (item) =>
+            !isSshWorkspaceUri(item) &&
+            !isSshWorkspaceUri(input.worktree) &&
+            existsSync(item) &&
+            isAdditionalSandboxDirectory(item, input.worktree),
         )
       : []
 
@@ -375,6 +409,7 @@ async function readStoredGitProjectID(gitCommonDir?: string) {
 }
 
 async function writeStoredGitProjectID(gitCommonDir: string | undefined, projectID: string) {
+  if (gitCommonDir && isSshWorkspaceUri(gitCommonDir)) return
   if (!gitCommonDir || !isGeneratedProjectID(projectID)) return
   const markerPath = path.join(gitCommonDir, "anybox")
   const cachedID = await Bun.file(markerPath)
@@ -386,7 +421,63 @@ async function writeStoredGitProjectID(gitCommonDir: string | undefined, project
   await Bun.file(markerPath).write(projectID).catch(() => undefined)
 }
 
+async function resolveRemoteGitTopLevel(profileID: string, remotePath: string) {
+  const result = await Ssh.exec(
+    profileID,
+    remotePath,
+    "git rev-parse --show-toplevel 2>/dev/null",
+    { timeoutMs: 10_000, maxOutputChars: 16_384 },
+  ).catch(() => undefined)
+  if (!result || result.exitCode !== 0) return undefined
+  const value = result.stdout.trim().split(/\r?\n/).at(-1)?.trim()
+  return value ? normalizeSshRemotePath(value) : undefined
+}
+
+async function resolveRemoteGitCommonDir(profileID: string, cwd: string) {
+  const result = await Ssh.exec(
+    profileID,
+    cwd,
+    "git rev-parse --git-common-dir 2>/dev/null",
+    { timeoutMs: 10_000, maxOutputChars: 16_384 },
+  ).catch(() => undefined)
+  if (!result || result.exitCode !== 0) return undefined
+  const value = result.stdout.trim().split(/\r?\n/).at(-1)?.trim()
+  if (!value) return undefined
+  return normalizeSshRemotePath(value.startsWith("/") ? value : path.posix.join(cwd, value))
+}
+
+async function resolveRemoteProjectIdentity(directory: string): Promise<ResolvedProjectIdentity> {
+  const location = parseWorkspaceLocation(directory)
+  if (location.kind !== "ssh") throw new Error("Expected SSH workspace URI")
+
+  const realRemotePath = await Ssh.realpath(directory).catch(() => location.remotePath)
+  const sandboxUri = createSshWorkspaceUri(location.profileID, realRemotePath)
+  const gitTopLevel = await resolveRemoteGitTopLevel(location.profileID, realRemotePath)
+  if (!gitTopLevel) {
+    return {
+      kind: "directory",
+      sandbox: sandboxUri,
+      worktree: sandboxUri,
+      vcs: undefined,
+    }
+  }
+
+  const gitCommonDir = await resolveRemoteGitCommonDir(location.profileID, gitTopLevel)
+  const worktreePath = gitCommonDir ? normalizeSshRemotePath(path.posix.join(gitCommonDir, "..")) : gitTopLevel
+
+  return {
+    kind: "git",
+    sandbox: createSshWorkspaceUri(location.profileID, gitTopLevel),
+    worktree: createSshWorkspaceUri(location.profileID, worktreePath),
+    gitCommonDir: gitCommonDir ? createSshWorkspaceUri(location.profileID, gitCommonDir) : undefined,
+    storedProjectID: undefined,
+    vcs: "git",
+  }
+}
+
 async function resolveProjectIdentity(directory: string): Promise<ResolvedProjectIdentity> {
+  if (isSshWorkspaceUri(directory)) return resolveRemoteProjectIdentity(directory)
+
   const resolvedDirectory = await resolveExistingProjectPath(directory)
   const matches = Filesystem.up({ targets: [".git"], start: resolvedDirectory })
   const gitMarker = await matches.next().then((item) => item.value)
@@ -452,6 +543,7 @@ async function repairProjects() {
 
   for (const project of listStoredProjects()) {
     for (const directory of projectRoots(project)) {
+      if (isSshWorkspaceUri(directory)) continue
       if (!directory || !existsSync(directory)) continue
       candidates.set(normalizeProjectPath(directory), directory)
     }
@@ -460,6 +552,7 @@ async function repairProjects() {
   if (db.tableExists("sessions")) {
     for (const session of db.findManyWithSchema("sessions", Session.SessionInfo)) {
       const directory = session.directory?.trim()
+      if (isSshWorkspaceUri(directory)) continue
       if (!directory || !existsSync(directory)) continue
       candidates.set(normalizeProjectPath(directory), directory)
     }
@@ -532,6 +625,7 @@ export async function sandboxes(projectID: string) {
 
   const valid: string[] = []
   for (const directory of project.sandboxes) {
+    if (isSshWorkspaceUri(directory) || isSshWorkspaceUri(project.worktree)) continue
     const stat = await fs.stat(directory).catch(() => undefined)
     if (stat?.isDirectory() && isAdditionalSandboxDirectory(directory, project.worktree)) valid.push(directory)
   }

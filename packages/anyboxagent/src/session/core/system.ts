@@ -6,6 +6,7 @@ import { Instance } from "#project/instance.ts"
 import * as Config from "#config/config.ts"
 import * as Provider from "#provider/provider.ts"
 import * as Skill from "#skill/skill.ts"
+import { isSshWorkspaceUri } from "@anybox/shared"
 import type * as Session from "#session/core/session.ts"
 import * as Task from "#session/tasks/task.ts"
 import * as PromptPresets from "#session/support/prompt-presets.ts"
@@ -101,6 +102,7 @@ export async function defaultPrompt(input?: {
 export async function environment(model: Provider.Model) {
     const project = Instance.project
     const modelName = model.api?.id ?? model.id
+    const isRemoteSsh = isSshWorkspaceUri(Instance.directory)
     return [
         [
             `You are powered by the model named ${modelName}. The exact model ID is ${model.providerID}/${modelName}`,
@@ -109,7 +111,8 @@ export async function environment(model: Provider.Model) {
             `  Working directory: ${Instance.directory}`,
             `  Workspace root folder: ${Instance.worktree}`,
             `  Is directory a git repo: ${project.vcs === "git" ? "yes" : "no"}`,
-            `  Platform: ${process.platform}`,
+            `  Platform: ${isRemoteSsh ? "remote linux/posix over SSH" : process.platform}`,
+            isRemoteSsh ? `  Shell command tool: ssh_shell_command` : undefined,
             `  Today's date: ${new Date().toDateString()}`,
             `</env>`,
             `<directories>`,

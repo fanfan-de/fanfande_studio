@@ -691,7 +691,6 @@ export function useAgentWorkspace({
     clearRuntimeDebugRefreshTimer,
     clearSessionDiffRefreshTimer,
     selectedFolderID,
-    selectedWorkspace,
     skipNextHistoryLoadRef,
     subscribedSessionStreamsRef,
     workbenchDockviewCommandsRef,

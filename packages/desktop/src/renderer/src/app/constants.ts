@@ -15,6 +15,4 @@ export const STREAM_PENDING_NEXT_STEP = "Live output will keep appending inside 
 
 export const sidebarActions: Array<{ key: SidebarActionKey; label: string }> = [
   { key: "project", label: "Open folder" },
-  { key: "sort", label: "Sort sessions" },
-  { key: "new", label: "Create session" },
 ]

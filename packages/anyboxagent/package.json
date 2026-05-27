@@ -13,12 +13,13 @@
     "typescript": "^6.0.2"
   },
   "dependencies": {
+    "@ai-sdk/provider": "^3.0.8",
     "@anybox/platform": "workspace:*",
     "@anybox/shared": "workspace:*",
-    "@ai-sdk/provider": "^3.0.8",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@opentui/core": "^0.1.90",
     "@opentui/solid": "^0.1.90",
+    "@types/ssh2": "^1.15.5",
     "ai": "^6.0.140",
     "fuzzysort": "^3.1.0",
     "gray-matter": "^4.0.3",
@@ -27,6 +28,7 @@
     "node-pty": "^1.1.0",
     "pyright": "^1.1.409",
     "remeda": "^2.33.6",
+    "ssh2": "^1.17.0",
     "typescript-language-server": "^4.4.0",
     "vitest": "^4.1.2",
     "which": "^6.0.1",

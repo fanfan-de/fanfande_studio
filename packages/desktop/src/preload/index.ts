@@ -19,6 +19,10 @@ import type {
   AgentSessionSummary,
   AgentSessionTurnRequestInput,
   AgentSideChatLink,
+  AgentSshConnectionTestResult,
+  AgentSshDirectoryListing,
+  AgentSshProfile,
+  AgentSshProfileInput,
   AppearanceConfigDocument,
   AppearanceConfigSnapshot,
   LocaleConfigDocument,
@@ -267,6 +271,18 @@ try {
       invokeDesktop("desktop:list-project-workspaces") as Promise<AgentProjectWorkspace[]>,
     openFolderWorkspace: (input: { directory: string }) =>
       invokeDesktop("desktop:open-folder-workspace", input) as Promise<AgentFolderWorkspace>,
+    listSshProfiles: () =>
+      invokeDesktop("desktop:list-ssh-profiles") as Promise<AgentSshProfile[]>,
+    saveSshProfile: (input: AgentSshProfileInput) =>
+      invokeDesktop("desktop:save-ssh-profile", input) as Promise<AgentSshProfile>,
+    deleteSshProfile: (input: { profileID: string }) =>
+      invokeDesktop("desktop:delete-ssh-profile", input) as Promise<{ profileID: string; removed: boolean }>,
+    testSshProfile: (input: { profileID: string }) =>
+      invokeDesktop("desktop:test-ssh-profile", input) as Promise<AgentSshConnectionTestResult>,
+    listSshDirectory: (input: { profileID: string; path?: string | null }) =>
+      invokeDesktop("desktop:list-ssh-directory", input) as Promise<AgentSshDirectoryListing>,
+    openSshFolderWorkspace: (input: { profileID: string; path: string }) =>
+      invokeDesktop("desktop:open-ssh-folder-workspace", input) as Promise<AgentFolderWorkspace>,
     createProjectWorkspace: (input: { directory: string }) =>
       invokeDesktop("desktop:create-project-workspace", input) as Promise<AgentProjectWorkspace>,
     createAgentSession: (input?: { directory?: string }) =>
