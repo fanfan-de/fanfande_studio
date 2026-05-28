@@ -3,6 +3,7 @@ import { delimiter, dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import z from "zod"
 import * as Auth from "#auth/auth.ts"
+import { getBrowserTrustedCommandToken } from "#browser-extension/runtime-token.ts"
 import * as ProviderAuth from "#auth/provider-auth.ts"
 import * as Config from "#config/config.ts"
 import * as Mcp from "#mcp/manager.ts"
@@ -23,6 +24,8 @@ const BUILTIN_FEISHU_PACKAGE_PATH = ["plugins", "builtin", "feishu", "0.1.0"] as
 const BUILD_CONNECTOR_CONFIG_PATH = ["config", "connectors.json"] as const
 const BUILD_BROWSER_CONNECTOR_PATH = ["connectors", "browser"] as const
 const SOURCE_BROWSER_CONNECTOR_PATH = ["connectors", "browser"] as const
+const BUILD_NODE_REPL_CONNECTOR_PATH = ["connectors", "node-repl"] as const
+const SOURCE_NODE_REPL_CONNECTOR_PATH = ["connectors", "node-repl"] as const
 const BUILD_GMAIL_CONNECTOR_PATH = ["connectors", "gmail"] as const
 const BUILD_FEISHU_CONNECTOR_PATH = ["connectors", "feishu"] as const
 const CONNECTOR_CUSTOM_OAUTH_CLIENT_KEY = "custom-oauth-client"
@@ -383,6 +386,11 @@ function builtinBrowserConnectorRoot() {
   return existsSync(packagedRoot) ? packagedRoot : packageRootFromAnyboxAgentRoot(...SOURCE_BROWSER_CONNECTOR_PATH)
 }
 
+function builtinNodeReplConnectorRoot() {
+  const packagedRoot = resolve(bundledRuntimeRoot(), ...BUILD_NODE_REPL_CONNECTOR_PATH)
+  return existsSync(packagedRoot) ? packagedRoot : packageRootFromAnyboxAgentRoot(...SOURCE_NODE_REPL_CONNECTOR_PATH)
+}
+
 function builtinGmailConnectorRoot() {
   const packagedRoot = resolve(bundledRuntimeRoot(), ...BUILD_GMAIL_CONNECTOR_PATH)
   return existsSync(packagedRoot) ? packagedRoot : resolve(builtinGmailPackageRoot(), "connectors", "gmail")
@@ -408,10 +416,19 @@ function builtinGmailOAuthClientSecret() {
     buildConfig.gmailOAuthClientSecret?.trim()
 }
 
+function localAgentBaseURL() {
+  const host = getProcessEnvValue("ANYBOX_SERVER_HOST")?.trim() || "127.0.0.1"
+  const port = getProcessEnvValue("ANYBOX_SERVER_PORT")?.trim() || "4096"
+  return `http://${host}:${port}`
+}
+
 function builtinDefinitions(): ConnectorDefinition[] {
   const browserConnectorRoot = builtinBrowserConnectorRoot()
   const browserServerPath = resolve(browserConnectorRoot, "server.js")
   const browserRuntimeAvailable = existsSync(browserServerPath)
+  const nodeReplConnectorRoot = builtinNodeReplConnectorRoot()
+  const nodeReplServerPath = resolve(nodeReplConnectorRoot, "server.js")
+  const nodeReplRuntimeAvailable = existsSync(nodeReplServerPath)
   const gmailConnectorRoot = builtinGmailConnectorRoot()
   const gmailServerPath = resolve(gmailConnectorRoot, "server.js")
   const gmailClientID = builtinGmailOAuthClientID()
@@ -526,6 +543,9 @@ function builtinDefinitions(): ConnectorDefinition[] {
         command: "node",
         args: [browserServerPath],
         cwd: browserConnectorRoot,
+        env: {
+          ANYBOX_AGENT_BASE_URL: localAgentBaseURL(),
+        },
         timeoutMs: 30_000,
         toolPolicies: {
           browser_status: { policy: "auto" },
@@ -551,6 +571,61 @@ function builtinDefinitions(): ConnectorDefinition[] {
       ],
       source: "platform",
       available: browserRuntimeAvailable,
+    }),
+    ConnectorDefinition.parse({
+      id: "node-repl",
+      name: "Node REPL",
+      description: "Run JavaScript in a persistent local Node.js REPL with optional Browser runtime helpers.",
+      publisher: "Anybox",
+      icon: "JS",
+      risk: "high",
+      permissions: [
+        "Starts a local Node.js MCP wrapper bundled with Anybox.",
+        "Runs JavaScript code requested by the agent in a persistent process.",
+        "When used with the Browser plugin, can execute raw JavaScript and CDP commands in Chrome tabs.",
+      ],
+      tools: [
+        {
+          name: "node_repl_js",
+          title: "Node REPL JavaScript",
+          description: "Run JavaScript in a persistent Node.js REPL.",
+          readOnly: false,
+        },
+        {
+          name: "node_repl_reset",
+          title: "Reset Node REPL",
+          description: "Reset the persistent Node.js REPL state.",
+          readOnly: false,
+        },
+        {
+          name: "node_repl_add_node_module_dir",
+          title: "Add Node Module Directory",
+          description: "Add a node_modules directory to CommonJS module resolution.",
+          readOnly: false,
+        },
+      ],
+      runtime: {
+        transport: "stdio",
+        command: "node",
+        args: [nodeReplServerPath],
+        cwd: nodeReplConnectorRoot,
+        env: {
+          ANYBOX_AGENT_BASE_URL: localAgentBaseURL(),
+          ANYBOX_BROWSER_TRUSTED_TOKEN: getBrowserTrustedCommandToken(),
+        },
+        timeoutMs: 120_000,
+        toolPolicies: {
+          node_repl_reset: { policy: "auto" },
+          node_repl_add_node_module_dir: { policy: "ask" },
+          node_repl_js: { policy: "ask" },
+        },
+      },
+      installReview: [
+        "Runs a persistent local JavaScript process.",
+        "Browser raw page script and CDP access require this connector and the Browser plugin to be selected.",
+      ],
+      source: "platform",
+      available: nodeReplRuntimeAvailable,
     }),
     ConnectorDefinition.parse({
       id: "gmail",

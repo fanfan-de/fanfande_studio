@@ -544,6 +544,15 @@ async function executeScript(params: unknown) {
   }
 }
 
+async function cdpSend(params: unknown) {
+  const input = readRecord(params)
+  const tabId = await activeTabId(input.tabId)
+  const method = readString(input.method)
+  if (!method) throw new Error("cdp.send requires method.")
+  const commandParams = readRecord(input.params)
+  return await sendCdp(tabId, method, commandParams)
+}
+
 export async function handleBrowserCommand(method: BrowserExtensionCommandMethod, params?: unknown) {
   switch (method) {
     case "tabs.list":
@@ -574,6 +583,8 @@ export async function handleBrowserCommand(method: BrowserExtensionCommandMethod
       return await waitFor(params)
     case "page.executeScript":
       return await executeScript(params)
+    case "cdp.send":
+      return await cdpSend(params)
   }
 }
 

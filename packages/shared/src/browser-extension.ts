@@ -15,6 +15,7 @@ export const BrowserExtensionCommandMethod = z.enum([
   "page.scroll",
   "page.waitFor",
   "page.executeScript",
+  "cdp.send",
 ])
 export type BrowserExtensionCommandMethod = z.infer<typeof BrowserExtensionCommandMethod>
 
@@ -30,6 +31,9 @@ export const BrowserExtensionHelloMessage = z.object({
   extensionInstanceID: z.string().min(1),
   extensionID: z.string().min(1).optional(),
   version: z.string().min(1),
+  transport: z.enum(["native", "websocket"]).optional(),
+  hostName: z.string().min(1).optional(),
+  lastTransportError: z.string().min(1).optional(),
 })
 export type BrowserExtensionHelloMessage = z.infer<typeof BrowserExtensionHelloMessage>
 

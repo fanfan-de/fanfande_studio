@@ -22,11 +22,13 @@ Start Anybox Agent before loading or reconnecting the extension:
 corepack pnpm --dir packages/anyboxagent run dev:server
 ```
 
-The extension connects to:
+The extension first tries Chrome Native Messaging host `com.anybox.browser`. If that host is unavailable, it falls back to:
 
 ```text
 ws://127.0.0.1:4096/api/browser-extension/ws
 ```
+
+Set `ANYBOX_FORCE_WEBSOCKET_BRIDGE` to `true` in extension local storage to force the fallback path during development.
 
 Check bridge status:
 
@@ -44,4 +46,3 @@ curl http://127.0.0.1:4096/api/browser-extension/status
 - `page.click`
 - `page.type`
 - `page.scroll`
-

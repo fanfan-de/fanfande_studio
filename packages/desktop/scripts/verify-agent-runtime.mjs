@@ -7,6 +7,9 @@ const desktopDir = path.resolve(scriptDir, "..")
 const runtimeDir = path.join(desktopDir, "build", "agent-runtime")
 const dependenciesDir = path.join(runtimeDir, "dependencies")
 const bunExecutableName = process.platform === "win32" ? "bun.exe" : "bun"
+const nativeHostExecutableName = process.platform === "win32"
+  ? "anybox-browser-native-host.exe"
+  : "anybox-browser-native-host"
 const pythonExecutable = process.platform === "win32"
   ? path.join(dependenciesDir, "python", "python.exe")
   : path.join(dependenciesDir, "python", "bin", "python3")
@@ -14,8 +17,11 @@ const pythonExecutable = process.platform === "win32"
 const requiredFiles = [
   path.join(runtimeDir, "agent-server.js"),
   path.join(runtimeDir, "connectors", "browser", "server.js"),
+  path.join(runtimeDir, "connectors", "node-repl", "server.js"),
+  path.join(runtimeDir, "connectors", "node-repl", "browser-client.mjs"),
   path.join(runtimeDir, "connectors", "gmail", "server.js"),
   path.join(runtimeDir, "connectors", "feishu", "server.js"),
+  path.join(runtimeDir, "native-host", nativeHostExecutableName),
   path.join(runtimeDir, bunExecutableName),
   path.join(runtimeDir, "node_modules", "node-pty", "package.json"),
   path.join(dependenciesDir, "manifest.json"),

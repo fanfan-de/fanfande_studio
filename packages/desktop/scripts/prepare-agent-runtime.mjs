@@ -9,12 +9,17 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const desktopDir = path.resolve(scriptDir, "..")
 const repoRoot = path.resolve(desktopDir, "..", "..")
 const agentDir = path.join(repoRoot, "packages", "anyboxagent")
+const browserNativeHostDir = path.join(repoRoot, "packages", "browser-native-host")
 const runtimeDir = path.join(desktopDir, "build", "agent-runtime")
 const browserConnectorSourceDir = path.join(agentDir, "connectors", "browser")
+const nodeReplConnectorSourceDir = path.join(agentDir, "connectors", "node-repl")
 const gmailConnectorSourceDir = path.join(agentDir, "plugins", "builtin", "gmail", "0.1.0", "connectors", "gmail")
 const feishuConnectorSourceDir = path.join(agentDir, "plugins", "builtin", "feishu", "0.1.0", "connectors", "feishu")
 
 const bunExecutableName = process.platform === "win32" ? "bun.exe" : "bun"
+const nativeHostExecutableName = process.platform === "win32"
+  ? "anybox-browser-native-host.exe"
+  : "anybox-browser-native-host"
 const connectorBuildConfigFile = path.join(runtimeDir, "config", "connectors.json")
 
 function readEnv(key) {
@@ -119,10 +124,17 @@ async function fixNodePtySpawnHelperPermissions(runtimeNodeModulesDir) {
 
 async function copyBundledConnectors() {
   const browserConnectorTargetDir = path.join(runtimeDir, "connectors", "browser")
+  const nodeReplConnectorTargetDir = path.join(runtimeDir, "connectors", "node-repl")
   const gmailConnectorTargetDir = path.join(runtimeDir, "connectors", "gmail")
   const feishuConnectorTargetDir = path.join(runtimeDir, "connectors", "feishu")
   if (!(await pathExists(path.join(browserConnectorSourceDir, "server.js")))) {
     throw new Error(`Missing Browser connector server at ${browserConnectorSourceDir}`)
+  }
+  if (!(await pathExists(path.join(nodeReplConnectorSourceDir, "server.js")))) {
+    throw new Error(`Missing Node REPL connector server at ${nodeReplConnectorSourceDir}`)
+  }
+  if (!(await pathExists(path.join(nodeReplConnectorSourceDir, "browser-client.mjs")))) {
+    throw new Error(`Missing Node REPL browser runtime at ${nodeReplConnectorSourceDir}`)
   }
   if (!(await pathExists(path.join(gmailConnectorSourceDir, "server.js")))) {
     throw new Error(`Missing Gmail connector server at ${gmailConnectorSourceDir}`)
@@ -132,11 +144,39 @@ async function copyBundledConnectors() {
   }
 
   await fsp.mkdir(browserConnectorTargetDir, { recursive: true })
+  await fsp.mkdir(nodeReplConnectorTargetDir, { recursive: true })
   await fsp.mkdir(gmailConnectorTargetDir, { recursive: true })
   await fsp.mkdir(feishuConnectorTargetDir, { recursive: true })
   await fsp.copyFile(path.join(browserConnectorSourceDir, "server.js"), path.join(browserConnectorTargetDir, "server.js"))
+  await fsp.copyFile(path.join(nodeReplConnectorSourceDir, "server.js"), path.join(nodeReplConnectorTargetDir, "server.js"))
+  await fsp.copyFile(
+    path.join(nodeReplConnectorSourceDir, "browser-client.mjs"),
+    path.join(nodeReplConnectorTargetDir, "browser-client.mjs"),
+  )
   await fsp.copyFile(path.join(gmailConnectorSourceDir, "server.js"), path.join(gmailConnectorTargetDir, "server.js"))
   await fsp.copyFile(path.join(feishuConnectorSourceDir, "server.js"), path.join(feishuConnectorTargetDir, "server.js"))
+}
+
+async function buildBrowserNativeHost(bunBinary) {
+  const entrypoint = path.join(browserNativeHostDir, "src", "main.ts")
+  if (!(await pathExists(entrypoint))) {
+    throw new Error(`Missing Browser Native Messaging Host entrypoint at ${entrypoint}`)
+  }
+
+  const targetDir = path.join(runtimeDir, "native-host")
+  await fsp.mkdir(targetDir, { recursive: true })
+  run(
+    bunBinary,
+    [
+      "build",
+      entrypoint,
+      "--target=bun",
+      "--compile",
+      "--outfile",
+      path.join(targetDir, nativeHostExecutableName),
+    ],
+    { cwd: repoRoot },
+  )
 }
 
 async function writeConnectorBuildConfig() {
@@ -183,6 +223,7 @@ async function main() {
   await copyNodePtyRuntime(runtimeNodeModulesDir)
   await fixNodePtySpawnHelperPermissions(runtimeNodeModulesDir)
   await copyBundledConnectors()
+  await buildBrowserNativeHost(bunBinary)
   await writeConnectorBuildConfig()
   await prepareWorkspaceDependencies({ bunBinary })
 

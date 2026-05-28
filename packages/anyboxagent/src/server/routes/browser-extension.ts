@@ -3,9 +3,11 @@ import { Hono } from "hono"
 import z from "zod"
 import {
   BrowserExtensionCommandContext,
+  BrowserExtensionCommandMethod,
   BrowserExtensionTabSummary,
 } from "@anybox/shared/browser-extension"
 import { browserExtensionBridge } from "#browser-extension/bridge.ts"
+import { isBrowserTrustedCommandToken } from "#browser-extension/runtime-token.ts"
 import { ApiError } from "#server/error.ts"
 import { ok, parseJsonBody } from "#server/http.ts"
 import type { AppEnv } from "#server/types.ts"
@@ -33,6 +35,13 @@ const BrowserCommandBody = z.object({
   timeoutMs: z.number().int().positive().max(120_000).optional(),
 })
 
+const BrowserTrustedCommandBody = z.object({
+  method: BrowserExtensionCommandMethod,
+  params: z.unknown().optional(),
+  context: BrowserExtensionCommandContext.optional(),
+  timeoutMs: z.number().int().positive().max(120_000).optional(),
+})
+
 function readMessageData(data: MessageEvent["data"]) {
   if (typeof data === "string") return data
   if (data instanceof ArrayBuffer) return new TextDecoder().decode(data)
@@ -49,19 +58,34 @@ export function BrowserExtensionRoutes(options: { upgradeWebSocket: UpgradeWebSo
   app.get("/status", (c) => ok(c, browserExtensionBridge.status()))
   app.post("/command", async (c) => {
     const body = await parseJsonBody(c, BrowserCommandBody, "Browser command payload is invalid.")
+    return ok(c, await runBrowserCommand(body))
+  })
 
+  app.post("/trusted-command", async (c) => {
+    if (!isBrowserTrustedCommandToken(c.req.header("x-anybox-browser-trusted-token"))) {
+      throw new ApiError(401, "UNAUTHORIZED", "Browser trusted command token is invalid.")
+    }
+    const body = await parseJsonBody(c, BrowserTrustedCommandBody, "Browser trusted command payload is invalid.")
+    return ok(c, await runBrowserCommand(body, { trusted: true }))
+  })
+
+  async function runBrowserCommand(
+    body: z.infer<typeof BrowserTrustedCommandBody>,
+    options: { trusted?: boolean } = {},
+  ) {
     if (body.method === "tabs.release") {
       const tabId = readTabId(body.params)
       if (!tabId) throw new ApiError(400, "INVALID_PAYLOAD", "tabs.release requires a tabId.")
-      return ok(c, {
+      return {
         tabId,
         released: browserExtensionBridge.releaseOwnedTab(tabId, body.context?.sessionID),
-      })
+      }
     }
 
     const result = await browserExtensionBridge.sendCommand(body.method, body.params, {
       context: body.context,
       timeoutMs: body.timeoutMs,
+      trusted: options.trusted,
     })
 
     if (body.method === "tabs.open") {
@@ -71,17 +95,19 @@ export function BrowserExtensionRoutes(options: { upgradeWebSocket: UpgradeWebSo
       browserExtensionBridge.touchTab(readTabId(result) ?? readTabId(body.params), body.context)
     }
 
-    return ok(c, result)
-  })
+    return result
+  }
 
   app.get(
     "/ws",
-    options.upgradeWebSocket(() => {
+    options.upgradeWebSocket((c) => {
       let connectionID: string | undefined
+      const transport = c.req.query("transport") === "native" ? "native" : "websocket"
+      const hostName = c.req.query("hostName")?.trim() || undefined
 
       return {
         onOpen(_event, ws) {
-          connectionID = browserExtensionBridge.register(ws)
+          connectionID = browserExtensionBridge.register(ws, { transport, hostName })
         },
         onMessage(event, ws) {
           if (!connectionID) {

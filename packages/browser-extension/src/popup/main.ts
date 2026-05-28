@@ -8,6 +8,8 @@ const reconnectButton = document.querySelector<HTMLButtonElement>("#reconnect-bu
 
 type Status = {
   state?: "connected" | "connecting" | "disconnected"
+  transport?: "native" | "websocket"
+  hostName?: string
   error?: string
   lastChecked?: number
 }
@@ -19,12 +21,17 @@ function renderStatus(status: Status | null | undefined) {
     statusLabel.textContent = state === "connected" ? "Connected" : state === "connecting" ? "Connecting" : "Disconnected"
   }
   if (statusDetail) {
+    const transportDetail = status?.transport === "native"
+      ? `Native Messaging (${status.hostName ?? "host"})`
+      : status?.transport === "websocket"
+        ? "WebSocket fallback"
+        : "Anybox Agent"
     statusDetail.textContent = status?.error
       ? status.error
       : state === "connected"
-        ? "Anybox Agent can use this Chrome profile."
+        ? `${transportDetail} can use this Chrome profile.`
         : state === "connecting"
-          ? "Connecting to 127.0.0.1:4096..."
+          ? `Connecting via ${transportDetail}...`
           : "Start Anybox Agent, then reconnect."
   }
   if (statusDot) {

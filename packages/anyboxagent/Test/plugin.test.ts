@@ -152,6 +152,9 @@ type ConnectorCatalogEnvelope = JsonEnvelope<
       required?: boolean
       secret?: boolean
     }>
+    tools: Array<{
+      name: string
+    }>
     runtime?: {
       transport: "stdio" | "remote"
       command?: string
@@ -786,6 +789,20 @@ async function writeBrowserConnectorRequirementPluginPackage() {
         ],
         required: true,
         reason: "Browser control through the shared Anybox browser connector.",
+      },
+      {
+        connector: "node-repl",
+        tools: [
+          "node_repl_js",
+          "node_repl_reset",
+          "node_repl_add_node_module_dir",
+        ],
+        permissions: [
+          "Run JavaScript in a persistent local Node.js REPL.",
+          "Use the Browser runtime adapter for raw page JavaScript and CDP commands when browser automation needs it.",
+        ],
+        required: true,
+        reason: "Codex-like Browser runtime API through the shared Anybox Node REPL connector.",
       },
     ],
   }, null, 2))
@@ -1598,14 +1615,36 @@ describe("plugin marketplace API", () => {
         required: true,
         reason: "Browser control through the shared Anybox browser connector.",
       },
+      {
+        connector: "node-repl",
+        tools: [
+          "node_repl_js",
+          "node_repl_reset",
+          "node_repl_add_node_module_dir",
+        ],
+        permissions: [
+          "Run JavaScript in a persistent local Node.js REPL.",
+          "Use the Browser runtime adapter for raw page JavaScript and CDP commands when browser automation needs it.",
+        ],
+        required: true,
+        reason: "Codex-like Browser runtime API through the shared Anybox Node REPL connector.",
+      },
     ])
 
     const connectorCatalogResponse = await app.request("/api/connectors/catalog")
     const connectorCatalogBody = (await connectorCatalogResponse.json()) as ConnectorCatalogEnvelope
     const browserConnector = connectorCatalogBody.data?.find((item) => item.id === "browser")
+    const nodeReplConnector = connectorCatalogBody.data?.find((item) => item.id === "node-repl")
     expect(connectorCatalogResponse.status).toBe(200)
     expect(browserConnector?.credential).toBeUndefined()
     expect(browserConnector?.runtime?.transport).toBe("stdio")
+    expect(nodeReplConnector?.credential).toBeUndefined()
+    expect(nodeReplConnector?.runtime?.transport).toBe("stdio")
+    expect(nodeReplConnector?.tools.map((tool) => tool.name)).toEqual([
+      "node_repl_js",
+      "node_repl_reset",
+      "node_repl_add_node_module_dir",
+    ])
 
     const installResponse = await app.request("/api/plugins/installed/browser", {
       method: "PUT",
@@ -1621,23 +1660,36 @@ describe("plugin marketplace API", () => {
     expect(installResponse.status).toBe(200)
     expect(installBody.data?.mcpServerIDs).toEqual([])
     expect(installBody.data?.connectorIDs).toEqual([])
-    expect(installBody.data?.connectorRequirementIDs).toEqual(["connector:browser:default"])
+    expect(installBody.data?.connectorRequirementIDs).toEqual(["connector:browser:default", "connector:node-repl:default"])
 
     const server = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "connector.browser.default")
     expect(server?.transport).toBe("connector")
     expect(server?.transport === "connector" ? server.connectorId : undefined).toBe("connector:browser:default")
+    const nodeReplServer = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "connector.node-repl.default")
+    expect(nodeReplServer?.transport).toBe("connector")
+    expect(nodeReplServer?.transport === "connector" ? nodeReplServer.connectorId : undefined).toBe("connector:node-repl:default")
 
     const runtime = await Connector.resolveRuntime("connector:browser:default")
     expect(runtime.transport).toBe("stdio")
     expect(runtime.transport === "stdio" ? runtime.command : undefined).toBe("node")
     expect(runtime.transport === "stdio" ? runtime.args?.[0] : undefined).toContain("connectors")
     expect(runtime.transport === "stdio" ? runtime.args?.[0] : undefined).toContain("browser")
+    const nodeReplRuntime = await Connector.resolveRuntime("connector:node-repl:default")
+    expect(nodeReplRuntime.transport).toBe("stdio")
+    expect(typeof (nodeReplRuntime.transport === "stdio" ? nodeReplRuntime.env?.ANYBOX_BROWSER_TRUSTED_TOKEN : undefined)).toBe("string")
+    expect(nodeReplRuntime.transport === "stdio" ? nodeReplRuntime.args?.[0] : undefined).toContain("node-repl")
 
     const diagnosticResponse = await app.request("/api/connectors/connector%3Abrowser%3Adefault/diagnostic")
     const diagnosticBody = (await diagnosticResponse.json()) as DiagnosticEnvelope
     expect(diagnosticResponse.status).toBe(200)
     expect(diagnosticBody.data?.ok).toBe(true)
     expect(diagnosticBody.data?.toolCount).toBe(14)
+
+    const nodeReplDiagnosticResponse = await app.request("/api/connectors/connector%3Anode-repl%3Adefault/diagnostic")
+    const nodeReplDiagnosticBody = (await nodeReplDiagnosticResponse.json()) as DiagnosticEnvelope
+    expect(nodeReplDiagnosticResponse.status).toBe(200)
+    expect(nodeReplDiagnosticBody.data?.ok).toBe(true)
+    expect(nodeReplDiagnosticBody.data?.toolCount).toBe(3)
   })
 
   test("loads plugin package manifests and exposes MCP, skills, and app connector metadata", async () => {

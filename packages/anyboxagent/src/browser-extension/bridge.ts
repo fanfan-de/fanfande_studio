@@ -22,6 +22,9 @@ type Connection = {
   extensionInstanceID?: string
   extensionID?: string
   version?: string
+  transport?: "native" | "websocket"
+  hostName?: string
+  lastTransportError?: string
   connectedAt: number
   lastSeenAt: number
 }
@@ -31,6 +34,7 @@ type PendingCommand = {
   connectionID: string
   method: BrowserExtensionCommandMethodValue
   context?: BrowserExtensionCommandContext
+  trusted?: boolean
   resolve(value: unknown): void
   reject(error: Error): void
   timer: ReturnType<typeof setTimeout>
@@ -55,11 +59,18 @@ type LastCommand = {
   completedAt?: number
   ok?: boolean
   error?: string
+  trusted?: boolean
+}
+
+type ConnectionOptions = {
+  transport?: "native" | "websocket"
+  hostName?: string
 }
 
 type SendCommandOptions = {
   timeoutMs?: number
   context?: BrowserExtensionCommandContext
+  trusted?: boolean
 }
 
 const log = Log.create({ service: "browser-extension" })
@@ -91,6 +102,9 @@ class BrowserExtensionBridge {
             extensionInstanceID: active.extensionInstanceID,
             extensionID: active.extensionID,
             version: active.version,
+            transport: active.transport,
+            hostName: active.hostName,
+            lastTransportError: active.lastTransportError,
             connectedAt: active.connectedAt,
             lastSeenAt: active.lastSeenAt,
           }
@@ -147,17 +161,19 @@ class BrowserExtensionBridge {
     return true
   }
 
-  register(socket: SocketLike) {
+  register(socket: SocketLike, options: ConnectionOptions = {}) {
     const connectionID = crypto.randomUUID()
     const connection: Connection = {
       socket,
       connectionID,
+      transport: options.transport,
+      hostName: options.hostName,
       connectedAt: Date.now(),
       lastSeenAt: Date.now(),
     }
     this.connections.set(connectionID, connection)
     this.activeConnectionID = connectionID
-    log.info("connected", { connectionID })
+    log.info("connected", { connectionID, transport: options.transport, hostName: options.hostName })
     return connectionID
   }
 
@@ -220,6 +236,7 @@ class BrowserExtensionBridge {
       messageID: options.context?.messageID,
       toolCallID: options.context?.toolCallID,
       startedAt: Date.now(),
+      trusted: options.trusted,
     }
 
     return await new Promise<unknown>((resolve, reject) => {
@@ -233,6 +250,7 @@ class BrowserExtensionBridge {
             messageID: options.context?.messageID,
             toolCallID: options.context?.toolCallID,
             startedAt: Date.now(),
+            trusted: options.trusted,
           }),
           completedAt: Date.now(),
           ok: false,
@@ -246,6 +264,7 @@ class BrowserExtensionBridge {
         connectionID: connection.connectionID,
         method,
         context: options.context,
+        trusted: options.trusted,
         resolve,
         reject,
         timer,
@@ -270,10 +289,12 @@ class BrowserExtensionBridge {
             messageID: options.context?.messageID,
             toolCallID: options.context?.toolCallID,
             startedAt: Date.now(),
+            trusted: options.trusted,
           }),
           completedAt: Date.now(),
           ok: false,
           error: normalizeError(error).message,
+          trusted: options.trusted,
         }
         reject(normalizeError(error))
       }
@@ -307,12 +328,17 @@ class BrowserExtensionBridge {
         connection.extensionInstanceID = message.extensionInstanceID
         connection.extensionID = message.extensionID
         connection.version = message.version
+        connection.transport = message.transport ?? connection.transport
+        connection.hostName = message.hostName ?? connection.hostName
+        connection.lastTransportError = message.lastTransportError
         this.activeConnectionID = connection.connectionID
         log.info("hello", {
           connectionID: connection.connectionID,
           extensionInstanceID: message.extensionInstanceID,
           extensionID: message.extensionID,
           version: message.version,
+          transport: connection.transport,
+          hostName: connection.hostName,
         })
         return
       case "result": {
@@ -330,6 +356,7 @@ class BrowserExtensionBridge {
           completedAt: Date.now(),
           ok: message.ok,
           error: message.ok ? undefined : message.error,
+          trusted: pending.trusted,
         }
         if (message.ok) {
           pending.resolve(message.data)
@@ -339,6 +366,9 @@ class BrowserExtensionBridge {
         return
       }
       case "event":
+        if (message.event === "transport_error") {
+          connection.lastTransportError = readMessage(message.data)
+        }
         log.debug("event", {
           connectionID: connection.connectionID,
           event: message.event,
@@ -351,3 +381,9 @@ class BrowserExtensionBridge {
 }
 
 export const browserExtensionBridge = new BrowserExtensionBridge()
+
+function readMessage(value: unknown) {
+  if (!value || typeof value !== "object") return undefined
+  const message = (value as { message?: unknown }).message
+  return typeof message === "string" && message.trim() ? message.trim() : undefined
+}
