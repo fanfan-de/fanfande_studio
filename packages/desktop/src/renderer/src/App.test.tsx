@@ -8418,7 +8418,8 @@ describe("App", () => {
     })
 
     expect(await screen.findByText("Provider catalog refreshed.")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss settings message" }))
+    expect(screen.getByText("Provider catalog refreshed.").closest(".toast-card")).not.toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }))
     expect(screen.queryByText("Provider catalog refreshed.")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()
   })
@@ -12597,7 +12598,8 @@ describe("App", () => {
   it("scopes provider scrolling to the column layout", () => {
     expect(styles).toMatch(/\.settings-page-main\.is-services\s*\{[^}]*overflow:\s*hidden;/s)
     expect(styles).toMatch(/\.settings-page-content,\s*\.settings-page-main\s*\{[^}]*scrollbar-gutter:\s*stable both-edges;/s)
-    expect(styles).toMatch(/\.settings-toast-region\s*\{[^}]*position:\s*absolute;[^}]*top:\s*18px;[^}]*right:\s*56px;/s)
+    expect(styles).toMatch(/\.toast-viewport\s*\{[^}]*position:\s*fixed;[^}]*top:\s*16px;[^}]*right:\s*48px;/s)
+    expect(styles).not.toContain(".settings-toast-region")
     expect(styles).toMatch(/\.settings-service-list\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s)
     expect(styles).toMatch(/\.settings-service-detail-panel\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s)
     expect(styles).toMatch(/\.settings-page-main\.prompt-presets-page-main\s*\{[^}]*height:\s*100%;[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*align-items:\s*stretch;/s)

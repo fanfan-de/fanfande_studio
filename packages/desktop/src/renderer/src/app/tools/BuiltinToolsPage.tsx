@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { ChevronDownIcon, ChevronRightIcon, CloseIcon, ToolsIcon } from "../icons"
+import { ChevronDownIcon, ChevronRightIcon, ToolsIcon } from "../icons"
 import { ShellTopMenu } from "../shared-ui"
 import type { BuiltinToolSummary } from "../types"
-
-interface BuiltinToolsMessage {
-  tone: "success" | "error"
-  text: string
-}
 
 interface BuiltinToolsPageProps {
   activeToolKind?: BuiltinToolKindKey | null
@@ -16,11 +11,9 @@ interface BuiltinToolsPageProps {
   isBuiltinToolSelectionDirty: boolean
   isLoadingBuiltinTools: boolean
   isSavingBuiltinTools: boolean
-  message: BuiltinToolsMessage | null
   windowControls?: ReactNode
   onActiveToolKindChange?: (kind: BuiltinToolKindKey | null) => void
   onBuiltinToolToggle: (toolID: string, enabled: boolean) => void
-  onDismissMessage: () => void
   onResetBuiltinTools: () => boolean | Promise<boolean>
   onSaveBuiltinTools: () => boolean | Promise<boolean>
 }
@@ -185,11 +178,9 @@ export function BuiltinToolsPage({
   isBuiltinToolSelectionDirty,
   isLoadingBuiltinTools,
   isSavingBuiltinTools,
-  message,
   windowControls,
   onActiveToolKindChange,
   onBuiltinToolToggle,
-  onDismissMessage,
   onResetBuiltinTools,
   onSaveBuiltinTools,
 }: BuiltinToolsPageProps) {
@@ -255,21 +246,6 @@ export function BuiltinToolsPage({
       />
 
       <div className="tools-page-main">
-        {message ? (
-          <div className={message.tone === "success" ? "tools-banner is-success" : "tools-banner is-error"}>
-            <span className="tools-banner-text">{message.text}</span>
-            <button
-              className="tools-banner-dismiss"
-              type="button"
-              aria-label="Dismiss tools message"
-              title="Dismiss"
-              onClick={onDismissMessage}
-            >
-              <CloseIcon />
-            </button>
-          </div>
-        ) : null}
-
         {builtinToolsError ? <div className="tools-banner is-error">{builtinToolsError}</div> : null}
 
         {isLoadingBuiltinTools ? (

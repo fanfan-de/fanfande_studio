@@ -12,5 +12,6 @@
 @import "./terminal.css";
 @import "./settings.css";
 @import "./tools.css";
+@import "./toast.css";
 @import "./responsive.css";
 @import "./debug.css";

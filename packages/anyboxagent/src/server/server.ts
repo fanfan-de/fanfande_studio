@@ -8,6 +8,7 @@ import { PermissionsRoutes } from "#server/routes/permissions.ts"
 import { PtyRoutes } from "#server/routes/pty.ts"
 import { RemoteRoutes } from "#server/routes/remote.ts"
 import { WorkspaceFilesRoutes } from "#server/routes/workspace-files.ts"
+import { BrowserExtensionRoutes } from "#server/routes/browser-extension.ts"
 import { DebugRoutes } from "#server/routes/debug.ts"
 import { SettingsRoutes } from "#server/routes/settings.ts"
 import { SessionRoutes } from "#server/routes/session.ts"
@@ -121,6 +122,7 @@ export function createServerRuntime(options: Pick<ServerOptions, "corsWhitelist"
   app.route("/api/permissions", PermissionsRoutes())
   app.route("/api/remote", RemoteRoutes())
   app.route("/api/workspace-files", WorkspaceFilesRoutes())
+  app.route("/api/browser-extension", BrowserExtensionRoutes({ upgradeWebSocket }))
   app.route("/api/pty", PtyRoutes({ registry: ptyRegistry, upgradeWebSocket }))
   app.route("/api/projects", ProjectRoutes({ ptyRegistry }))
   app.route("/api/sessions", SessionRoutes({ ptyRegistry }))

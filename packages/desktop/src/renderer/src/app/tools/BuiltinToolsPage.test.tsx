@@ -62,9 +62,7 @@ function renderBuiltinToolsPage(overrides: Partial<Parameters<typeof BuiltinTool
     isBuiltinToolSelectionDirty: true,
     isLoadingBuiltinTools: false,
     isSavingBuiltinTools: false,
-    message: null,
     onBuiltinToolToggle: vi.fn(),
-    onDismissMessage: vi.fn(),
     onResetBuiltinTools: vi.fn(),
     onSaveBuiltinTools: vi.fn(),
     ...overrides,
@@ -125,8 +123,7 @@ describe("BuiltinToolsPage", () => {
     expect(props.onResetBuiltinTools).toHaveBeenCalled()
   })
 
-  it("renders message, load error, loading, and empty states", () => {
-    const onDismissMessage = vi.fn()
+  it("renders load error, loading, and empty states", () => {
     const { rerender } = render(
       <BuiltinToolsPage
         builtinTools={[]}
@@ -134,19 +131,15 @@ describe("BuiltinToolsPage", () => {
         isBuiltinToolSelectionDirty={false}
         isLoadingBuiltinTools={false}
         isSavingBuiltinTools={false}
-        message={{ tone: "success", text: "Built-in tool settings saved." }}
         onBuiltinToolToggle={vi.fn()}
-        onDismissMessage={onDismissMessage}
         onResetBuiltinTools={vi.fn()}
         onSaveBuiltinTools={vi.fn()}
       />,
     )
 
-    expect(screen.getByText("Built-in tool settings saved.")).toBeInTheDocument()
     expect(screen.getByText("Unable to read tools.")).toBeInTheDocument()
     expect(screen.getByText("No built-in tools")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss tools message" }))
-    expect(onDismissMessage).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole("button", { name: "Dismiss tools message" })).not.toBeInTheDocument()
 
     rerender(
       <BuiltinToolsPage
@@ -155,9 +148,7 @@ describe("BuiltinToolsPage", () => {
         isBuiltinToolSelectionDirty={false}
         isLoadingBuiltinTools
         isSavingBuiltinTools={false}
-        message={null}
         onBuiltinToolToggle={vi.fn()}
-        onDismissMessage={vi.fn()}
         onResetBuiltinTools={vi.fn()}
         onSaveBuiltinTools={vi.fn()}
       />,

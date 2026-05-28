@@ -22,6 +22,7 @@ import {
   SearchIcon,
 } from "../icons"
 import { useI18n } from "../i18n/I18nProvider"
+import { useToast } from "../toast"
 
 interface SshDraft {
   id?: string
@@ -153,6 +154,7 @@ function isEditableKeyboardTarget(target: EventTarget | null) {
 
 export function SshConnectionsPage({ searchQuery, onWorkspaceOpened }: SshConnectionsPageProps) {
   const { t } = useI18n()
+  const toast = useToast()
   const [profiles, setProfiles] = useState<AgentSshProfile[]>([])
   const [draft, setDraft] = useState<SshDraft>(EMPTY_DRAFT)
   const [activeProfileID, setActiveProfileID] = useState<string | null>(null)
@@ -269,10 +271,10 @@ export function SshConnectionsPage({ searchQuery, onWorkspaceOpened }: SshConnec
       if (saved) {
         await loadProfiles()
         selectProfile(saved)
-        setMessage({ tone: "success", text: "SSH profile saved." })
+        toast.success("SSH profile saved.")
       }
     } catch (error) {
-      setMessage({ tone: "error", text: error instanceof Error ? error.message : String(error) })
+      toast.error(error instanceof Error ? error.message : String(error))
     } finally {
       setIsBusy(false)
     }
@@ -289,9 +291,9 @@ export function SshConnectionsPage({ searchQuery, onWorkspaceOpened }: SshConnec
       setActiveProfileID(null)
       setEntries([])
       await loadProfiles()
-      setMessage({ tone: "success", text: "SSH profile deleted." })
+      toast.success("SSH profile deleted.")
     } catch (error) {
-      setMessage({ tone: "error", text: error instanceof Error ? error.message : String(error) })
+      toast.error(error instanceof Error ? error.message : String(error))
     } finally {
       setIsBusy(false)
     }
@@ -342,15 +344,12 @@ export function SshConnectionsPage({ searchQuery, onWorkspaceOpened }: SshConnec
       const result = await window.desktop!.testSshProfile?.({ profileID: draft.id })
       const loaded = await loadDirectory(result?.remotePath ?? currentPath)
       if (loaded) {
-        setMessage({
-          tone: "success",
-          text: result
-            ? t("ssh.browser.connectedPath", { path: result.remotePath })
-            : t("ssh.browser.connectionTestCompleted"),
-        })
+        toast.success(result
+          ? t("ssh.browser.connectedPath", { path: result.remotePath })
+          : t("ssh.browser.connectionTestCompleted"))
       }
     } catch (error) {
-      setMessage({ tone: "error", text: error instanceof Error ? error.message : String(error) })
+      toast.error(error instanceof Error ? error.message : String(error))
     } finally {
       setIsBusy(false)
     }
@@ -365,10 +364,10 @@ export function SshConnectionsPage({ searchQuery, onWorkspaceOpened }: SshConnec
       const workspace = await window.desktop!.openSshFolderWorkspace?.({ profileID: activeProfileID, path })
       if (workspace) {
         await onWorkspaceOpened?.(workspace)
-        setMessage({ tone: "success", text: t("ssh.browser.openedWorkspace", { name: workspace.name }) })
+        toast.success(t("ssh.browser.openedWorkspace", { name: workspace.name }))
       }
     } catch (error) {
-      setMessage({ tone: "error", text: error instanceof Error ? error.message : String(error) })
+      toast.error(error instanceof Error ? error.message : String(error))
     } finally {
       setIsBusy(false)
     }

@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./api": "./src/api.ts",
+    "./browser-extension": "./src/browser-extension.ts",
     "./desktop-ipc": "./src/desktop-ipc.ts",
     "./reasoning": "./src/reasoning.ts",
     "./session": "./src/session.ts",

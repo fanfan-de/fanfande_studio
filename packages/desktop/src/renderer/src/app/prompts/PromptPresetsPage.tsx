@@ -37,7 +37,6 @@ interface PromptPresetsPageProps {
   isPromptDirty: boolean
   isPromptUrlInstallDialogOpen: boolean
   isSavingPromptPresetSelection: boolean
-  message: PromptEditorMessage | null
   promptDraftContent: string
   promptDraftLabel: string
   promptLoadError: string | null
@@ -55,7 +54,6 @@ interface PromptPresetsPageProps {
   windowControls?: ReactNode
   onCreatePromptPreset: () => boolean | Promise<boolean>
   onDeletePromptPreset: (presetID?: string) => boolean | Promise<boolean>
-  onDismissMessage: () => void
   onInstallPromptsFromUrl: () => boolean | Promise<boolean>
   onPromptDraftChange: (value: string) => void
   onPromptDraftLabelChange: (value: string) => void
@@ -601,7 +599,6 @@ export function PromptPresetsPage({
   isPromptDirty,
   isPromptUrlInstallDialogOpen,
   isSavingPromptPresetSelection,
-  message,
   promptDraftContent,
   promptDraftLabel,
   promptLoadError,
@@ -619,7 +616,6 @@ export function PromptPresetsPage({
   windowControls,
   onCreatePromptPreset,
   onDeletePromptPreset,
-  onDismissMessage,
   onInstallPromptsFromUrl,
   onPromptDraftChange,
   onPromptDraftLabelChange,
@@ -673,21 +669,6 @@ export function PromptPresetsPage({
       />
 
       <div className="settings-page-main is-services prompt-presets-page-main">
-        {message ? (
-          <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>
-            <span className="settings-banner-text">{message.text}</span>
-            <button
-              className="settings-banner-dismiss"
-              type="button"
-              aria-label="Dismiss settings message"
-              title="Dismiss"
-              onClick={onDismissMessage}
-            >
-              <CloseIcon />
-            </button>
-          </div>
-        ) : null}
-
         {promptLoadError ? (
           <div className="settings-banner is-error">{promptLoadError}</div>
         ) : null}

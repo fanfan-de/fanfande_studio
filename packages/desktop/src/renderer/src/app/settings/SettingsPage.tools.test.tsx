@@ -86,7 +86,6 @@ function createSettingsPageProps(
     loadError: null,
     mcpServerDraft: createMcpDraft(),
     mcpServers: [],
-    message: null,
     models: [],
     onActivityRailVisibilityChange: vi.fn(),
     onAgentDebugTraceChange: vi.fn(),
@@ -103,7 +102,6 @@ function createSettingsPageProps(
     onFontFamilyChange: vi.fn(),
     onDebugLineColorsChange: vi.fn(),
     onDebugUiRegionsChange: vi.fn(),
-    onDismissMessage: vi.fn(),
     onDeleteArchivedSession: vi.fn(),
     onDeleteMcpServer: vi.fn(),
     onDeleteProvider: vi.fn(),
@@ -280,24 +278,11 @@ describe("SettingsPage built-in tools", () => {
     expect(mainPanel!.scrollTop).toBe(0)
   })
 
-  it("renders a dismiss button for settings messages", () => {
-    const onDismissMessage = vi.fn()
+  it("does not render a settings-local toast region", () => {
+    const { container } = render(<SettingsPage {...createSettingsPageProps()} />)
 
-    render(
-      <SettingsPage
-        {...createSettingsPageProps({
-          message: {
-            tone: "success",
-            text: "Provider catalog refreshed.",
-          },
-          onDismissMessage,
-        })}
-      />,
-    )
-
-    expect(screen.getByText("Provider catalog refreshed.")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss settings message" }))
-    expect(onDismissMessage).toHaveBeenCalledTimes(1)
+    expect(container.querySelector(".settings-toast-region")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Dismiss settings message" })).not.toBeInTheDocument()
   })
 
   it("does not render built-in tools inside settings", () => {

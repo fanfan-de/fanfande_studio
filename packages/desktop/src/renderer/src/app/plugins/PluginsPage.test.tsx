@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import type { ComponentProps } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { PluginsPage } from "./PluginsPage"
@@ -209,7 +209,6 @@ function createProps(overrides: Partial<PluginsPageProps> = {}): PluginsPageProp
     installedPlugins: [],
     isLoading: false,
     loadError: null,
-    message: null,
     connectorStatuses: [],
     pluginCatalog: [createPlugin()],
     pluginConnectorStatuses: {},
@@ -227,7 +226,6 @@ function createProps(overrides: Partial<PluginsPageProps> = {}): PluginsPageProp
     onDeleteInstalledPluginConnectorAuthSession: vi.fn(),
     onDiagnoseInstalledPlugin: vi.fn(),
     onDiagnoseInstalledPluginConnector: vi.fn(),
-    onDismissMessage: vi.fn(),
     onInstallPlugin: vi.fn(),
     onPluginDraftAppApiKeyChange: vi.fn(),
     onPluginDraftConfigChange: vi.fn(),
@@ -276,6 +274,44 @@ describe("PluginsPage", () => {
     fireEvent.click(installedButton)
 
     expect(onPluginSelect).toHaveBeenCalledWith("filesystem")
+  })
+
+  it("opens installed plugin local files from the sidebar context menu", async () => {
+    const getStoragePaths = vi.fn().mockResolvedValue({
+      installedPlugins: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed",
+    })
+    const openPath = vi.fn().mockResolvedValue({
+      ok: true,
+      targetPath: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed\\filesystem",
+    })
+    window.desktop = {
+      getStoragePaths,
+      openPath,
+    } as unknown as Window["desktop"]
+
+    render(
+      <PluginsPage
+        {...createProps({
+          installedPlugins: [createInstalledPlugin()],
+        })}
+      />,
+    )
+
+    const installedSidebar = screen.getByRole("complementary", { name: "Installed plugins" })
+    fireEvent.contextMenu(within(installedSidebar).getByRole("button", { name: "Filesystem installed enabled" }), {
+      clientX: 48,
+      clientY: 64,
+    })
+
+    expect(screen.getByRole("menu", { name: "Filesystem actions" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open local files" }))
+
+    await waitFor(() => {
+      expect(openPath).toHaveBeenCalledWith({
+        targetPath: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed\\filesystem",
+      })
+    })
+    expect(getStoragePaths).toHaveBeenCalledTimes(1)
   })
 
   it("shows installed plugins even when catalog metadata is missing", () => {

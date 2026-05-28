@@ -33,6 +33,7 @@ import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
 import { useSettingsPage } from "./app/use-settings-page"
+import { ToastProvider } from "./app/toast"
 import { RendererProfiler, createRendererProfilerOnRender } from "./app/perf-profiler"
 import { createEmptyComposerDraftState } from "./app/composer/draft-state"
 import type { BuiltinToolKindKey } from "./app/tools/BuiltinToolsPage"
@@ -374,7 +375,7 @@ function useToolPermissionModeState() {
   }
 }
 
-export function App() {
+function AppContent() {
   const [workbenchContext, setWorkbenchContext] = useState<WorkbenchWindowContext | null>(() =>
     hasExplicitWorkbenchWindowID() ? null : FALLBACK_WORKBENCH_CONTEXT,
   )
@@ -749,6 +750,14 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
   )
 }
 
+export function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
+  )
+}
+
 function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContext }) {
   const surfaceID = getWorkbenchSurfaceID(workbenchContext)
   const [appUpdateState, setAppUpdateState] = useState<DesktopAppUpdateState | null>(null)
@@ -991,11 +1000,9 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     deletingGlobalSkillDirectory,
     expandedSkillPaths,
     globalSkillFolderOptions,
-    globalSkillsMessage,
     globalSkillsRoot,
     globalSkillsTree,
     gitInstallTargetDirectory,
-    gitInstallMessage,
     gitInstallPreview,
     gitInstallSource,
     handleCreateGlobalSkill,
@@ -1095,7 +1102,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     diagnosingPluginID,
     diagnosingPluginConnectorID,
     diagnosingConnectorID,
-    dismissMessage,
     installPlugin,
     installPromptsFromUrl,
     importMcpConfigJson,
@@ -1123,7 +1129,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     loadArchivedSessions,
     mcpServerDraft,
     mcpServers,
-    message,
     models,
     openSettings,
     pluginCatalog,
@@ -1950,7 +1955,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 isPromptDirty={isPromptDirty}
                 isPromptUrlInstallDialogOpen={isPromptUrlInstallDialogOpen}
                 isSavingPromptPresetSelection={isSavingPromptPresetSelection}
-                message={message}
                 promptDraftContent={promptDraftContent}
                 promptDraftLabel={promptDraftLabel}
                 promptLoadError={promptLoadError}
@@ -1967,7 +1971,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 windowControls={windowControls}
                 onCreatePromptPreset={createPromptPreset}
                 onDeletePromptPreset={deletePromptPreset}
-                onDismissMessage={dismissMessage}
                 onInstallPromptsFromUrl={installPromptsFromUrl}
                 onPromptUrlInstallDialogClose={closePromptUrlInstallDialog}
                 onPromptUrlInstallDialogOpen={openPromptUrlInstallDialog}
@@ -1992,12 +1995,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
               expandedSkillPaths={expandedSkillPaths}
               globalSkillFolderOptions={globalSkillFolderOptions}
-              globalSkillsMessage={globalSkillsMessage}
               globalSkillsRoot={globalSkillsRoot}
               globalSkillsTree={globalSkillsTree}
               hideNavigator
               gitInstallTargetDirectory={gitInstallTargetDirectory}
-              gitInstallMessage={gitInstallMessage}
               gitInstallPreview={gitInstallPreview}
               gitInstallSource={gitInstallSource}
               isCreateGlobalSkillDraftVisible={isCreateGlobalSkillDraftVisible}
@@ -2082,7 +2083,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                     installedPlugins={installedPlugins}
                     isLoading={isLoadingPlugins}
                     loadError={pluginsError}
-                    message={message}
                     pluginCatalog={pluginCatalog}
                     pluginConnectorStatuses={pluginConnectorStatuses}
                     pluginDiagnostics={pluginDiagnostics}
@@ -2096,7 +2096,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                     onDeleteInstalledPluginConnectorAuthSession={deleteInstalledPluginConnectorAuthSession}
                     onDiagnoseInstalledPlugin={diagnoseInstalledPlugin}
                     onDiagnoseInstalledPluginConnector={diagnoseInstalledPluginConnector}
-                    onDismissMessage={dismissMessage}
                     onInstallPlugin={installPlugin}
                     onPluginDraftAppApiKeyChange={setPluginDraftAppApiKey}
                     onPluginDraftConfigChange={setPluginDraftConfigValue}
@@ -2121,7 +2120,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                     diagnosingConnectorID={diagnosingConnectorID}
                     hideTopMenu
                     isLoading={isLoadingConnectors}
-                    message={message}
                     savingConnectorID={savingConnectorID}
                     searchQuery={connectionSearchQueries.connectors}
                     onCancelConnectorAuthFlow={cancelConnectorAuthFlow}
@@ -2132,7 +2130,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                     onDeleteConnectorConfig={deleteConnectorConfig}
                     onDeleteConnectorAuthSession={deleteConnectorAuthSession}
                     onDiagnoseConnector={diagnoseConnector}
-                    onDismissMessage={dismissMessage}
                     onSaveConnectorApiKey={saveConnectorApiKey}
                     onSaveConnectorConfig={saveConnectorConfig}
                     onSearchQueryChange={handleConnectionSearchQueryChange}
@@ -2150,13 +2147,11 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                   installedPlugins={installedPlugins}
                   mcpServerDraft={mcpServerDraft}
                   mcpServers={mcpServers}
-                  message={message}
                   pluginCatalog={pluginCatalog}
                   savingMcpServerID={savingMcpServerID}
                   isImportingMcpConfigJson={isImportingMcpConfigJson}
                   searchQuery={connectionSearchQueries.mcp}
                   onDeleteMcpServer={deleteMcpServer}
-                  onDismissMessage={dismissMessage}
                   onImportMcpConfigJson={importMcpConfigJson}
                   onMcpServerDraftChange={setMcpServerDraftValue}
                   onMcpToolPolicyChange={setMcpToolPolicy}
@@ -2183,11 +2178,9 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               isBuiltinToolSelectionDirty={isBuiltinToolSelectionDirty}
               isLoadingBuiltinTools={isLoadingBuiltinTools}
               isSavingBuiltinTools={isSavingBuiltinTools}
-              message={message}
               windowControls={windowControls}
               onActiveToolKindChange={setActiveBuiltinToolKind}
               onBuiltinToolToggle={setBuiltinToolEnabled}
-              onDismissMessage={dismissMessage}
               onResetBuiltinTools={resetBuiltinTools}
               onSaveBuiltinTools={saveBuiltinTools}
             />
@@ -2441,7 +2434,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               loadError={loadError}
               mcpServerDraft={mcpServerDraft}
               mcpServers={mcpServers}
-              message={message}
               models={models}
               pluginCatalog={pluginCatalog}
               providerDrafts={providerDrafts}
@@ -2464,7 +2456,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onAutomaticUpdatesToggle={() => void handleAutomaticUpdatesToggle()}
               onCheckForUpdates={() => void handleCheckForUpdates()}
               onClose={closeSettings}
-              onDismissMessage={dismissMessage}
               onDeleteArchivedSession={deleteArchivedSession}
               onDeleteMcpServer={deleteMcpServer}
               onDeleteProvider={deleteProvider}

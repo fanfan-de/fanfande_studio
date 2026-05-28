@@ -14,11 +14,6 @@ import type {
   ConnectorStatus,
 } from "../types"
 
-interface ConnectorsMessage {
-  tone: "success" | "error"
-  text: string
-}
-
 interface ConnectorsPageProps {
   activeConnectorID: string | null
   connectorApiKeyDrafts: Record<string, string>
@@ -28,7 +23,6 @@ interface ConnectorsPageProps {
   connectorsError: string | null
   diagnosingConnectorID: string | null
   isLoading: boolean
-  message: ConnectorsMessage | null
   savingConnectorID: string | null
   hideTopMenu?: boolean
   searchQuery?: string
@@ -41,7 +35,6 @@ interface ConnectorsPageProps {
   onDeleteConnectorConfig: (connectorID: string) => boolean | Promise<boolean>
   onDeleteConnectorAuthSession: (connectorID: string) => boolean | Promise<boolean>
   onDiagnoseConnector: (connectorID: string) => boolean | Promise<boolean>
-  onDismissMessage: () => void
   onSaveConnectorApiKey: (connectorID: string) => boolean | Promise<boolean>
   onSaveConnectorConfig: (connectorID: string) => boolean | Promise<boolean>
   onStartConnectorAuthFlow: (connectorID: string) => boolean | Promise<boolean>
@@ -149,7 +142,6 @@ export function ConnectorsPage({
   diagnosingConnectorID,
   hideTopMenu = false,
   isLoading,
-  message,
   savingConnectorID,
   searchQuery,
   windowControls,
@@ -161,7 +153,6 @@ export function ConnectorsPage({
   onDeleteConnectorConfig,
   onDeleteConnectorAuthSession,
   onDiagnoseConnector,
-  onDismissMessage,
   onSaveConnectorApiKey,
   onSaveConnectorConfig,
   onSearchQueryChange,
@@ -227,21 +218,6 @@ export function ConnectorsPage({
       ) : null}
 
       <div className="settings-page-main is-services connectors-page-main">
-        {message ? (
-          <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>
-            <span className="settings-banner-text">{message.text}</span>
-            <button
-              className="settings-banner-dismiss"
-              type="button"
-              aria-label="Dismiss connector message"
-              title="Dismiss"
-              onClick={onDismissMessage}
-            >
-              <CloseIcon />
-            </button>
-          </div>
-        ) : null}
-
         {connectorsError ? <div className="settings-banner is-error">{connectorsError}</div> : null}
 
         {isLoading ? (

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import {
   ChevronDownIcon,
   ChevronRightIcon,
-  CloseIcon,
   ConnectedStatusIcon,
   DeleteIcon,
+  FolderOpenIcon,
   OpenExternalIcon,
   PluginIcon,
   PlusIcon,
@@ -24,11 +25,6 @@ import type {
   PluginRuntimeTemplate,
 } from "../types"
 
-interface PluginsMessage {
-  tone: "success" | "error"
-  text: string
-}
-
 interface PluginsPageProps {
   activePluginID: string | null
   deletingPluginID: string | null
@@ -38,7 +34,6 @@ interface PluginsPageProps {
   installedPlugins: InstalledPlugin[]
   isLoading: boolean
   loadError: string | null
-  message: PluginsMessage | null
   connectorStatuses: ConnectorStatus[]
   pluginCatalog: PluginCatalogItem[]
   pluginConnectorStatuses: Record<string, PluginConnectorStatus[]>
@@ -55,7 +50,6 @@ interface PluginsPageProps {
   onDeleteInstalledPluginConnectorAuthSession: (pluginID: string, appID: string) => boolean | Promise<boolean>
   onDiagnoseInstalledPlugin: (pluginID: string) => boolean | Promise<boolean>
   onDiagnoseInstalledPluginConnector: (pluginID: string, appID: string) => boolean | Promise<boolean>
-  onDismissMessage: () => void
   onInstallPlugin: (pluginID: string) => boolean | Promise<boolean>
   onPluginDraftAppApiKeyChange: (appID: string, value: string) => void
   onPluginDraftConfigChange: (key: string, value: string) => void
@@ -312,6 +306,23 @@ interface InstalledPluginsSidebarProps {
   onPluginSelect: (pluginID: string) => void
 }
 
+type InstalledPluginContextMenuState = {
+  installed: InstalledPlugin
+  name: string
+  x: number
+  y: number
+} | null
+
+const INSTALLED_PLUGIN_CONTEXT_MENU_WIDTH = 184
+const INSTALLED_PLUGIN_CONTEXT_MENU_HEIGHT = 48
+const INSTALLED_PLUGIN_DIRECT_PATH_KEYS = [
+  "localPath",
+  "packagePath",
+  "installPath",
+  "directory",
+  "path",
+] as const
+
 function installedPluginStatusText(installed: InstalledPlugin) {
   if (installed.missingPackage) return "Package missing"
   return installed.enabled ? "Enabled" : "Disabled"
@@ -327,12 +338,156 @@ function installedPluginStatusClassName(installed: InstalledPlugin) {
   return installed.enabled ? "is-enabled" : ""
 }
 
+function isAbsoluteLocalPath(targetPath: string) {
+  return /^[a-zA-Z]:[\\/]/.test(targetPath) || targetPath.startsWith("\\\\") || targetPath.startsWith("/")
+}
+
+function clampInstalledPluginContextMenuPosition(x: number, y: number) {
+  const margin = 8
+  if (typeof window === "undefined") {
+    return { x, y }
+  }
+
+  return {
+    x: Math.max(margin, Math.min(x, window.innerWidth - INSTALLED_PLUGIN_CONTEXT_MENU_WIDTH - margin)),
+    y: Math.max(margin, Math.min(y, window.innerHeight - INSTALLED_PLUGIN_CONTEXT_MENU_HEIGHT - margin)),
+  }
+}
+
+function getInstalledPluginDirectPath(installed: InstalledPlugin) {
+  const record = installed as unknown as Record<string, unknown>
+
+  for (const key of INSTALLED_PLUGIN_DIRECT_PATH_KEYS) {
+    const value = record[key]
+    if (typeof value === "string") {
+      const targetPath = value.trim()
+      if (targetPath && isAbsoluteLocalPath(targetPath)) return targetPath
+    }
+  }
+
+  return null
+}
+
+function pluginIDPathSegment(pluginID: string) {
+  const segment = pluginID.trim()
+  if (!segment || segment.includes("/") || segment.includes("\\") || segment.includes("..")) return null
+  return segment
+}
+
+function joinLocalPath(rootPath: string, segment: string) {
+  const root = rootPath.trim().replace(/[\\/]+$/, "")
+  const separator = root.includes("\\") ? "\\" : "/"
+  return `${root}${separator}${segment}`
+}
+
+function resolveInstalledPluginStoragePath(installed: InstalledPlugin, installedPluginsRoot: string) {
+  const segment = pluginIDPathSegment(installed.pluginID)
+  return segment ? joinLocalPath(installedPluginsRoot, segment) : installedPluginsRoot.trim()
+}
+
+function canOpenInstalledPluginLocalFiles(installed: InstalledPlugin) {
+  return Boolean(window.desktop?.openPath && (getInstalledPluginDirectPath(installed) || window.desktop.getStoragePaths))
+}
+
+async function openInstalledPluginLocalFiles(installed: InstalledPlugin) {
+  const openPath = window.desktop?.openPath
+  if (!openPath) {
+    throw new Error("Opening local plugin files is unavailable in this desktop shell.")
+  }
+
+  let targetPath = getInstalledPluginDirectPath(installed)
+  if (!targetPath) {
+    const storagePaths = await window.desktop?.getStoragePaths?.()
+    if (!storagePaths) {
+      throw new Error("Plugin storage paths are unavailable in this desktop shell.")
+    }
+    targetPath = resolveInstalledPluginStoragePath(installed, storagePaths.installedPlugins)
+  }
+
+  await openPath({ targetPath })
+}
+
+interface InstalledPluginContextMenuProps {
+  menu: InstalledPluginContextMenuState
+  onClose: () => void
+}
+
+function InstalledPluginContextMenu({
+  menu,
+  onClose,
+}: InstalledPluginContextMenuProps) {
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!menu) return
+
+    function handlePointerDown(event: globalThis.PointerEvent) {
+      const target = event.target as Node | null
+      if (!target) return
+      if (menuRef.current?.contains(target)) return
+      onClose()
+    }
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose()
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+    window.addEventListener("resize", onClose)
+    window.addEventListener("scroll", onClose, true)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("resize", onClose)
+      window.removeEventListener("scroll", onClose, true)
+    }
+  }, [menu, onClose])
+
+  if (!menu) return null
+
+  const position = clampInstalledPluginContextMenuPosition(menu.x, menu.y)
+  const canOpenLocalFiles = canOpenInstalledPluginLocalFiles(menu.installed)
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="ui-context-menu plugins-installed-context-menu"
+      role="menu"
+      aria-label={`${menu.name} actions`}
+      style={{ left: position.x, top: position.y }}
+    >
+      <button
+        className="ui-context-menu__item"
+        role="menuitem"
+        type="button"
+        disabled={!canOpenLocalFiles}
+        onClick={(event) => {
+          event.stopPropagation()
+          onClose()
+          void openInstalledPluginLocalFiles(menu.installed).catch((error) => {
+            console.error("[plugins] Failed to open local plugin files.", error)
+          })
+        }}
+      >
+        <span className="ui-context-menu__icon" aria-hidden="true"><FolderOpenIcon /></span>
+        <span className="ui-context-menu__label">Open local files</span>
+      </button>
+    </div>,
+    document.body,
+  )
+}
+
 function InstalledPluginsSidebar({
   installedPlugins,
   pluginCatalog,
   selectedPluginID,
   onPluginSelect,
 }: InstalledPluginsSidebarProps) {
+  const [contextMenu, setContextMenu] = useState<InstalledPluginContextMenuState>(null)
   const catalogByPluginID = useMemo(
     () => new Map(pluginCatalog.map((plugin) => [plugin.id, plugin])),
     [pluginCatalog],
@@ -352,53 +507,73 @@ function InstalledPluginsSidebar({
     [catalogByPluginID, installedPlugins],
   )
 
+  function closeContextMenu() {
+    setContextMenu(null)
+  }
+
   return (
-    <aside className="plugins-installed-sidebar" aria-label="Installed plugins">
-      <div className="plugins-installed-sidebar-header">
-        <h2>Installed</h2>
-        <span>{installedPlugins.length}</span>
-      </div>
-
-      {installedRows.length > 0 ? (
-        <div className="plugins-installed-list" role="list" aria-label="Installed plugins list">
-          {installedRows.map(({ installed, plugin }) => {
-            const name = plugin?.name ?? installedPluginDisplayName(installed.pluginID)
-            const isActive = selectedPluginID === installed.pluginID
-            const visibleStatus = installed.missingPackage || !installed.enabled ? installedPluginStatusText(installed) : null
-
-            return (
-              <div key={installed.pluginID} role="listitem">
-                <button
-                  className={isActive ? "plugins-installed-item is-active" : "plugins-installed-item"}
-                  type="button"
-                  aria-label={`${name} ${installedPluginAriaStatus(installed)}`}
-                  aria-pressed={isActive}
-                  onClick={() => onPluginSelect(installed.pluginID)}
-                >
-                  {plugin ? (
-                    <PluginMark plugin={plugin} />
-                  ) : (
-                    <span className="plugins-icon-mark is-installed-placeholder" aria-hidden="true">
-                      <PluginIcon />
-                    </span>
-                  )}
-                  <span className="plugins-installed-copy">
-                    <span className="plugins-installed-title">
-                      <strong>{name}</strong>
-                      <span className="plugins-installed-version">v{installed.version}</span>
-                    </span>
-                    {visibleStatus ? <span className="plugins-installed-state">{visibleStatus}</span> : null}
-                  </span>
-                  <span className={`plugins-installed-status-dot ${installedPluginStatusClassName(installed)}`} aria-hidden="true" />
-                </button>
-              </div>
-            )
-          })}
+    <>
+      <aside className="plugins-installed-sidebar" aria-label="Installed plugins">
+        <div className="plugins-installed-sidebar-header">
+          <h2>Installed</h2>
+          <span>{installedPlugins.length}</span>
         </div>
-      ) : (
-        <p className="plugins-installed-empty">No installed plugins yet.</p>
-      )}
-    </aside>
+
+        {installedRows.length > 0 ? (
+          <div className="plugins-installed-list" role="list" aria-label="Installed plugins list">
+            {installedRows.map(({ installed, plugin }) => {
+              const name = plugin?.name ?? installedPluginDisplayName(installed.pluginID)
+              const isActive = selectedPluginID === installed.pluginID
+              const visibleStatus = installed.missingPackage || !installed.enabled ? installedPluginStatusText(installed) : null
+
+              return (
+                <div key={installed.pluginID} role="listitem">
+                  <button
+                    className={isActive ? "plugins-installed-item is-active" : "plugins-installed-item"}
+                    type="button"
+                    aria-label={`${name} ${installedPluginAriaStatus(installed)}`}
+                    aria-pressed={isActive}
+                    onClick={() => {
+                      closeContextMenu()
+                      onPluginSelect(installed.pluginID)
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setContextMenu({
+                        installed,
+                        name,
+                        x: event.clientX,
+                        y: event.clientY,
+                      })
+                    }}
+                  >
+                    {plugin ? (
+                      <PluginMark plugin={plugin} />
+                    ) : (
+                      <span className="plugins-icon-mark is-installed-placeholder" aria-hidden="true">
+                        <PluginIcon />
+                      </span>
+                    )}
+                    <span className="plugins-installed-copy">
+                      <span className="plugins-installed-title">
+                        <strong>{name}</strong>
+                        <span className="plugins-installed-version">v{installed.version}</span>
+                      </span>
+                      {visibleStatus ? <span className="plugins-installed-state">{visibleStatus}</span> : null}
+                    </span>
+                    <span className={`plugins-installed-status-dot ${installedPluginStatusClassName(installed)}`} aria-hidden="true" />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="plugins-installed-empty">No installed plugins yet.</p>
+        )}
+      </aside>
+      <InstalledPluginContextMenu menu={contextMenu} onClose={closeContextMenu} />
+    </>
   )
 }
 
@@ -463,7 +638,6 @@ export function PluginsPage({
   hideTopMenu = false,
   isLoading,
   loadError,
-  message,
   pluginCatalog,
   pluginConnectorStatuses,
   searchQuery,
@@ -477,7 +651,6 @@ export function PluginsPage({
   onDeleteInstalledPluginConnectorApiKey,
   onDeleteInstalledPluginConnectorAuthSession,
   onDiagnoseInstalledPluginConnector,
-  onDismissMessage,
   onInstallPlugin,
   onPluginDraftAppApiKeyChange,
   onPluginDraftConfigChange,
@@ -648,21 +821,6 @@ export function PluginsPage({
       ) : null}
 
       <div className="plugins-page-main">
-        {message ? (
-          <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>
-            <span className="settings-banner-text">{message.text}</span>
-            <button
-              className="settings-banner-dismiss"
-              type="button"
-              aria-label="Dismiss plugins message"
-              title="Dismiss"
-              onClick={onDismissMessage}
-            >
-              <CloseIcon />
-            </button>
-          </div>
-        ) : null}
-
         {loadError ? <div className="settings-banner is-error">{loadError}</div> : null}
 
         {isLoading ? (

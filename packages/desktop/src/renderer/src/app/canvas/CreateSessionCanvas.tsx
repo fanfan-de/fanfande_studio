@@ -9,10 +9,6 @@ interface SkillMetadataField {
 
 interface GlobalSkillsCanvasProps {
   deletingGlobalSkillDirectory: string | null
-  globalSkillsMessage: {
-    tone: "success" | "error"
-    text: string
-  } | null
   globalSkillsRoot: string
   isDirty: boolean
   isLoadingFile: boolean
@@ -190,7 +186,6 @@ function SkillMarkdownPreview({ text }: { text: string }) {
 
 export function GlobalSkillsCanvas({
   deletingGlobalSkillDirectory,
-  globalSkillsMessage,
   globalSkillsRoot,
   isDirty,
   isLoadingFile,
@@ -236,19 +231,7 @@ export function GlobalSkillsCanvas({
   return (
     <section className="global-skills-canvas">
       <div className="global-skills-toolbar">
-        {globalSkillsMessage ? (
-          <div
-            className={
-              globalSkillsMessage.tone === "success"
-                ? "settings-banner is-success global-skills-toolbar-message"
-                : "settings-banner is-error global-skills-toolbar-message"
-            }
-          >
-            {globalSkillsMessage.text}
-          </div>
-        ) : (
-          <div className="global-skills-toolbar-spacer" aria-hidden="true" />
-        )}
+        <div className="global-skills-toolbar-spacer" aria-hidden="true" />
         <div className="global-skills-toolbar-actions">
           <div className="global-skills-mode-toggle" role="group" aria-label="Skill markdown view mode">
             <button

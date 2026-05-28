@@ -28,11 +28,6 @@ import {
 } from "./mcp-server-source"
 import { McpToolsPolicyPanel } from "./McpToolsPolicyPanel"
 
-interface McpServersMessage {
-  tone: "success" | "error"
-  text: string
-}
-
 interface McpServersPageProps {
   activeMcpServerID: string | null
   activeMcpServerDiagnostic: McpServerDiagnostic | null
@@ -41,7 +36,6 @@ interface McpServersPageProps {
   loadError: string | null
   mcpServerDraft: McpServerDraftState
   mcpServers: McpServerSummary[]
-  message: McpServersMessage | null
   installedPlugins?: InstalledPlugin[]
   pluginCatalog?: PluginCatalogItem[]
   savingMcpServerID: string | null
@@ -51,7 +45,6 @@ interface McpServersPageProps {
   searchQuery?: string
   windowControls?: ReactNode
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
-  onDismissMessage: () => void
   onImportMcpConfigJson: (input: string) => boolean | Promise<boolean>
   onMcpServerDraftChange: (field: keyof McpServerDraftState, value: string | boolean) => void
   onMcpToolPolicyChange: (toolName: string, policy: McpToolPolicyValue) => void
@@ -610,7 +603,6 @@ export function McpServersPage({
   loadError,
   mcpServerDraft,
   mcpServers,
-  message,
   installedPlugins = [],
   pluginCatalog = [],
   savingMcpServerID,
@@ -620,7 +612,6 @@ export function McpServersPage({
   searchQuery,
   windowControls,
   onDeleteMcpServer,
-  onDismissMessage,
   onImportMcpConfigJson,
   onMcpServerDraftChange,
   onMcpToolPolicyChange,
@@ -695,21 +686,6 @@ export function McpServersPage({
       ) : null}
 
       <div className="settings-page-main is-services mcp-servers-page-main">
-        {message ? (
-          <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>
-            <span className="settings-banner-text">{message.text}</span>
-            <button
-              className="settings-banner-dismiss"
-              type="button"
-              aria-label="Dismiss settings message"
-              title="Dismiss"
-              onClick={onDismissMessage}
-            >
-              <CloseIcon />
-            </button>
-          </div>
-        ) : null}
-
         {loadError ? <div className="settings-banner is-error">{loadError}</div> : null}
 
         {isLoading ? (

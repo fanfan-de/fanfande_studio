@@ -1,0 +1,118 @@
+.toast-viewport {
+  position: fixed;
+  top: 16px;
+  right: 48px;
+  z-index: 72;
+  width: min(360px, calc(100vw - 64px));
+  display: grid;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast-card {
+  min-width: 0;
+  min-height: 48px;
+  padding: 10px 10px 10px 12px;
+  border: 1px solid var(--seg-border);
+  border-radius: 8px;
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  box-shadow: 0 14px 36px rgba(24, 37, 50, 0.14);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.toast-card.is-success {
+  border-color: rgba(78, 146, 102, 0.34);
+}
+
+.toast-card.is-error {
+  border-color: rgba(197, 97, 78, 0.34);
+}
+
+.toast-card.is-info {
+  border-color: rgba(95, 146, 194, 0.34);
+}
+
+.toast-card-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toast-card-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.toast-card.is-success .toast-card-icon {
+  color: #2f7a4c;
+}
+
+.toast-card.is-error .toast-card-icon {
+  color: #b34a3c;
+}
+
+.toast-card.is-info .toast-card-icon {
+  color: #3f75a8;
+}
+
+.toast-card-text {
+  min-width: 0;
+  color: var(--seg-text-1);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.toast-card-dismiss {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--seg-radius-xs);
+  background: transparent;
+  color: var(--seg-text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.toast-card-dismiss svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.toast-card-dismiss:hover,
+.toast-card-dismiss:focus-visible {
+  border-color: var(--seg-border);
+  background: var(--seg-panel-muted);
+  color: var(--seg-text-1);
+}
+
+.toast-card-dismiss:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
+}

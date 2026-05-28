@@ -962,10 +962,6 @@ interface SettingsPageProps {
   installedPlugins?: InstalledPlugin[]
   mcpServerDraft: McpServerDraftState
   mcpServers: McpServerSummary[]
-  message: {
-    tone: "success" | "error"
-    text: string
-  } | null
   models: ProviderModel[]
   pluginCatalog?: PluginCatalogItem[]
   providerDrafts: Record<string, ProviderDraftState>
@@ -988,7 +984,6 @@ interface SettingsPageProps {
   onAutomaticUpdatesToggle: () => void
   onCheckForUpdates: () => void
   onClose: () => void
-  onDismissMessage: () => void
   onDeleteArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
   onDeleteProvider: (providerID: string) => void | Promise<void>
@@ -1058,7 +1053,6 @@ export function SettingsPage({
   installedPlugins = [],
   mcpServerDraft,
   mcpServers,
-  message,
   models,
   pluginCatalog = [],
   providerDrafts,
@@ -1081,7 +1075,6 @@ export function SettingsPage({
   onAutomaticUpdatesToggle,
   onCheckForUpdates,
   onClose,
-  onDismissMessage,
   onDeleteArchivedSession,
   onDeleteMcpServer,
   onDeleteProvider,
@@ -1747,26 +1740,6 @@ export function SettingsPage({
                   <CloseIcon />
                 </button>
               </header>
-
-              {message ? (
-                <div className="settings-toast-region">
-                  <div
-                    className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}
-                    role={message.tone === "success" ? "status" : "alert"}
-                  >
-                    <span className="settings-banner-text">{message.text}</span>
-                    <button
-                      className="settings-banner-dismiss"
-                      type="button"
-                      aria-label={t("settings.dismissMessage")}
-                      title={t("app.dismiss")}
-                      onClick={onDismissMessage}
-                    >
-                      <CloseIcon />
-                    </button>
-                  </div>
-                </div>
-              ) : null}
 
               <div className="settings-page-shell">
             <aside className="settings-page-primary-nav" aria-label={t("settings.sections")}>
@@ -3403,10 +3376,6 @@ export function SettingsPage({
           </aside>
 
           <div className="settings-page-content">
-            {message ? (
-              <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>{message.text}</div>
-            ) : null}
-
             {loadError ? <div className="settings-banner is-error">{loadError}</div> : null}
 
             {showEmptyState ? (

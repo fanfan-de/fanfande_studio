@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>薛登文 - 简历</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 10mm;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        background: #f3f4f6;
+        color: #111827;
+        font-family:
+          "Microsoft YaHei UI",
+          "Microsoft YaHei",
+          "PingFang SC",
+          "Noto Sans CJK SC",
+          Arial,
+          sans-serif;
+        font-size: 9.2pt;
+        line-height: 1.42;
+      }
+
+      body {
+        padding: 10mm 0;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .page {
+        display: grid;
+        grid-template-columns: 54mm 1fr;
+        gap: 7mm;
+        width: 190mm;
+        min-height: 277mm;
+        margin: 0 auto;
+        padding: 0;
+        background: #ffffff;
+      }
+
+      header {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8mm;
+        align-items: end;
+        padding-bottom: 4.2mm;
+        border-bottom: 1.4pt solid #111827;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 24pt;
+        font-weight: 800;
+        letter-spacing: 0;
+        line-height: 1;
+      }
+
+      .subtitle {
+        margin-top: 2.4mm;
+        color: #374151;
+        font-size: 10.2pt;
+        font-weight: 700;
+      }
+
+      .summary {
+        max-width: 88mm;
+        color: #4b5563;
+        font-size: 8.8pt;
+        line-height: 1.5;
+      }
+
+      aside,
+      main {
+        padding-top: 5.2mm;
+      }
+
+      aside {
+        border-right: 0.7pt solid #d1d5db;
+        padding-right: 5mm;
+      }
+
+      main {
+        min-width: 0;
+      }
+
+      section + section {
+        margin-top: 5mm;
+      }
+
+      h2 {
+        margin-bottom: 2.4mm;
+        color: #0f172a;
+        font-size: 9.6pt;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+      }
+
+      h3 {
+        color: #111827;
+        font-size: 9.6pt;
+        font-weight: 800;
+        line-height: 1.3;
+      }
+
+      .meta {
+        color: #6b7280;
+        font-size: 8pt;
+        font-weight: 700;
+        line-height: 1.4;
+      }
+
+      .contact,
+      .tag-list,
+      .compact-list {
+        display: grid;
+        gap: 1.7mm;
+      }
+
+      .contact a,
+      .contact span {
+        overflow-wrap: anywhere;
+      }
+
+      .pill-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.3mm;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 5.7mm;
+        padding: 0 2.2mm;
+        border: 0.7pt solid #cbd5e1;
+        border-radius: 3px;
+        color: #0f172a;
+        background: #f8fafc;
+        font-size: 7.7pt;
+        font-weight: 700;
+      }
+
+      ul {
+        margin: 1.5mm 0 0;
+        padding-left: 4mm;
+      }
+
+      li {
+        margin: 0.8mm 0;
+      }
+
+      .block + .block {
+        margin-top: 4mm;
+      }
+
+      .entry {
+        display: grid;
+        grid-template-columns: 27mm 1fr;
+        gap: 3mm;
+      }
+
+      .entry + .entry {
+        margin-top: 3.6mm;
+        padding-top: 3.2mm;
+        border-top: 0.7pt solid #e5e7eb;
+      }
+
+      .entry-body p {
+        margin-top: 1.1mm;
+        color: #4b5563;
+      }
+
+      .project {
+        padding: 3mm 3.4mm;
+        border: 0.7pt solid #dbe2ea;
+        border-radius: 5px;
+        background: #fbfdff;
+        break-inside: avoid;
+      }
+
+      .project + .project {
+        margin-top: 3.2mm;
+      }
+
+      .project-head {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 4mm;
+        align-items: baseline;
+      }
+
+      .project p {
+        margin-top: 1.2mm;
+        color: #4b5563;
+      }
+
+      .skills-group + .skills-group {
+        margin-top: 3.2mm;
+      }
+
+      .skills-group strong {
+        display: block;
+        margin-bottom: 1.3mm;
+        color: #111827;
+        font-size: 8.5pt;
+      }
+
+      .edu-item + .edu-item {
+        margin-top: 3.2mm;
+      }
+
+      .edu-item p {
+        margin-top: 1mm;
+        color: #4b5563;
+      }
+
+      .print-note {
+        color: #6b7280;
+        font-size: 7.8pt;
+      }
+
+      @media print {
+        html,
+        body {
+          background: #ffffff;
+        }
+
+        body {
+          padding: 0;
+        }
+
+        .page {
+          width: auto;
+          min-height: auto;
+          margin: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <article class="page">
+      <header>
+        <div>
+          <h1>薛登文</h1>
+          <p class="subtitle">AI Agent Builder / Interactive Systems Designer</p>
+        </div>
+        <p class="summary">
+          从游戏战斗策划与交互系统开发转向 AI Agent 产品方向，关注 Agent 工作流、工具调用、记忆上下文和复杂任务拆解。擅长把复杂交互规则拆成可沟通、可实现、可验证的产品与系统方案。
+        </p>
+      </header>
+
+      <aside>
+        <section>
+          <h2>联系</h2>
+          <div class="contact">
+            <a href="mailto:1912807579@qq.com">1912807579@qq.com</a>
+            <a href="tel:15601971390">15601971390</a>
+            <span>GitHub: github.com/fanfan-de/fanfande_studio</span>
+            <span>产品: anybox-studio.pages.dev</span>
+          </div>
+        </section>
+
+        <section>
+          <h2>求职方向</h2>
+          <div class="pill-grid">
+            <span class="pill">AI Agent 产品</span>
+            <span class="pill">交互系统设计</span>
+            <span class="pill">桌面应用</span>
+            <span class="pill">工具型产品</span>
+          </div>
+        </section>
+
+        <section>
+          <h2>核心能力</h2>
+          <div class="skills-group">
+            <strong>Agent 与工作流</strong>
+            <div class="pill-grid">
+              <span class="pill">Tool Calling</span>
+              <span class="pill">Workflow</span>
+              <span class="pill">Memory</span>
+              <span class="pill">MCP</span>
+              <span class="pill">Provider / Model</span>
+            </div>
+          </div>
+          <div class="skills-group">
+            <strong>桌面与工程实现</strong>
+            <div class="pill-grid">
+              <span class="pill">Electron</span>
+              <span class="pill">Bun</span>
+              <span class="pill">Hono</span>
+              <span class="pill">AI SDK</span>
+              <span class="pill">node-pty</span>
+              <span class="pill">xterm</span>
+            </div>
+          </div>
+          <div class="skills-group">
+            <strong>游戏与交互系统</strong>
+            <div class="pill-grid">
+              <span class="pill">战斗系统</span>
+              <span class="pill">行为树</span>
+              <span class="pill">状态机</span>
+              <span class="pill">Unity 编辑器</span>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>教育</h2>
+          <div class="edu-item">
+            <p class="meta">2022.09 - 2025.05</p>
+            <h3>清华大学 · IMDT 硕士</h3>
+            <p>深圳国际研究生院，互动媒体设计与技术方向。关注人机交互，游戏设计在心理干预场景中的落地。</p>
+          </div>
+          <div class="edu-item">
+            <p class="meta">2015.09 - 2021.06</p>
+            <h3>华东理工大学 · 化学工程 本科</h3>
+            <p>期间服役两年。</p>
+          </div>
+        </section>
+      </aside>
+
+      <main>
+        <section>
+          <h2>工作经历</h2>
+          <div class="entry">
+            <p class="meta">2025.11 - 2026.02</p>
+            <div class="entry-body">
+              <h3>网易 · 战斗策划 Contractor</h3>
+              <p>负责商业化资源维护、动作蓝图维护，熟悉工程生产环境中的配置、校验与协作流程。</p>
+            </div>
+          </div>
+          <div class="entry">
+            <p class="meta">2025.05 - 2025.10</p>
+            <div class="entry-body">
+              <h3>巨阵无限 · 战斗策划</h3>
+              <p>参与在研大战略游戏，构建类 CK3 战斗系统策划案，把复杂战斗规则拆解成可沟通、可实现的系统方案。</p>
+            </div>
+          </div>
+          <div class="entry">
+            <p class="meta">2024.08 - 2025.02</p>
+            <div class="entry-body">
+              <h3>缇米乐科技 · 战斗策划实习</h3>
+              <p>设计并跟进怪物动作、特效需求、角色制作流程；扩展 Unity 战斗编辑器能力，搭建小兵、Boss、群体敌人和大型敌人的 AI 行为树模板。</p>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>项目经历</h2>
+          <div class="project">
+            <div class="project-head">
+              <h3>anybox</h3>
+              <p class="meta">本地 AI Agent 工作台</p>
+            </div>
+            <p>把项目、会话、终端、权限和工具调用整合到单一工作空间，面向本地项目与 AI Agent 协作。</p>
+            <ul>
+              <li>按目录组织项目，支持创建会话、回溯历史记录，让本地文件编辑与大模型对话深度结合。</li>
+              <li>内置 PTY 终端，通过 node-pty 和 xterm 提供终端体验，并对敏感操作进行安全校验、拦截与状态追踪。</li>
+              <li>支持 Provider、Model、MCP 服务、Skill 等项目级配置；桌面端自动拉起本地 Agent 服务，也支持连接自定义 Agent 实例。</li>
+            </ul>
+            <p class="print-note">技术关键词: Electron, node-pty, xterm, Bun, Hono, AI SDK, MCP, Skill</p>
+          </div>
+
+          <div class="project">
+            <div class="project-head">
+              <h3>Prompt Architect</h3>
+              <p class="meta">Chrome 侧边栏提示词工程工具</p>
+            </div>
+            <p>面向开发者、文案创作者和设计师的提示词构建系统，以模块化方式快速组装高质量、结构化 AI 提示词。</p>
+            <ul>
+              <li>为 Python 编程、小红书文案、Midjourney 绘图等场景创建独立工作区，一键切换上下文。</li>
+              <li>将提示词拆解为角色、语气、输出格式等模块，支持树状结构配置与自由组装。</li>
+              <li>使用 {{变量}} 模板语法预设结构，点击下拉菜单快速填充变量内容；内置社区分享和导入能力。</li>
+            </ul>
+            <p class="print-note">技术关键词: Chrome Side Panel, Templates, Variables, Config, Community</p>
+          </div>
+        </section>
+
+        <section>
+          <h2>个人标签</h2>
+          <div class="pill-grid">
+            <span class="pill">清华 IMDT</span>
+            <span class="pill">复杂规则拆解</span>
+            <span class="pill">行为树 / 状态机</span>
+            <span class="pill">Agent 产品</span>
+            <span class="pill">工具调用</span>
+            <span class="pill">本地工作流</span>
+          </div>
+        </section>
+      </main>
+    </article>
+  </body>
+</html>

@@ -35,17 +35,9 @@ interface GlobalSkillsPageProps {
   deletingGlobalSkillDirectory: string | null
   expandedSkillPaths: string[]
   globalSkillFolderOptions: GlobalSkillFolderOption[]
-  globalSkillsMessage: {
-    tone: "success" | "error"
-    text: string
-  } | null
   globalSkillsRoot: string
   globalSkillsTree: GlobalSkillTreeNode[]
   gitInstallTargetDirectory: string | null
-  gitInstallMessage: {
-    tone: "success" | "error"
-    text: string
-  } | null
   gitInstallPreview: SkillGitInstallPreview | null
   gitInstallSource: string
   isCreateGlobalSkillDraftVisible: boolean
@@ -141,10 +133,6 @@ export interface GlobalSkillsNavigatorProps {
 
 interface GlobalSkillGitInstallDialogProps {
   folderOptions: GlobalSkillFolderOption[]
-  gitInstallMessage: {
-    tone: "success" | "error"
-    text: string
-  } | null
   gitInstallPreview: SkillGitInstallPreview | null
   gitInstallSource: string
   gitInstallTargetDirectory: string | null
@@ -938,7 +926,6 @@ export function GlobalSkillsNavigator({
 
 function GlobalSkillGitInstallDialog({
   folderOptions,
-  gitInstallMessage,
   gitInstallPreview,
   gitInstallSource,
   gitInstallTargetDirectory,
@@ -1027,12 +1014,6 @@ function GlobalSkillGitInstallDialog({
             </button>
           </div>
         </form>
-
-        {gitInstallMessage ? (
-          <p className={`global-skills-git-install-message is-${gitInstallMessage.tone}`} role={gitInstallMessage.tone === "error" ? "alert" : "status"}>
-            {gitInstallMessage.text}
-          </p>
-        ) : null}
 
         {gitInstallPreview ? (
           <section className="global-skills-git-install-preview" aria-label="Git skill install preview">
@@ -1212,11 +1193,9 @@ export function GlobalSkillsPage({
   deletingGlobalSkillDirectory,
   expandedSkillPaths,
   globalSkillFolderOptions,
-  globalSkillsMessage,
   globalSkillsRoot,
   globalSkillsTree,
   gitInstallTargetDirectory,
-  gitInstallMessage,
   gitInstallPreview,
   gitInstallSource,
   isCreateGlobalSkillDraftVisible,
@@ -1340,7 +1319,6 @@ export function GlobalSkillsPage({
           <div className="settings-service-detail-panel global-skills-detail-panel">
             <GlobalSkillsCanvas
               deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
-              globalSkillsMessage={globalSkillsMessage}
               globalSkillsRoot={globalSkillsRoot}
               isDirty={isDirty}
               isLoadingFile={isLoadingFile}
@@ -1359,7 +1337,6 @@ export function GlobalSkillsPage({
       {isGitInstallDialogOpen ? (
         <GlobalSkillGitInstallDialog
           folderOptions={globalSkillFolderOptions}
-          gitInstallMessage={gitInstallMessage}
           gitInstallPreview={gitInstallPreview}
           gitInstallSource={gitInstallSource}
           gitInstallTargetDirectory={gitInstallTargetDirectory}

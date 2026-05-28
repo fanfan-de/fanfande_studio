@@ -373,15 +373,6 @@ body.is-dragging-settings-page {
   pointer-events: none;
 }
 
-.settings-toast-region {
-  position: absolute;
-  top: 18px;
-  right: 56px;
-  z-index: 8;
-  width: min(360px, calc(100% - 104px));
-  pointer-events: none;
-}
-
 .settings-page-main.is-services {
   overflow: hidden;
 }
@@ -394,11 +385,6 @@ body.is-dragging-settings-page {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-}
-
-.settings-toast-region .settings-banner {
-  pointer-events: auto;
-  box-shadow: var(--shadow-md);
 }
 
 .settings-banner.is-success {
@@ -8382,18 +8368,6 @@ body.is-dragging-settings-page {
 .settings-primary-nav-label {
   font-weight: 560;
   letter-spacing: 0;
-}
-
-.settings-toast-region {
-  top: 18px;
-  right: 42px;
-  width: min(320px, calc(100% - 84px));
-}
-
-.settings-toast-region .settings-banner {
-  padding: 10px 12px;
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(31, 31, 31, 0.08);
 }
 
 .settings-banner.is-success {

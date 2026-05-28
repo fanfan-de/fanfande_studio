@@ -30,6 +30,7 @@ import type {
 import { mergeMcpToolPolicyDefaults } from "./mcp/mcp-tool-policies"
 import { parseMcpConfigJson } from "./mcp/mcp-config-import"
 import { arePluginCatalogsEqual, mergePluginCatalogWithInstalled } from "./plugin-catalog"
+import { useToast } from "./toast"
 
 interface SettingsMessage {
   tone: "success" | "error"
@@ -182,7 +183,7 @@ function mergeProviderDrafts(
 function getProviderAuthFailureMessage(providerID: string, flow: ProviderAuthFlow) {
   if (flow.errorMessage) return flow.errorMessage
   if (providerID === "anybox") {
-    return "桌面端无法连接 Anybox API。请使用测试连接查看网络诊断，或切换代理规则后重试。"
+    return "The desktop app could not connect to the Anybox API. Use Test connection for network diagnostics, or switch proxy rules and try again."
   }
   return "Provider authentication failed."
 }
@@ -503,6 +504,7 @@ function getMcpServerValidationError(draft: McpServerDraftState) {
 }
 
 export function useSettingsPage(options: UseSettingsPageOptions) {
+  const toast = useToast()
   const isBuiltinToolsPageOpen = options.isBuiltinToolsPageOpen ?? false
   const isConnectorsPageOpen = options.isConnectorsPageOpen ?? false
   const isMcpServersPageOpen = options.isMcpServersPageOpen ?? false
@@ -560,7 +562,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [builtinToolsError, setBuiltinToolsError] = useState<string | null>(null)
   const [promptLoadError, setPromptLoadError] = useState<string | null>(null)
   const [archivedSessionsError, setArchivedSessionsError] = useState<string | null>(null)
-  const [message, setMessage] = useState<SettingsMessage | null>(null)
   const [savingProviderID, setSavingProviderID] = useState<string | null>(null)
   const [deletingProviderID, setDeletingProviderID] = useState<string | null>(null)
   const [testingProviderID, setTestingProviderID] = useState<string | null>(null)
@@ -609,6 +610,14 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const pluginConnectorsRequestIDRef = useRef<Record<string, number>>({})
   const promptPresetsRequestIDRef = useRef(0)
   const promptPresetDocumentRequestIDRef = useRef(0)
+
+  const showMessage = useCallback((nextMessage: SettingsMessage) => {
+    if (nextMessage.tone === "success") {
+      toast.success(nextMessage.text)
+    } else {
+      toast.error(nextMessage.text)
+    }
+  }, [toast])
 
   useEffect(() => {
     if (!isOpen) return
@@ -1095,7 +1104,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     const apiKey = connectorApiKeyDrafts[connectorID]?.trim() ?? ""
     setSavingConnectorID(connectorID)
-    setMessage(null)
 
     try {
       const status = await saveConnectorApiKeyApi({
@@ -1105,13 +1113,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       upsertConnectorStatus(status)
       await notifyMcpUpdated()
       setConnectorApiKeyDraft(connectorID, "")
-      setMessage({
+      showMessage({
         tone: "success",
         text: apiKey ? "Connector API key saved." : "Connector API key cleared.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -1126,19 +1134,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!deleteConnectorApiKeyApi) return false
 
     setSavingConnectorID(connectorID)
-    setMessage(null)
 
     try {
       const status = await deleteConnectorApiKeyApi({ connectorID })
       upsertConnectorStatus(status)
       await notifyMcpUpdated()
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Connector disconnected.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -1154,7 +1161,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     const config = connectorConfigDrafts[connectorID] ?? {}
     setSavingConnectorID(connectorID)
-    setMessage(null)
 
     try {
       const status = await saveConnectorConfigApi({
@@ -1167,13 +1173,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         ...current,
         [connectorID]: {},
       }))
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Connector configuration saved. Continue with sign-in when the Feishu app callback URL and scopes are ready.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -1188,19 +1194,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!deleteConnectorConfigApi) return false
 
     setSavingConnectorID(connectorID)
-    setMessage(null)
 
     try {
       const status = await deleteConnectorConfigApi({ connectorID })
       upsertConnectorStatus(status)
       await notifyMcpUpdated()
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Connector configuration cleared.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -1227,17 +1232,17 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         if (["connected", "error", "expired", "cancelled"].includes(flow.status)) {
           await notifyMcpUpdated()
           if (flow.status === "connected") {
-            setMessage({
+            showMessage({
               tone: "success",
               text: "Connector signed in.",
             })
           } else if (flow.status === "cancelled") {
-            setMessage({
+            showMessage({
               tone: "error",
               text: flow.errorMessage ?? "Connector sign-in was cancelled.",
             })
           } else {
-            setMessage({
+            showMessage({
               tone: "error",
               text: flow.errorMessage ?? "Connector sign-in failed.",
             })
@@ -1245,7 +1250,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
           return
         }
       } catch (error) {
-        setMessage({
+        showMessage({
           tone: "error",
           text: getErrorMessage(error),
         })
@@ -1261,7 +1266,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!startConnectorAuthFlowApi) return false
 
     setSavingConnectorID(connectorID)
-    setMessage(null)
 
     try {
       const flow = await startConnectorAuthFlowApi({ connectorID })
@@ -1271,14 +1275,14 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         await window.desktop.openExternalUrl({ url: flow.authorizationURL })
       }
 
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Continue the connector sign-in flow in your browser.",
       })
       void pollConnectorAuthFlow(connectorID, flow.id)
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -1294,18 +1298,17 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!flowID || !cancelConnectorAuthFlowApi) return false
 
     setSavingConnectorID(connectorID)
-    setMessage(null)
 
     try {
       await cancelConnectorAuthFlowApi({ connectorID, flowID })
       await loadConnectorStatus(connectorID)
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Connector sign-in cancelled.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -1320,19 +1323,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!deleteConnectorAuthSessionApi) return false
 
     setSavingConnectorID(connectorID)
-    setMessage(null)
 
     try {
       const status = await deleteConnectorAuthSessionApi({ connectorID })
       upsertConnectorStatus(status)
       await notifyMcpUpdated()
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Connector disconnected.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -1347,15 +1349,14 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!getConnectorDiagnostic) return false
 
     setDiagnosingConnectorID(connectorID)
-    setMessage(null)
 
     try {
       const diagnostic = await getConnectorDiagnostic({ connectorID })
       await loadConnectorStatus(connectorID)
-      setMessage(formatMcpDiagnosticMessage(diagnostic, "diagnose"))
+      showMessage(formatMcpDiagnosticMessage(diagnostic, "diagnose"))
       return diagnostic.ok
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -1611,17 +1612,11 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   function openSettings() {
-    setMessage(null)
     setIsOpen(true)
   }
 
   function closeSettings() {
-    setMessage(null)
     setIsOpen(false)
-  }
-
-  function dismissMessage() {
-    setMessage(null)
   }
 
   function setProviderDraftValue(providerID: string, field: "apiKey" | "baseURL", value: string) {
@@ -1743,7 +1738,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!updateBuiltinToolSelection) return false
 
     setIsSavingBuiltinTools(true)
-    setMessage(null)
 
     try {
       const selection = normalizeBuiltinToolSelection(
@@ -1752,13 +1746,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setSavedBuiltinToolSelection(selection)
       setBuiltinToolSelection(selection)
       setBuiltinTools((items) => applyBuiltinToolSelection(items, selection))
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Built-in tool settings saved.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -1773,20 +1767,19 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!updateBuiltinToolSelection) return false
 
     setIsSavingBuiltinTools(true)
-    setMessage(null)
 
     try {
       const selection = normalizeBuiltinToolSelection(await updateBuiltinToolSelection({ tools: {} }))
       setSavedBuiltinToolSelection(selection)
       setBuiltinToolSelection(selection)
       setBuiltinTools((items) => applyBuiltinToolSelection(items, selection))
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Built-in tool settings reset to defaults.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -1836,13 +1829,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!window.desktop?.updatePromptPresetSelection) return false
     setIsSavingPromptPresetSelection(true)
     setSavingPromptPresetSelectionField(field ?? null)
-    setMessage(null)
 
     try {
       const selection = await window.desktop.updatePromptPresetSelection(selectionToSave)
       setPromptPresetSelection(selection)
       setSavedPromptPresetSelection(selection)
-      setMessage({
+      showMessage({
         tone: "success",
         text:
           field === "systemPromptPresetID"
@@ -1858,7 +1850,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       if (rollbackSelection) {
         setPromptPresetSelection(rollbackSelection)
       }
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -1907,7 +1899,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!window.desktop?.createPromptPreset) return false
 
     setIsCreatingPromptPreset(true)
-    setMessage(null)
 
     try {
       const document = await window.desktop.createPromptPreset({
@@ -1932,13 +1923,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setSavedPromptLabel(document.label)
       setPromptDraftContent(document.content)
       setSavedPromptContent(document.content)
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Prompt preset created.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -1952,10 +1943,9 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     const openPath = window.desktop?.openPath
     if (!promptRoot.trim()) return false
 
-    setMessage(null)
 
     if (!openPath) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: "Opening the prompts folder is unavailable in this desktop shell.",
       })
@@ -1968,7 +1958,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2114,7 +2104,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
       setIsPromptUrlInstallDialogOpen(false)
       resetPromptUrlInstallDialog()
-      setMessage({
+      showMessage({
         tone: "success",
         text: `Installed ${result.installed.length} prompt${result.installed.length === 1 ? "" : "s"}.`,
       })
@@ -2134,7 +2124,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!selectedPromptPresetID || !selectedPromptPreset || !window.desktop?.updatePromptPreset) return false
 
     setSavingPromptPresetID(selectedPromptPresetID)
-    setMessage(null)
 
     try {
       const document = await window.desktop.updatePromptPreset({
@@ -2148,13 +2137,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setSavedPromptContent(document.content)
       setPromptDraftContent(document.content)
       syncPromptPresetSummary(document)
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Prompt preset saved.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2174,7 +2163,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
 
     setResettingPromptPresetID(selectedPromptPresetID)
-    setMessage(null)
 
     try {
       const document = await window.desktop.resetPromptPreset({
@@ -2186,13 +2174,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setSavedPromptContent(document.content)
       setPromptDraftContent(document.content)
       syncPromptPresetSummary(document)
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Prompt preset reset to default.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2215,7 +2203,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
 
     setDeletingPromptPresetID(presetID)
-    setMessage(null)
 
     try {
       const nextSelection = await window.desktop.deletePromptPreset({
@@ -2227,7 +2214,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setSavedPromptPresetSelection(nextSelection)
 
       if (selectedPromptPresetID !== presetID) {
-        setMessage({
+        showMessage({
           tone: "success",
           text: "Prompt preset deleted.",
         })
@@ -2251,13 +2238,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         await loadPromptPresetDocument(nextPresetID, { silent: true })
       }
 
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Prompt preset deleted.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2296,7 +2283,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
 
     if (!nextProvider.options) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: `No changes to save for ${provider.name}.`,
       })
@@ -2304,7 +2291,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
 
     setSavingProviderID(providerID)
-    setMessage(null)
 
     try {
       await updateProvider({
@@ -2313,13 +2299,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       })
       await loadSettingsData({ silent: true })
       await notifyProviderModelsUpdated()
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Provider settings saved.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2354,17 +2340,17 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
           await notifyProviderModelsUpdated()
 
           if (flow.status === "connected") {
-            setMessage({
+            showMessage({
               tone: "success",
               text: "Provider authentication connected.",
             })
           } else if (flow.status === "cancelled") {
-            setMessage({
+            showMessage({
               tone: "error",
               text: flow.errorMessage ?? "Provider authentication was cancelled.",
             })
           } else {
-            setMessage({
+            showMessage({
               tone: "error",
               text: getProviderAuthFailureMessage(providerID, flow),
             })
@@ -2372,7 +2358,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
           return
         }
       } catch (error) {
-        setMessage({
+        showMessage({
           tone: "error",
           text: getErrorMessage(error),
         })
@@ -2392,7 +2378,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!provider || !method) return false
 
     setSavingProviderID(providerID)
-    setMessage(null)
 
     try {
       const flow = await window.desktop.startGlobalProviderAuthFlow({
@@ -2418,7 +2403,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         })
       }
 
-      setMessage({
+      showMessage({
         tone: "success",
         text:
           flow.kind === "device_code"
@@ -2429,7 +2414,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       void pollProviderAuthFlow(providerID, flow.id)
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2444,7 +2429,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!flowID || !window.desktop?.cancelGlobalProviderAuthFlow) return false
 
     setSavingProviderID(providerID)
-    setMessage(null)
 
     try {
       await window.desktop.cancelGlobalProviderAuthFlow({
@@ -2452,13 +2436,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         flowID,
       })
       await loadSettingsData({ silent: true })
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Provider authentication cancelled.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2475,7 +2459,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       (nextApiKey === undefined ? providerDrafts[providerID]?.apiKey ?? "" : nextApiKey ?? "").trim()
 
     setSavingProviderID(providerID)
-    setMessage(null)
 
     try {
       await window.desktop.saveGlobalProviderApiKey({
@@ -2484,13 +2467,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       })
       await loadSettingsData({ silent: true })
       await notifyProviderModelsUpdated()
-      setMessage({
+      showMessage({
         tone: "success",
         text: apiKey ? "API key saved." : "API key cleared.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2504,7 +2487,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!window.desktop?.deleteGlobalProviderAuthSession) return false
 
     setSavingProviderID(providerID)
-    setMessage(null)
 
     try {
       await window.desktop.deleteGlobalProviderAuthSession({
@@ -2512,13 +2494,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       })
       await loadSettingsData({ silent: true })
       await notifyProviderModelsUpdated()
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Shared provider session removed.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2540,7 +2522,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!window.desktop?.testGlobalProviderConnection) return false
 
     setTestingProviderID(providerID)
-    setMessage(null)
 
     try {
       const result = await window.desktop.testGlobalProviderConnection({
@@ -2549,13 +2530,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       })
       await loadSettingsData({ silent: true, preserveProviderDrafts: true })
       await notifyProviderModelsUpdated()
-      setMessage({
+      showMessage({
         tone: result.ok ? "success" : "error",
         text: result.message,
       })
       return result.ok
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2569,7 +2550,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     const refreshProviderCatalogApi = window.desktop?.refreshGlobalProviderCatalog
 
     if (!refreshProviderCatalogApi) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: "Desktop provider refresh API is unavailable.",
       })
@@ -2577,19 +2558,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
 
     setIsRefreshingProviderCatalog(true)
-    setMessage(null)
 
     try {
       await refreshProviderCatalogApi()
       await loadSettingsData({ silent: true })
       await notifyProviderModelsUpdated()
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Provider catalog refreshed.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2604,7 +2584,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!removeProvider) return
 
     setDeletingProviderID(providerID)
-    setMessage(null)
 
     try {
       await removeProvider({
@@ -2612,12 +2591,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       })
       await loadSettingsData({ silent: true })
       await notifyProviderModelsUpdated()
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Provider settings reset.",
       })
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2635,7 +2614,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     isPersistingSelectionRef.current = true
     setIsSavingSelection(true)
-    setMessage(null)
 
     try {
       let didSave = false
@@ -2652,13 +2630,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
       if (didSave) {
         await notifyProviderModelsUpdated()
-        setMessage({
+        showMessage({
           tone: "success",
           text: "Model settings saved.",
         })
       }
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2677,7 +2655,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     const serverID = mcpServerDraft.id.trim()
     const validationError = getMcpServerValidationError(mcpServerDraft)
     if (validationError) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: validationError,
       })
@@ -2685,7 +2663,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
 
     setSavingMcpServerID(serverID)
-    setMessage(null)
 
     try {
       await window.desktop.updateGlobalMcpServer({
@@ -2729,13 +2706,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       await notifyMcpUpdated()
       setActiveMcpServerID(serverID)
       const diagnostic = await loadMcpServerDiagnostic(serverID)
-      setMessage(diagnostic ? formatMcpDiagnosticMessage(diagnostic) : {
+      showMessage(diagnostic ? formatMcpDiagnosticMessage(diagnostic) : {
         tone: "success",
         text: "MCP server saved.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2752,7 +2729,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     try {
       parsed = parseMcpConfigJson(input)
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2760,7 +2737,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
 
     setIsImportingMcpConfigJson(true)
-    setMessage(null)
 
     try {
       for (const imported of parsed.servers) {
@@ -2785,13 +2761,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       const warningText = parsed.warnings.length > 0
         ? ` ${parsed.warnings.slice(0, 2).join(" ")}${parsed.warnings.length > 2 ? " ..." : ""}`
         : ""
-      setMessage({
+      showMessage({
         tone: "success",
         text: `Imported ${parsed.servers.length} MCP server${parsed.servers.length === 1 ? "" : "s"}.${warningText}`,
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2805,7 +2781,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!window.desktop?.deleteGlobalMcpServer) return
 
     setDeletingMcpServerID(serverID)
-    setMessage(null)
 
     try {
       await window.desktop.deleteGlobalMcpServer({
@@ -2821,12 +2796,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         delete next[serverID]
         return next
       })
-      setMessage({
+      showMessage({
         tone: "success",
         text: "MCP server removed.",
       })
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2842,7 +2817,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!plugin) return false
 
     setInstallingPluginID(pluginID)
-    setMessage(null)
 
     try {
       const installed = await window.desktop.installPlugin({
@@ -2854,13 +2828,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       await notifyPluginCapabilitiesUpdated()
       setActivePluginSelection(pluginID)
       setPluginDraft(buildPluginDraft(plugin, installed))
-      setMessage({
+      showMessage({
         tone: "success",
         text: `${plugin.name} installed. Enable it for a project from the MCP picker when needed.`,
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2877,7 +2851,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!plugin) return false
 
     setUpdatingPluginID(pluginID)
-    setMessage(null)
 
     try {
       const installed = await window.desktop.updateInstalledPlugin({
@@ -2888,13 +2861,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       await notifyPluginCapabilitiesUpdated()
       setActivePluginSelection(pluginID)
       setPluginDraft(buildPluginDraft(plugin, installed))
-      setMessage({
+      showMessage({
         tone: "success",
         text: `${plugin.name} updated.`,
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2920,7 +2893,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!window.desktop?.deleteInstalledPlugin) return false
 
     setDeletingPluginID(pluginID)
-    setMessage(null)
 
     try {
       await window.desktop.deleteInstalledPlugin({
@@ -2941,13 +2913,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       const nextPlugin = pluginCatalog.find((plugin) => plugin.id !== pluginID) ?? pluginCatalog[0]
       setActivePluginSelection(nextPlugin?.id ?? null)
       setPluginDraft(buildPluginDraft(nextPlugin))
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Plugin removed.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -2959,13 +2931,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
   async function diagnoseInstalledPlugin(pluginID: string) {
     setDiagnosingPluginID(pluginID)
-    setMessage(null)
 
     try {
       const diagnostic = await loadPluginDiagnostic(pluginID)
       if (!diagnostic) return false
       await loadPlugins({ silent: true })
-      setMessage(formatMcpDiagnosticMessage(diagnostic, "diagnose"))
+      showMessage(formatMcpDiagnosticMessage(diagnostic, "diagnose"))
       return diagnostic.ok
     } finally {
       setDiagnosingPluginID(null)
@@ -2978,7 +2949,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     const connectorKey = `${pluginID}:${appID}`
     const apiKey = pluginDraft.appApiKeys[appID]?.trim() ?? ""
     setSavingPluginConnectorID(connectorKey)
-    setMessage(null)
 
     try {
       await window.desktop.saveInstalledPluginConnectorApiKey({
@@ -2989,13 +2959,13 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       await loadPluginConnectorStatuses(pluginID)
       await notifyMcpUpdated()
       setPluginDraftAppApiKey(appID, "")
-      setMessage({
+      showMessage({
         tone: "success",
         text: apiKey ? "App connector API key saved." : "App connector API key cleared.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -3010,19 +2980,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     const connectorKey = `${pluginID}:${appID}`
     setSavingPluginConnectorID(connectorKey)
-    setMessage(null)
 
     try {
       await window.desktop.deleteInstalledPluginConnectorApiKey({ pluginID, appID })
       await loadPluginConnectorStatuses(pluginID)
       await notifyMcpUpdated()
-      setMessage({
+      showMessage({
         tone: "success",
         text: "App connector disconnected.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -3049,17 +3018,17 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         if (["connected", "error", "expired", "cancelled"].includes(flow.status)) {
           await notifyMcpUpdated()
           if (flow.status === "connected") {
-            setMessage({
+            showMessage({
               tone: "success",
               text: "App connector signed in.",
             })
           } else if (flow.status === "cancelled") {
-            setMessage({
+            showMessage({
               tone: "error",
               text: flow.errorMessage ?? "App connector sign-in was cancelled.",
             })
           } else {
-            setMessage({
+            showMessage({
               tone: "error",
               text: flow.errorMessage ?? "App connector sign-in failed.",
             })
@@ -3067,7 +3036,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
           return
         }
       } catch (error) {
-        setMessage({
+        showMessage({
           tone: "error",
           text: getErrorMessage(error),
         })
@@ -3083,7 +3052,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     const connectorKey = `${pluginID}:${appID}`
     setSavingPluginConnectorID(connectorKey)
-    setMessage(null)
 
     try {
       const flow = await window.desktop.startInstalledPluginConnectorAuthFlow({ pluginID, appID })
@@ -3093,14 +3061,14 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         await window.desktop.openExternalUrl({ url: flow.authorizationURL })
       }
 
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Continue the app connector sign-in flow in your browser.",
       })
       void pollInstalledPluginConnectorAuthFlow(pluginID, appID, flow.id)
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -3116,18 +3084,17 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     const connectorKey = `${pluginID}:${appID}`
     setSavingPluginConnectorID(connectorKey)
-    setMessage(null)
 
     try {
       await window.desktop.cancelInstalledPluginConnectorAuthFlow({ pluginID, appID, flowID })
       await loadPluginConnectorStatuses(pluginID)
-      setMessage({
+      showMessage({
         tone: "success",
         text: "App connector sign-in cancelled.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -3142,19 +3109,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     const connectorKey = `${pluginID}:${appID}`
     setSavingPluginConnectorID(connectorKey)
-    setMessage(null)
 
     try {
       await window.desktop.deleteInstalledPluginConnectorAuthSession({ pluginID, appID })
       await loadPluginConnectorStatuses(pluginID)
       await notifyMcpUpdated()
-      setMessage({
+      showMessage({
         tone: "success",
         text: "App connector disconnected.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -3169,15 +3135,14 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     const connectorKey = `${pluginID}:${appID}`
     setDiagnosingPluginConnectorID(connectorKey)
-    setMessage(null)
 
     try {
       const diagnostic = await window.desktop.getInstalledPluginConnectorDiagnostic({ pluginID, appID })
       await loadPluginConnectorStatuses(pluginID)
-      setMessage(formatMcpDiagnosticMessage(diagnostic, "diagnose"))
+      showMessage(formatMcpDiagnosticMessage(diagnostic, "diagnose"))
       return diagnostic.ok
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -3192,19 +3157,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!restoreArchivedSessionApi) return false
 
     setRestoringArchivedSessionID(sessionID)
-    setMessage(null)
 
     try {
       const result = await restoreArchivedSessionApi({ sessionID })
       await loadArchivedSessions({ silent: true })
       await notifyArchivedSessionRestored(result.session)
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Archived session restored.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -3219,18 +3183,17 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!deleteArchivedSessionApi) return false
 
     setDeletingArchivedSessionID(sessionID)
-    setMessage(null)
 
     try {
       await deleteArchivedSessionApi({ sessionID })
       await loadArchivedSessions({ silent: true })
-      setMessage({
+      showMessage({
         tone: "success",
         text: "Archived session deleted.",
       })
       return true
     } catch (error) {
-      setMessage({
+      showMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
@@ -3277,7 +3240,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     connectorConfigDrafts,
     connectorsError,
     connectorStatuses,
-    dismissMessage,
     deleteConnectorApiKey,
     deleteConnectorConfig,
     deleteConnectorAuthSession,
@@ -3330,7 +3292,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     loadError,
     mcpServerDraft,
     mcpServers,
-    message,
     models,
     openSettings,
     pluginCatalog,

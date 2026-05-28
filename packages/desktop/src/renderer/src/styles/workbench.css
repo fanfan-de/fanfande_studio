@@ -130,12 +130,6 @@
   min-height: 1px;
 }
 
-.global-skills-toolbar-message {
-  margin: 0;
-  min-width: 0;
-  padding: 8px 10px;
-}
-
 .global-skills-toolbar-actions {
   display: inline-flex;
   align-items: center;
@@ -748,8 +742,7 @@
 }
 
 .global-skills-git-install-header h3,
-.global-skills-git-install-header p,
-.global-skills-git-install-message {
+.global-skills-git-install-header p {
   margin: 0;
 }
 
@@ -842,6 +835,7 @@
 }
 
 .global-skills-git-install-message {
+  margin: 0;
   padding: 10px 12px;
   border-radius: var(--seg-radius-xs);
   font-size: 13px;

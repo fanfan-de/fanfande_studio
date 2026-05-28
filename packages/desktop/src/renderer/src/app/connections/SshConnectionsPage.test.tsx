@@ -7,6 +7,7 @@ import type {
   AgentSshProfile,
   DesktopApi,
 } from "../../../../shared/desktop-ipc-contract"
+import { ToastProvider } from "../toast"
 import { SshConnectionsPage } from "./SshConnectionsPage"
 
 const PROFILE: AgentSshProfile = {
@@ -73,7 +74,11 @@ function installDesktopMock(overrides: Partial<DesktopApi> = {}) {
 }
 
 function renderPage() {
-  return render(<SshConnectionsPage searchQuery="" />)
+  return render(
+    <ToastProvider>
+      <SshConnectionsPage searchQuery="" />
+    </ToastProvider>,
+  )
 }
 
 function deferred<T>() {
