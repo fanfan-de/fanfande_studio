@@ -724,6 +724,75 @@ async function writeConfigRequiredPluginPackage() {
   return packageSourceRoot
 }
 
+async function writeBrowserConnectorRequirementPluginPackage() {
+  if (!activeRoot) throw new Error("Temp root has not been initialized.")
+
+  const packageSourceRoot = pluginInstallRoot()
+  const packageRoot = join(packageSourceRoot, "browser", "0.1.0")
+  const manifestRoot = join(packageRoot, ".fanfande-plugin")
+  const skillRoot = join(packageRoot, "skills", "browser")
+  await mkdir(manifestRoot, { recursive: true })
+  await mkdir(skillRoot, { recursive: true })
+
+  await writeFile(join(skillRoot, "SKILL.md"), [
+    "---",
+    "name: Browser",
+    "description: Use when the Browser plugin is enabled and the user asks to inspect or control Chrome through the Anybox browser connector.",
+    "---",
+    "",
+    "# Browser",
+    "",
+    "Use the Browser MCP tools from this plugin to inspect and control Chrome through the Anybox browser extension.",
+    "",
+  ].join("\n"))
+
+  await writeFile(join(manifestRoot, "plugin.json"), JSON.stringify({
+    name: "browser",
+    version: "0.1.0",
+    description: "Control Chrome through the Anybox browser extension and browser MCP connector.",
+    author: {
+      name: "Fanfande",
+    },
+    interface: {
+      displayName: "Browser",
+      shortDescription: "Use Chrome tabs through the Anybox browser extension.",
+      developerName: "Fanfande",
+      category: "Browser",
+      logo: "BR",
+    },
+    skills: "skills",
+    connectorRequirements: [
+      {
+        connector: "browser",
+        tools: [
+          "browser_status",
+          "browser_get_tabs",
+          "browser_open_tab",
+          "browser_activate_tab",
+          "browser_snapshot",
+          "browser_interactive_snapshot",
+          "browser_screenshot",
+          "browser_click",
+          "browser_click_element",
+          "browser_fill",
+          "browser_type",
+          "browser_scroll",
+          "browser_wait_for",
+          "browser_release_tab",
+        ],
+        permissions: [
+          "Read Chrome tab titles, URLs, visible page text, interactive elements, and screenshots.",
+          "Open, activate, click, scroll, type into, and fill Chrome tabs through the Anybox browser extension.",
+        ],
+        required: true,
+        reason: "Browser control through the shared Anybox browser connector.",
+      },
+    ],
+  }, null, 2))
+
+  return packageSourceRoot
+}
+
 async function writeCriticalPluginPackage() {
   if (!activeRoot) throw new Error("Temp root has not been initialized.")
 
@@ -1491,8 +1560,9 @@ describe("plugin marketplace API", () => {
     expect(installBody.data?.connectorRequirementIDs).toEqual(["connector:docs:default"])
   })
 
-  test("loads built-in Browser plugin through the platform browser connector", async () => {
+  test("loads Browser plugin package through the platform browser connector", async () => {
     await useTempDatabase()
+    await writeBrowserConnectorRequirementPluginPackage()
     const app = createServerApp()
 
     const catalogResponse = await app.request("/api/plugins/catalog")

@@ -10,7 +10,7 @@ const desktopDir = path.resolve(scriptDir, "..")
 const repoRoot = path.resolve(desktopDir, "..", "..")
 const agentDir = path.join(repoRoot, "packages", "anyboxagent")
 const runtimeDir = path.join(desktopDir, "build", "agent-runtime")
-const browserConnectorSourceDir = path.join(agentDir, "plugins", "builtin", "browser", "0.1.0", "connectors", "browser")
+const browserConnectorSourceDir = path.join(agentDir, "connectors", "browser")
 const gmailConnectorSourceDir = path.join(agentDir, "plugins", "builtin", "gmail", "0.1.0", "connectors", "gmail")
 const feishuConnectorSourceDir = path.join(agentDir, "plugins", "builtin", "feishu", "0.1.0", "connectors", "feishu")
 

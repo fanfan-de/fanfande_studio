@@ -18,11 +18,11 @@ const GMAIL_OAUTH_CLIENT_ID_ENV = "ANYBOX_GMAIL_OAUTH_CLIENT_ID"
 const GMAIL_OAUTH_CLIENT_SECRET_ENV = "ANYBOX_GMAIL_OAUTH_CLIENT_SECRET"
 const LEGACY_GMAIL_OAUTH_CLIENT_ID_ENV = "GOOGLE_OAUTH_CLIENT_ID"
 const LEGACY_GMAIL_OAUTH_CLIENT_SECRET_ENV = "GOOGLE_OAUTH_CLIENT_SECRET"
-const BUILTIN_BROWSER_PACKAGE_PATH = ["plugins", "builtin", "browser", "0.1.0"] as const
 const BUILTIN_GMAIL_PACKAGE_PATH = ["plugins", "builtin", "gmail", "0.1.0"] as const
 const BUILTIN_FEISHU_PACKAGE_PATH = ["plugins", "builtin", "feishu", "0.1.0"] as const
 const BUILD_CONNECTOR_CONFIG_PATH = ["config", "connectors.json"] as const
 const BUILD_BROWSER_CONNECTOR_PATH = ["connectors", "browser"] as const
+const SOURCE_BROWSER_CONNECTOR_PATH = ["connectors", "browser"] as const
 const BUILD_GMAIL_CONNECTOR_PATH = ["connectors", "gmail"] as const
 const BUILD_FEISHU_CONNECTOR_PATH = ["connectors", "feishu"] as const
 const CONNECTOR_CUSTOM_OAUTH_CLIENT_KEY = "custom-oauth-client"
@@ -370,10 +370,6 @@ function readConnectorBuildConfig(): ConnectorBuildConfig {
   }
 }
 
-function builtinBrowserPackageRoot() {
-  return packageRootFromAnyboxAgentRoot(...BUILTIN_BROWSER_PACKAGE_PATH)
-}
-
 function builtinGmailPackageRoot() {
   return packageRootFromAnyboxAgentRoot(...BUILTIN_GMAIL_PACKAGE_PATH)
 }
@@ -384,7 +380,7 @@ function builtinFeishuPackageRoot() {
 
 function builtinBrowserConnectorRoot() {
   const packagedRoot = resolve(bundledRuntimeRoot(), ...BUILD_BROWSER_CONNECTOR_PATH)
-  return existsSync(packagedRoot) ? packagedRoot : resolve(builtinBrowserPackageRoot(), "connectors", "browser")
+  return existsSync(packagedRoot) ? packagedRoot : packageRootFromAnyboxAgentRoot(...SOURCE_BROWSER_CONNECTOR_PATH)
 }
 
 function builtinGmailConnectorRoot() {
