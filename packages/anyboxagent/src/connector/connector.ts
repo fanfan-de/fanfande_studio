@@ -18,9 +18,11 @@ const GMAIL_OAUTH_CLIENT_ID_ENV = "ANYBOX_GMAIL_OAUTH_CLIENT_ID"
 const GMAIL_OAUTH_CLIENT_SECRET_ENV = "ANYBOX_GMAIL_OAUTH_CLIENT_SECRET"
 const LEGACY_GMAIL_OAUTH_CLIENT_ID_ENV = "GOOGLE_OAUTH_CLIENT_ID"
 const LEGACY_GMAIL_OAUTH_CLIENT_SECRET_ENV = "GOOGLE_OAUTH_CLIENT_SECRET"
+const BUILTIN_BROWSER_PACKAGE_PATH = ["plugins", "builtin", "browser", "0.1.0"] as const
 const BUILTIN_GMAIL_PACKAGE_PATH = ["plugins", "builtin", "gmail", "0.1.0"] as const
 const BUILTIN_FEISHU_PACKAGE_PATH = ["plugins", "builtin", "feishu", "0.1.0"] as const
 const BUILD_CONNECTOR_CONFIG_PATH = ["config", "connectors.json"] as const
+const BUILD_BROWSER_CONNECTOR_PATH = ["connectors", "browser"] as const
 const BUILD_GMAIL_CONNECTOR_PATH = ["connectors", "gmail"] as const
 const BUILD_FEISHU_CONNECTOR_PATH = ["connectors", "feishu"] as const
 const CONNECTOR_CUSTOM_OAUTH_CLIENT_KEY = "custom-oauth-client"
@@ -368,12 +370,21 @@ function readConnectorBuildConfig(): ConnectorBuildConfig {
   }
 }
 
+function builtinBrowserPackageRoot() {
+  return packageRootFromAnyboxAgentRoot(...BUILTIN_BROWSER_PACKAGE_PATH)
+}
+
 function builtinGmailPackageRoot() {
   return packageRootFromAnyboxAgentRoot(...BUILTIN_GMAIL_PACKAGE_PATH)
 }
 
 function builtinFeishuPackageRoot() {
   return packageRootFromAnyboxAgentRoot(...BUILTIN_FEISHU_PACKAGE_PATH)
+}
+
+function builtinBrowserConnectorRoot() {
+  const packagedRoot = resolve(bundledRuntimeRoot(), ...BUILD_BROWSER_CONNECTOR_PATH)
+  return existsSync(packagedRoot) ? packagedRoot : resolve(builtinBrowserPackageRoot(), "connectors", "browser")
 }
 
 function builtinGmailConnectorRoot() {
@@ -402,6 +413,9 @@ function builtinGmailOAuthClientSecret() {
 }
 
 function builtinDefinitions(): ConnectorDefinition[] {
+  const browserConnectorRoot = builtinBrowserConnectorRoot()
+  const browserServerPath = resolve(browserConnectorRoot, "server.js")
+  const browserRuntimeAvailable = existsSync(browserServerPath)
   const gmailConnectorRoot = builtinGmailConnectorRoot()
   const gmailServerPath = resolve(gmailConnectorRoot, "server.js")
   const gmailClientID = builtinGmailOAuthClientID()
@@ -413,6 +427,135 @@ function builtinDefinitions(): ConnectorDefinition[] {
   const feishuRuntimeAvailable = existsSync(feishuServerPath)
 
   return [
+    ConnectorDefinition.parse({
+      id: "browser",
+      name: "Browser",
+      description: "Control Chrome through the Anybox browser extension.",
+      publisher: "Anybox",
+      icon: "BR",
+      risk: "high",
+      permissions: [
+        "Reads Chrome tab titles, URLs, visible page text, interactive elements, and screenshots.",
+        "Opens, activates, clicks, scrolls, types into, and fills Chrome tabs through the Anybox browser extension.",
+        "Requires the Anybox browser extension to be installed, enabled, and connected.",
+      ],
+      tools: [
+        {
+          name: "browser_status",
+          title: "Browser Status",
+          description: "Check whether the Anybox browser extension is connected.",
+          readOnly: true,
+        },
+        {
+          name: "browser_get_tabs",
+          title: "Get Browser Tabs",
+          description: "List Chrome tabs visible to the Anybox browser extension.",
+          readOnly: true,
+        },
+        {
+          name: "browser_open_tab",
+          title: "Open Browser Tab",
+          description: "Open a URL in Chrome.",
+          readOnly: false,
+        },
+        {
+          name: "browser_activate_tab",
+          title: "Activate Browser Tab",
+          description: "Activate an existing Chrome tab.",
+          readOnly: false,
+        },
+        {
+          name: "browser_snapshot",
+          title: "Browser Snapshot",
+          description: "Read page title, URL, visible text, links, buttons, and inputs.",
+          readOnly: true,
+        },
+        {
+          name: "browser_interactive_snapshot",
+          title: "Browser Interactive Snapshot",
+          description: "List visible clickable and fillable page elements with stable element IDs.",
+          readOnly: true,
+        },
+        {
+          name: "browser_screenshot",
+          title: "Browser Screenshot",
+          description: "Capture a PNG screenshot of a Chrome tab.",
+          readOnly: true,
+        },
+        {
+          name: "browser_click",
+          title: "Browser Click",
+          description: "Click viewport coordinates in a Chrome tab.",
+          readOnly: false,
+        },
+        {
+          name: "browser_click_element",
+          title: "Browser Click Element",
+          description: "Click an element returned by browser_interactive_snapshot.",
+          readOnly: false,
+        },
+        {
+          name: "browser_fill",
+          title: "Browser Fill",
+          description: "Fill an input-like element returned by browser_interactive_snapshot.",
+          readOnly: false,
+        },
+        {
+          name: "browser_type",
+          title: "Browser Type",
+          description: "Insert text into the focused element in a Chrome tab.",
+          readOnly: false,
+        },
+        {
+          name: "browser_scroll",
+          title: "Browser Scroll",
+          description: "Scroll a Chrome tab by a viewport delta.",
+          readOnly: false,
+        },
+        {
+          name: "browser_wait_for",
+          title: "Browser Wait For",
+          description: "Wait until a Chrome page reaches a URL, text, selector, or element condition.",
+          readOnly: true,
+        },
+        {
+          name: "browser_release_tab",
+          title: "Browser Release Tab",
+          description: "Release a Chrome tab from session ownership without closing it.",
+          readOnly: false,
+        },
+      ],
+      runtime: {
+        transport: "stdio",
+        command: "node",
+        args: [browserServerPath],
+        cwd: browserConnectorRoot,
+        timeoutMs: 30_000,
+        toolPolicies: {
+          browser_status: { policy: "auto" },
+          browser_get_tabs: { policy: "auto" },
+          browser_snapshot: { policy: "auto" },
+          browser_interactive_snapshot: { policy: "auto" },
+          browser_screenshot: { policy: "auto" },
+          browser_wait_for: { policy: "auto" },
+          browser_open_tab: { policy: "ask" },
+          browser_activate_tab: { policy: "ask" },
+          browser_click: { policy: "ask" },
+          browser_click_element: { policy: "ask" },
+          browser_fill: { policy: "ask" },
+          browser_type: { policy: "ask" },
+          browser_scroll: { policy: "ask" },
+          browser_release_tab: { policy: "ask" },
+        },
+      },
+      installReview: [
+        "Runs a local Node.js MCP wrapper bundled with Anybox.",
+        "Requires the Anybox browser extension to be connected before browser commands can run.",
+        "Interactive page actions are configured to ask before execution.",
+      ],
+      source: "platform",
+      available: browserRuntimeAvailable,
+    }),
     ConnectorDefinition.parse({
       id: "gmail",
       name: "Gmail",

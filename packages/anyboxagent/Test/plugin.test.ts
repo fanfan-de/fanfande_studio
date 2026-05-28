@@ -1199,14 +1199,14 @@ describe("plugin marketplace API", () => {
     const catalogResponse = await app.request("/api/connectors/catalog")
     const catalogBody = (await catalogResponse.json()) as ConnectorCatalogEnvelope
     expect(catalogResponse.status).toBe(200)
-    expect(catalogBody.data?.[0]?.id).toBe("docs")
-    expect(catalogBody.data?.[0]?.credential?.kind).toBe("api_key")
+    const docsConnector = catalogBody.data?.find((connector) => connector.id === "docs")
+    expect(docsConnector?.credential?.kind).toBe("api_key")
 
     const disconnectedResponse = await app.request("/api/connectors")
     const disconnectedBody = (await disconnectedResponse.json()) as PlatformConnectorStatusEnvelope
+    const docsStatus = disconnectedBody.data?.find((connector) => connector.connectorID === "connector:docs:default")
     expect(disconnectedResponse.status).toBe(200)
-    expect(disconnectedBody.data?.[0]?.connectorID).toBe("connector:docs:default")
-    expect(disconnectedBody.data?.[0]?.connected).toBe(false)
+    expect(docsStatus?.connected).toBe(false)
 
     const connectResponse = await app.request("/api/connectors/connector%3Adocs%3Adefault/api-key", {
       method: "PUT",
@@ -1489,6 +1489,85 @@ describe("plugin marketplace API", () => {
     expect(installResponse.status).toBe(200)
     expect(installBody.data?.connectorIDs).toEqual([])
     expect(installBody.data?.connectorRequirementIDs).toEqual(["connector:docs:default"])
+  })
+
+  test("loads built-in Browser plugin through the platform browser connector", async () => {
+    await useTempDatabase()
+    const app = createServerApp()
+
+    const catalogResponse = await app.request("/api/plugins/catalog")
+    const catalogBody = (await catalogResponse.json()) as PluginCatalogEnvelope
+    const plugin = catalogBody.data?.find((item) => item.id === "browser")
+
+    expect(catalogResponse.status).toBe(200)
+    expect(plugin?.connectors).toEqual([])
+    expect(plugin?.apps).toEqual([])
+    expect(plugin?.connectorRequirements).toEqual([
+      {
+        connector: "browser",
+        tools: [
+          "browser_status",
+          "browser_get_tabs",
+          "browser_open_tab",
+          "browser_activate_tab",
+          "browser_snapshot",
+          "browser_interactive_snapshot",
+          "browser_screenshot",
+          "browser_click",
+          "browser_click_element",
+          "browser_fill",
+          "browser_type",
+          "browser_scroll",
+          "browser_wait_for",
+          "browser_release_tab",
+        ],
+        permissions: [
+          "Read Chrome tab titles, URLs, visible page text, interactive elements, and screenshots.",
+          "Open, activate, click, scroll, type into, and fill Chrome tabs through the Anybox browser extension.",
+        ],
+        required: true,
+        reason: "Browser control through the shared Anybox browser connector.",
+      },
+    ])
+
+    const connectorCatalogResponse = await app.request("/api/connectors/catalog")
+    const connectorCatalogBody = (await connectorCatalogResponse.json()) as ConnectorCatalogEnvelope
+    const browserConnector = connectorCatalogBody.data?.find((item) => item.id === "browser")
+    expect(connectorCatalogResponse.status).toBe(200)
+    expect(browserConnector?.credential).toBeUndefined()
+    expect(browserConnector?.runtime?.transport).toBe("stdio")
+
+    const installResponse = await app.request("/api/plugins/installed/browser", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        enabled: true,
+      }),
+    })
+    const installBody = (await installResponse.json()) as InstalledPluginEnvelope
+
+    expect(installResponse.status).toBe(200)
+    expect(installBody.data?.mcpServerIDs).toEqual([])
+    expect(installBody.data?.connectorIDs).toEqual([])
+    expect(installBody.data?.connectorRequirementIDs).toEqual(["connector:browser:default"])
+
+    const server = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "connector.browser.default")
+    expect(server?.transport).toBe("connector")
+    expect(server?.transport === "connector" ? server.connectorId : undefined).toBe("connector:browser:default")
+
+    const runtime = await Connector.resolveRuntime("connector:browser:default")
+    expect(runtime.transport).toBe("stdio")
+    expect(runtime.transport === "stdio" ? runtime.command : undefined).toBe("node")
+    expect(runtime.transport === "stdio" ? runtime.args?.[0] : undefined).toContain("connectors")
+    expect(runtime.transport === "stdio" ? runtime.args?.[0] : undefined).toContain("browser")
+
+    const diagnosticResponse = await app.request("/api/connectors/connector%3Abrowser%3Adefault/diagnostic")
+    const diagnosticBody = (await diagnosticResponse.json()) as DiagnosticEnvelope
+    expect(diagnosticResponse.status).toBe(200)
+    expect(diagnosticBody.data?.ok).toBe(true)
+    expect(diagnosticBody.data?.toolCount).toBe(14)
   })
 
   test("loads plugin package manifests and exposes MCP, skills, and app connector metadata", async () => {

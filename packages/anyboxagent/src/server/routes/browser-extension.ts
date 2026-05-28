@@ -1,8 +1,37 @@
 import type { UpgradeWebSocket } from "hono/ws"
 import { Hono } from "hono"
+import z from "zod"
+import {
+  BrowserExtensionCommandContext,
+  BrowserExtensionTabSummary,
+} from "@anybox/shared/browser-extension"
 import { browserExtensionBridge } from "#browser-extension/bridge.ts"
-import { ok } from "#server/http.ts"
+import { ApiError } from "#server/error.ts"
+import { ok, parseJsonBody } from "#server/http.ts"
 import type { AppEnv } from "#server/types.ts"
+
+const BrowserMcpCommandMethod = z.enum([
+  "tabs.list",
+  "tabs.open",
+  "tabs.activate",
+  "tabs.release",
+  "page.snapshot",
+  "page.interactiveSnapshot",
+  "page.screenshot",
+  "page.click",
+  "page.clickElement",
+  "page.fill",
+  "page.type",
+  "page.scroll",
+  "page.waitFor",
+])
+
+const BrowserCommandBody = z.object({
+  method: BrowserMcpCommandMethod,
+  params: z.unknown().optional(),
+  context: BrowserExtensionCommandContext.optional(),
+  timeoutMs: z.number().int().positive().max(120_000).optional(),
+})
 
 function readMessageData(data: MessageEvent["data"]) {
   if (typeof data === "string") return data
@@ -18,6 +47,32 @@ export function BrowserExtensionRoutes(options: { upgradeWebSocket: UpgradeWebSo
 
   app.get("/health", (c) => ok(c, { ok: true }))
   app.get("/status", (c) => ok(c, browserExtensionBridge.status()))
+  app.post("/command", async (c) => {
+    const body = await parseJsonBody(c, BrowserCommandBody, "Browser command payload is invalid.")
+
+    if (body.method === "tabs.release") {
+      const tabId = readTabId(body.params)
+      if (!tabId) throw new ApiError(400, "INVALID_PAYLOAD", "tabs.release requires a tabId.")
+      return ok(c, {
+        tabId,
+        released: browserExtensionBridge.releaseOwnedTab(tabId, body.context?.sessionID),
+      })
+    }
+
+    const result = await browserExtensionBridge.sendCommand(body.method, body.params, {
+      context: body.context,
+      timeoutMs: body.timeoutMs,
+    })
+
+    if (body.method === "tabs.open") {
+      const parsedTab = BrowserExtensionTabSummary.safeParse(result)
+      if (parsedTab.success) browserExtensionBridge.markOwnedTab(parsedTab.data, body.context)
+    } else {
+      browserExtensionBridge.touchTab(readTabId(result) ?? readTabId(body.params), body.context)
+    }
+
+    return ok(c, result)
+  })
 
   app.get(
     "/ws",
@@ -55,4 +110,10 @@ export function BrowserExtensionRoutes(options: { upgradeWebSocket: UpgradeWebSo
   )
 
   return app
+}
+
+function readTabId(value: unknown) {
+  if (!value || typeof value !== "object") return undefined
+  const tabId = (value as { tabId?: unknown }).tabId
+  return Number.isInteger(tabId) && Number(tabId) > 0 ? Number(tabId) : undefined
 }

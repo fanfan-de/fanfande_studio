@@ -76,6 +76,17 @@ describe("global built-in tool selection", () => {
     })
   })
 
+  it("keeps browser tools out of global built-in selection", async () => {
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        const toolNames = await resolveAgentToolNames("default")
+        expect(toolNames.some((name) => name.startsWith("browser_"))).toBe(false)
+        expect(await ToolRegistry.get("browser_status")).toBeUndefined()
+      },
+    })
+  })
+
   it("filters a globally disabled built-in shell tool without legacy aliases", async () => {
     const selectedToolID = activeOneTimeShellToolIDs()[0] ?? "read_file"
     await Config.setToolSelection(Config.GLOBAL_CONFIG_ID, {

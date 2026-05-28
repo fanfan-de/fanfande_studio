@@ -13,6 +13,7 @@ const pythonExecutable = process.platform === "win32"
 
 const requiredFiles = [
   path.join(runtimeDir, "agent-server.js"),
+  path.join(runtimeDir, "connectors", "browser", "server.js"),
   path.join(runtimeDir, "connectors", "gmail", "server.js"),
   path.join(runtimeDir, "connectors", "feishu", "server.js"),
   path.join(runtimeDir, bunExecutableName),

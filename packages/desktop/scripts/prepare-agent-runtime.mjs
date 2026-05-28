@@ -10,6 +10,7 @@ const desktopDir = path.resolve(scriptDir, "..")
 const repoRoot = path.resolve(desktopDir, "..", "..")
 const agentDir = path.join(repoRoot, "packages", "anyboxagent")
 const runtimeDir = path.join(desktopDir, "build", "agent-runtime")
+const browserConnectorSourceDir = path.join(agentDir, "plugins", "builtin", "browser", "0.1.0", "connectors", "browser")
 const gmailConnectorSourceDir = path.join(agentDir, "plugins", "builtin", "gmail", "0.1.0", "connectors", "gmail")
 const feishuConnectorSourceDir = path.join(agentDir, "plugins", "builtin", "feishu", "0.1.0", "connectors", "feishu")
 
@@ -117,8 +118,12 @@ async function fixNodePtySpawnHelperPermissions(runtimeNodeModulesDir) {
 }
 
 async function copyBundledConnectors() {
+  const browserConnectorTargetDir = path.join(runtimeDir, "connectors", "browser")
   const gmailConnectorTargetDir = path.join(runtimeDir, "connectors", "gmail")
   const feishuConnectorTargetDir = path.join(runtimeDir, "connectors", "feishu")
+  if (!(await pathExists(path.join(browserConnectorSourceDir, "server.js")))) {
+    throw new Error(`Missing Browser connector server at ${browserConnectorSourceDir}`)
+  }
   if (!(await pathExists(path.join(gmailConnectorSourceDir, "server.js")))) {
     throw new Error(`Missing Gmail connector server at ${gmailConnectorSourceDir}`)
   }
@@ -126,8 +131,10 @@ async function copyBundledConnectors() {
     throw new Error(`Missing Feishu connector server at ${feishuConnectorSourceDir}`)
   }
 
+  await fsp.mkdir(browserConnectorTargetDir, { recursive: true })
   await fsp.mkdir(gmailConnectorTargetDir, { recursive: true })
   await fsp.mkdir(feishuConnectorTargetDir, { recursive: true })
+  await fsp.copyFile(path.join(browserConnectorSourceDir, "server.js"), path.join(browserConnectorTargetDir, "server.js"))
   await fsp.copyFile(path.join(gmailConnectorSourceDir, "server.js"), path.join(gmailConnectorTargetDir, "server.js"))
   await fsp.copyFile(path.join(feishuConnectorSourceDir, "server.js"), path.join(feishuConnectorTargetDir, "server.js"))
 }

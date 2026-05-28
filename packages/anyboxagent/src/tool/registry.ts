@@ -2,7 +2,6 @@ import { Instance } from "#project/instance.ts"
 import * as Tool from "#tool/tool.ts"
 import { AskUserQuestionTool } from "#tool/ask-user-question.ts"
 import { ApplyPatchTool } from "#tool/apply-patch.ts"
-import { BrowserTools } from "#tool/browser-tools.ts"
 import { CancelSubagentTool } from "#tool/cancel-subagent.ts"
 import {
   CmdCommandTool,
@@ -129,7 +128,6 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     SpawnSubagentTool,
     CancelSubagentTool,
     StopBackgroundTaskTool,
-    ...BrowserTools,
   ]
 
   if (isRemoteWorkspace) {
