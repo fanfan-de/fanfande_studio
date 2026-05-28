@@ -3,7 +3,9 @@ import {
   BrowserExtensionCommandMethod,
   BrowserExtensionServerMessage,
   type BrowserExtensionClientMessage as BrowserExtensionClientMessageValue,
+  type BrowserExtensionCommandContext,
   type BrowserExtensionCommandMethod as BrowserExtensionCommandMethodValue,
+  type BrowserExtensionTabSummary,
 } from "@anybox/shared/browser-extension"
 import * as Log from "#util/log.ts"
 
@@ -25,11 +27,39 @@ type Connection = {
 }
 
 type PendingCommand = {
+  commandID: string
   connectionID: string
   method: BrowserExtensionCommandMethodValue
+  context?: BrowserExtensionCommandContext
   resolve(value: unknown): void
   reject(error: Error): void
   timer: ReturnType<typeof setTimeout>
+}
+
+type OwnedTab = {
+  tabId: number
+  sessionID: string
+  url?: string
+  title?: string
+  openedAt: number
+  lastUsedAt: number
+}
+
+type LastCommand = {
+  commandID: string
+  method: BrowserExtensionCommandMethodValue
+  sessionID?: string
+  messageID?: string
+  toolCallID?: string
+  startedAt: number
+  completedAt?: number
+  ok?: boolean
+  error?: string
+}
+
+type SendCommandOptions = {
+  timeoutMs?: number
+  context?: BrowserExtensionCommandContext
 }
 
 const log = Log.create({ service: "browser-extension" })
@@ -46,7 +76,10 @@ function normalizeError(error: unknown) {
 class BrowserExtensionBridge {
   private readonly connections = new Map<string, Connection>()
   private readonly pending = new Map<string, PendingCommand>()
+  private readonly ownedTabs = new Map<number, OwnedTab>()
   private activeConnectionID: string | undefined
+  private activeSessionID: string | undefined
+  private lastCommand: LastCommand | undefined
 
   status() {
     const active = this.activeConnection()
@@ -63,7 +96,55 @@ class BrowserExtensionBridge {
           }
         : null,
       connectionCount: this.connections.size,
+      activeSessionID: this.activeSessionID,
+      ownedTabs: [...this.ownedTabs.values()].sort((left, right) => right.lastUsedAt - left.lastUsedAt),
+      lastCommand: this.lastCommand,
     }
+  }
+
+  preferredTabID(sessionID: string | undefined, explicitTabID?: number) {
+    if (explicitTabID) return explicitTabID
+    if (!sessionID) return undefined
+
+    let preferred: OwnedTab | undefined
+    for (const tab of this.ownedTabs.values()) {
+      if (tab.sessionID !== sessionID) continue
+      if (!preferred || tab.lastUsedAt > preferred.lastUsedAt) preferred = tab
+    }
+    return preferred?.tabId
+  }
+
+  markOwnedTab(tab: BrowserExtensionTabSummary, context?: BrowserExtensionCommandContext) {
+    const sessionID = context?.sessionID
+    if (!sessionID || typeof tab.id !== "number") return
+
+    const now = Date.now()
+    this.activeSessionID = sessionID
+    this.ownedTabs.set(tab.id, {
+      tabId: tab.id,
+      sessionID,
+      url: tab.url,
+      title: tab.title,
+      openedAt: this.ownedTabs.get(tab.id)?.openedAt ?? now,
+      lastUsedAt: now,
+    })
+  }
+
+  touchTab(tabId: number | undefined, context?: BrowserExtensionCommandContext) {
+    if (!tabId) return
+    const owned = this.ownedTabs.get(tabId)
+    if (!owned) return
+    if (context?.sessionID && owned.sessionID !== context.sessionID) return
+    owned.lastUsedAt = Date.now()
+    if (context?.sessionID) this.activeSessionID = context.sessionID
+  }
+
+  releaseOwnedTab(tabId: number, sessionID?: string) {
+    const owned = this.ownedTabs.get(tabId)
+    if (!owned) return false
+    if (sessionID && owned.sessionID !== sessionID) return false
+    this.ownedTabs.delete(tabId)
+    return true
   }
 
   register(socket: SocketLike) {
@@ -121,7 +202,7 @@ class BrowserExtensionBridge {
   async sendCommand(
     method: BrowserExtensionCommandMethodValue,
     params?: unknown,
-    options: { timeoutMs?: number } = {},
+    options: SendCommandOptions = {},
   ) {
     BrowserExtensionCommandMethod.parse(method)
     const connection = this.activeConnection()
@@ -131,16 +212,40 @@ class BrowserExtensionBridge {
 
     const commandID = crypto.randomUUID()
     const timeoutMs = options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS
+    if (options.context?.sessionID) this.activeSessionID = options.context.sessionID
+    this.lastCommand = {
+      commandID,
+      method,
+      sessionID: options.context?.sessionID,
+      messageID: options.context?.messageID,
+      toolCallID: options.context?.toolCallID,
+      startedAt: Date.now(),
+    }
 
     return await new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(commandID)
+        this.lastCommand = {
+          ...(this.lastCommand?.commandID === commandID ? this.lastCommand : {
+            commandID,
+            method,
+            sessionID: options.context?.sessionID,
+            messageID: options.context?.messageID,
+            toolCallID: options.context?.toolCallID,
+            startedAt: Date.now(),
+          }),
+          completedAt: Date.now(),
+          ok: false,
+          error: `Timed out after ${timeoutMs}ms.`,
+        }
         reject(new Error(`Browser command '${method}' timed out after ${timeoutMs}ms.`))
       }, timeoutMs)
 
       this.pending.set(commandID, {
+        commandID,
         connectionID: connection.connectionID,
         method,
+        context: options.context,
         resolve,
         reject,
         timer,
@@ -152,10 +257,24 @@ class BrowserExtensionBridge {
           commandID,
           method,
           params,
+          context: options.context,
         })
       } catch (error) {
         clearTimeout(timer)
         this.pending.delete(commandID)
+        this.lastCommand = {
+          ...(this.lastCommand?.commandID === commandID ? this.lastCommand : {
+            commandID,
+            method,
+            sessionID: options.context?.sessionID,
+            messageID: options.context?.messageID,
+            toolCallID: options.context?.toolCallID,
+            startedAt: Date.now(),
+          }),
+          completedAt: Date.now(),
+          ok: false,
+          error: normalizeError(error).message,
+        }
         reject(normalizeError(error))
       }
     })
@@ -201,6 +320,17 @@ class BrowserExtensionBridge {
         if (!pending) return
         clearTimeout(pending.timer)
         this.pending.delete(message.commandID)
+        this.lastCommand = {
+          commandID: pending.commandID,
+          method: pending.method,
+          sessionID: pending.context?.sessionID,
+          messageID: pending.context?.messageID,
+          toolCallID: pending.context?.toolCallID,
+          startedAt: this.lastCommand?.commandID === pending.commandID ? this.lastCommand.startedAt : Date.now(),
+          completedAt: Date.now(),
+          ok: message.ok,
+          error: message.ok ? undefined : message.error,
+        }
         if (message.ok) {
           pending.resolve(message.data)
         } else {

@@ -32,8 +32,9 @@ function ensureRoot() {
   return root
 }
 
-function showOverlay() {
+function showOverlay(action?: string) {
   const root = ensureRoot()
+  root.textContent = action ? `Anybox: ${action}` : "Anybox is controlling Chrome"
   root.style.opacity = "1"
   root.style.transform = "translateY(0)"
   if (hideTimer !== undefined) clearTimeout(hideTimer)
@@ -46,7 +47,7 @@ function showOverlay() {
 chrome.runtime.onMessage.addListener((message: unknown, _sender: unknown, sendResponse: (response: unknown) => void) => {
   if (!message || typeof message !== "object") return false
   if ((message as { type?: string }).type !== "ANYBOX_BROWSER_BRIDGE_ACTIVE") return false
-  showOverlay()
+  showOverlay((message as { action?: string }).action)
   sendResponse({ ok: true })
   return true
 })

@@ -367,6 +367,8 @@ try {
       invokeDesktop("desktop:save-session-trace-export", input) as Promise<DesktopSaveSessionTraceExportResult>,
     saveSessionTraceExportDirectory: (input: { sessionID: string }) =>
       invokeDesktop("desktop:save-session-trace-export-directory", input) as Promise<DesktopSaveSessionTraceExportDirectoryResult>,
+    saveSessionTraceExportToProject: (input: { sessionID: string; directory: string; projectID?: string | null }) =>
+      invokeDesktop("desktop:save-session-trace-export-to-project", input) as Promise<DesktopSaveSessionTraceExportDirectoryResult>,
     updateSessionWorkflow: (input: DesktopIpcInput<"desktop:update-session-workflow">) =>
       invokeDesktop("desktop:update-session-workflow", input) as Promise<DesktopIpcOutput<"desktop:update-session-workflow">>,
     updateSessionActiveMessage: (input: DesktopIpcInput<"desktop:update-session-active-message">) =>

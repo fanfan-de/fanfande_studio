@@ -357,6 +357,32 @@ describe("SessionCanvasTopMenu trace export", () => {
     })
   })
 
+  it("saves split trace folder to the project default location", async () => {
+    const saveSessionTraceExportToProject = vi.fn().mockResolvedValue({
+      canceled: false,
+      path: "C:\\Users\\Demo\\AppData\\Roaming\\Anybox\\session-traces\\project-1\\trace-folder",
+      fileCount: 11,
+      recordCount: 1,
+    })
+    setDesktopApi({ saveSessionTraceExportToProject })
+
+    renderTopMenu({
+      gitDirectory: "C:\\Projects\\Demo",
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Export session trace" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: /Save to project default/ }))
+
+    await waitFor(() => {
+      expect(saveSessionTraceExportToProject).toHaveBeenCalledWith({
+        sessionID: "session-1",
+        directory: "C:\\Projects\\Demo",
+        projectID: "project-1",
+      })
+      expect(screen.getByText("Trace saved to project default.")).toBeInTheDocument()
+    })
+  })
+
   it("does not show trace export actions without an active session", () => {
     renderTopMenu({ activeSession: null })
 

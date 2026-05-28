@@ -1,9 +1,15 @@
 import { Buffer } from "node:buffer"
 import z from "zod"
 import {
+  BrowserExtensionElementActionResult,
+  BrowserExtensionFillResult,
+  BrowserExtensionInteractiveSnapshotResult,
   BrowserExtensionScreenshotResult,
   BrowserExtensionSnapshotResult,
+  BrowserExtensionTabSummary,
   BrowserExtensionTabsListResult,
+  BrowserExtensionWaitForResult,
+  type BrowserExtensionCommandContext,
 } from "@anybox/shared/browser-extension"
 import { browserExtensionBridge } from "#browser-extension/bridge.ts"
 import * as ImageAssets from "#session/support/image-assets.ts"
@@ -27,6 +33,11 @@ const SnapshotParameters = z.object({
   maxTextChars: z.number().int().positive().max(100_000).optional().describe("Maximum visible text characters to return."),
 })
 
+const InteractiveSnapshotParameters = z.object({
+  tabId: OptionalTabID.describe("Chrome tab id. Defaults to the current session's owned tab, then active tab."),
+  maxElements: z.number().int().positive().max(500).optional().describe("Maximum interactive elements to return."),
+})
+
 const ScreenshotParameters = z.object({
   tabId: OptionalTabID.describe("Chrome tab id. Defaults to the active tab in the focused window."),
   fullPage: z.boolean().optional().describe("Capture beyond the current viewport when Chrome supports it."),
@@ -37,6 +48,22 @@ const ClickParameters = z.object({
   x: z.number().finite().describe("Viewport x coordinate."),
   y: z.number().finite().describe("Viewport y coordinate."),
   button: z.enum(["left", "right", "middle"]).optional().describe("Mouse button. Defaults to left."),
+})
+
+const ClickElementParameters = z.object({
+  tabId: OptionalTabID.describe("Chrome tab id. Defaults to the current session's owned tab, then active tab."),
+  elementId: z.string().min(1).describe("Element id returned by browser_interactive_snapshot."),
+  elementName: z.string().optional().describe("Optional human-readable element name from browser_interactive_snapshot."),
+  role: z.string().optional().describe("Optional element role from browser_interactive_snapshot."),
+  button: z.enum(["left", "right", "middle"]).optional().describe("Mouse button. Defaults to left."),
+})
+
+const FillParameters = z.object({
+  tabId: OptionalTabID.describe("Chrome tab id. Defaults to the current session's owned tab, then active tab."),
+  elementId: z.string().min(1).describe("Element id returned by browser_interactive_snapshot."),
+  text: z.string().describe("Text to place into the field. Empty string clears the field."),
+  elementName: z.string().optional().describe("Optional human-readable element name from browser_interactive_snapshot."),
+  sensitive: z.boolean().optional().describe("Whether the target field is sensitive, from browser_interactive_snapshot."),
 })
 
 const TypeParameters = z.object({
@@ -50,20 +77,78 @@ const ScrollParameters = z.object({
   scrollY: z.number().finite().optional().describe("Vertical scroll delta in CSS pixels."),
 })
 
+const WaitForParameters = z.object({
+  tabId: OptionalTabID.describe("Chrome tab id. Defaults to the current session's owned tab, then active tab."),
+  text: z.string().min(1).optional().describe("Visible text to wait for."),
+  urlIncludes: z.string().min(1).optional().describe("URL substring to wait for."),
+  selector: z.string().min(1).optional().describe("CSS selector to wait for."),
+  elementId: z.string().min(1).optional().describe("Element id returned by browser_interactive_snapshot to wait for."),
+  timeoutMs: z.number().int().positive().max(60_000).optional().describe("Maximum wait time in milliseconds."),
+}).refine((value) => Boolean(value.text || value.urlIncludes || value.selector || value.elementId), {
+  message: "Provide text, urlIncludes, selector, or elementId.",
+})
+
+const ReleaseTabParameters = z.object({
+  tabId: z.number().int().positive().describe("Owned Chrome tab id to release from this Anybox session."),
+})
+
 function jsonText(value: unknown) {
   return JSON.stringify(value, null, 2)
 }
 
-async function runBrowserCommand(method: Parameters<typeof browserExtensionBridge.sendCommand>[0], params?: unknown) {
-  return await browserExtensionBridge.sendCommand(method, params)
+function commandContext(ctx: Tool.Context): BrowserExtensionCommandContext {
+  return {
+    sessionID: ctx.sessionID,
+    messageID: ctx.messageID,
+    toolCallID: ctx.toolCallID,
+  }
 }
 
-function interactionPermission(summary: string): Tool.ToolPermissionIntent {
+function withPreferredTab<T extends { tabId?: number }>(parameters: T, ctx: Tool.Context): T {
+  const tabId = browserExtensionBridge.preferredTabID(ctx.sessionID, parameters.tabId)
+  return tabId ? { ...parameters, tabId } : parameters
+}
+
+async function runBrowserCommand(
+  method: Parameters<typeof browserExtensionBridge.sendCommand>[0],
+  params: unknown,
+  ctx: Tool.Context,
+  options: { timeoutMs?: number } = {},
+) {
+  return await browserExtensionBridge.sendCommand(method, params, {
+    ...options,
+    context: commandContext(ctx),
+  })
+}
+
+function interactionPermission(
+  summary: string,
+  options: { action?: "allow" | "ask"; risk?: Tool.ToolPermissionIntent["risk"]; forceAsk?: boolean } = {},
+): Tool.ToolPermissionIntent {
   return {
-    action: "allow",
-    risk: "low",
+    action: options.action ?? "allow",
+    risk: options.risk ?? "low",
     reason: summary,
+    forceAsk: options.forceAsk,
   }
+}
+
+const DANGEROUS_ACTION_PATTERN =
+  /\b(delete|remove|submit|send|publish|post|pay|purchase|buy|checkout|transfer|withdraw|confirm|approve|sign in|login)\b/i
+
+function interactionRisk(label: string | undefined, fallback: Tool.ToolPermissionIntent["risk"] = "medium") {
+  if (!label) return fallback
+  return DANGEROUS_ACTION_PATTERN.test(label) ? "high" : fallback
+}
+
+function approvalTarget(parameters: { tabId?: number; elementId?: string; elementName?: string; role?: string }) {
+  const parts = [
+    parameters.elementName ? `"${parameters.elementName}"` : undefined,
+    parameters.role ? `role=${parameters.role}` : undefined,
+    parameters.elementId ? `elementId=${parameters.elementId}` : undefined,
+    parameters.tabId ? `tab=${parameters.tabId}` : undefined,
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(", ") : "the active Chrome page"
 }
 
 export const BrowserStatusTool = Tool.define(
@@ -94,8 +179,8 @@ export const BrowserGetTabsTool = Tool.define(
     title: "Browser Get Tabs",
     description: "List Chrome tabs visible to the Anybox Chrome extension.",
     parameters: EmptyParameters,
-    execute: async () => {
-      const result = BrowserExtensionTabsListResult.parse(await runBrowserCommand("tabs.list", {}))
+    execute: async (_parameters, ctx) => {
+      const result = BrowserExtensionTabsListResult.parse(await runBrowserCommand("tabs.list", {}, ctx))
       return {
         title: `Chrome tabs (${result.tabs.length})`,
         text: jsonText(result),
@@ -122,12 +207,13 @@ export const BrowserOpenTabTool = Tool.define(
       title: "Open Chrome tab",
       summary: `Open ${parameters.url} in Chrome.`,
     }),
-    execute: async (parameters) => {
-      const result = await runBrowserCommand("tabs.open", parameters)
+    execute: async (parameters, ctx) => {
+      const result = BrowserExtensionTabSummary.parse(await runBrowserCommand("tabs.open", parameters, ctx))
+      browserExtensionBridge.markOwnedTab(result, commandContext(ctx))
       return {
         title: "Opened Chrome tab",
         text: jsonText(result),
-        metadata: { url: parameters.url },
+        metadata: { url: parameters.url, tabId: result.id, owned: true },
         data: result,
       }
     },
@@ -146,8 +232,9 @@ export const BrowserActivateTabTool = Tool.define(
     description: "Activate an existing Chrome tab.",
     parameters: ActivateTabParameters,
     assessPermission: (parameters) => interactionPermission(`Activate Chrome tab ${parameters.tabId}.`),
-    execute: async (parameters) => {
-      const result = await runBrowserCommand("tabs.activate", parameters)
+    execute: async (parameters, ctx) => {
+      const result = await runBrowserCommand("tabs.activate", parameters, ctx)
+      browserExtensionBridge.touchTab(parameters.tabId, commandContext(ctx))
       return {
         title: `Activated Chrome tab ${parameters.tabId}`,
         text: jsonText(result),
@@ -169,8 +256,10 @@ export const BrowserSnapshotTool = Tool.define(
     title: "Browser Snapshot",
     description: "Read the current Chrome page title, URL, visible text, links, buttons, and inputs.",
     parameters: SnapshotParameters,
-    execute: async (parameters) => {
-      const result = BrowserExtensionSnapshotResult.parse(await runBrowserCommand("page.snapshot", parameters))
+    execute: async (parameters, ctx) => {
+      const commandParameters = withPreferredTab(parameters, ctx)
+      const result = BrowserExtensionSnapshotResult.parse(await runBrowserCommand("page.snapshot", commandParameters, ctx))
+      browserExtensionBridge.touchTab(result.tabId, commandContext(ctx))
       return {
         title: result.title || result.url || `Chrome tab ${result.tabId}`,
         text: jsonText(result),
@@ -191,6 +280,39 @@ export const BrowserSnapshotTool = Tool.define(
   },
 )
 
+export const BrowserInteractiveSnapshotTool = Tool.define(
+  "browser_interactive_snapshot",
+  async (): Promise<Tool.ToolRuntime<typeof InteractiveSnapshotParameters, Record<string, unknown>>> => ({
+    title: "Browser Interactive Snapshot",
+    description: "List visible clickable and fillable elements on a Chrome page with stable element ids.",
+    parameters: InteractiveSnapshotParameters,
+    execute: async (parameters, ctx) => {
+      const commandParameters = withPreferredTab(parameters, ctx)
+      const result = BrowserExtensionInteractiveSnapshotResult.parse(
+        await runBrowserCommand("page.interactiveSnapshot", commandParameters, ctx),
+      )
+      browserExtensionBridge.touchTab(result.tabId, commandContext(ctx))
+      return {
+        title: result.title || result.url || `Chrome tab ${result.tabId}`,
+        text: jsonText(result),
+        metadata: {
+          tabId: result.tabId,
+          url: result.url,
+          title: result.title,
+          count: result.elements.length,
+          truncated: result.truncated,
+        },
+        data: result,
+      }
+    },
+  }),
+  {
+    title: "Browser Interactive Snapshot",
+    aliases: ["browser-elements"],
+    capabilities: { kind: "read", readOnly: true, destructive: false, concurrency: "safe" },
+  },
+)
+
 export const BrowserScreenshotTool = Tool.define(
   "browser_screenshot",
   async (): Promise<Tool.ToolRuntime<typeof ScreenshotParameters, Record<string, unknown>>> => ({
@@ -198,7 +320,9 @@ export const BrowserScreenshotTool = Tool.define(
     description: "Capture a PNG screenshot of a Chrome tab.",
     parameters: ScreenshotParameters,
     execute: async (parameters, ctx) => {
-      const result = BrowserExtensionScreenshotResult.parse(await runBrowserCommand("page.screenshot", parameters))
+      const commandParameters = withPreferredTab(parameters, ctx)
+      const result = BrowserExtensionScreenshotResult.parse(await runBrowserCommand("page.screenshot", commandParameters, ctx))
+      browserExtensionBridge.touchTab(result.tabId, commandContext(ctx))
       const bytes = new Uint8Array(Buffer.from(result.data, "base64"))
       const asset = await ImageAssets.saveImageAsset({
         sessionID: ctx.sessionID,
@@ -248,17 +372,24 @@ export const BrowserClickTool = Tool.define(
     title: "Browser Click",
     description: "Click viewport coordinates in a Chrome tab.",
     parameters: ClickParameters,
-    assessPermission: (parameters) => interactionPermission(`Click Chrome at (${parameters.x}, ${parameters.y}).`),
+    assessPermission: (parameters) =>
+      interactionPermission(`Click Chrome at (${parameters.x}, ${parameters.y}).`, {
+        action: "ask",
+        risk: "medium",
+        forceAsk: true,
+      }),
     describeApproval: (parameters) => ({
       title: "Click Chrome page",
       summary: `Click Chrome at (${parameters.x}, ${parameters.y}).`,
     }),
-    execute: async (parameters) => {
-      const result = await runBrowserCommand("page.click", parameters)
+    execute: async (parameters, ctx) => {
+      const commandParameters = withPreferredTab(parameters, ctx)
+      const result = await runBrowserCommand("page.click", commandParameters, ctx)
+      browserExtensionBridge.touchTab(commandParameters.tabId, commandContext(ctx))
       return {
         title: "Clicked Chrome page",
         text: jsonText(result),
-        metadata: { tabId: parameters.tabId, x: parameters.x, y: parameters.y },
+        metadata: { tabId: commandParameters.tabId, x: parameters.x, y: parameters.y },
         data: result,
       }
     },
@@ -270,23 +401,114 @@ export const BrowserClickTool = Tool.define(
   },
 )
 
+export const BrowserClickElementTool = Tool.define(
+  "browser_click_element",
+  async (): Promise<Tool.ToolRuntime<typeof ClickElementParameters, Record<string, unknown>>> => ({
+    title: "Browser Click Element",
+    description: "Click an element returned by browser_interactive_snapshot.",
+    parameters: ClickElementParameters,
+    assessPermission: (parameters) => {
+      const risk = interactionRisk(parameters.elementName)
+      return interactionPermission(`Click ${approvalTarget(parameters)} in Chrome.`, {
+        action: "ask",
+        risk,
+        forceAsk: true,
+      })
+    },
+    describeApproval: (parameters) => ({
+      title: "Click Chrome element",
+      summary: `Click ${approvalTarget(parameters)} in Chrome.`,
+      details: {
+        body: `Element: ${approvalTarget(parameters)}`,
+      },
+    }),
+    execute: async (parameters, ctx) => {
+      const commandParameters = withPreferredTab(parameters, ctx)
+      const result = BrowserExtensionElementActionResult.parse(
+        await runBrowserCommand("page.clickElement", commandParameters, ctx),
+      )
+      browserExtensionBridge.touchTab(result.tabId, commandContext(ctx))
+      return {
+        title: "Clicked Chrome element",
+        text: jsonText(result),
+        metadata: { tabId: result.tabId, elementId: result.elementId, url: result.url },
+        data: result,
+      }
+    },
+  }),
+  {
+    title: "Browser Click Element",
+    aliases: ["browser-click-element"],
+    capabilities: { kind: "interaction", readOnly: false, destructive: false, concurrency: "exclusive" },
+  },
+)
+
+export const BrowserFillTool = Tool.define(
+  "browser_fill",
+  async (): Promise<Tool.ToolRuntime<typeof FillParameters, Record<string, unknown>>> => ({
+    title: "Browser Fill",
+    description: "Fill an input-like element returned by browser_interactive_snapshot.",
+    parameters: FillParameters,
+    assessPermission: (parameters) => {
+      const risk = parameters.sensitive ? "high" : interactionRisk(parameters.elementName)
+      return interactionPermission(`Fill ${approvalTarget(parameters)} in Chrome with ${parameters.text.length} characters.`, {
+        action: "ask",
+        risk,
+        forceAsk: true,
+      })
+    },
+    describeApproval: (parameters) => ({
+      title: "Fill Chrome field",
+      summary: `Fill ${approvalTarget(parameters)} in Chrome with ${parameters.text.length} characters.`,
+      details: {
+        body: parameters.sensitive
+          ? "The target field is marked sensitive; the typed value is intentionally hidden."
+          : `Text length: ${parameters.text.length}`,
+      },
+    }),
+    execute: async (parameters, ctx) => {
+      const commandParameters = withPreferredTab(parameters, ctx)
+      const result = BrowserExtensionFillResult.parse(await runBrowserCommand("page.fill", commandParameters, ctx))
+      browserExtensionBridge.touchTab(result.tabId, commandContext(ctx))
+      return {
+        title: "Filled Chrome field",
+        text: jsonText(result),
+        metadata: { tabId: result.tabId, elementId: result.elementId, textLength: result.textLength, url: result.url },
+        data: result,
+      }
+    },
+  }),
+  {
+    title: "Browser Fill",
+    aliases: ["browser-fill"],
+    capabilities: { kind: "interaction", readOnly: false, destructive: false, concurrency: "exclusive" },
+  },
+)
+
 export const BrowserTypeTool = Tool.define(
   "browser_type",
   async (): Promise<Tool.ToolRuntime<typeof TypeParameters, Record<string, unknown>>> => ({
     title: "Browser Type",
     description: "Insert text into the focused element in a Chrome tab.",
     parameters: TypeParameters,
-    assessPermission: () => interactionPermission("Type text into the focused Chrome page element."),
+    assessPermission: (parameters) =>
+      interactionPermission(`Type ${parameters.text.length} characters into the focused Chrome page element.`, {
+        action: "ask",
+        risk: "medium",
+        forceAsk: true,
+      }),
     describeApproval: () => ({
       title: "Type in Chrome page",
       summary: "Type text into the focused Chrome page element.",
     }),
-    execute: async (parameters) => {
-      const result = await runBrowserCommand("page.type", parameters)
+    execute: async (parameters, ctx) => {
+      const commandParameters = withPreferredTab(parameters, ctx)
+      const result = await runBrowserCommand("page.type", commandParameters, ctx)
+      browserExtensionBridge.touchTab(commandParameters.tabId, commandContext(ctx))
       return {
         title: "Typed in Chrome page",
         text: jsonText(result),
-        metadata: { tabId: parameters.tabId, textLength: parameters.text.length },
+        metadata: { tabId: commandParameters.tabId, textLength: parameters.text.length },
         data: result,
       }
     },
@@ -305,13 +527,15 @@ export const BrowserScrollTool = Tool.define(
     description: "Scroll a Chrome tab by a viewport delta.",
     parameters: ScrollParameters,
     assessPermission: () => interactionPermission("Scroll the Chrome page."),
-    execute: async (parameters) => {
-      const result = await runBrowserCommand("page.scroll", parameters)
+    execute: async (parameters, ctx) => {
+      const commandParameters = withPreferredTab(parameters, ctx)
+      const result = await runBrowserCommand("page.scroll", commandParameters, ctx)
+      browserExtensionBridge.touchTab(commandParameters.tabId, commandContext(ctx))
       return {
         title: "Scrolled Chrome page",
         text: jsonText(result),
         metadata: {
-          tabId: parameters.tabId,
+          tabId: commandParameters.tabId,
           scrollX: parameters.scrollX ?? 0,
           scrollY: parameters.scrollY ?? 0,
         },
@@ -326,14 +550,71 @@ export const BrowserScrollTool = Tool.define(
   },
 )
 
+export const BrowserWaitForTool = Tool.define(
+  "browser_wait_for",
+  async (): Promise<Tool.ToolRuntime<typeof WaitForParameters, Record<string, unknown>>> => ({
+    title: "Browser Wait For",
+    description: "Wait until a Chrome page reaches a URL, text, selector, or element condition.",
+    parameters: WaitForParameters,
+    execute: async (parameters, ctx) => {
+      const commandParameters = withPreferredTab(parameters, ctx)
+      const timeoutMs = (parameters.timeoutMs ?? 10_000) + 5_000
+      const result = BrowserExtensionWaitForResult.parse(
+        await runBrowserCommand("page.waitFor", commandParameters, ctx, { timeoutMs }),
+      )
+      browserExtensionBridge.touchTab(result.tabId, commandContext(ctx))
+      return {
+        title: result.matched ? "Chrome wait condition matched" : "Chrome wait condition timed out",
+        text: jsonText(result),
+        metadata: { tabId: result.tabId, matched: result.matched, url: result.url },
+        data: result,
+      }
+    },
+  }),
+  {
+    title: "Browser Wait For",
+    aliases: ["browser-wait-for"],
+    capabilities: { kind: "read", readOnly: true, destructive: false, concurrency: "safe" },
+  },
+)
+
+export const BrowserReleaseTabTool = Tool.define(
+  "browser_release_tab",
+  async (): Promise<Tool.ToolRuntime<typeof ReleaseTabParameters, Record<string, unknown>>> => ({
+    title: "Browser Release Tab",
+    description: "Release an owned Chrome tab from the current Anybox session without closing it.",
+    parameters: ReleaseTabParameters,
+    assessPermission: (parameters) => interactionPermission(`Release Chrome tab ${parameters.tabId} from this Anybox session.`),
+    execute: async (parameters, ctx) => {
+      const released = browserExtensionBridge.releaseOwnedTab(parameters.tabId, ctx.sessionID)
+      return {
+        title: released ? `Released Chrome tab ${parameters.tabId}` : `Chrome tab ${parameters.tabId} was not owned`,
+        text: jsonText({ tabId: parameters.tabId, released }),
+        metadata: { tabId: parameters.tabId, released },
+        data: { tabId: parameters.tabId, released },
+      }
+    },
+  }),
+  {
+    title: "Browser Release Tab",
+    aliases: ["browser-release-tab"],
+    capabilities: { kind: "interaction", readOnly: false, destructive: false, concurrency: "exclusive" },
+  },
+)
+
 export const BrowserTools = [
   BrowserStatusTool,
   BrowserGetTabsTool,
   BrowserOpenTabTool,
   BrowserActivateTabTool,
   BrowserSnapshotTool,
+  BrowserInteractiveSnapshotTool,
   BrowserScreenshotTool,
   BrowserClickTool,
+  BrowserClickElementTool,
+  BrowserFillTool,
   BrowserTypeTool,
   BrowserScrollTool,
+  BrowserWaitForTool,
+  BrowserReleaseTabTool,
 ]

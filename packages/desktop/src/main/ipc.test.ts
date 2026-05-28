@@ -449,6 +449,39 @@ describe("ipc session trace export helpers", () => {
     expect(recordCall?.[1]).toContain('"tool-calls/000001-grep-toolcall-1.json"')
   })
 
+  it("saves a split session trace directory under the project default location", async () => {
+    const makeDirectory = vi.fn().mockResolvedValue(undefined)
+    const writeTraceFile = vi.fn().mockResolvedValue(undefined)
+    requestAgentJSONMock.mockResolvedValueOnce({
+      data: traceExport,
+    })
+
+    const result = await internal.saveSessionTraceExportToProject(
+      {
+        sessionID: "session-1",
+        directory: "C:\\Projects\\Demo",
+        projectID: "project-1",
+      },
+      {
+        makeDirectory,
+        now: new Date(2026, 4, 22, 9, 8, 7),
+        userDataPath: "C:\\Users\\Demo\\AppData\\Roaming\\Anybox",
+        writeTraceFile,
+      },
+    )
+
+    expect(result).toEqual(expect.objectContaining({
+      canceled: false,
+      path: "C:\\Users\\Demo\\AppData\\Roaming\\Anybox\\session-traces\\project-1\\anybox-trace-session-1-20260522-090807",
+      recordCount: 0,
+    }))
+    expect(makeDirectory).toHaveBeenCalledWith(
+      "C:\\Users\\Demo\\AppData\\Roaming\\Anybox\\session-traces\\project-1\\anybox-trace-session-1-20260522-090807",
+      { recursive: true },
+    )
+    expect(writeTraceFile.mock.calls.some((call) => String(call[0]).endsWith("\\manifest.json"))).toBe(true)
+  })
+
   it("saves a split session trace directory when runtime arrays are missing", async () => {
     const traceWithSparseRuntime = {
       ...traceExport,

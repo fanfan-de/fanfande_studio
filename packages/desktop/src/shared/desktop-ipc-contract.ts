@@ -1133,6 +1133,10 @@ export interface DesktopIpcContract {
     input: { sessionID: string }
     output: DesktopSaveSessionTraceExportDirectoryResult
   }
+  "desktop:save-session-trace-export-to-project": {
+    input: { sessionID: string; directory: string; projectID?: string | null }
+    output: DesktopSaveSessionTraceExportDirectoryResult
+  }
   "desktop:update-session-workflow": {
     input: { sessionID: string } & AgentSessionWorkflowUpdateInput
     output: DesktopSessionMutationResult
@@ -1701,6 +1705,7 @@ export interface DesktopApiMethods {
   getSessionTraceExport(input: DesktopIpcInput<"desktop:get-session-trace-export">): Promise<DesktopIpcOutput<"desktop:get-session-trace-export">>
   saveSessionTraceExport(input: DesktopIpcInput<"desktop:save-session-trace-export">): Promise<DesktopIpcOutput<"desktop:save-session-trace-export">>
   saveSessionTraceExportDirectory(input: DesktopIpcInput<"desktop:save-session-trace-export-directory">): Promise<DesktopIpcOutput<"desktop:save-session-trace-export-directory">>
+  saveSessionTraceExportToProject(input: DesktopIpcInput<"desktop:save-session-trace-export-to-project">): Promise<DesktopIpcOutput<"desktop:save-session-trace-export-to-project">>
   agentSession: DesktopAgentSessionApi
   getGlobalProviderCatalog(): Promise<DesktopIpcOutput<"desktop:get-global-provider-catalog">>
   refreshGlobalProviderCatalog(): Promise<DesktopIpcOutput<"desktop:refresh-global-provider-catalog">>

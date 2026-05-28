@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type OpenDialogOptions, type OpenDialogReturnValue, type SaveDialogOptions, type SaveDialogReturnValue, type WebContents } from "electron"
 import { createPlatformAdapter } from "@anybox/platform"
 import { DesktopIpcSchemas, createSshWorkspaceUri, isSshWorkspaceUri } from "@anybox/shared"
+import { createHash } from "node:crypto"
 import { appendFile, mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { AppearanceConfigDocument } from "../shared/appearance"
@@ -528,6 +529,7 @@ async function updateToolPermissionMode(input: AgentToolPermissionModePayload) {
 type SessionTraceExportInput = DesktopIpcInput<"desktop:get-session-trace-export">
 type SaveSessionTraceExportInput = DesktopIpcInput<"desktop:save-session-trace-export">
 type SaveSessionTraceExportDirectoryInput = DesktopIpcInput<"desktop:save-session-trace-export-directory">
+type SaveSessionTraceExportToProjectInput = DesktopIpcInput<"desktop:save-session-trace-export-to-project">
 
 interface SaveSessionTraceExportOptions {
   downloadsPath?: string
@@ -541,6 +543,7 @@ interface SaveSessionTraceExportDirectoryOptions {
   makeDirectory?: (directory: string, options: { recursive: true }) => Promise<unknown>
   now?: Date
   showOpenDialog?: (options: OpenDialogOptions) => Promise<OpenDialogReturnValue>
+  userDataPath?: string
   writeTraceFile?: (filePath: string, data: string, encoding: BufferEncoding) => Promise<unknown>
 }
 
@@ -566,6 +569,37 @@ function formatSessionTraceTimestamp(date: Date) {
     pad(date.getMinutes()),
     pad(date.getSeconds()),
   ].join("")
+}
+
+function getSessionTraceExportFolderName(sessionID: string, date: Date) {
+  const safeSessionID = sanitizeSessionTraceFileSegment(sessionID)
+  return `anybox-trace-${safeSessionID}-${formatSessionTraceTimestamp(date)}`
+}
+
+function getProjectSessionTraceExportRoot(
+  input: Pick<SaveSessionTraceExportToProjectInput, "directory" | "projectID">,
+  options: Pick<SaveSessionTraceExportDirectoryOptions, "userDataPath"> = {},
+) {
+  const projectID = input.projectID?.trim()
+  if (projectID) {
+    return path.join(options.userDataPath ?? app.getPath("userData"), "session-traces", sanitizeSessionTraceFileSegment(projectID))
+  }
+
+  const projectDirectory = input.directory
+  const directory = projectDirectory.trim()
+  if (!directory) {
+    throw new Error("Project directory is required.")
+  }
+  if (isSshWorkspaceUri(directory)) {
+    throw new Error("Saving trace exports to a project default location only supports local projects.")
+  }
+  if (!path.isAbsolute(directory)) {
+    throw new Error("Project directory must be an absolute local path.")
+  }
+
+  const name = sanitizeSessionTraceFileSegment(path.basename(directory))
+  const digest = createHash("sha256").update(directory.toLowerCase()).digest("hex").slice(0, 12)
+  return path.join(options.userDataPath ?? app.getPath("userData"), "session-traces", `${name}-${digest}`)
 }
 
 function sanitizeSessionTraceFileNamePart(value: string | undefined) {
@@ -932,10 +966,7 @@ async function saveSessionTraceExportDirectory(
   options: SaveSessionTraceExportDirectoryOptions = {},
 ) {
   const trace = await getSessionTraceExport(input)
-  const sessionID = input.sessionID.trim()
-  const safeSessionID = sanitizeSessionTraceFileSegment(sessionID)
-  const timestamp = formatSessionTraceTimestamp(options.now ?? new Date())
-  const folderName = `anybox-trace-${safeSessionID}-${timestamp}`
+  const folderName = getSessionTraceExportFolderName(input.sessionID, options.now ?? new Date())
   const showOpenDialog = options.showOpenDialog ?? ((dialogOptions: OpenDialogOptions) =>
     dialog.showOpenDialog(dialogOptions))
   const selection = await showOpenDialog({
@@ -951,6 +982,24 @@ async function saveSessionTraceExportDirectory(
   }
 
   const targetDirectory = path.join(selectedDirectory, folderName)
+  const result = await writeSplitSessionTraceExportDirectory(trace, targetDirectory, options)
+
+  return {
+    canceled: false,
+    path: targetDirectory,
+    fileCount: result.fileCount,
+    recordCount: result.recordCount,
+  }
+}
+
+async function saveSessionTraceExportToProject(
+  input: SaveSessionTraceExportToProjectInput,
+  options: SaveSessionTraceExportDirectoryOptions = {},
+) {
+  const exportRoot = getProjectSessionTraceExportRoot(input, options)
+  const trace = await getSessionTraceExport({ sessionID: input.sessionID })
+  const folderName = getSessionTraceExportFolderName(input.sessionID, options.now ?? new Date())
+  const targetDirectory = path.join(exportRoot, folderName)
   const result = await writeSplitSessionTraceExportDirectory(trace, targetDirectory, options)
 
   return {
@@ -2262,6 +2311,11 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   handleDesktopIpc(
     "desktop:save-session-trace-export-directory",
     async (_event, input: SaveSessionTraceExportDirectoryInput) => saveSessionTraceExportDirectory(input),
+  )
+
+  handleDesktopIpc(
+    "desktop:save-session-trace-export-to-project",
+    async (_event, input: SaveSessionTraceExportToProjectInput) => saveSessionTraceExportToProject(input),
   )
 
   handleDesktopIpc(
@@ -4037,5 +4091,6 @@ export const internal = {
   saveComposerPastedImages,
   saveSessionTraceExport,
   saveSessionTraceExportDirectory,
+  saveSessionTraceExportToProject,
   updateToolPermissionMode,
 }

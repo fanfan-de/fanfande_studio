@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { ExternalEditorMenuButton } from "../external-editor/ExternalEditorMenuButton"
 import { GitQuickMenuButton } from "../git/GitQuickMenuButton"
-import { CheckIcon, ChevronDownIcon, CopyIcon, DownloadIcon, InfoIcon, SessionRunningIcon, SessionTreeIcon } from "../icons"
+import { CheckIcon, ChevronDownIcon, CopyIcon, DownloadIcon, FolderIcon, InfoIcon, SessionRunningIcon, SessionTreeIcon } from "../icons"
 import { ShellTopMenu, SideChatBadge, writeTextToClipboard } from "../shared-ui"
 import type {
   ComposerMcpOption,
@@ -664,13 +664,22 @@ function SessionInfoMenuButton({ sessionID, tasks }: { sessionID: string; tasks?
   )
 }
 
-function SessionTraceExportMenuButton({ sessionID }: { sessionID: string }) {
+function SessionTraceExportMenuButton({
+  projectDirectory,
+  projectID,
+  sessionID,
+}: {
+  projectDirectory: string | null
+  projectID: string | null
+  sessionID: string
+}) {
   const menuRef = useRef<HTMLDivElement | null>(null)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const [busyAction, setBusyAction] = useState<"copy" | "save" | "saveDirectory" | null>(null)
+  const [busyAction, setBusyAction] = useState<"copy" | "save" | "saveDirectory" | "saveProject" | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const trimmedProjectDirectory = projectDirectory?.trim() ?? ""
 
   useEffect(() => {
     if (!isMenuOpen) return
@@ -769,6 +778,33 @@ function SessionTraceExportMenuButton({ sessionID }: { sessionID: string }) {
     }
   }
 
+  async function handleSaveProjectClick() {
+    resetStatus()
+    setBusyAction("saveProject")
+
+    try {
+      if (!trimmedProjectDirectory) {
+        throw new Error("Project directory is unavailable.")
+      }
+      if (!window.desktop?.saveSessionTraceExportToProject) {
+        throw new Error("Project trace export save is unavailable.")
+      }
+
+      const result = await window.desktop.saveSessionTraceExportToProject({
+        sessionID,
+        directory: trimmedProjectDirectory,
+        projectID,
+      })
+      if (!result.canceled) {
+        setStatusMessage("Trace saved to project default.")
+      }
+    } catch (error) {
+      setErrorMessage(readErrorMessage(error))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   return (
     <div className="canvas-top-menu-selector-anchor">
       <button
@@ -836,6 +872,20 @@ function SessionTraceExportMenuButton({ sessionID }: { sessionID: string }) {
             </span>
             <span className="canvas-top-menu-context-option-status">{busyAction === "saveDirectory" ? "Saving" : "Folder"}</span>
           </button>
+          <button
+            className="canvas-top-menu-context-option canvas-top-menu-trace-option"
+            disabled={busyAction !== null || !trimmedProjectDirectory}
+            onClick={() => void handleSaveProjectClick()}
+            role="menuitem"
+            title={trimmedProjectDirectory ? "Save under the app data trace folder for this project" : "No project directory available"}
+            type="button"
+          >
+            <span className="canvas-top-menu-context-option-label">
+              <FolderIcon />
+              <strong>Save to project default</strong>
+            </span>
+            <span className="canvas-top-menu-context-option-status">{busyAction === "saveProject" ? "Saving" : "Project"}</span>
+          </button>
           {statusMessage ? <p className="canvas-top-menu-quick-status">{statusMessage}</p> : null}
           {errorMessage ? <p className="canvas-top-menu-quick-status is-error">{errorMessage}</p> : null}
         </div>
@@ -890,7 +940,13 @@ export function SessionCanvasTopMenu({
       trailing={(
         <>
           <ExternalEditorMenuButton directory={gitDirectory} />
-          {activeSession ? <SessionTraceExportMenuButton sessionID={activeSession.id} /> : null}
+          {activeSession ? (
+            <SessionTraceExportMenuButton
+              sessionID={activeSession.id}
+              projectDirectory={gitDirectory}
+              projectID={gitProjectID}
+            />
+          ) : null}
           {!readOnlySideChat ? (
             <>
               <ToolPermissionModeMenuButton
