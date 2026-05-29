@@ -715,6 +715,11 @@ function SessionTraceExportMenuButton({
     return error instanceof Error ? error.message : String(error)
   }
 
+  async function openSavedTraceFolder(folderPath: string | undefined) {
+    if (!folderPath || !window.desktop?.openPath) return
+    await window.desktop.openPath({ targetPath: folderPath })
+  }
+
   async function loadTraceJSON() {
     if (!window.desktop?.getSessionTraceExport) {
       throw new Error("Trace export is unavailable.")
@@ -769,6 +774,7 @@ function SessionTraceExportMenuButton({
 
       const result = await window.desktop.saveSessionTraceExportDirectory({ sessionID })
       if (!result.canceled) {
+        await openSavedTraceFolder(result.path)
         setStatusMessage("Split trace folder saved.")
       }
     } catch (error) {
@@ -796,6 +802,7 @@ function SessionTraceExportMenuButton({
         projectID,
       })
       if (!result.canceled) {
+        await openSavedTraceFolder(result.path)
         setStatusMessage("Trace saved to project default.")
       }
     } catch (error) {

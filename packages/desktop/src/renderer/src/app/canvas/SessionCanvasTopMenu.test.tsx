@@ -338,13 +338,18 @@ describe("SessionCanvasTopMenu trace export", () => {
   })
 
   it("saves split trace folder and displays save status", async () => {
+    const exportedPath = "C:\\Temp\\trace-folder"
+    const openPath = vi.fn().mockResolvedValue({
+      ok: true,
+      targetPath: exportedPath,
+    })
     const saveSessionTraceExportDirectory = vi.fn().mockResolvedValue({
       canceled: false,
-      path: "C:\\Temp\\trace-folder",
+      path: exportedPath,
       fileCount: 11,
       recordCount: 1,
     })
-    setDesktopApi({ saveSessionTraceExportDirectory })
+    setDesktopApi({ openPath, saveSessionTraceExportDirectory })
 
     renderTopMenu()
 
@@ -353,18 +358,24 @@ describe("SessionCanvasTopMenu trace export", () => {
 
     await waitFor(() => {
       expect(saveSessionTraceExportDirectory).toHaveBeenCalledWith({ sessionID: "session-1" })
+      expect(openPath).toHaveBeenCalledWith({ targetPath: exportedPath })
       expect(screen.getByText("Split trace folder saved.")).toBeInTheDocument()
     })
   })
 
   it("saves split trace folder to the project default location", async () => {
+    const exportedPath = "C:\\Users\\Demo\\AppData\\Roaming\\Anybox\\session-traces\\project-1\\trace-folder"
+    const openPath = vi.fn().mockResolvedValue({
+      ok: true,
+      targetPath: exportedPath,
+    })
     const saveSessionTraceExportToProject = vi.fn().mockResolvedValue({
       canceled: false,
-      path: "C:\\Users\\Demo\\AppData\\Roaming\\Anybox\\session-traces\\project-1\\trace-folder",
+      path: exportedPath,
       fileCount: 11,
       recordCount: 1,
     })
-    setDesktopApi({ saveSessionTraceExportToProject })
+    setDesktopApi({ openPath, saveSessionTraceExportToProject })
 
     renderTopMenu({
       gitDirectory: "C:\\Projects\\Demo",
@@ -379,6 +390,7 @@ describe("SessionCanvasTopMenu trace export", () => {
         directory: "C:\\Projects\\Demo",
         projectID: "project-1",
       })
+      expect(openPath).toHaveBeenCalledWith({ targetPath: exportedPath })
       expect(screen.getByText("Trace saved to project default.")).toBeInTheDocument()
     })
   })
