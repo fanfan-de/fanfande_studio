@@ -605,6 +605,12 @@
   color: #403a96;
 }
 
+.composer-inline-tag.is-plugin {
+  border-color: rgba(45, 120, 154, 0.26);
+  background: #eef8fb;
+  color: #20566e;
+}
+
 .composer-attachment-name {
   max-width: 220px;
   overflow: hidden;
@@ -1491,6 +1497,12 @@
 }
 
 .composer-inline-tag.is-mcp {
+  border-color: var(--seg-info-border);
+  background: var(--seg-info-surface);
+  color: var(--seg-info-text);
+}
+
+.composer-inline-tag.is-plugin {
   border-color: var(--seg-info-border);
   background: var(--seg-info-surface);
   color: var(--seg-info-text);

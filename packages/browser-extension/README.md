@@ -42,6 +42,8 @@ curl http://127.0.0.1:4096/api/browser-extension/status
 - `tabs.open`
 - `tabs.activate`
 - `page.snapshot`
+- `page.domTree`
+- `page.accessibilityTree`
 - `page.screenshot`
 - `page.click`
 - `page.type`

@@ -8,9 +8,11 @@ import { safeError, safeLog } from "./safe-console"
 
 export const BROWSER_NATIVE_HOST_NAME = "com.anybox.browser"
 export const DEFAULT_BROWSER_EXTENSION_ID = "hjbejdmgpifdjjlpgmdfmbmbhkedgnjc"
+export const BROWSER_NATIVE_RUNTIME_CONFIG_FILENAME = `${BROWSER_NATIVE_HOST_NAME}.runtime.json`
 
 const EXTENSION_ID_ENV = "ANYBOX_BROWSER_EXTENSION_ID"
 const AGENT_RUNTIME_ENV = "ANYBOX_AGENT_RUNTIME_DIR"
+const AGENT_BASE_URL_ENV = "ANYBOX_AGENT_BASE_URL"
 const nativeHostExecutableName = process.platform === "win32"
   ? "anybox-browser-native-host.exe"
   : "anybox-browser-native-host"
@@ -47,10 +49,43 @@ export function resolveBrowserNativeHostExecutable() {
 }
 
 function resolveManifestPath() {
-  return path.join(app.getPath("userData"), "native-messaging", `${BROWSER_NATIVE_HOST_NAME}.json`)
+  return path.join(resolveNativeMessagingDirectory(), `${BROWSER_NATIVE_HOST_NAME}.json`)
 }
 
-export async function registerBrowserNativeMessagingHost() {
+function resolveNativeMessagingDirectory() {
+  return path.join(app.getPath("userData"), "native-messaging")
+}
+
+export function resolveBrowserNativeMessagingRuntimeConfigPath() {
+  return path.join(resolveNativeMessagingDirectory(), BROWSER_NATIVE_RUNTIME_CONFIG_FILENAME)
+}
+
+function normalizeAgentBaseURL(value: string) {
+  const trimmed = value.trim()
+  const url = new URL(trimmed)
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`Browser native messaging agent URL must use http or https: ${trimmed}`)
+  }
+  return url.toString().replace(/\/+$/, "")
+}
+
+export function browserNativeMessagingRuntimeConfig(input: { agentBaseURL: string }) {
+  return {
+    agentBaseURL: normalizeAgentBaseURL(input.agentBaseURL),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+export async function writeBrowserNativeMessagingRuntimeConfig(agentBaseURL: string) {
+  const configPath = resolveBrowserNativeMessagingRuntimeConfigPath()
+  const config = browserNativeMessagingRuntimeConfig({ agentBaseURL })
+  await fsp.mkdir(path.dirname(configPath), { recursive: true })
+  await fsp.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8")
+  safeLog(`[desktop][browser-native] wrote runtime config at ${configPath}`)
+  return { configPath, config }
+}
+
+export async function registerBrowserNativeMessagingHost(options: { agentBaseURL?: string } = {}) {
   if (process.platform !== "win32") return undefined
 
   const hostPath = resolveBrowserNativeHostExecutable()
@@ -64,6 +99,13 @@ export async function registerBrowserNativeMessagingHost() {
   const manifest = browserNativeMessagingManifest({ hostPath, extensionID })
   await fsp.mkdir(path.dirname(manifestPath), { recursive: true })
   await fsp.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8")
+
+  const agentBaseURL = options.agentBaseURL || readTrimmedDesktopEnv(AGENT_BASE_URL_ENV)
+  if (agentBaseURL) {
+    await writeBrowserNativeMessagingRuntimeConfig(agentBaseURL).catch((error) => {
+      safeError("[desktop][browser-native] failed to write runtime config", error)
+    })
+  }
 
   const result = spawnSync("reg", [
     "add",

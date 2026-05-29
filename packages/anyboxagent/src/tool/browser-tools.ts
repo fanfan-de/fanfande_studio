@@ -1,6 +1,8 @@
 import { Buffer } from "node:buffer"
 import z from "zod"
 import {
+  BrowserExtensionAccessibilityTreeResult,
+  BrowserExtensionDomTreeResult,
   BrowserExtensionElementActionResult,
   BrowserExtensionFillResult,
   BrowserExtensionInteractiveSnapshotResult,
@@ -36,6 +38,22 @@ const SnapshotParameters = z.object({
 const InteractiveSnapshotParameters = z.object({
   tabId: OptionalTabID.describe("Chrome tab id. Defaults to the current session's owned tab, then active tab."),
   maxElements: z.number().int().positive().max(500).optional().describe("Maximum interactive elements to return."),
+})
+
+const DomTreeParameters = z.object({
+  tabId: OptionalTabID.describe("Chrome tab id. Defaults to the current session's owned tab, then active tab."),
+  maxDepth: z.number().int().min(0).max(20).optional().describe("Maximum DOM depth to request. Defaults to 6."),
+  maxNodes: z.number().int().positive().max(5_000).optional().describe("Maximum DOM nodes to return. Defaults to 1000."),
+  pierce: z.boolean().optional().describe("Whether to include shadow DOM and iframe content documents when Chrome exposes them. Defaults to true."),
+  includeText: z.boolean().optional().describe("Whether to include text nodes. Defaults to true."),
+  includeAttributes: z.boolean().optional().describe("Whether to include element attributes with sensitive values redacted. Defaults to true."),
+})
+
+const AccessibilityTreeParameters = z.object({
+  tabId: OptionalTabID.describe("Chrome tab id. Defaults to the current session's owned tab, then active tab."),
+  maxDepth: z.number().int().min(0).max(30).optional().describe("Maximum accessibility tree depth to request. Defaults to 8."),
+  maxNodes: z.number().int().positive().max(5_000).optional().describe("Maximum accessibility nodes to return. Defaults to 1000."),
+  includeIgnored: z.boolean().optional().describe("Whether to include Chrome accessibility nodes marked ignored. Defaults to false."),
 })
 
 const ScreenshotParameters = z.object({
@@ -309,6 +327,74 @@ export const BrowserInteractiveSnapshotTool = Tool.define(
   {
     title: "Browser Interactive Snapshot",
     aliases: ["browser-elements"],
+    capabilities: { kind: "read", readOnly: true, destructive: false, concurrency: "safe" },
+  },
+)
+
+export const BrowserDomTreeTool = Tool.define(
+  "browser_dom_tree",
+  async (): Promise<Tool.ToolRuntime<typeof DomTreeParameters, Record<string, unknown>>> => ({
+    title: "Browser DOM Tree",
+    description: "Read a compact DOM tree for a Chrome page, including node types, names, attributes, text nodes, shadow roots, and content documents when available.",
+    parameters: DomTreeParameters,
+    execute: async (parameters, ctx) => {
+      const commandParameters = withPreferredTab(parameters, ctx)
+      const result = BrowserExtensionDomTreeResult.parse(
+        await runBrowserCommand("page.domTree", commandParameters, ctx),
+      )
+      browserExtensionBridge.touchTab(result.tabId, commandContext(ctx))
+      return {
+        title: result.title || result.url || `Chrome tab ${result.tabId} DOM tree`,
+        text: jsonText(result),
+        metadata: {
+          tabId: result.tabId,
+          url: result.url,
+          title: result.title,
+          nodeCount: result.nodeCount,
+          truncated: result.truncated,
+        },
+        data: result,
+      }
+    },
+  }),
+  {
+    title: "Browser DOM Tree",
+    aliases: ["browser-dom-tree"],
+    capabilities: { kind: "read", readOnly: true, destructive: false, concurrency: "safe" },
+  },
+)
+
+export const BrowserAccessibilityTreeTool = Tool.define(
+  "browser_accessibility_tree",
+  async (): Promise<Tool.ToolRuntime<typeof AccessibilityTreeParameters, Record<string, unknown>>> => ({
+    title: "Browser Accessibility Tree",
+    description: "Read Chrome's accessibility tree for a page, including roles, names, values, properties, parent ids, and child ids.",
+    parameters: AccessibilityTreeParameters,
+    execute: async (parameters, ctx) => {
+      const commandParameters = withPreferredTab(parameters, ctx)
+      const result = BrowserExtensionAccessibilityTreeResult.parse(
+        await runBrowserCommand("page.accessibilityTree", commandParameters, ctx),
+      )
+      browserExtensionBridge.touchTab(result.tabId, commandContext(ctx))
+      return {
+        title: result.title || result.url || `Chrome tab ${result.tabId} accessibility tree`,
+        text: jsonText(result),
+        metadata: {
+          tabId: result.tabId,
+          url: result.url,
+          title: result.title,
+          nodeCount: result.nodeCount,
+          rootNodeId: result.rootNodeId,
+          includeIgnored: result.includeIgnored,
+          truncated: result.truncated,
+        },
+        data: result,
+      }
+    },
+  }),
+  {
+    title: "Browser Accessibility Tree",
+    aliases: ["browser-ax-tree", "browser-accessibility-tree"],
     capabilities: { kind: "read", readOnly: true, destructive: false, concurrency: "safe" },
   },
 )
@@ -609,6 +695,8 @@ export const BrowserTools = [
   BrowserActivateTabTool,
   BrowserSnapshotTool,
   BrowserInteractiveSnapshotTool,
+  BrowserDomTreeTool,
+  BrowserAccessibilityTreeTool,
   BrowserScreenshotTool,
   BrowserClickTool,
   BrowserClickElementTool,

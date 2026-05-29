@@ -31,6 +31,39 @@ type InteractiveElement = {
   }
 }
 
+type DomTreeRelation = "child" | "shadowRoot" | "contentDocument" | "templateContent" | "pseudoElement"
+
+type DomTreeNode = {
+  relation?: DomTreeRelation
+  nodeId?: number
+  backendNodeId?: number
+  nodeType: number
+  nodeName: string
+  localName?: string
+  nodeValue?: string
+  attributes?: Record<string, string>
+  children?: DomTreeNode[]
+}
+
+type AccessibilityTreeNode = {
+  nodeId: string
+  parentId?: string
+  backendDOMNodeId?: number
+  ignored: boolean
+  ignoredReasons?: string[]
+  role?: string
+  name?: string
+  value?: unknown
+  description?: string
+  properties?: Record<string, unknown>
+  childIds?: string[]
+}
+
+const SENSITIVE_VALUE_PATTERN =
+  /\b(password|passcode|passwd|secret|token|api[_-]?key|authorization|cookie|session|csrf|credit|card|cvv|cvc|ssn|otp|2fa)\b/i
+const MAX_NODE_TEXT_CHARS = 500
+const REDACTED_VALUE = "[redacted]"
+
 function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? value as Record<string, unknown> : {}
 }
@@ -49,6 +82,34 @@ function readString(value: unknown, fallback = "") {
 
 function readStringOrUndefined(value: unknown) {
   return typeof value === "string" && value.trim() ? value : undefined
+}
+
+function readClampedInteger(value: unknown, fallback: number, min: number, max: number) {
+  const numeric = readNumber(value, fallback) ?? fallback
+  return Math.min(max, Math.max(min, Math.trunc(numeric)))
+}
+
+function truncateText(value: unknown, limit = MAX_NODE_TEXT_CHARS) {
+  if (typeof value !== "string") return undefined
+  const trimmed = value.replace(/\s+/g, " ").trim()
+  if (!trimmed) return undefined
+  return trimmed.length > limit ? `${trimmed.slice(0, limit).trimEnd()}...` : trimmed
+}
+
+function compactJsonValue(value: unknown): unknown {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === "string") return truncateText(value) ?? ""
+  if (typeof value === "number" || typeof value === "boolean") return value
+  if (Array.isArray(value)) return value.slice(0, 20).map(compactJsonValue).filter((item) => item !== undefined)
+  if (typeof value === "object") {
+    const output: Record<string, unknown> = {}
+    for (const [key, child] of Object.entries(value as Record<string, unknown>).slice(0, 20)) {
+      const compact = compactJsonValue(child)
+      if (compact !== undefined) output[key] = compact
+    }
+    return output
+  }
+  return String(value)
 }
 
 function toTabSummary(tab: any): TabSummary {
@@ -314,6 +375,240 @@ async function interactiveSnapshot(params: unknown) {
   }
 }
 
+function readCdpAttribute(rawNode: any, name: string) {
+  const attributes = Array.isArray(rawNode?.attributes) ? rawNode.attributes : []
+  for (let index = 0; index < attributes.length; index += 2) {
+    if (attributes[index] === name) return typeof attributes[index + 1] === "string" ? attributes[index + 1] : ""
+  }
+  return undefined
+}
+
+function shouldRedactDomAttribute(rawNode: any, attributeName: string) {
+  if (SENSITIVE_VALUE_PATTERN.test(attributeName)) return true
+  if (attributeName.toLowerCase() !== "value") return false
+  return (readCdpAttribute(rawNode, "type") ?? "").toLowerCase() === "password"
+}
+
+function normalizeDomAttributes(rawNode: any) {
+  const attributes = Array.isArray(rawNode?.attributes) ? rawNode.attributes : []
+  const output: Record<string, string> = {}
+  for (let index = 0; index < attributes.length; index += 2) {
+    const name = typeof attributes[index] === "string" ? attributes[index] : undefined
+    if (!name) continue
+    const value = typeof attributes[index + 1] === "string" ? attributes[index + 1] : ""
+    output[name] = shouldRedactDomAttribute(rawNode, name) ? REDACTED_VALUE : (truncateText(value) ?? "")
+  }
+  return Object.keys(output).length > 0 ? output : undefined
+}
+
+function appendDomChildren(
+  target: DomTreeNode,
+  rawChildren: unknown,
+  relation: DomTreeRelation,
+  visit: (rawNode: any, relation: DomTreeRelation) => DomTreeNode | undefined,
+) {
+  if (!Array.isArray(rawChildren)) return
+  for (const child of rawChildren) {
+    const normalized = visit(child, relation)
+    if (!normalized) continue
+    if (!target.children) target.children = []
+    target.children.push(normalized)
+  }
+}
+
+async function domTree(params: unknown) {
+  const input = readRecord(params)
+  const tabId = await activeTabId(input.tabId)
+  const maxDepth = readClampedInteger(input.maxDepth, 6, 0, 20)
+  const maxNodes = readClampedInteger(input.maxNodes, 1_000, 1, 5_000)
+  const pierce = readBoolean(input.pierce, true)
+  const includeText = readBoolean(input.includeText, true)
+  const includeAttributes = readBoolean(input.includeAttributes, true)
+  const tab = await tabInfo(tabId)
+
+  await sendCdp(tabId, "DOM.enable", {})
+  const documentTree = await sendCdp(tabId, "DOM.getDocument", {
+    depth: maxDepth,
+    pierce,
+  }) as { root?: any }
+  if (!documentTree.root) throw new Error("Chrome did not return a DOM document root.")
+
+  let nodeCount = 0
+  let truncated = false
+
+  const visit = (rawNode: any, relation: DomTreeRelation = "child"): DomTreeNode | undefined => {
+    if (!rawNode || typeof rawNode !== "object") return undefined
+    if (!includeText && rawNode.nodeType === 3) return undefined
+    if (nodeCount >= maxNodes) {
+      truncated = true
+      return undefined
+    }
+
+    nodeCount += 1
+    const normalized: DomTreeNode = {
+      ...(relation !== "child" ? { relation } : {}),
+      ...(typeof rawNode.nodeId === "number" ? { nodeId: rawNode.nodeId } : {}),
+      ...(typeof rawNode.backendNodeId === "number" ? { backendNodeId: rawNode.backendNodeId } : {}),
+      nodeType: Number.isInteger(rawNode.nodeType) ? rawNode.nodeType : 0,
+      nodeName: typeof rawNode.nodeName === "string" ? rawNode.nodeName : "",
+      ...(typeof rawNode.localName === "string" && rawNode.localName ? { localName: rawNode.localName } : {}),
+    }
+    const nodeValue = truncateText(rawNode.nodeValue)
+    if (nodeValue) normalized.nodeValue = nodeValue
+    if (includeAttributes) {
+      const attributes = normalizeDomAttributes(rawNode)
+      if (attributes) normalized.attributes = attributes
+    }
+
+    appendDomChildren(normalized, rawNode.children, "child", visit)
+    appendDomChildren(normalized, rawNode.shadowRoots, "shadowRoot", visit)
+    appendDomChildren(normalized, rawNode.pseudoElements, "pseudoElement", visit)
+    const contentDocument = visit(rawNode.contentDocument, "contentDocument")
+    if (contentDocument) {
+      if (!normalized.children) normalized.children = []
+      normalized.children.push(contentDocument)
+    }
+    const templateContent = visit(rawNode.templateContent, "templateContent")
+    if (templateContent) {
+      if (!normalized.children) normalized.children = []
+      normalized.children.push(templateContent)
+    }
+
+    return normalized
+  }
+
+  const root = visit(documentTree.root)
+  if (!root) throw new Error("Chrome DOM document root could not be normalized.")
+
+  return {
+    tabId,
+    url: tab.url,
+    title: tab.title,
+    root,
+    nodeCount,
+    maxDepth,
+    maxNodes,
+    truncated,
+  }
+}
+
+function axValue(rawValue: any): unknown {
+  if (!rawValue || typeof rawValue !== "object") return undefined
+  if ("value" in rawValue) return compactJsonValue(rawValue.value)
+  if (typeof rawValue.type === "string") return rawValue.type
+  return undefined
+}
+
+function axValueText(rawValue: any) {
+  const value = axValue(rawValue)
+  return typeof value === "string" ? value : undefined
+}
+
+function axIgnoredReasons(rawNode: any) {
+  if (!Array.isArray(rawNode?.ignoredReasons)) return undefined
+  const reasons = rawNode.ignoredReasons
+    .map((reason: any) => typeof reason?.name === "string" ? reason.name : axValueText(reason?.value))
+    .filter((reason: unknown): reason is string => typeof reason === "string" && reason.length > 0)
+  return reasons.length > 0 ? reasons : undefined
+}
+
+function axProperties(rawNode: any) {
+  if (!Array.isArray(rawNode?.properties)) return undefined
+  const properties: Record<string, unknown> = {}
+  for (const property of rawNode.properties) {
+    if (!property || typeof property.name !== "string") continue
+    const value = axValue(property.value)
+    if (value !== undefined) properties[property.name] = value
+  }
+  return Object.keys(properties).length > 0 ? properties : undefined
+}
+
+function shouldRedactAccessibilityValue(node: AccessibilityTreeNode) {
+  const haystack = [
+    node.role,
+    node.name,
+    node.description,
+    node.properties ? Object.entries(node.properties).map(([key, value]) => `${key} ${String(value)}`).join(" ") : "",
+  ].join(" ")
+  return SENSITIVE_VALUE_PATTERN.test(haystack)
+}
+
+async function accessibilityTree(params: unknown) {
+  const input = readRecord(params)
+  const tabId = await activeTabId(input.tabId)
+  const maxDepth = readClampedInteger(input.maxDepth, 8, 0, 30)
+  const maxNodes = readClampedInteger(input.maxNodes, 1_000, 1, 5_000)
+  const includeIgnored = readBoolean(input.includeIgnored, false)
+  const tab = await tabInfo(tabId)
+
+  await sendCdp(tabId, "Accessibility.enable", {})
+  const rawTree = await sendCdp(tabId, "Accessibility.getFullAXTree", {
+    depth: maxDepth,
+  }) as { nodes?: any[] }
+  const rawNodes = Array.isArray(rawTree.nodes) ? rawTree.nodes : []
+  const parentById = new Map<string, string>()
+  for (const rawNode of rawNodes) {
+    const nodeId = typeof rawNode?.nodeId === "string" ? rawNode.nodeId : undefined
+    if (!nodeId || !Array.isArray(rawNode.childIds)) continue
+    for (const childId of rawNode.childIds) {
+      if (typeof childId === "string") parentById.set(childId, nodeId)
+    }
+  }
+
+  const normalized = rawNodes.map((rawNode): AccessibilityTreeNode | undefined => {
+    const nodeId = typeof rawNode?.nodeId === "string" ? rawNode.nodeId : undefined
+    if (!nodeId) return undefined
+    const node: AccessibilityTreeNode = {
+      nodeId,
+      ...(typeof rawNode.backendDOMNodeId === "number" ? { backendDOMNodeId: rawNode.backendDOMNodeId } : {}),
+      ignored: rawNode.ignored === true,
+      ...(axIgnoredReasons(rawNode) ? { ignoredReasons: axIgnoredReasons(rawNode) } : {}),
+      ...(axValueText(rawNode.role) ? { role: axValueText(rawNode.role) } : {}),
+      ...(axValueText(rawNode.name) ? { name: axValueText(rawNode.name) } : {}),
+      ...(axValue(rawNode.value) !== undefined ? { value: axValue(rawNode.value) } : {}),
+      ...(axValueText(rawNode.description) ? { description: axValueText(rawNode.description) } : {}),
+      ...(axProperties(rawNode) ? { properties: axProperties(rawNode) } : {}),
+    }
+    if (shouldRedactAccessibilityValue(node) && node.value !== undefined) node.value = REDACTED_VALUE
+    return node
+  }).filter((node): node is AccessibilityTreeNode => Boolean(node))
+
+  const filteredNodes = normalized.filter((node) => includeIgnored || !node.ignored)
+  const keptNodes = filteredNodes.slice(0, maxNodes)
+  const keptIds = new Set(keptNodes.map((node) => node.nodeId))
+  const keptById = new Map(keptNodes.map((node) => [node.nodeId, node]))
+
+  const nearestKeptParent = (nodeId: string) => {
+    let parentId = parentById.get(nodeId)
+    while (parentId && !keptIds.has(parentId)) parentId = parentById.get(parentId)
+    return parentId
+  }
+
+  for (const node of keptNodes) {
+    const parentId = nearestKeptParent(node.nodeId)
+    if (!parentId) continue
+    node.parentId = parentId
+    const parent = keptById.get(parentId)
+    if (parent) {
+      if (!parent.childIds) parent.childIds = []
+      parent.childIds.push(node.nodeId)
+    }
+  }
+
+  return {
+    tabId,
+    url: tab.url,
+    title: tab.title,
+    rootNodeId: keptNodes.find((node) => !node.parentId)?.nodeId,
+    nodes: keptNodes,
+    nodeCount: keptNodes.length,
+    maxDepth,
+    maxNodes,
+    includeIgnored,
+    truncated: filteredNodes.length > keptNodes.length,
+  }
+}
+
 async function screenshot(params: unknown) {
   const input = readRecord(params)
   const tabId = await activeTabId(input.tabId)
@@ -567,6 +862,10 @@ export async function handleBrowserCommand(method: BrowserExtensionCommandMethod
       return await snapshot(params)
     case "page.interactiveSnapshot":
       return await interactiveSnapshot(params)
+    case "page.domTree":
+      return await domTree(params)
+    case "page.accessibilityTree":
+      return await accessibilityTree(params)
     case "page.screenshot":
       return await screenshot(params)
     case "page.click":

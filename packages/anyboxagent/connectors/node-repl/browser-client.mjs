@@ -134,6 +134,14 @@ class BrowserTab {
     return browserCommand("page.interactiveSnapshot", this.withTabId(options))
   }
 
+  async domTree(options = {}) {
+    return browserCommand("page.domTree", this.withTabId(options))
+  }
+
+  async accessibilityTree(options = {}) {
+    return browserCommand("page.accessibilityTree", this.withTabId(options))
+  }
+
   async screenshot(options = {}) {
     return browserCommand("page.screenshot", this.withTabId(options))
   }

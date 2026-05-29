@@ -8,6 +8,7 @@ import path from "node:path"
 import type { Readable } from "node:stream"
 import { setTimeout as delay } from "node:timers/promises"
 import { readTrimmedDesktopEnv } from "./env-compat"
+import { writeBrowserNativeMessagingRuntimeConfig } from "./browser-native-messaging"
 import { safeError, safeLog } from "./safe-console"
 import { createSourceRuntimeSnapshot, shouldRestartForSourceRuntimeChange, type SourceRuntimeSnapshot } from "./source-runtime-watch"
 
@@ -57,6 +58,14 @@ function log(message: string, ...details: unknown[]) {
 
 function logError(message: string, error: unknown) {
   safeError("[desktop][agent]", message, error)
+}
+
+async function publishBrowserNativeAgentBaseURL(baseURL: string) {
+  try {
+    await writeBrowserNativeMessagingRuntimeConfig(baseURL)
+  } catch (error) {
+    logError("failed to publish browser native messaging runtime config", error)
+  }
 }
 
 function resolveBundledRuntimeCandidates() {
@@ -437,10 +446,16 @@ async function restartManagedAgent(reason: string) {
 }
 
 export async function ensureManagedAgentRunning() {
-  if (managedAgent) return managedAgent.baseURL
+  if (managedAgent) {
+    await publishBrowserNativeAgentBaseURL(managedAgent.baseURL)
+    return managedAgent.baseURL
+  }
 
   const externalBaseURL = readTrimmedDesktopEnv(MANAGED_AGENT_BASE_URL_ENV)
-  if (externalBaseURL) return externalBaseURL
+  if (externalBaseURL) {
+    await publishBrowserNativeAgentBaseURL(externalBaseURL)
+    return externalBaseURL
+  }
 
   if (readTrimmedDesktopEnv(MANAGED_AGENT_DISABLE_ENV) === "1") {
     return undefined
@@ -497,6 +512,7 @@ export async function ensureManagedAgentRunning() {
       if (spec.sourceRuntime) {
         await ensureSourceRuntimeWatcher()
       }
+      await publishBrowserNativeAgentBaseURL(baseURL)
       log(`managed agent ready at ${baseURL} via ${spec.label}`)
       return baseURL
     } catch (error) {

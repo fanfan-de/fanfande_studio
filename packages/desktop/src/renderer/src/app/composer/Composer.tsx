@@ -32,6 +32,7 @@ import type {
   ComposerMcpOption,
   ComposerModelOption,
   ComposerPastedImageAttachment,
+  ComposerPluginOption,
   ComposerReasoningEffortOption,
   ComposerSkillOption,
   ComposerTagData,
@@ -43,11 +44,13 @@ import {
   createComposerDraftStateFromPlainText,
   createComposerFileTagData,
   createComposerMcpTagData,
+  createComposerPluginTagData,
   createComposerSkillTagData,
   normalizeComposerDraftState,
   readComposerTagIdentity,
   readComposerTagsFromDraftState,
   readTaggedMcpServerIDsFromDraftState,
+  readTaggedPluginIDsFromDraftState,
 } from "./draft-state"
 
 
@@ -71,15 +74,18 @@ interface ComposerProps {
   onPickAttachments: () => void | Promise<void>
   onPasteImageAttachments?: (images: ComposerPastedImageAttachment[]) => void | Promise<void>
   onPlanModeToggle?: () => void | Promise<void>
+  onPluginToggle?: (value: string) => void | Promise<void>
   onReasoningEffortChange: (value: ReasoningEffort | null) => void
   onRemoveAttachment: (path: string) => void
   onCancelSend?: () => void | Promise<void>
   onSend: (draftStateOverride?: ComposerDraftState) => void | Promise<void>
   placeholder?: string
+  pluginOptions?: ComposerPluginOption[]
   reasoningEffortOptions: ComposerReasoningEffortOption[]
   selectedMcpServerIDs: string[]
   selectedModel: string | null
   selectedModelLabel: string
+  selectedPluginIDs?: string[]
   selectedReasoningEffort: ReasoningEffort | null
   selectedReasoningEffortLabel: string
   selectedSkillIDs: string[]
@@ -91,7 +97,7 @@ interface ComposerProps {
 }
 
 type ComposerMenuKey = "model" | "reasoning" | null
-type ComposerCommandKey = "attach" | "file" | "mcp" | "model" | "plan" | "reasoning" | "skill"
+type ComposerCommandKey = "attach" | "file" | "mcp" | "model" | "plan" | "plugin" | "reasoning" | "skill"
 
 interface ComposerModelProviderGroup {
   matchingOptions: ComposerModelOption[]
@@ -128,7 +134,7 @@ type ComposerCommandMenuState =
       kind: "command-selector"
       match: ComposerTriggerMatch
       query: string
-      selector: "file" | "mcp" | "skill"
+      selector: "file" | "mcp" | "plugin" | "skill"
     }
 
 type ComposerCommandMenuItem =
@@ -170,6 +176,9 @@ const LEXICAL_INITIAL_CONFIG = {
   },
 }
 
+const EMPTY_PLUGIN_OPTIONS: ComposerPluginOption[] = []
+const EMPTY_SELECTED_PLUGIN_IDS: string[] = []
+
 const COMPOSER_COMMAND_TRIGGER_PREFIX = "~"
 
 const COMPOSER_COMMANDS: Array<{
@@ -191,6 +200,11 @@ const COMPOSER_COMMANDS: Array<{
     value: "mcp",
     label: `${COMPOSER_COMMAND_TRIGGER_PREFIX}mcp`,
     description: "Enable a project MCP server and insert its inline tag.",
+  },
+  {
+    value: "plugin",
+    label: `${COMPOSER_COMMAND_TRIGGER_PREFIX}plugin`,
+    description: "Enable a project plugin and insert its inline tag.",
   },
   {
     value: "attach",
@@ -232,7 +246,7 @@ export function getVisibleComposerCommandLabels({
   return COMPOSER_COMMANDS
     .filter((command) => command.label.slice(1).includes(normalizedQuery))
     .filter((command) => {
-      if ((command.value === "skill" || command.value === "mcp") && !showProjectTagCommands) {
+      if ((command.value === "skill" || command.value === "mcp" || command.value === "plugin") && !showProjectTagCommands) {
         return false
       }
 
@@ -726,7 +740,7 @@ function deriveCommandMenuState() {
   const beforeText = readComposerBeforeTextForCommandMenu(anchorNode, selection.anchor.offset)
   if (beforeText === null) return null
 
-  const selectorMatch = findTriggerMatch(beforeText, /(^|\s)~(file|skill|mcp)(?:\s+([^\n]*))?$/)
+  const selectorMatch = findTriggerMatch(beforeText, /(^|\s)~(file|skill|mcp|plugin)(?:\s+([^\n]*))?$/)
   if (selectorMatch) {
     return {
       anchorRect: getComposerSelectionRect(),
@@ -737,7 +751,7 @@ function deriveCommandMenuState() {
         end: selection.anchor.offset,
       },
       query: selectorMatch.groups[2] ?? "",
-      selector: selectorMatch.groups[1] as "file" | "mcp" | "skill",
+      selector: selectorMatch.groups[1] as "file" | "mcp" | "plugin" | "skill",
     } satisfies ComposerCommandMenuState
   }
 
@@ -867,15 +881,18 @@ export function Composer({
   onPickAttachments,
   onPasteImageAttachments,
   onPlanModeToggle,
+  onPluginToggle,
   onReasoningEffortChange,
   onRemoveAttachment,
   onCancelSend,
   onSend,
   placeholder = "Describe the UI, implementation task, or review target for the agent.",
+  pluginOptions = EMPTY_PLUGIN_OPTIONS,
   reasoningEffortOptions,
   selectedMcpServerIDs,
   selectedModel,
   selectedModelLabel,
+  selectedPluginIDs = EMPTY_SELECTED_PLUGIN_IDS,
   selectedReasoningEffort,
   selectedReasoningEffortLabel,
   selectedSkillIDs,
@@ -895,6 +912,10 @@ export function Composer({
   const isComposingRef = useRef(false)
   const fileSearchRequestRef = useRef(0)
   const pendingMcpDiffRef = useRef<{
+    added: Set<string>
+    removed: Set<string>
+  } | null>(null)
+  const pendingPluginDiffRef = useRef<{
     added: Set<string>
     removed: Set<string>
   } | null>(null)
@@ -999,6 +1020,33 @@ export function Composer({
       })
   }
 
+  function buildPluginTagItems(query: string) {
+    if (!showProjectTagCommands) return []
+
+    const currentTagIdentities = getCurrentTagIdentities()
+    const selectedPluginIDSet = toSet(selectedPluginIDs)
+
+    return pluginOptions
+      .filter((option) => matchesQuery(option.label, query) || matchesQuery(option.value, query))
+      .map((option) => {
+        const tagData = createComposerPluginTagData(option)
+        const disabled = currentTagIdentities.has(readComposerTagIdentity(tagData))
+        return {
+          type: "tag",
+          key: `plugin:${option.value}`,
+          group: "Plugins",
+          label: option.label,
+          description: disabled
+            ? "Already tagged in this draft."
+            : selectedPluginIDSet.has(option.value)
+              ? "Already enabled in the project menu."
+              : option.description,
+          disabled,
+          tagData,
+        } satisfies ComposerCommandMenuItem
+      })
+  }
+
   function buildImmediateCommandMenuItems(state: ComposerCommandMenuState | null) {
     if (!state) return []
 
@@ -1013,6 +1061,10 @@ export function Composer({
 
       if (state.selector === "mcp") {
         return buildMcpTagItems(state.query)
+      }
+
+      if (state.selector === "plugin") {
+        return buildPluginTagItems(state.query)
       }
 
       return []
@@ -1248,6 +1300,11 @@ export function Composer({
         return
       }
 
+      if (commandMenuState.selector === "plugin") {
+        setCommandMenuItemsWithRef(buildPluginTagItems(query))
+        return
+      }
+
       void buildFileTagItems(query).then((items) => {
         if (items) {
           setCommandMenuItemsWithRef(items)
@@ -1257,16 +1314,22 @@ export function Composer({
     }
 
     setCommandMenuItemsWithRef([])
+    const pluginItems = buildPluginTagItems(commandMenuState.query)
+    if (pluginItems.length > 0) {
+      setCommandMenuItemsWithRef(pluginItems)
+    }
     void buildFileTagItems(commandMenuState.query).then((fileItems) => {
       if (!fileItems) return
-      setCommandMenuItemsWithRef(fileItems)
+      setCommandMenuItemsWithRef([...pluginItems, ...fileItems])
     })
   }, [
     commandMenuState,
     mcpOptions,
     onPlanModeToggle,
+    pluginOptions,
     reasoningEffortOptions.length,
     selectedMcpServerIDs,
+    selectedPluginIDs,
     selectedSkillIDs,
     showModelSelector,
     showProjectTagCommands,
@@ -1310,6 +1373,22 @@ export function Composer({
     }
   }
 
+  function syncPluginDiff(nextDraftState: ComposerDraftState) {
+    if (!showProjectTagCommands || !onPluginToggle) return
+
+    const previousPluginIDs = new Set(readTaggedPluginIDsFromDraftState(draftStateRef.current))
+    const nextPluginIDs = new Set(readTaggedPluginIDsFromDraftState(nextDraftState))
+    const pendingDiff = pendingPluginDiffRef.current
+    pendingPluginDiffRef.current = null
+
+    const added = difference(nextPluginIDs, previousPluginIDs).filter((value) => !pendingDiff?.added.has(value))
+    const removed = difference(previousPluginIDs, nextPluginIDs).filter((value) => !pendingDiff?.removed.has(value))
+
+    for (const pluginID of [...added, ...removed]) {
+      void onPluginToggle(pluginID)
+    }
+  }
+
   function handleEditorChange(editorState: ReturnType<LexicalEditor["getEditorState"]>) {
     const nextDraftState = createComposerDraftStateFromEditorState(editorState)
     const nextCommandMenuState = editorState.read(() => deriveCommandMenuState())
@@ -1327,6 +1406,7 @@ export function Composer({
     }
 
     syncMcpDiff(nextDraftState)
+    syncPluginDiff(nextDraftState)
     draftStateRef.current = nextDraftState
     localEditorLexicalJSONRef.current = nextDraftState.lexicalJSON
     rememberLocalComposerDraftEcho(localDraftEchoesRef.current, nextDraftState.lexicalJSON)
@@ -1338,7 +1418,7 @@ export function Composer({
     const currentCommandMenuState = commandMenuStateRef.current ?? readCommandMenuStateFromEditor()
     if (!editor || !currentCommandMenuState || currentCommandMenuState.kind !== "command-trigger") return
 
-    if (command === "file" || command === "skill" || command === "mcp") {
+    if (command === "file" || command === "skill" || command === "mcp" || command === "plugin") {
       createTextReplacement(editor, currentCommandMenuState.match, `${COMPOSER_COMMAND_TRIGGER_PREFIX}${command} `)
       return
     }
@@ -1388,6 +1468,17 @@ export function Composer({
 
       if (!selectedMcpServerIDs.includes(item.tagData.serverID)) {
         void onMcpToggle?.(item.tagData.serverID)
+      }
+    }
+
+    if (item.tagData.kind === "plugin") {
+      pendingPluginDiffRef.current = {
+        added: new Set([item.tagData.pluginID]),
+        removed: new Set(),
+      }
+
+      if (!selectedPluginIDs.includes(item.tagData.pluginID)) {
+        void onPluginToggle?.(item.tagData.pluginID)
       }
     }
 

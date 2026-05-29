@@ -7,6 +7,8 @@ export const BrowserExtensionCommandMethod = z.enum([
   "tabs.release",
   "page.snapshot",
   "page.interactiveSnapshot",
+  "page.domTree",
+  "page.accessibilityTree",
   "page.screenshot",
   "page.click",
   "page.clickElement",
@@ -159,6 +161,71 @@ export const BrowserExtensionInteractiveSnapshotResult = z.object({
   truncated: z.boolean(),
 })
 export type BrowserExtensionInteractiveSnapshotResult = z.infer<typeof BrowserExtensionInteractiveSnapshotResult>
+
+export type BrowserExtensionDomNode = {
+  relation?: "child" | "shadowRoot" | "contentDocument" | "templateContent" | "pseudoElement"
+  nodeId?: number
+  backendNodeId?: number
+  nodeType: number
+  nodeName: string
+  localName?: string
+  nodeValue?: string
+  attributes?: Record<string, string>
+  children?: BrowserExtensionDomNode[]
+}
+
+export const BrowserExtensionDomNode: z.ZodType<BrowserExtensionDomNode> = z.lazy(() => z.object({
+  relation: z.enum(["child", "shadowRoot", "contentDocument", "templateContent", "pseudoElement"]).optional(),
+  nodeId: z.number().int().optional(),
+  backendNodeId: z.number().int().optional(),
+  nodeType: z.number().int(),
+  nodeName: z.string(),
+  localName: z.string().optional(),
+  nodeValue: z.string().optional(),
+  attributes: z.record(z.string(), z.string()).optional(),
+  children: z.array(BrowserExtensionDomNode).optional(),
+}))
+
+export const BrowserExtensionDomTreeResult = z.object({
+  tabId: z.number().int(),
+  url: z.string().optional(),
+  title: z.string().optional(),
+  root: BrowserExtensionDomNode,
+  nodeCount: z.number().int().nonnegative(),
+  maxDepth: z.number().int().nonnegative(),
+  maxNodes: z.number().int().positive(),
+  truncated: z.boolean(),
+})
+export type BrowserExtensionDomTreeResult = z.infer<typeof BrowserExtensionDomTreeResult>
+
+export const BrowserExtensionAccessibilityNode = z.object({
+  nodeId: z.string().min(1),
+  parentId: z.string().min(1).optional(),
+  backendDOMNodeId: z.number().int().optional(),
+  ignored: z.boolean(),
+  ignoredReasons: z.array(z.string()).optional(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  value: z.unknown().optional(),
+  description: z.string().optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
+  childIds: z.array(z.string()).optional(),
+})
+export type BrowserExtensionAccessibilityNode = z.infer<typeof BrowserExtensionAccessibilityNode>
+
+export const BrowserExtensionAccessibilityTreeResult = z.object({
+  tabId: z.number().int(),
+  url: z.string().optional(),
+  title: z.string().optional(),
+  rootNodeId: z.string().optional(),
+  nodes: z.array(BrowserExtensionAccessibilityNode),
+  nodeCount: z.number().int().nonnegative(),
+  maxDepth: z.number().int().nonnegative(),
+  maxNodes: z.number().int().positive(),
+  includeIgnored: z.boolean(),
+  truncated: z.boolean(),
+})
+export type BrowserExtensionAccessibilityTreeResult = z.infer<typeof BrowserExtensionAccessibilityTreeResult>
 
 export const BrowserExtensionScreenshotResult = z.object({
   tabId: z.number().int(),

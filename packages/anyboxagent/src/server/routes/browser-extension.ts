@@ -19,6 +19,8 @@ const BrowserMcpCommandMethod = z.enum([
   "tabs.release",
   "page.snapshot",
   "page.interactiveSnapshot",
+  "page.domTree",
+  "page.accessibilityTree",
   "page.screenshot",
   "page.click",
   "page.clickElement",

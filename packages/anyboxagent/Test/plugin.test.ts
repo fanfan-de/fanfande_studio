@@ -774,6 +774,8 @@ async function writeBrowserConnectorRequirementPluginPackage() {
           "browser_activate_tab",
           "browser_snapshot",
           "browser_interactive_snapshot",
+          "browser_dom_tree",
+          "browser_accessibility_tree",
           "browser_screenshot",
           "browser_click",
           "browser_click_element",
@@ -784,7 +786,7 @@ async function writeBrowserConnectorRequirementPluginPackage() {
           "browser_release_tab",
         ],
         permissions: [
-          "Read Chrome tab titles, URLs, visible page text, interactive elements, and screenshots.",
+          "Read Chrome tab titles, URLs, visible page text, DOM trees, accessibility trees, interactive elements, and screenshots.",
           "Open, activate, click, scroll, type into, and fill Chrome tabs through the Anybox browser extension.",
         ],
         required: true,
@@ -1599,6 +1601,8 @@ describe("plugin marketplace API", () => {
           "browser_activate_tab",
           "browser_snapshot",
           "browser_interactive_snapshot",
+          "browser_dom_tree",
+          "browser_accessibility_tree",
           "browser_screenshot",
           "browser_click",
           "browser_click_element",
@@ -1609,7 +1613,7 @@ describe("plugin marketplace API", () => {
           "browser_release_tab",
         ],
         permissions: [
-          "Read Chrome tab titles, URLs, visible page text, interactive elements, and screenshots.",
+          "Read Chrome tab titles, URLs, visible page text, DOM trees, accessibility trees, interactive elements, and screenshots.",
           "Open, activate, click, scroll, type into, and fill Chrome tabs through the Anybox browser extension.",
         ],
         required: true,
@@ -1683,7 +1687,7 @@ describe("plugin marketplace API", () => {
     const diagnosticBody = (await diagnosticResponse.json()) as DiagnosticEnvelope
     expect(diagnosticResponse.status).toBe(200)
     expect(diagnosticBody.data?.ok).toBe(true)
-    expect(diagnosticBody.data?.toolCount).toBe(14)
+    expect(diagnosticBody.data?.toolCount).toBe(16)
 
     const nodeReplDiagnosticResponse = await app.request("/api/connectors/connector%3Anode-repl%3Adefault/diagnostic")
     const nodeReplDiagnosticBody = (await nodeReplDiagnosticResponse.json()) as DiagnosticEnvelope

@@ -1430,11 +1430,20 @@ export interface ComposerMcpTagData {
   description?: string
 }
 
+export interface ComposerPluginTagData {
+  kind: "plugin"
+  id: string
+  label: string
+  pluginID: string
+  description?: string
+}
+
 export type ComposerTagData =
   | ComposerFileTagData
   | ComposerCommentTagData
   | ComposerSkillTagData
   | ComposerMcpTagData
+  | ComposerPluginTagData
 
 export type ColorMode = "system" | "light" | "dark"
 export type BrandTheme = "terra" | "sage"

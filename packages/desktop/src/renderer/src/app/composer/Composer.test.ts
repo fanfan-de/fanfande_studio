@@ -222,6 +222,11 @@ describe("getVisibleComposerCommandLabels", () => {
   it("hides ~plan when plan mode toggling is unavailable", () => {
     expect(getVisibleComposerCommandLabels({ hasPlanModeToggle: false })).not.toContain("~plan")
   })
+
+  it("shows project plugin commands only when project tag commands are enabled", () => {
+    expect(getVisibleComposerCommandLabels({ showProjectTagCommands: true })).toContain("~plugin")
+    expect(getVisibleComposerCommandLabels({ showProjectTagCommands: false })).not.toContain("~plugin")
+  })
 })
 
 describe("handleComposerCommandMenuMouseDown", () => {

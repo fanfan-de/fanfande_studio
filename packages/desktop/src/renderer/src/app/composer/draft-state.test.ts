@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { ComposerCommentReference, ComposerMcpOption, ComposerSkillOption } from "../types"
+import type { ComposerCommentReference, ComposerMcpOption, ComposerPluginOption, ComposerSkillOption } from "../types"
 import {
   appendComposerTagToDraftState,
   appendTextToComposerDraftState,
@@ -8,8 +8,10 @@ import {
   createComposerDraftStateFromPlainText,
   createComposerFileTagData,
   createComposerMcpTagData,
+  createComposerPluginTagData,
   createComposerSkillTagData,
   createEmptyComposerDraftState,
+  readTaggedPluginIDsFromDraftState,
   readComposerTagsFromDraftState,
   removeComposerTagFromDraftState,
   syncComposerMcpTagsWithSelection,
@@ -33,6 +35,12 @@ const MCP_OPTIONS: ComposerMcpOption[] = [
     description: "Automate browser verification",
   },
 ]
+
+const PLUGIN_OPTION: ComposerPluginOption = {
+  value: "build-web-apps",
+  label: "Build Web Apps",
+  description: "Frontend app tools and skills",
+}
 
 function createCommentReference(): ComposerCommentReference {
   return {
@@ -96,6 +104,7 @@ describe("composer draft-state", () => {
     draftState = appendComposerTagToDraftState(draftState, createComposerCommentTagData(createCommentReference()))
     draftState = appendComposerTagToDraftState(draftState, createComposerSkillTagData(SKILL_OPTION))
     draftState = appendComposerTagToDraftState(draftState, createComposerMcpTagData(MCP_OPTIONS[0]!))
+    draftState = appendComposerTagToDraftState(draftState, createComposerPluginTagData(PLUGIN_OPTION))
 
     const compiled = compileComposerSubmission({
       draftState,
@@ -107,6 +116,7 @@ describe("composer draft-state", () => {
     expect(compiled.displayText).toContain("@App.tsx:10-14")
     expect(compiled.taggedFilePaths).toEqual(["src/app/components.tsx"])
     expect(compiled.taggedMcpServerIDs).toEqual(["filesystem"])
+    expect(compiled.taggedPluginIDs).toEqual(["build-web-apps"])
     expect(compiled.commentReferences).toHaveLength(1)
     expect(compiled.userReferences).toEqual([
       {
@@ -125,6 +135,14 @@ describe("composer draft-state", () => {
     expect(compiled.selectedSkillIDs).toEqual(["existing-skill", SKILL_OPTION.value])
     expect(compiled.transportText).toContain("Referenced files:\n- src/app/components.tsx")
     expect(compiled.transportText).toContain("Review the selected lines before making changes.")
+  })
+
+  it("reads plugin tags from the composer draft state", () => {
+    let draftState = createComposerDraftStateFromPlainText("Use this integration.")
+    draftState = appendComposerTagToDraftState(draftState, createComposerPluginTagData(PLUGIN_OPTION))
+
+    expect(readTaggedPluginIDsFromDraftState(draftState)).toEqual(["build-web-apps"])
+    expect(draftState.plainText).toContain("@Build Web Apps")
   })
 
   it("compiles preview comment tags into browser context while stripping the visible token from the request", () => {

@@ -1,7 +1,6 @@
 import { encodeNativeMessage, NativeMessageDecoder } from "./framing"
+import { agentBaseURL, HOST_NAME } from "./agent-config"
 
-const DEFAULT_AGENT_BASE_URL = "http://127.0.0.1:4096"
-const HOST_NAME = "com.anybox.browser"
 const RECONNECT_BASE_MS = 500
 const RECONNECT_MAX_MS = 5_000
 
@@ -14,12 +13,6 @@ const decoder = new NativeMessageDecoder()
 function log(message: string, detail?: unknown) {
   const suffix = detail === undefined ? "" : ` ${detail instanceof Error ? detail.message : String(detail)}`
   process.stderr.write(`[anybox-browser-native-host] ${message}${suffix}\n`)
-}
-
-function agentBaseURL() {
-  return (process.env.ANYBOX_AGENT_BASE_URL || process.env.FANFANDE_AGENT_BASE_URL || DEFAULT_AGENT_BASE_URL)
-    .trim()
-    .replace(/\/+$/, "")
 }
 
 function wsURL() {

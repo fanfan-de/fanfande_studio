@@ -20,6 +20,7 @@ function readComposerTagTitle(tagData: ComposerTagData) {
     case "file":
       return tagData.filePath
     case "mcp":
+    case "plugin":
     case "skill":
       return tagData.description ?? tagData.label
   }

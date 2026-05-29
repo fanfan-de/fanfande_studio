@@ -108,6 +108,64 @@ const tools = [
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
   {
+    name: "browser_dom_tree",
+    title: "Browser DOM Tree",
+    description: "Read a compact DOM tree for a Chrome page, including node types, names, attributes, text nodes, shadow roots, and content documents when available.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tabId,
+        maxDepth: {
+          type: "number",
+          description: "Maximum DOM depth to request. Defaults to 6.",
+        },
+        maxNodes: {
+          type: "number",
+          description: "Maximum DOM nodes to return. Defaults to 1000.",
+        },
+        pierce: {
+          type: "boolean",
+          description: "Whether to include shadow DOM and iframe content documents when Chrome exposes them. Defaults to true.",
+        },
+        includeText: {
+          type: "boolean",
+          description: "Whether to include text nodes. Defaults to true.",
+        },
+        includeAttributes: {
+          type: "boolean",
+          description: "Whether to include element attributes with sensitive values redacted. Defaults to true.",
+        },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
+  {
+    name: "browser_accessibility_tree",
+    title: "Browser Accessibility Tree",
+    description: "Read Chrome's accessibility tree for a page, including roles, names, values, properties, parent ids, and child ids.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tabId,
+        maxDepth: {
+          type: "number",
+          description: "Maximum accessibility tree depth to request. Defaults to 8.",
+        },
+        maxNodes: {
+          type: "number",
+          description: "Maximum accessibility nodes to return. Defaults to 1000.",
+        },
+        includeIgnored: {
+          type: "boolean",
+          description: "Whether to include Chrome accessibility nodes marked ignored. Defaults to false.",
+        },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
+  {
     name: "browser_screenshot",
     title: "Browser Screenshot",
     description: "Capture a PNG screenshot of a Chrome tab.",
@@ -309,6 +367,8 @@ const commandByToolName = {
   browser_activate_tab: "tabs.activate",
   browser_snapshot: "page.snapshot",
   browser_interactive_snapshot: "page.interactiveSnapshot",
+  browser_dom_tree: "page.domTree",
+  browser_accessibility_tree: "page.accessibilityTree",
   browser_screenshot: "page.screenshot",
   browser_click: "page.click",
   browser_click_element: "page.clickElement",

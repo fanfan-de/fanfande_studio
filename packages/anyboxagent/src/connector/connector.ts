@@ -448,7 +448,7 @@ function builtinDefinitions(): ConnectorDefinition[] {
       icon: "BR",
       risk: "high",
       permissions: [
-        "Reads Chrome tab titles, URLs, visible page text, interactive elements, and screenshots.",
+        "Reads Chrome tab titles, URLs, visible page text, DOM trees, accessibility trees, interactive elements, and screenshots.",
         "Opens, activates, clicks, scrolls, types into, and fills Chrome tabs through the Anybox browser extension.",
         "Requires the Anybox browser extension to be installed, enabled, and connected.",
       ],
@@ -487,6 +487,18 @@ function builtinDefinitions(): ConnectorDefinition[] {
           name: "browser_interactive_snapshot",
           title: "Browser Interactive Snapshot",
           description: "List visible clickable and fillable page elements with stable element IDs.",
+          readOnly: true,
+        },
+        {
+          name: "browser_dom_tree",
+          title: "Browser DOM Tree",
+          description: "Read a compact DOM tree for a Chrome page.",
+          readOnly: true,
+        },
+        {
+          name: "browser_accessibility_tree",
+          title: "Browser Accessibility Tree",
+          description: "Read Chrome's accessibility tree for a page.",
           readOnly: true,
         },
         {
@@ -552,6 +564,8 @@ function builtinDefinitions(): ConnectorDefinition[] {
           browser_get_tabs: { policy: "auto" },
           browser_snapshot: { policy: "auto" },
           browser_interactive_snapshot: { policy: "auto" },
+          browser_dom_tree: { policy: "auto" },
+          browser_accessibility_tree: { policy: "auto" },
           browser_screenshot: { policy: "auto" },
           browser_wait_for: { policy: "auto" },
           browser_open_tab: { policy: "ask" },

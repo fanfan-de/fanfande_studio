@@ -12,6 +12,7 @@ import type {
   ComposerCommentReference,
   ComposerDraftState,
   ComposerMcpOption,
+  ComposerPluginOption,
   ComposerSkillOption,
   ComposerTagData,
   UserTurnReference,
@@ -25,6 +26,7 @@ export interface CompiledComposerSubmission {
   selectedSkillIDs: string[]
   taggedFilePaths: string[]
   taggedMcpServerIDs: string[]
+  taggedPluginIDs: string[]
   userReferences: UserTurnReference[]
   transportText: string
 }
@@ -231,6 +233,8 @@ function getComposerTagIdentity(tag: ComposerTagData) {
       return `file:${tag.filePath}`
     case "mcp":
       return `mcp:${tag.serverID}`
+    case "plugin":
+      return `plugin:${tag.pluginID}`
     case "skill":
       return `skill:${tag.skillID}`
   }
@@ -440,6 +444,16 @@ export function createComposerMcpTagData(option: ComposerMcpOption): ComposerTag
   }
 }
 
+export function createComposerPluginTagData(option: ComposerPluginOption): ComposerTagData {
+  return {
+    kind: "plugin",
+    id: `plugin:${option.value}`,
+    label: option.label,
+    pluginID: option.value,
+    description: option.description,
+  }
+}
+
 export function syncComposerMcpTagsWithSelection(
   draftState: ComposerDraftState,
   selectedServerIDs: string[],
@@ -481,6 +495,7 @@ export function compileComposerSubmission(input: {
   const userReferences = buildComposerUserReferences(tags)
   const taggedFilePaths = [...new Set(tags.flatMap((tag) => (tag.kind === "file" ? [tag.filePath] : [])))]
   const taggedMcpServerIDs = [...new Set(tags.flatMap((tag) => (tag.kind === "mcp" ? [tag.serverID] : [])))]
+  const taggedPluginIDs = [...new Set(tags.flatMap((tag) => (tag.kind === "plugin" ? [tag.pluginID] : [])))]
   const selectedSkillIDs = [
     ...new Set([
       ...(input.selectedSkillIDs ?? []),
@@ -518,6 +533,7 @@ export function compileComposerSubmission(input: {
     selectedSkillIDs,
     taggedFilePaths,
     taggedMcpServerIDs,
+    taggedPluginIDs,
     userReferences,
     transportText: [leadingText, ...transportSections].filter(Boolean).join("\n\n"),
   } satisfies CompiledComposerSubmission
@@ -525,6 +541,10 @@ export function compileComposerSubmission(input: {
 
 export function readTaggedMcpServerIDsFromDraftState(draftState: ComposerDraftState) {
   return readComposerTagsFromDraftState(draftState).flatMap((tag) => (tag.kind === "mcp" ? [tag.serverID] : []))
+}
+
+export function readTaggedPluginIDsFromDraftState(draftState: ComposerDraftState) {
+  return readComposerTagsFromDraftState(draftState).flatMap((tag) => (tag.kind === "plugin" ? [tag.pluginID] : []))
 }
 
 export function readComposerTagIdentity(tag: ComposerTagData) {
