@@ -26,6 +26,7 @@ import {
 } from "../shared/desktop-ipc-contract"
 import { getAgentConfig, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
 import { readAppearanceConfigSnapshot, writeAppearanceConfigSnapshot } from "./appearance-config"
+import { ComputerUseOverlayManager } from "./computer-use-overlay"
 import { filterAvailableExternalEditorsForTarget, listAvailableExternalEditors, openInExternalEditor } from "./external-editors"
 import { buildFolderWorkspaceForDirectory, buildFolderWorkspaces } from "./folder-workspaces"
 import {
@@ -1397,6 +1398,43 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     }
   }
 
+  async function cancelAgentSessionFromComputerUseOverlay(input: {
+    backendSessionID: string
+    clientTurnID?: string
+    webContentsID: number
+  }) {
+    abortActiveAgentSessionRequests({
+      backendSessionID: input.backendSessionID,
+      clientTurnID: input.clientTurnID,
+      webContentsID: input.webContentsID,
+    })
+
+    try {
+      await requestAgentJSON(
+        `/api/sessions/${encodeURIComponent(input.backendSessionID)}/cancel`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            cancelQueued: true,
+            reason: "user",
+          }),
+        },
+      )
+    } catch (error) {
+      safeWarn(
+        "[desktop] computer use overlay cancel endpoint failed:",
+        error instanceof Error ? error.message : String(error),
+      )
+    }
+  }
+
+  const computerUseOverlay = new ComputerUseOverlayManager({
+    onCancel: cancelAgentSessionFromComputerUseOverlay,
+  })
+
   function createSessionStreamSubscription(
     target: Electron.WebContents,
     sessionID: string,
@@ -1436,6 +1474,10 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
 
     const dispose = () => {
       disposed = true
+      computerUseOverlay.clearForRequest({
+        backendSessionID: sessionID,
+        webContentsID: target.id,
+      })
       sendUnifiedSubscriptionState("closed")
       if (restartTimer) {
         clearTimeout(restartTimer)
@@ -1474,6 +1516,13 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
           if (item.id) {
             lastEventID = item.id
           }
+
+          computerUseOverlay.handleSessionStreamEvent({
+            backendSessionID: sessionID,
+            data: item.data,
+            event: item.event,
+            target,
+          })
 
           sendDesktopIpcEvent(target, AGENT_SESSION_EVENT_CHANNEL, {
             kind: "stream",
@@ -4082,6 +4131,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     activeAgentSessionRequests.set(agentSessionRequestKey(target.id, clientTurnID), request)
     const abortOnTargetDestroyed = () => {
       request.cancelRequested = true
+      computerUseOverlay.clearForWebContents(target.id)
       request.controller.abort()
     }
     target.once("destroyed", abortOnTargetDestroyed)
@@ -4110,6 +4160,14 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
       requestId = response.headers.get("x-request-id") ?? undefined
 
       await readAgentSSEStream(response, (item) => {
+        computerUseOverlay.handleSessionStreamEvent({
+          backendSessionID,
+          clientTurnID,
+          data: item.data,
+          event: item.event,
+          target,
+        })
+
         sendDesktopIpcEvent(target, AGENT_SESSION_EVENT_CHANNEL, {
           kind: "stream",
           source: "request",
@@ -4144,6 +4202,11 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     } finally {
       target.off("destroyed", abortOnTargetDestroyed)
       removeActiveAgentSessionRequest(target.id, clientTurnID, request)
+      computerUseOverlay.clearForRequest({
+        backendSessionID,
+        clientTurnID,
+        webContentsID: target.id,
+      })
     }
 
     return {
