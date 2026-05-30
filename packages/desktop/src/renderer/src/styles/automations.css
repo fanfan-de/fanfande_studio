@@ -529,144 +529,418 @@
   position: absolute;
   inset: 0;
   z-index: 20;
-  padding: 68px 44px 40px;
-  background: color-mix(in srgb, var(--seg-shell) 76%, transparent);
+  padding: 44px;
+  background: color-mix(in srgb, var(--seg-shell) 62%, rgba(0, 0, 0, 0.28));
+  backdrop-filter: blur(3px);
   display: grid;
-  place-items: start center;
+  place-items: center;
 }
 
 .automations-create-panel {
-  width: min(560px, 100%);
-  max-height: 100%;
-  overflow: auto;
-  padding: 18px;
-  border-radius: var(--seg-radius-sm);
-  display: grid;
-  gap: 16px;
+  width: min(800px, 100%);
+  max-height: min(620px, calc(100dvh - 88px));
+  overflow: visible;
+  padding: 0;
+  border-color: color-mix(in srgb, var(--seg-border) 72%, transparent);
+  border-radius: calc(var(--seg-radius-sm) + 8px);
+  background: var(--surface-elevated);
+  box-shadow: 0 24px 70px rgba(31, 48, 66, 0.2);
 }
 
-.automations-template-grid,
-.automations-form {
+.automations-create-composer {
   min-width: 0;
+  min-height: 378px;
+  max-height: inherit;
   display: grid;
-  gap: 10px;
+  grid-template-rows: auto minmax(220px, 1fr) auto;
+  overflow: visible;
 }
 
-.automations-template-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.automations-template-button {
+.automations-template-browser {
   min-width: 0;
-  width: 100%;
-  min-height: 54px;
-  padding: 10px 12px;
-  border: 1px solid var(--seg-border);
-  border-radius: var(--seg-radius-xs);
-  background: var(--seg-panel);
-  color: var(--seg-text-1);
+  min-height: min(520px, calc(100dvh - 88px));
+  max-height: inherit;
   display: grid;
-  gap: 3px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.automations-template-button:hover,
-.automations-template-button:focus-visible {
-  border-color: rgba(95, 146, 194, 0.6);
-  background: #ffffff;
-}
-
-.automations-template-button strong {
-  min-width: 0;
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
 }
 
-.automations-template-button span,
-.automations-field span {
-  color: var(--seg-text-3);
-  font-size: 11px;
-}
-
-.automations-field {
+.automations-create-header {
   min-width: 0;
-  display: grid;
+  padding: 18px 18px 4px 20px;
+  align-items: start;
+  gap: 12px;
+}
+
+.automations-template-browser-header {
+  min-width: 0;
+  padding: 20px 20px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.automations-template-browser-header h2 {
+  margin: 0;
+  color: var(--seg-text-1);
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.automations-create-title-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  width: auto;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--seg-text-1);
+  font: inherit;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.automations-create-title-input::placeholder,
+.automations-create-prompt-input::placeholder {
+  color: var(--seg-text-3);
+}
+
+.automations-create-title-input:focus,
+.automations-create-prompt-input:focus {
+  outline: none;
+}
+
+.automations-create-header-actions {
+  min-width: 0;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
   gap: 6px;
 }
 
-.automations-field input,
-.automations-field select,
-.automations-field textarea {
+.automations-create-prompt-input {
   min-width: 0;
   width: 100%;
-  border: 1px solid var(--seg-border);
-  border-radius: var(--seg-radius-xs);
-  background: var(--seg-panel);
+  min-height: 220px;
+  padding: 4px 20px 18px;
+  border: 0;
+  resize: none;
+  background: transparent;
   color: var(--seg-text-1);
   font: inherit;
+  font-size: 16px;
+  line-height: 1.48;
 }
 
-.automations-field input,
-.automations-field select {
-  min-height: 34px;
-  padding: 0 10px;
+.automations-create-footer {
+  min-width: 0;
+  padding: 12px 18px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.automations-field textarea {
-  min-height: 150px;
-  resize: vertical;
-  padding: 9px 10px;
-  line-height: 1.45;
+.automations-create-controls,
+.automations-create-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.automations-field input:focus,
-.automations-field select:focus,
-.automations-field textarea:focus {
+.automations-create-controls {
+  flex-wrap: wrap;
+}
+
+.automations-create-menu-anchor {
+  position: relative;
+}
+
+.automations-create-control-pill,
+.automations-create-control-button {
+  max-width: 220px;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: var(--seg-radius-xs);
+  background: transparent;
+  color: var(--seg-text-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.automations-create-control-button {
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.automations-create-control-button:hover,
+.automations-create-control-button:focus-visible,
+.automations-create-control-button.is-active {
+  background: var(--mix-seg-panel-muted-88-seg-panel-12);
+  color: var(--seg-text-1);
+}
+
+.automations-create-control-button:focus-visible {
   outline: var(--focus-outline-width) solid var(--focus-outline-color);
   outline-offset: var(--focus-outline-offset);
 }
 
-.automations-segmented {
+.automations-create-control-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.automations-template-manual-button {
+  border-color: color-mix(in srgb, var(--seg-border) 70%, transparent);
+  background: var(--mix-seg-panel-muted-88-seg-panel-12);
+  color: var(--seg-text-1);
+  font-weight: 650;
+}
+
+.automations-create-control-pill {
+  color: var(--seg-text-2);
+}
+
+.automations-create-control-pill span,
+.automations-create-control-button span {
   min-width: 0;
-  margin: 0;
-  padding: 3px;
-  border: 1px solid var(--seg-border);
-  border-radius: var(--seg-radius-xs);
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
-  gap: 3px;
-}
-
-.automations-segmented label {
-  min-width: 0;
-  min-height: 28px;
-  border-radius: calc(var(--seg-radius-xs) - 2px);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--seg-text-3);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.automations-segmented label.is-active {
-  background: var(--mix-seg-accent-soft-72-seg-panel-28);
-  color: var(--seg-accent-strong);
-}
-
-.automations-segmented input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
   overflow: hidden;
-  clip: rect(0 0 0 0);
+  text-overflow: ellipsis;
+}
+
+.automations-create-control-pill svg,
+.automations-create-control-button svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.automations-create-close {
+  border-color: transparent;
+  background: transparent;
+}
+
+.automations-create-cancel,
+.automations-create-button {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.automations-create-cancel {
+  border-color: transparent;
+  background: transparent;
 }
 
 .automations-create-button {
   justify-content: center;
+}
+
+.automations-create-menu {
+  position: absolute;
+  z-index: 24;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  min-width: 176px;
+  max-width: min(340px, calc(100vw - 64px));
+  max-height: min(290px, calc(100dvh - 180px));
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--seg-border) 78%, transparent);
+  border-radius: var(--semantic-dropdown-menu-radius, calc(var(--seg-radius-sm) + 2px));
+  background: var(--seg-dropdown-menu-surface, var(--surface-elevated));
+  box-shadow: 0 18px 42px rgba(31, 48, 66, 0.16);
+  scrollbar-width: none;
+}
+
+.automations-create-menu::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.automations-template-menu {
+  top: calc(100% + 8px);
+  right: 0;
+  bottom: auto;
+  left: auto;
+  width: min(330px, calc(100vw - 64px));
+  max-height: min(320px, calc(100dvh - 180px));
+}
+
+.automations-project-menu {
+  min-width: min(280px, calc(100vw - 64px));
+}
+
+.automations-cadence-menu {
+  min-width: 190px;
+}
+
+.automations-cadence-menu .automations-create-menu-option {
+  min-height: 32px;
+  padding: 4px 8px;
+}
+
+.automations-create-menu-option {
+  min-width: 0;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--seg-radius-xs);
+  background: transparent;
+  color: var(--seg-text-1);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.automations-create-menu-option:hover,
+.automations-create-menu-option:focus-visible,
+.automations-create-menu-option.is-selected {
+  background: var(--mix-seg-panel-muted-88-seg-panel-12);
+  color: var(--seg-text-1);
+}
+
+.automations-create-menu-option:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
+}
+
+.automations-create-menu-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.automations-create-menu-copy strong,
+.automations-create-menu-copy span,
+.automations-create-menu-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automations-create-menu-copy strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.automations-create-menu-copy span,
+.automations-create-menu-meta {
+  color: var(--seg-text-3);
+  font-size: 11px;
+}
+
+.automations-create-menu-option.is-selected .automations-create-menu-meta {
+  color: var(--seg-accent-strong);
+}
+
+.automations-template-browser-grid {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 20px 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--mix-seg-text-3-54-transparent-46) transparent;
+}
+
+.automations-template-browser-grid::-webkit-scrollbar {
+  width: 10px;
+}
+
+.automations-template-browser-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.automations-template-browser-grid::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--mix-seg-text-3-54-transparent-46);
+  background-clip: padding-box;
+}
+
+.automations-template-card {
+  min-width: 0;
+  width: 100%;
+  min-height: 170px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--seg-border) 78%, transparent);
+  border-radius: var(--seg-radius-sm);
+  background: color-mix(in srgb, var(--seg-panel) 72%, transparent);
+  color: var(--seg-text-1);
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.automations-template-card:hover,
+.automations-template-card:focus-visible,
+.automations-template-card.is-selected {
+  border-color: var(--mix-seg-accent-34-seg-border-66);
+  background: var(--mix-seg-panel-muted-88-seg-panel-12);
+}
+
+.automations-template-card:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
+}
+
+.automations-template-card-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--seg-accent-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.automations-template-card-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.automations-template-card-copy {
+  min-width: 0;
+  white-space: pre-wrap;
+  color: var(--seg-text-1);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.5;
 }
 
 .automations-page .icon-button {
@@ -777,7 +1051,7 @@
     flex-wrap: wrap;
   }
 
-  .automations-template-grid {
+  .automations-template-browser-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

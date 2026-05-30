@@ -219,6 +219,13 @@ describe("Sidebar", () => {
     renderSidebar({ workspaces: [workspace] })
 
     expect(screen.getByLabelText("Automation: Daily review")).toBeInTheDocument()
+    const row = screen.getByText("Automation run").closest("button")
+    if (!(row instanceof HTMLButtonElement)) {
+      throw new Error("Expected automation session row to render as a button.")
+    }
+    expect(row.firstElementChild).toHaveClass("session-row-copy")
+    expect(row.lastElementChild).toHaveClass("session-row-icons")
+    expect(row.lastElementChild).toContainElement(screen.getByLabelText("Automation: Daily review"))
   })
 
   it("shows the green dot only for unread session canvases that are not visible", () => {
@@ -231,7 +238,9 @@ describe("Sidebar", () => {
       visibleCanvasSessionIDs: ["workspace-1-session-visible"],
     })
 
-    expect(screen.getByRole("button", { name: "Unread" }).querySelector(".session-row-status-dot")).not.toBeNull()
+    const unreadRow = screen.getByRole("button", { name: "Unread" })
+    expect(unreadRow.lastElementChild).toHaveClass("session-row-icons")
+    expect(unreadRow.lastElementChild?.querySelector(".session-row-status-dot")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Visible" }).querySelector(".session-row-status-dot")).toBeNull()
     expect(screen.getByRole("button", { name: "Read" }).querySelector(".session-row-status-dot")).toBeNull()
   })

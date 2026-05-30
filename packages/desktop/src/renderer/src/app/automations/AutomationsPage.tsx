@@ -4,8 +4,14 @@ import {
   AutomationIcon,
   BackIcon,
   CheckIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
+  CloseIcon,
   DeleteIcon,
+  FileSearchIcon,
+  FileTextIcon,
+  FolderIcon,
+  OpenExternalIcon,
   PlusIcon,
   SessionRunningIcon,
   StopIcon,
@@ -17,9 +23,13 @@ import type {
   AgentAutomationRun,
   AgentAutomationTriageStatus,
 } from "../../../../shared/desktop-ipc-contract"
+import { useI18n } from "../i18n/I18nProvider"
+import type { TranslationKey } from "../i18n/translations"
 
 type AgentAutomationSchedule = AgentAutomationDefinition["schedule"]
 type AgentAutomationStatus = AgentAutomationDefinition["status"]
+type CreateMenuKey = "cadence" | "project"
+type CreatePanelMode = "manual" | "templates"
 type AutomationDesktopApi = Required<
   Pick<
     NonNullable<Window["desktop"]>,
@@ -51,60 +61,50 @@ type CadenceKey = "one-minute" | "five-minutes" | "fifteen-minutes" | "hourly" |
 const SCHEDULE_OPTIONS: Array<{
   expression: string
   key: CadenceKey
-  label: string
+  labelKey: TranslationKey
   type: AgentAutomationSchedule["type"]
 }> = [
-  { key: "daily", label: "Daily", type: "rrule", expression: "FREQ=DAILY;INTERVAL=1" },
-  { key: "weekly", label: "Weekly", type: "rrule", expression: "FREQ=WEEKLY;INTERVAL=1" },
-  { key: "hourly", label: "Hourly", type: "rrule", expression: "FREQ=HOURLY;INTERVAL=1" },
-  { key: "fifteen-minutes", label: "15 min", type: "cron", expression: "*/15 * * * *" },
-  { key: "five-minutes", label: "5 min", type: "cron", expression: "*/5 * * * *" },
-  { key: "one-minute", label: "1 min", type: "cron", expression: "*/1 * * * *" },
+  { key: "daily", labelKey: "automations.cadence.daily", type: "rrule", expression: "FREQ=DAILY;INTERVAL=1" },
+  { key: "weekly", labelKey: "automations.cadence.weekly", type: "rrule", expression: "FREQ=WEEKLY;INTERVAL=1" },
+  { key: "hourly", labelKey: "automations.cadence.hourly", type: "rrule", expression: "FREQ=HOURLY;INTERVAL=1" },
+  { key: "fifteen-minutes", labelKey: "automations.cadence.fifteenMinutes", type: "cron", expression: "*/15 * * * *" },
+  { key: "five-minutes", labelKey: "automations.cadence.fiveMinutes", type: "cron", expression: "*/5 * * * *" },
+  { key: "one-minute", labelKey: "automations.cadence.oneMinute", type: "cron", expression: "*/1 * * * *" },
 ]
 
 const AUTOMATION_TEMPLATES: Array<{
   cadence: CadenceKey
   id: string
-  name: string
-  prompt: string
+  nameKey: TranslationKey
+  promptKey: TranslationKey
 }> = [
   {
     id: "daily-brief",
     cadence: "daily",
-    name: "Daily project brief",
-    prompt: [
-      "Review the current project state and recent changes.",
-      "Return JSON with findings for urgent regressions, failed checks, stale branches, or blocked work.",
-      "Use an empty findings array when nothing needs attention.",
-    ].join("\n"),
+    nameKey: "automations.templates.dailyBrief.name",
+    promptKey: "automations.templates.dailyBrief.prompt",
   },
   {
     id: "weekly-review",
     cadence: "weekly",
-    name: "Weekly maintenance review",
-    prompt: [
-      "Review the project for maintenance risks.",
-      "Look for failing tests, dependency drift, uncommitted high-risk changes, and documentation gaps.",
-      "Return concise JSON findings with severity and suggested next actions.",
-    ].join("\n"),
+    nameKey: "automations.templates.weeklyReview.name",
+    promptKey: "automations.templates.weeklyReview.prompt",
   },
   {
     id: "one-minute-watch",
     cadence: "one-minute",
-    name: "1-minute smoke watch",
-    prompt: [
-      "Check whether the project has obvious build, lint, or test blockers.",
-      "Prefer fast local checks already configured by the repository.",
-      "Return JSON findings only for actionable problems.",
-    ].join("\n"),
+    nameKey: "automations.templates.oneMinuteWatch.name",
+    promptKey: "automations.templates.oneMinuteWatch.prompt",
   },
 ]
 
 const ACTIVE_RUN_STATUSES = new Set<AgentAutomationRun["status"]>(["queued", "running"])
 
-function requireDesktopApi(): AutomationDesktopApi {
+type Translate = (key: TranslationKey, params?: Record<string, string | number>) => string
+
+function requireDesktopApi(translate?: Translate): AutomationDesktopApi {
   if (!window.desktop) {
-    throw new Error("Desktop API is unavailable.")
+    throw new Error(translate?.("automations.error.desktopApiUnavailable") ?? "Desktop API is unavailable.")
   }
   const desktop = window.desktop
   if (
@@ -117,21 +117,39 @@ function requireDesktopApi(): AutomationDesktopApi {
     !desktop.updateAutomation ||
     !desktop.updateAutomationRunTriage
   ) {
-    throw new Error("Automation API is unavailable.")
+    throw new Error(translate?.("automations.error.automationApiUnavailable") ?? "Automation API is unavailable.")
   }
   return desktop as AutomationDesktopApi
 }
 
-function getScheduleLabel(schedule: AgentAutomationSchedule) {
+function getTemplateDraft(template: (typeof AUTOMATION_TEMPLATES)[number], translate: Translate) {
+  return {
+    name: translate(template.nameKey),
+    prompt: translate(template.promptKey),
+  }
+}
+
+function getScheduleLabel(schedule: AgentAutomationSchedule, translate: Translate) {
   const match = SCHEDULE_OPTIONS.find((option) => option.type === schedule.type && option.expression === schedule.expression)
-  if (match) return match.label
-  if (schedule.type === "cron") return `Cron ${schedule.expression}`
+  if (match) return translate(match.labelKey)
+  if (schedule.type === "cron") return translate("automations.schedule.cron", { expression: schedule.expression })
   return schedule.expression
 }
 
-function formatDate(timestamp: number | undefined, fallback = "Not scheduled") {
-  if (!timestamp) return fallback
-  return new Intl.DateTimeFormat(undefined, {
+function renderAutomationTemplateIcon(templateID: string) {
+  if (templateID === "daily-brief") return <FileSearchIcon />
+  if (templateID === "weekly-review") return <FileTextIcon />
+  return <AutomationIcon />
+}
+
+function formatDate(
+  timestamp: number | undefined,
+  locale: string,
+  translate: Translate,
+  fallbackKey: TranslationKey = "automations.date.notScheduled",
+) {
+  if (!timestamp) return translate(fallbackKey)
+  return new Intl.DateTimeFormat(locale, {
     month: "short",
     day: "2-digit",
     hour: "2-digit",
@@ -139,7 +157,11 @@ function formatDate(timestamp: number | undefined, fallback = "Not scheduled") {
   }).format(timestamp)
 }
 
-function formatProjectTarget(automation: AgentAutomationDefinition, projectsByID: Map<string, AutomationProjectOption>) {
+function formatProjectTarget(
+  automation: AgentAutomationDefinition,
+  projectsByID: Map<string, AutomationProjectOption>,
+  translate: Translate,
+) {
   const projectNames = (automation.scope.projectIDs ?? [])
     .map((projectID) => projectsByID.get(projectID)?.name ?? projectID)
     .filter(Boolean)
@@ -152,8 +174,8 @@ function formatProjectTarget(automation: AgentAutomationDefinition, projectsByID
       .join(", ")
   }
 
-  if (automation.scope.sessionID) return `Session ${automation.scope.sessionID}`
-  return "No target"
+  if (automation.scope.sessionID) return translate("automations.target.session", { sessionID: automation.scope.sessionID })
+  return translate("automations.target.none")
 }
 
 function getStatusBadgeClassName(status: AgentAutomationStatus | AgentAutomationRun["status"]) {
@@ -168,12 +190,12 @@ function getRunTitle(run: AgentAutomationRun, automationsByID: Map<string, Agent
   return automationsByID.get(run.automationID)?.name ?? run.automationID
 }
 
-function getRunSummary(run: AgentAutomationRun) {
+function getRunSummary(run: AgentAutomationRun, translate: Translate) {
   if (run.error) return run.error
   if (run.summary) return run.summary
-  if (run.status === "queued") return "Queued"
-  if (run.status === "running") return "Running"
-  return "No summary"
+  if (run.status === "queued") return translate("automations.runSummary.queued")
+  if (run.status === "running") return translate("automations.runSummary.running")
+  return translate("automations.runSummary.none")
 }
 
 function getRunTimestamp(run: AgentAutomationRun) {
@@ -191,21 +213,70 @@ function getLatestRunByAutomationID(runs: AgentAutomationRun[]) {
   return latestRuns
 }
 
-function getOutputPolicyLabel(automation: AgentAutomationDefinition) {
-  if (automation.outputPolicy.triage === "always") return "Always send to inbox"
-  if (automation.outputPolicy.triage === "never") return "Never triage"
-  return automation.outputPolicy.autoArchiveNoFindings ? "Findings only" : "Findings review"
+function getFindingCountLabel(count: number, translate: Translate) {
+  return count === 1
+    ? translate("automations.findings.singular", { count })
+    : translate("automations.findings.plural", { count })
+}
+
+function getRunTriggerLabel(trigger: AgentAutomationRun["trigger"], translate: Translate) {
+  if (trigger === "manual") return translate("automations.trigger.manual")
+  if (trigger === "schedule") return translate("automations.trigger.schedule")
+  return trigger
+}
+
+function getStatusLabel(status: AgentAutomationStatus | AgentAutomationRun["status"], translate: Translate) {
+  const key = `automations.status.${status}` as TranslationKey
+  return translate(key)
+}
+
+function getPermissionModeLabel(permissionMode: string | undefined, translate: Translate) {
+  if (!permissionMode || permissionMode === "default") return translate("automations.permission.default")
+  if (permissionMode === "read-only") return translate("automations.permission.readOnly")
+  if (permissionMode === "full-access" || permissionMode === "full_access") return translate("automations.permission.fullAccess")
+  return permissionMode
+}
+
+function getEnvironmentLabel(environment: string, translate: Translate) {
+  if (environment === "local") return translate("automations.environment.local")
+  if (environment === "worktree") return translate("automations.environment.worktree")
+  return environment
+}
+
+function getReasoningEffortLabel(reasoningEffort: string | undefined | null, translate: Translate) {
+  if (!reasoningEffort) return translate("automations.value.default")
+  if (reasoningEffort === "low") return translate("automations.reasoning.low")
+  if (reasoningEffort === "medium") return translate("automations.reasoning.medium")
+  if (reasoningEffort === "high") return translate("automations.reasoning.high")
+  if (reasoningEffort === "max") return translate("automations.reasoning.max")
+  return reasoningEffort
+}
+
+function getOutputPolicyLabel(automation: AgentAutomationDefinition, translate: Translate) {
+  if (automation.outputPolicy.triage === "always") return translate("automations.output.always")
+  if (automation.outputPolicy.triage === "never") return translate("automations.output.never")
+  return automation.outputPolicy.autoArchiveNoFindings
+    ? translate("automations.output.findingsOnly")
+    : translate("automations.output.findingsReview")
 }
 
 export function AutomationsPage({ projects, windowControls, onOpenSession }: AutomationsPageProps) {
+  const { locale, t } = useI18n()
+  const defaultTemplate = AUTOMATION_TEMPLATES[0]
+  const defaultTemplateDraft = defaultTemplate
+    ? getTemplateDraft(defaultTemplate, t)
+    : { name: "", prompt: "" }
   const [automations, setAutomations] = useState<AgentAutomationDefinition[]>([])
   const [runs, setRuns] = useState<AgentAutomationRun[]>([])
   const [selectedAutomationID, setSelectedAutomationID] = useState<string | null>(null)
   const [isCreatePanelOpen, setIsCreatePanelOpen] = useState(false)
   const [selectedProjectID, setSelectedProjectID] = useState("")
-  const [draftName, setDraftName] = useState(AUTOMATION_TEMPLATES[0]?.name ?? "")
-  const [draftPrompt, setDraftPrompt] = useState(AUTOMATION_TEMPLATES[0]?.prompt ?? "")
+  const [draftTemplateID, setDraftTemplateID] = useState<string | null>(defaultTemplate?.id ?? null)
+  const [draftName, setDraftName] = useState(defaultTemplateDraft.name)
+  const [draftPrompt, setDraftPrompt] = useState(defaultTemplateDraft.prompt)
   const [cadence, setCadence] = useState<CadenceKey>(AUTOMATION_TEMPLATES[0]?.cadence ?? "daily")
+  const [createPanelMode, setCreatePanelMode] = useState<CreatePanelMode>("manual")
+  const [openCreateMenu, setOpenCreateMenu] = useState<CreateMenuKey | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [runningAutomationID, setRunningAutomationID] = useState<string | null>(null)
@@ -223,6 +294,12 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
     ? runs.filter((run) => run.automationID === selectedAutomationID)
     : []
   const activeAutomationCount = automations.filter((automation) => automation.status === "active").length
+  const selectedScheduleOption = SCHEDULE_OPTIONS.find((option) => option.key === cadence) ?? SCHEDULE_OPTIONS[0]
+  const selectedScheduleLabel = selectedScheduleOption
+    ? t(selectedScheduleOption.labelKey)
+    : t("automations.schedule.label")
+  const selectedProject = selectedProjectID ? projectsByID.get(selectedProjectID) : undefined
+  const selectedTemplateID = draftTemplateID
 
   useEffect(() => {
     if (!selectedProjectID && projects[0]) {
@@ -236,10 +313,43 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
     }
   }, [automationsByID, selectedAutomationID])
 
+  useEffect(() => {
+    if (!draftTemplateID) return
+    const template = AUTOMATION_TEMPLATES.find((item) => item.id === draftTemplateID)
+    if (!template) return
+    const templateDraft = getTemplateDraft(template, t)
+    setDraftName(templateDraft.name)
+    setDraftPrompt(templateDraft.prompt)
+    setCadence(template.cadence)
+  }, [draftTemplateID, t])
+
+  useEffect(() => {
+    if (!openCreateMenu) return
+
+    function closeCreateMenu(event: MouseEvent) {
+      const target = event.target
+      if (target instanceof Element && target.closest(".automations-create-menu-anchor")) return
+      setOpenCreateMenu(null)
+    }
+
+    function closeCreateMenuOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpenCreateMenu(null)
+      }
+    }
+
+    document.addEventListener("mousedown", closeCreateMenu)
+    document.addEventListener("keydown", closeCreateMenuOnEscape)
+    return () => {
+      document.removeEventListener("mousedown", closeCreateMenu)
+      document.removeEventListener("keydown", closeCreateMenuOnEscape)
+    }
+  }, [openCreateMenu])
+
   async function refreshAutomations(options: { silent?: boolean } = {}) {
     if (!options.silent) setIsLoading(true)
     try {
-      const desktop = requireDesktopApi()
+      const desktop = requireDesktopApi(t)
       const [nextAutomations, nextRuns] = await Promise.all([
         desktop.listAutomations(),
         desktop.listAutomationRuns({ limit: 100 }),
@@ -276,9 +386,19 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
   function applyTemplate(templateID: string) {
     const template = AUTOMATION_TEMPLATES.find((item) => item.id === templateID)
     if (!template) return
-    setDraftName(template.name)
-    setDraftPrompt(template.prompt)
+    const templateDraft = getTemplateDraft(template, t)
+    setDraftName(templateDraft.name)
+    setDraftPrompt(templateDraft.prompt)
     setCadence(template.cadence)
+    setDraftTemplateID(template.id)
+    setOpenCreateMenu(null)
+    setCreatePanelMode("manual")
+  }
+
+  function closeCreatePanel() {
+    setOpenCreateMenu(null)
+    setCreatePanelMode("manual")
+    setIsCreatePanelOpen(false)
   }
 
   async function handleCreateAutomation(event: FormEvent<HTMLFormElement>) {
@@ -287,11 +407,11 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
     const name = draftName.trim()
     const prompt = draftPrompt.trim()
     if (!project) {
-      setError("Select a project before creating an automation.")
+      setError(t("automations.error.selectProject"))
       return
     }
     if (!name || !prompt) {
-      setError("Name and prompt are required.")
+      setError(t("automations.error.namePromptRequired"))
       return
     }
 
@@ -322,9 +442,9 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
 
     setIsSaving(true)
     try {
-      const createdAutomation = await requireDesktopApi().createAutomation(input)
+      const createdAutomation = await requireDesktopApi(t).createAutomation(input)
       setError(null)
-      setIsCreatePanelOpen(false)
+      closeCreatePanel()
       setSelectedAutomationID(createdAutomation.id)
       await refreshAutomations({ silent: true })
     } catch (createError) {
@@ -336,7 +456,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
 
   async function updateAutomationStatus(automation: AgentAutomationDefinition, status: AgentAutomationStatus) {
     try {
-      await requireDesktopApi().updateAutomation({
+      await requireDesktopApi(t).updateAutomation({
         automationID: automation.id,
         automation: { status },
       })
@@ -347,9 +467,9 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
   }
 
   async function deleteAutomation(automation: AgentAutomationDefinition) {
-    if (!window.confirm(`Delete automation "${automation.name}"?`)) return
+    if (!window.confirm(t("automations.confirmDelete", { name: automation.name }))) return
     try {
-      await requireDesktopApi().deleteAutomation({ automationID: automation.id })
+      await requireDesktopApi(t).deleteAutomation({ automationID: automation.id })
       setSelectedAutomationID(null)
       await refreshAutomations({ silent: true })
     } catch (deleteError) {
@@ -360,7 +480,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
   async function runAutomation(automationID: string) {
     setRunningAutomationID(automationID)
     try {
-      await requireDesktopApi().runAutomation({ automationID })
+      await requireDesktopApi(t).runAutomation({ automationID })
       await refreshAutomations({ silent: true })
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : String(runError))
@@ -372,7 +492,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
   async function setRunTriage(runID: string, triageStatus: AgentAutomationTriageStatus) {
     setMutatingRunID(runID)
     try {
-      await requireDesktopApi().updateAutomationRunTriage({ runID, triageStatus })
+      await requireDesktopApi(t).updateAutomationRunTriage({ runID, triageStatus })
       await refreshAutomations({ silent: true })
     } catch (triageError) {
       setError(triageError instanceof Error ? triageError.message : String(triageError))
@@ -384,7 +504,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
   async function cancelRun(runID: string) {
     setMutatingRunID(runID)
     try {
-      await requireDesktopApi().cancelAutomationRun({ runID })
+      await requireDesktopApi(t).cancelAutomationRun({ runID })
       await refreshAutomations({ silent: true })
     } catch (cancelError) {
       setError(cancelError instanceof Error ? cancelError.message : String(cancelError))
@@ -395,108 +515,222 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
 
   const createPanel = isCreatePanelOpen ? (
     <div className="automations-create-overlay">
-      <section className="automations-create-panel" role="dialog" aria-modal="true" aria-label="Create automation">
-        <div className="automations-create-header">
-          <div className="automations-panel-heading">
-            <span className="label">Create</span>
-            <h2>New automation</h2>
+      <section className="automations-create-panel" role="dialog" aria-modal="true" aria-label={t("automations.create.dialogLabel")}>
+        {createPanelMode === "templates" ? (
+          <div className="automations-template-browser">
+            <header className="automations-template-browser-header">
+              <h2>{t("automations.templates.title")}</h2>
+              <div className="automations-create-header-actions">
+                <button
+                  className="automations-create-control-button automations-template-manual-button"
+                  type="button"
+                  onClick={() => {
+                    setOpenCreateMenu(null)
+                    setCreatePanelMode("manual")
+                  }}
+                >
+                  {t("automations.templates.manualSetup")}
+                </button>
+                <button
+                  className="icon-button automations-create-close"
+                  type="button"
+                  aria-label={t("app.cancel")}
+                  title={t("app.cancel")}
+                  onClick={closeCreatePanel}
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+            </header>
+
+            <div className="automations-template-browser-grid" aria-label={t("automations.templates.title")}>
+              {AUTOMATION_TEMPLATES.map((template) => {
+                const templateDraft = getTemplateDraft(template, t)
+                return (
+                  <button
+                    key={template.id}
+                    className={joinClassNames("automations-template-card", selectedTemplateID === template.id && "is-selected")}
+                    type="button"
+                    onClick={() => applyTemplate(template.id)}
+                  >
+                    <span className="automations-template-card-icon" aria-hidden="true">
+                      {renderAutomationTemplateIcon(template.id)}
+                    </span>
+                    <span className="automations-template-card-copy">{templateDraft.prompt}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
-          <button
-            className="secondary-button"
-            type="button"
-            onClick={() => setIsCreatePanelOpen(false)}
-          >
-            Cancel
-          </button>
-        </div>
-
-        <div className="automations-template-grid" aria-label="Automation templates">
-          {AUTOMATION_TEMPLATES.map((template) => (
-            <button
-              key={template.id}
-              className="automations-template-button"
-              type="button"
-              onClick={() => applyTemplate(template.id)}
-            >
-              <strong>{template.name}</strong>
-              <span>{SCHEDULE_OPTIONS.find((option) => option.key === template.cadence)?.label}</span>
-            </button>
-          ))}
-        </div>
-
-        <form className="automations-form" onSubmit={handleCreateAutomation}>
-          <label className="automations-field">
-            <span>Name</span>
+        ) : (
+          <form className="automations-create-composer" onSubmit={handleCreateAutomation}>
+          <header className="automations-create-header">
             <input
+              aria-label={t("automations.create.titleLabel")}
+              className="automations-create-title-input"
               type="text"
+              placeholder={t("automations.create.titlePlaceholder")}
               value={draftName}
-              onChange={(event) => setDraftName(event.target.value)}
+              onChange={(event) => {
+                setDraftName(event.target.value)
+                setDraftTemplateID(null)
+              }}
             />
-          </label>
 
-          <label className="automations-field">
-            <span>Project</span>
-            <select
-              value={selectedProjectID}
-              disabled={projects.length === 0}
-              onChange={(event) => setSelectedProjectID(event.target.value)}
-            >
-              {projects.length === 0 ? <option value="">No projects</option> : null}
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </label>
+            <div className="automations-create-header-actions">
+              <div className="automations-create-menu-anchor">
+                <button
+                  className="automations-create-control-button"
+                  type="button"
+                  onClick={() => {
+                    setOpenCreateMenu(null)
+                    setCreatePanelMode("templates")
+                  }}
+                >
+                  <span>{t("automations.create.useTemplate")}</span>
+                </button>
+              </div>
 
-          <fieldset className="automations-segmented" aria-label="Cadence">
-            {SCHEDULE_OPTIONS.map((option) => (
-              <label key={option.key} className={cadence === option.key ? "is-active" : ""}>
-                <input
-                  type="radio"
-                  name="automation-cadence"
-                  value={option.key}
-                  checked={cadence === option.key}
-                  onChange={() => setCadence(option.key)}
-                />
-                <span>{option.label}</span>
-              </label>
-            ))}
-          </fieldset>
+              <button
+                className="icon-button automations-create-close"
+                type="button"
+                aria-label={t("app.cancel")}
+                title={t("app.cancel")}
+                onClick={closeCreatePanel}
+              >
+                <CloseIcon />
+              </button>
+            </div>
+          </header>
 
-          <label className="automations-field">
-            <span>Prompt</span>
-            <textarea
-              rows={9}
-              value={draftPrompt}
-              onChange={(event) => setDraftPrompt(event.target.value)}
-            />
-          </label>
+          <textarea
+            className="automations-create-prompt-input"
+            aria-label={t("automations.create.promptLabel")}
+            placeholder={t("automations.create.promptPlaceholder")}
+            value={draftPrompt}
+            onChange={(event) => {
+              setDraftPrompt(event.target.value)
+              setDraftTemplateID(null)
+            }}
+          />
 
-          <button
-            className="primary-button automations-create-button"
-            type="submit"
-            disabled={isSaving || projects.length === 0}
-          >
-            {isSaving ? "Creating..." : "Create automation"}
-          </button>
-        </form>
+          <div className="automations-create-footer">
+            <div className="automations-create-controls" aria-label={t("automations.create.configurationLabel")}>
+              <span className="automations-create-control-pill" title={selectedProject?.directory ?? t("automations.project.noneSelected")}>
+                <OpenExternalIcon />
+                <span>{t("automations.create.worktree")}</span>
+              </span>
+
+              <div className="automations-create-menu-anchor">
+                <button
+                  className={joinClassNames("automations-create-control-button", openCreateMenu === "project" && "is-active")}
+                  type="button"
+                  disabled={projects.length === 0}
+                  aria-haspopup="menu"
+                  aria-expanded={openCreateMenu === "project"}
+                  onClick={() => setOpenCreateMenu((current) => current === "project" ? null : "project")}
+                >
+                  <FolderIcon />
+                  <span>{selectedProject?.name ?? t("automations.project.select")}</span>
+                  <ChevronDownIcon />
+                </button>
+
+                {openCreateMenu === "project" ? (
+                  <div className="automations-create-menu automations-project-menu" role="menu" aria-label={t("automations.project.menuLabel")}>
+                    {projects.map((project) => (
+                      <button
+                        key={project.id}
+                        className={joinClassNames("automations-create-menu-option", selectedProjectID === project.id && "is-selected")}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selectedProjectID === project.id}
+                        onClick={() => {
+                          setSelectedProjectID(project.id)
+                          setOpenCreateMenu(null)
+                        }}
+                      >
+                        <span className="automations-create-menu-copy">
+                          <strong>{project.name}</strong>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="automations-create-menu-anchor">
+                <button
+                  className={joinClassNames("automations-create-control-button", openCreateMenu === "cadence" && "is-active")}
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={openCreateMenu === "cadence"}
+                  onClick={() => setOpenCreateMenu((current) => current === "cadence" ? null : "cadence")}
+                >
+                  <AutomationIcon />
+                  <span>{selectedScheduleLabel}</span>
+                  <ChevronDownIcon />
+                </button>
+
+                {openCreateMenu === "cadence" ? (
+                  <div className="automations-create-menu automations-cadence-menu" role="menu" aria-label={t("automations.cadence.menuLabel")}>
+                    {SCHEDULE_OPTIONS.map((option) => (
+                      <button
+                        key={option.key}
+                        className={joinClassNames("automations-create-menu-option", cadence === option.key && "is-selected")}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={cadence === option.key}
+                        onClick={() => {
+                          setCadence(option.key)
+                          setDraftTemplateID(null)
+                          setOpenCreateMenu(null)
+                        }}
+                      >
+                        <span className="automations-create-menu-copy">
+                          <strong>{t(option.labelKey)}</strong>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="automations-create-actions">
+              <button
+                className="secondary-button automations-create-cancel"
+                type="button"
+                onClick={closeCreatePanel}
+              >
+                {t("app.cancel")}
+              </button>
+              <button
+                className="primary-button automations-create-button"
+                type="submit"
+                aria-label={t("automations.create.submit")}
+                disabled={isSaving || projects.length === 0}
+              >
+                {isSaving ? t("automations.create.creating") : t("automations.create.create")}
+              </button>
+            </div>
+          </div>
+          </form>
+        )}
       </section>
     </div>
   ) : null
 
   return (
-    <section className="automations-page" aria-label="Automations">
+    <section className="automations-page" aria-label={t("automations.title")}>
       <ShellTopMenu
         as="header"
-        ariaLabel="Automations top menu"
+        ariaLabel={t("automations.topMenu")}
         className="canvas-region-top-menu automations-top-menu"
         contentClassName="canvas-region-top-menu-tabs-shell"
         content={(
           <div className="automations-top-menu-label">
             <AutomationIcon />
-            <span>Automations</span>
+            <span>{t("automations.title")}</span>
           </div>
         )}
         dragRegion
@@ -513,13 +747,13 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
         ) : null}
 
         {selectedAutomation ? (
-          <section className="automation-detail" aria-label={`Automation details for ${selectedAutomation.name}`}>
+          <section className="automation-detail" aria-label={t("automations.detail.ariaLabel", { name: selectedAutomation.name })}>
             <header className="automation-detail-header">
               <button
                 className="icon-button"
                 type="button"
-                aria-label="Back to automations"
-                title="Back to automations"
+                aria-label={t("automations.detail.back")}
+                title={t("automations.detail.back")}
                 onClick={() => setSelectedAutomationID(null)}
               >
                 <BackIcon />
@@ -527,7 +761,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
 
               <div className="automation-detail-title">
                 <div className="automation-detail-breadcrumb">
-                  <span>Automations</span>
+                  <span>{t("automations.title")}</span>
                   <ChevronRightIcon />
                   <strong>{selectedAutomation.name}</strong>
                 </div>
@@ -548,20 +782,20 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                         onClick={() => void runAutomation(selectedAutomation.id)}
                       >
                         {isRunning || activeRun ? <SessionRunningIcon /> : <AutomationIcon />}
-                        <span>{isRunning || activeRun ? "Running" : "Run now"}</span>
+                        <span>{isRunning || activeRun ? t("automations.actions.running") : t("automations.actions.runNow")}</span>
                       </button>
                       <button
                         className="secondary-button"
                         type="button"
                         onClick={() => void updateAutomationStatus(selectedAutomation, isActive ? "paused" : "active")}
                       >
-                        {isActive ? "Pause" : "Resume"}
+                        {isActive ? t("automations.actions.pause") : t("automations.actions.resume")}
                       </button>
                       <button
                         className="icon-button is-danger"
                         type="button"
-                        aria-label={`Delete ${selectedAutomation.name}`}
-                        title={`Delete ${selectedAutomation.name}`}
+                        aria-label={t("automations.actions.deleteNamed", { name: selectedAutomation.name })}
+                        title={t("automations.actions.deleteNamed", { name: selectedAutomation.name })}
                         onClick={() => void deleteAutomation(selectedAutomation)}
                       >
                         <DeleteIcon />
@@ -576,8 +810,8 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
               <main className="automation-detail-main">
                 <section className="automation-detail-section">
                   <div className="automations-panel-heading">
-                    <span className="label">Prompt</span>
-                    <h2>Instructions</h2>
+                    <span className="label">{t("automations.detail.promptLabel")}</span>
+                    <h2>{t("automations.detail.instructions")}</h2>
                   </div>
                   <p className="automation-detail-prompt">{selectedAutomation.prompt}</p>
                 </section>
@@ -585,18 +819,18 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                 <section className="automation-detail-section">
                   <div className="automation-section-title-row">
                     <div className="automations-panel-heading">
-                      <span className="label">Runs</span>
-                      <h2>Run history</h2>
+                      <span className="label">{t("automations.detail.runsLabel")}</span>
+                      <h2>{t("automations.detail.runHistory")}</h2>
                     </div>
                     <button className="secondary-button" type="button" onClick={() => void refreshAutomations()}>
-                      Refresh
+                      {t("app.refresh")}
                     </button>
                   </div>
 
                   {selectedAutomationRuns.length === 0 ? (
                     <article className="automations-empty-state">
-                      <h3>No runs yet</h3>
-                      <p>This automation has not produced a run history.</p>
+                      <h3>{t("automations.runs.emptyTitle")}</h3>
+                      <p>{t("automations.runs.emptyCopy")}</p>
                     </article>
                   ) : (
                     <div className="automations-run-list">
@@ -608,13 +842,13 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                           <article key={run.id} className={joinClassNames("automations-run-card", isActiveRun && "is-active")}>
                             <div className="automations-run-header">
                               <strong>{getRunTitle(run, automationsByID)}</strong>
-                              <span className={getStatusBadgeClassName(run.status)}>{run.status}</span>
+                              <span className={getStatusBadgeClassName(run.status)}>{getStatusLabel(run.status, t)}</span>
                             </div>
-                            <p>{getRunSummary(run)}</p>
+                            <p>{getRunSummary(run, t)}</p>
                             <div className="automations-run-meta">
-                              <span>{run.trigger}</span>
-                              <span>{run.findingCount} findings</span>
-                              <span>{formatDate(getRunTimestamp(run), "Unknown time")}</span>
+                              <span>{getRunTriggerLabel(run.trigger, t)}</span>
+                              <span>{getFindingCountLabel(run.findingCount, t)}</span>
+                              <span>{formatDate(getRunTimestamp(run), locale, t, "automations.date.unknownTime")}</span>
                             </div>
                             <div className="automations-run-actions">
                               {run.sessionID ? (
@@ -623,15 +857,15 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                                   type="button"
                                   onClick={() => onOpenSession?.(run.sessionID!)}
                                 >
-                                  Open
+                                  {t("automations.actions.open")}
                                 </button>
                               ) : null}
                               {isActiveRun ? (
                                 <button
                                   className="icon-button"
                                   type="button"
-                                  aria-label="Cancel run"
-                                  title="Cancel run"
+                                  aria-label={t("automations.actions.cancelRun")}
+                                  title={t("automations.actions.cancelRun")}
                                   disabled={isMutating}
                                   onClick={() => void cancelRun(run.id)}
                                 >
@@ -642,8 +876,8 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                                   <button
                                     className="icon-button"
                                     type="button"
-                                    aria-label="Mark run read"
-                                    title="Mark run read"
+                                    aria-label={t("automations.actions.markRunRead")}
+                                    title={t("automations.actions.markRunRead")}
                                     disabled={isMutating}
                                     onClick={() => void setRunTriage(run.id, "read")}
                                   >
@@ -652,8 +886,8 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                                   <button
                                     className="icon-button"
                                     type="button"
-                                    aria-label="Archive run"
-                                    title="Archive run"
+                                    aria-label={t("automations.actions.archiveRun")}
+                                    title={t("automations.actions.archiveRun")}
                                     disabled={isMutating}
                                     onClick={() => void setRunTriage(run.id, "archived")}
                                   >
@@ -670,59 +904,59 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                 </section>
               </main>
 
-              <aside className="automation-detail-sidebar" aria-label="Automation details">
+              <aside className="automation-detail-sidebar" aria-label={t("automations.detail.sidebarLabel")}>
                 <section className="automation-sidebar-section">
-                  <h2>Status</h2>
+                  <h2>{t("automations.detail.status")}</h2>
                   <dl className="automation-detail-list">
                     <div>
-                      <dt>Status</dt>
-                      <dd><span className={getStatusBadgeClassName(selectedAutomation.status)}>{selectedAutomation.status}</span></dd>
+                      <dt>{t("automations.detail.status")}</dt>
+                      <dd><span className={getStatusBadgeClassName(selectedAutomation.status)}>{getStatusLabel(selectedAutomation.status, t)}</span></dd>
                     </div>
                     <div>
-                      <dt>Next run</dt>
-                      <dd>{formatDate(selectedAutomation.nextRunAt)}</dd>
+                      <dt>{t("automations.detail.nextRun")}</dt>
+                      <dd>{formatDate(selectedAutomation.nextRunAt, locale, t)}</dd>
                     </div>
                     <div>
-                      <dt>Last run</dt>
-                      <dd>{formatDate(selectedAutomation.lastRunAt, "Never")}</dd>
+                      <dt>{t("automations.detail.lastRun")}</dt>
+                      <dd>{formatDate(selectedAutomation.lastRunAt, locale, t, "automations.date.never")}</dd>
                     </div>
                   </dl>
                 </section>
 
                 <section className="automation-sidebar-section">
-                  <h2>Details</h2>
+                  <h2>{t("automations.detail.details")}</h2>
                   <dl className="automation-detail-list">
                     <div>
-                      <dt>Target</dt>
-                      <dd>{formatProjectTarget(selectedAutomation, projectsByID)}</dd>
+                      <dt>{t("automations.detail.target")}</dt>
+                      <dd>{formatProjectTarget(selectedAutomation, projectsByID, t)}</dd>
                     </div>
                     <div>
-                      <dt>Cadence</dt>
-                      <dd>{getScheduleLabel(selectedAutomation.schedule)}</dd>
+                      <dt>{t("automations.detail.cadence")}</dt>
+                      <dd>{getScheduleLabel(selectedAutomation.schedule, t)}</dd>
                     </div>
                     <div>
-                      <dt>Timezone</dt>
+                      <dt>{t("automations.detail.timezone")}</dt>
                       <dd>{selectedAutomation.schedule.timezone}</dd>
                     </div>
                     <div>
-                      <dt>Environment</dt>
-                      <dd>{selectedAutomation.execution.environment}</dd>
+                      <dt>{t("automations.detail.environment")}</dt>
+                      <dd>{getEnvironmentLabel(selectedAutomation.execution.environment, t)}</dd>
                     </div>
                     <div>
-                      <dt>Permission</dt>
-                      <dd>{selectedAutomation.execution.permissionMode ?? "default"}</dd>
+                      <dt>{t("automations.detail.permission")}</dt>
+                      <dd>{getPermissionModeLabel(selectedAutomation.execution.permissionMode, t)}</dd>
                     </div>
                     <div>
-                      <dt>Model</dt>
-                      <dd>{selectedAutomation.execution.model ?? "Default"}</dd>
+                      <dt>{t("automations.detail.model")}</dt>
+                      <dd>{selectedAutomation.execution.model ?? t("automations.value.default")}</dd>
                     </div>
                     <div>
-                      <dt>Reasoning</dt>
-                      <dd>{selectedAutomation.execution.reasoning_effort ?? "Default"}</dd>
+                      <dt>{t("automations.detail.reasoning")}</dt>
+                      <dd>{getReasoningEffortLabel(selectedAutomation.execution.reasoning_effort, t)}</dd>
                     </div>
                     <div>
-                      <dt>Output</dt>
-                      <dd>{getOutputPolicyLabel(selectedAutomation)}</dd>
+                      <dt>{t("automations.detail.output")}</dt>
+                      <dd>{getOutputPolicyLabel(selectedAutomation, t)}</dd>
                     </div>
                   </dl>
                 </section>
@@ -730,33 +964,33 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
             </div>
           </section>
         ) : (
-          <section className="automations-index" aria-label="Automations list">
+          <section className="automations-index" aria-label={t("automations.list.ariaLabel")}>
             <header className="automations-index-header">
               <div className="automations-index-title">
-                <h1>Automations</h1>
-                <p>{activeAutomationCount} active of {automations.length} total</p>
+                <h1>{t("automations.title")}</h1>
+                <p>{t("automations.summary.activeCount", { active: activeAutomationCount, total: automations.length })}</p>
               </div>
 
               <div className="automations-index-actions">
                 <button className="secondary-button" type="button" onClick={() => void refreshAutomations()}>
-                  Refresh
+                  {t("app.refresh")}
                 </button>
                 <button className="primary-button" type="button" onClick={() => setIsCreatePanelOpen(true)}>
                   <PlusIcon />
-                  <span>New automation</span>
+                  <span>{t("automations.actions.newAutomation")}</span>
                 </button>
               </div>
             </header>
 
             {isLoading ? (
               <article className="automations-empty-state">
-                <h3>Loading automations</h3>
-                <p>Fetching schedules and recent runs.</p>
+                <h3>{t("automations.loading.title")}</h3>
+                <p>{t("automations.loading.copy")}</p>
               </article>
             ) : automations.length === 0 ? (
               <article className="automations-empty-state">
-                <h3>No automations</h3>
-                <p>Create a project automation to start scheduled checks.</p>
+                <h3>{t("automations.empty.title")}</h3>
+                <p>{t("automations.empty.copy")}</p>
               </article>
             ) : (
               <div className="automations-index-list">
@@ -775,51 +1009,55 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                       <button
                         className="automations-index-row-open"
                         type="button"
-                        aria-label={`Open ${automation.name}`}
+                        aria-label={t("automations.actions.openNamed", { name: automation.name })}
                         onClick={() => setSelectedAutomationID(automation.id)}
                       >
                         <span className="automations-index-row-main">
                           <span className="automations-index-row-title">
                             <strong>{automation.name}</strong>
-                            <span>{formatProjectTarget(automation, projectsByID)}</span>
+                            <span>{formatProjectTarget(automation, projectsByID, t)}</span>
                           </span>
                           <span className="automations-index-row-summary">
-                            {activeRun ? getRunSummary(activeRun) : latestRun ? getRunSummary(latestRun) : "No runs yet"}
+                            {activeRun ? getRunSummary(activeRun, t) : latestRun ? getRunSummary(latestRun, t) : t("automations.runs.noRunsYet")}
                           </span>
                         </span>
                         <span className="automations-index-row-meta">
-                          <span>{getScheduleLabel(automation.schedule)}</span>
-                          <span>{formatDate(automation.nextRunAt)}</span>
+                          <span>{getScheduleLabel(automation.schedule, t)}</span>
+                          <span>{formatDate(automation.nextRunAt, locale, t)}</span>
                         </span>
                         <span className={getStatusBadgeClassName(activeRun?.status ?? automation.status)}>
-                          {activeRun?.status ?? automation.status}
+                          {getStatusLabel(activeRun?.status ?? automation.status, t)}
                         </span>
                       </button>
                       <span className="automations-index-row-actions">
                         <button
                           className="secondary-button"
                           type="button"
-                          aria-label={`运行 ${automation.name}`}
+                          aria-label={t("automations.actions.runNamed", { name: automation.name })}
                           disabled={isRunning || Boolean(activeRun)}
                           onClick={() => void runAutomation(automation.id)}
                         >
-                          运行
+                          {t("automations.actions.run")}
                         </button>
                         <button
                           className="secondary-button"
                           type="button"
-                          aria-label={`${isActive ? "暂停" : "恢复"} ${automation.name}`}
+                          aria-label={
+                            isActive
+                              ? t("automations.actions.pauseNamed", { name: automation.name })
+                              : t("automations.actions.resumeNamed", { name: automation.name })
+                          }
                           onClick={() => void updateAutomationStatus(automation, isActive ? "paused" : "active")}
                         >
-                          {isActive ? "暂停" : "恢复"}
+                          {isActive ? t("automations.actions.pause") : t("automations.actions.resume")}
                         </button>
                         <button
                           className="secondary-button is-danger"
                           type="button"
-                          aria-label={`删除 ${automation.name}`}
+                          aria-label={t("automations.actions.deleteNamed", { name: automation.name })}
                           onClick={() => void deleteAutomation(automation)}
                         >
-                          删除
+                          {t("app.delete")}
                         </button>
                       </span>
                     </article>

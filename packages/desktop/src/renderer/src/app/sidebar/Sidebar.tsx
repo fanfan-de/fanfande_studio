@@ -671,34 +671,34 @@ function FolderWorkspaceView({
             className={joinClassNames("session-row", active && "is-active", isSubagent && "is-subagent")}
             onClick={() => onSessionSelect(workspace.id, session.id)}
           >
-            <span
-              className={
-                isRunning
-                  ? "session-row-status-icon is-running"
-                  : hasUnreadCanvas
-                    ? "session-row-status-icon is-unread"
-                    : "session-row-status-icon"
-              }
-              aria-hidden="true"
-            >
-              {isRunning ? (
-                <SessionRunningIcon />
-              ) : hasUnreadCanvas ? (
-                <span className="session-row-status-dot" />
-              ) : null}
-            </span>
             <span className="session-row-copy">
               <span className="session-row-label">{session.title}</span>
-              {session.automation ? (
-                <span
-                  className="session-row-source-badge is-automation"
-                  title={`Automation: ${session.automation.name}`}
-                  aria-label={`Automation: ${session.automation.name}`}
-                >
-                  <AutomationIcon />
-                </span>
-              ) : null}
             </span>
+            {isRunning || hasUnreadCanvas || session.automation ? (
+              <span className="session-row-icons">
+                {isRunning || hasUnreadCanvas ? (
+                  <span
+                    className={isRunning ? "session-row-status-icon is-running" : "session-row-status-icon is-unread"}
+                    aria-hidden="true"
+                  >
+                    {isRunning ? (
+                      <SessionRunningIcon />
+                    ) : (
+                      <span className="session-row-status-dot" />
+                    )}
+                  </span>
+                ) : null}
+                {session.automation ? (
+                  <span
+                    className="session-row-source-badge is-automation"
+                    title={`Automation: ${session.automation.name}`}
+                    aria-label={`Automation: ${session.automation.name}`}
+                  >
+                    <AutomationIcon />
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
           </button>
           <span className="session-row-trailing">
             <time

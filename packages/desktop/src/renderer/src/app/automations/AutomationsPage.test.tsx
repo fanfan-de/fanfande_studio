@@ -5,6 +5,7 @@ import type {
   AgentAutomationDefinition,
   AgentAutomationRun,
 } from "../../../../shared/desktop-ipc-contract"
+import { I18nProvider } from "../i18n/I18nProvider"
 import { AutomationsPage } from "./AutomationsPage"
 
 function setDesktopMock(value: unknown) {
@@ -49,6 +50,7 @@ function createAutomation(overrides: Partial<AgentAutomationDefinition> = {}): A
 describe("AutomationsPage", () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    window.localStorage.clear()
     setDesktopMock(undefined)
   })
 
@@ -82,11 +84,11 @@ describe("AutomationsPage", () => {
 
     expect(await screen.findByText("Existing automation")).toBeInTheDocument()
     expect(screen.queryByText("Review the project.")).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "运行 Existing automation" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "暂停 Existing automation" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "删除 Existing automation" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Run Existing automation" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Pause Existing automation" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Delete Existing automation" })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "运行 Existing automation" }))
+    fireEvent.click(screen.getByRole("button", { name: "Run Existing automation" }))
 
     await waitFor(() => expect(runAutomationMock).toHaveBeenCalledWith({ automationID: "aut_existing" }))
     expect(screen.queryByRole("heading", { name: "Instructions" })).not.toBeInTheDocument()
@@ -111,5 +113,38 @@ describe("AutomationsPage", () => {
         type: "rrule",
       }),
     }))
+  })
+
+  it("renders automation chrome in the configured Chinese locale", async () => {
+    window.localStorage.setItem("desktop.locale", "zh-CN")
+    setDesktopMock({
+      cancelAutomationRun: vi.fn(),
+      createAutomation: vi.fn(),
+      deleteAutomation: vi.fn(),
+      getLocaleConfig: undefined,
+      listAutomationRuns: vi.fn(async () => [] satisfies AgentAutomationRun[]),
+      listAutomations: vi.fn(async () => [createAutomation()]),
+      runAutomation: vi.fn(),
+      updateAutomation: vi.fn(),
+      updateAutomationRunTriage: vi.fn(),
+    })
+
+    render(
+      <I18nProvider>
+        <AutomationsPage
+          projects={[{
+            directory: "C:/Projects/example",
+            id: "proj_1",
+            name: "Example",
+          }]}
+        />
+      </I18nProvider>,
+    )
+
+    expect(await screen.findByRole("heading", { name: "自动化" })).toBeInTheDocument()
+    expect(screen.getByText("1 个启用，共 1 个")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "运行 Existing automation" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "暂停 Existing automation" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "删除 Existing automation" })).toBeInTheDocument()
   })
 })

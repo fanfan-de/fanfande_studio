@@ -759,7 +759,8 @@ body.is-resizing-sidebar .sidebar-resizer::before {
   min-height: 32px;
   padding: 0 8px;
   border-radius: 8px;
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
 }
@@ -771,9 +772,19 @@ body.is-resizing-sidebar .sidebar-resizer::before {
 
 .session-row-copy {
   min-width: 0;
-  flex: 1 1 auto;
+  display: block;
+}
+
+.sidebar .session-row-copy {
+  width: auto;
+  display: block;
+}
+
+.session-row-icons {
+  min-width: 0;
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
 }
 
@@ -888,6 +899,7 @@ body.is-resizing-sidebar .sidebar-resizer::before {
 
 .session-row-label {
   min-width: 0;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
