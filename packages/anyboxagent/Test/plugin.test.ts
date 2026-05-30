@@ -21,6 +21,29 @@ interface JsonEnvelope<T> {
   }
 }
 
+interface SkillTreeTestNode {
+  name: string
+  path: string
+  kind: string
+  readOnly?: boolean
+  scope?: string
+  pluginID?: string
+  children?: SkillTreeTestNode[]
+}
+
+function findSkillTreeNode(
+  nodes: SkillTreeTestNode[] | undefined,
+  predicate: (node: SkillTreeTestNode) => boolean,
+): SkillTreeTestNode | null {
+  for (const node of nodes ?? []) {
+    if (predicate(node)) return node
+    const nested = findSkillTreeNode(node.children, predicate)
+    if (nested) return nested
+  }
+
+  return null
+}
+
 type PluginCatalogEnvelope = JsonEnvelope<
   Array<{
     id: string
@@ -1739,6 +1762,51 @@ describe("plugin marketplace API", () => {
     const projectRoot = activeRoot ?? "."
     const skills = await Skill.list(projectRoot)
     expect(skills.some((skill) => skill.id === "plugin:manifest-lab:review" && skill.scope === "plugin")).toBe(true)
+
+    const treeResponse = await app.request("/api/skills/tree")
+    const treeBody = (await treeResponse.json()) as JsonEnvelope<{ root: string; items: SkillTreeTestNode[] }>
+    expect(treeResponse.status).toBe(200)
+
+    const pluginGroup = findSkillTreeNode(treeBody.data?.items, (node) => node.name === "Plugin skills")
+    expect(pluginGroup?.readOnly).toBe(true)
+    expect(pluginGroup?.scope).toBe("plugin")
+
+    const pluginSkillFile = findSkillTreeNode(
+      pluginGroup?.children,
+      (node) => node.name === "SKILL.md" && node.pluginID === "manifest-lab",
+    )
+    expect(pluginSkillFile?.readOnly).toBe(true)
+    expect(pluginSkillFile?.scope).toBe("plugin")
+
+    const readSkillResponse = await app.request(
+      `/api/skills/file?path=${encodeURIComponent(pluginSkillFile?.path ?? "")}`,
+    )
+    const readSkillBody = (await readSkillResponse.json()) as JsonEnvelope<{
+      path: string
+      content: string
+      readOnly?: boolean
+      scope?: string
+      pluginID?: string
+    }>
+    expect(readSkillResponse.status).toBe(200)
+    expect(readSkillBody.data?.readOnly).toBe(true)
+    expect(readSkillBody.data?.scope).toBe("plugin")
+    expect(readSkillBody.data?.pluginID).toBe("manifest-lab")
+    expect(readSkillBody.data?.content).toContain("Use this skill to review generated documentation notes.")
+
+    const writeSkillResponse = await app.request("/api/skills/file", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: pluginSkillFile?.path,
+        content: "changed",
+      }),
+    })
+    const writeSkillBody = (await writeSkillResponse.json()) as JsonEnvelope<unknown>
+    expect(writeSkillResponse.status).toBe(400)
+    expect(writeSkillBody.error?.code).toBe("INVALID_SKILL_PATH")
   })
 
   test("loads the newest manifest from a versioned plugin package", async () => {

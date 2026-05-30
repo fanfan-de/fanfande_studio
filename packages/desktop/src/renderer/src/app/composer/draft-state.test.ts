@@ -7,6 +7,7 @@ import {
   createComposerCommentTagData,
   createComposerDraftStateFromPlainText,
   createComposerFileTagData,
+  createComposerLongTextTagData,
   createComposerMcpTagData,
   createComposerPluginTagData,
   createComposerSkillTagData,
@@ -15,6 +16,7 @@ import {
   readComposerTagsFromDraftState,
   removeComposerTagFromDraftState,
   syncComposerMcpTagsWithSelection,
+  updateComposerLongTextTagInDraftState,
 } from "./draft-state"
 
 const SKILL_OPTION: ComposerSkillOption = {
@@ -143,6 +145,46 @@ describe("composer draft-state", () => {
 
     expect(readTaggedPluginIDsFromDraftState(draftState)).toEqual(["build-web-apps"])
     expect(draftState.plainText).toContain("@Build Web Apps")
+  })
+
+  it("compiles long text tags into full display and transport text", () => {
+    const longText = Array.from({ length: 20 }, (_, index) => `Line ${index + 1}: pasted implementation notes`).join("\n")
+    let draftState = createComposerDraftStateFromPlainText("Use this context:")
+    draftState = appendComposerTagToDraftState(draftState, createComposerLongTextTagData(longText, "long-text:test"))
+
+    const compiled = compileComposerSubmission({ draftState })
+
+    expect(draftState.plainText).toContain("@Long text")
+    expect(draftState.plainText).not.toContain("Line 20: pasted implementation notes")
+    expect(compiled.displayText).toContain("Use this context:")
+    expect(compiled.displayText).toContain(longText)
+    expect(compiled.displayText).not.toContain("@Long text")
+    expect(compiled.transportText).toContain(longText)
+  })
+
+  it("updates and removes long text tags without affecting other tags", () => {
+    const firstLongText = Array.from({ length: 18 }, (_, index) => `Original line ${index + 1}`).join("\n")
+    const nextLongText = "Shorter edited pasted text."
+    let draftState = createEmptyComposerDraftState()
+    draftState = appendComposerTagToDraftState(draftState, createComposerSkillTagData(SKILL_OPTION))
+    draftState = appendComposerTagToDraftState(draftState, createComposerLongTextTagData(firstLongText, "long-text:test"))
+
+    const updatedDraftState = updateComposerLongTextTagInDraftState(draftState, "long-text:test", nextLongText)
+    const updatedTags = readComposerTagsFromDraftState(updatedDraftState)
+
+    expect(updatedTags).toHaveLength(2)
+    expect(updatedTags[0]).toMatchObject({ kind: "skill", skillID: SKILL_OPTION.value })
+    expect(updatedTags[1]).toMatchObject({
+      kind: "long-text",
+      id: "long-text:test",
+      text: nextLongText,
+      characterCount: nextLongText.length,
+    })
+
+    const removedDraftState = removeComposerTagFromDraftState(updatedDraftState, "long-text:test")
+    const remainingTags = readComposerTagsFromDraftState(removedDraftState)
+    expect(remainingTags).toHaveLength(1)
+    expect(remainingTags[0]).toMatchObject({ kind: "skill", skillID: SKILL_OPTION.value })
   })
 
   it("compiles preview comment tags into browser context while stripping the visible token from the request", () => {

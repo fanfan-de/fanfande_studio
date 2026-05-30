@@ -6,10 +6,12 @@ import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin"
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin"
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin"
 import {
+  $createParagraphNode,
   $createTextNode,
   $getNodeByKey,
   $getRoot,
   $getSelection,
+  $isParagraphNode,
   $isRangeSelection,
   $isTextNode,
   type LexicalEditor,
@@ -36,6 +38,7 @@ import type {
   ComposerReasoningEffortOption,
   ComposerSkillOption,
   ComposerTagData,
+  ComposerLongTextTagData,
   ReasoningEffort,
 } from "../types"
 import { $createComposerTagNode, ComposerTagNode } from "./ComposerTagNode"
@@ -43,14 +46,19 @@ import {
   createComposerDraftStateFromEditorState,
   createComposerDraftStateFromPlainText,
   createComposerFileTagData,
+  createComposerLongTextTagData,
   createComposerMcpTagData,
   createComposerPluginTagData,
   createComposerSkillTagData,
   normalizeComposerDraftState,
+  readComposerLongTextStats,
   readComposerTagIdentity,
   readComposerTagsFromDraftState,
   readTaggedMcpServerIDsFromDraftState,
   readTaggedPluginIDsFromDraftState,
+  removeComposerTagFromDraftState,
+  shouldCreateComposerLongTextTag,
+  updateComposerLongTextTagInDraftState,
 } from "./draft-state"
 
 
@@ -167,6 +175,11 @@ type ComposerKeyAction =
       preventDefault: boolean
       type: "close-menu" | "noop" | "select-active" | "send"
     }
+
+interface ComposerLongTextEditorState {
+  tagID: string
+  text: string
+}
 
 const LEXICAL_INITIAL_CONFIG = {
   namespace: "DesktopComposer",
@@ -694,6 +707,65 @@ export async function createComposerPastedImageAttachments(files: File[]) {
   )
 }
 
+function readComposerClipboardPlainText(clipboardData: DataTransfer | null) {
+  if (!clipboardData) return ""
+
+  try {
+    return clipboardData.getData("text/plain")
+  } catch {
+    return ""
+  }
+}
+
+function insertLongTextTagAtSelection(editor: LexicalEditor, text: string) {
+  const tagData = createComposerLongTextTagData(text)
+
+  editor.update(() => {
+    const selection = $getSelection()
+    const trailingTextNode = $createTextNode(" ")
+    if (!$isRangeSelection(selection)) {
+      const root = $getRoot()
+      const lastRootChild = root.getLastChild()
+      const paragraph = $isParagraphNode(lastRootChild) ? lastRootChild : $createParagraphNode()
+      if (!$isParagraphNode(lastRootChild)) {
+        root.append(paragraph)
+      }
+
+      const lastChild = paragraph.getLastChild()
+      if ($isTextNode(lastChild) && !lastChild.getTextContent().endsWith(" ")) {
+        paragraph.append($createTextNode(" "))
+      }
+
+      paragraph.append($createComposerTagNode(tagData))
+      paragraph.append(trailingTextNode)
+      trailingTextNode.select(1, 1)
+      return
+    }
+
+    const insertedNodes = [$createComposerTagNode(tagData), trailingTextNode]
+    if (selection.isCollapsed()) {
+      const anchorNode = selection.anchor.getNode()
+      const anchorOffset = selection.anchor.offset
+      const anchorText = $isTextNode(anchorNode) ? anchorNode.getTextContent() : ""
+      if (anchorOffset > 0 && anchorText && !/\s/.test(anchorText[anchorOffset - 1] ?? "")) {
+        insertedNodes.unshift($createTextNode(" "))
+      }
+    }
+
+    selection.insertNodes(insertedNodes)
+    trailingTextNode.select(1, 1)
+  })
+}
+
+function findComposerLongTextTagElement(target: EventTarget | null) {
+  if (!(target instanceof Element)) return null
+
+  const element = target.closest<HTMLElement>(".composer-inline-tag.is-long-text[data-composer-tag-id]")
+  if (!element) return null
+
+  return element
+}
+
 function insertTagAtMatch(editor: LexicalEditor, match: ComposerTriggerMatch, tagData: ComposerTagData) {
   editor.update(() => {
     const node = $getNodeByKey(match.nodeKey)
@@ -927,6 +999,7 @@ export function Composer({
   const [commandMenuState, setCommandMenuState] = useState<ComposerCommandMenuState | null>(null)
   const [commandMenuItems, setCommandMenuItems] = useState<ComposerCommandMenuItem[]>([])
   const [activeCommandIndex, setActiveCommandIndex] = useState(0)
+  const [longTextEditorState, setLongTextEditorState] = useState<ComposerLongTextEditorState | null>(null)
   const commandMenuStateRef = useRef<ComposerCommandMenuState | null>(commandMenuState)
   const commandMenuItemsRef = useRef<ComposerCommandMenuItem[]>(commandMenuItems)
   const activeCommandIndexRef = useRef(activeCommandIndex)
@@ -943,6 +1016,60 @@ export function Composer({
   function setCommandMenuItemsWithRef(nextItems: ComposerCommandMenuItem[]) {
     commandMenuItemsRef.current = nextItems
     setCommandMenuItems(nextItems)
+  }
+
+  function applyDraftStateToEditor(nextDraftState: ComposerDraftState) {
+    const normalizedNextDraftState = normalizeComposerDraftState(nextDraftState)
+    const editor = editorRef.current
+
+    draftStateRef.current = normalizedNextDraftState
+    localEditorLexicalJSONRef.current = normalizedNextDraftState.lexicalJSON
+    rememberLocalComposerDraftEcho(localDraftEchoesRef.current, normalizedNextDraftState.lexicalJSON)
+    setCommandMenuStateWithRef(null)
+
+    if (editor) {
+      const nextEditorState = parseComposerDraftStateForEditor(editor, normalizedNextDraftState.lexicalJSON, {
+        selectEnd: isComposerEditorFocused(editor),
+      })
+      editor.setEditorState(nextEditorState)
+    }
+
+    onDraftStateChange(normalizedNextDraftState)
+  }
+
+  function readLongTextTagFromDraft(tagID: string) {
+    return readComposerTagsFromDraftState(draftStateRef.current)
+      .find((tag): tag is ComposerLongTextTagData => tag.kind === "long-text" && tag.id === tagID) ?? null
+  }
+
+  function openLongTextEditor(tagID: string) {
+    const tag = readLongTextTagFromDraft(tagID)
+    if (!tag) return
+
+    setLongTextEditorState({
+      tagID: tag.id,
+      text: tag.text,
+    })
+  }
+
+  function commitLongTextEditor() {
+    if (!longTextEditorState) return
+
+    applyDraftStateToEditor(
+      updateComposerLongTextTagInDraftState(
+        draftStateRef.current,
+        longTextEditorState.tagID,
+        longTextEditorState.text,
+      ),
+    )
+    setLongTextEditorState(null)
+  }
+
+  function removeLongTextTag() {
+    if (!longTextEditorState) return
+
+    applyDraftStateToEditor(removeComposerTagFromDraftState(draftStateRef.current, longTextEditorState.tagID))
+    setLongTextEditorState(null)
   }
 
   function getCurrentTagIdentities() {
@@ -1491,6 +1618,16 @@ export function Composer({
   }
 
   function handleEditorKeyDown(event: KeyboardEvent<HTMLElement>) {
+    const longTextTagElement = findComposerLongTextTagElement(event.target)
+    if (longTextTagElement && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault()
+      event.stopPropagation()
+      openLongTextEditor(longTextTagElement.dataset.composerTagId ?? "")
+      return
+    }
+
+    if (!isEditorEventTarget(event.target)) return
+
     const currentCommandMenuState = commandMenuStateRef.current ?? readCommandMenuStateFromEditor()
     const currentCommandMenuItems =
       commandMenuItemsRef.current.length > 0 ? commandMenuItemsRef.current : buildImmediateCommandMenuItems(currentCommandMenuState)
@@ -1548,17 +1685,38 @@ export function Composer({
 
   function handleEditorPaste(event: ReactClipboardEvent<HTMLElement>) {
     const imageFiles = readComposerClipboardImageFiles(event.clipboardData)
-    if (imageFiles.length === 0) return
-    if (!canPasteImageAttachments || !onPasteImageAttachments) return
+    if (imageFiles.length > 0) {
+      if (!canPasteImageAttachments || !onPasteImageAttachments) return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      void createComposerPastedImageAttachments(imageFiles)
+        .then((images) => onPasteImageAttachments(images))
+        .catch((error) => {
+          console.error("[desktop] read pasted composer image failed:", error)
+        })
+      return
+    }
+
+    const pastedText = readComposerClipboardPlainText(event.clipboardData)
+    if (!shouldCreateComposerLongTextTag(pastedText)) return
+
+    const editor = editorRef.current
+    if (!editor) return
 
     event.preventDefault()
     event.stopPropagation()
+    insertLongTextTagAtSelection(editor, pastedText)
+  }
 
-    void createComposerPastedImageAttachments(imageFiles)
-      .then((images) => onPasteImageAttachments(images))
-      .catch((error) => {
-        console.error("[desktop] read pasted composer image failed:", error)
-      })
+  function handleEditorClick(event: ReactMouseEvent<HTMLElement>) {
+    const longTextTagElement = findComposerLongTextTagElement(event.target)
+    if (!longTextTagElement) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    openLongTextEditor(longTextTagElement.dataset.composerTagId ?? "")
   }
 
   const unsupportedAttachmentPathSet = new Set(unsupportedAttachmentPaths)
@@ -1595,6 +1753,7 @@ export function Composer({
       : commandMenuState?.kind === "command-trigger"
         ? "No matching commands."
         : "No matching commands or tags."
+  const longTextEditorStats = longTextEditorState ? readComposerLongTextStats(longTextEditorState.text) : null
 
   return (
     <footer ref={footerRef} className="composer prompt-input-shell" onKeyDownCapture={handleEditorKeyDown}>
@@ -1620,6 +1779,7 @@ export function Composer({
                 aria-description={sendButtonDescription}
                 aria-label="Task draft"
                 className="composer-editor-input"
+                onClickCapture={handleEditorClick}
                 onCompositionEnd={() => {
                   isComposingRef.current = false
                 }}
@@ -1635,6 +1795,79 @@ export function Composer({
           />
         </div>
       </LexicalComposer>
+
+      {longTextEditorState && longTextEditorStats ? (
+        <div
+          className="composer-long-text-overlay"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setLongTextEditorState(null)
+            }
+          }}
+        >
+          <article
+            className="composer-long-text-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Edit long pasted text"
+          >
+            <header className="composer-long-text-dialog-header">
+              <div className="composer-long-text-dialog-title">
+                <h2>Long pasted text</h2>
+                <p>{longTextEditorStats.characterCount} chars · {longTextEditorStats.lineCount} lines</p>
+              </div>
+              <button
+                aria-label="Close long text editor"
+                className="composer-long-text-close"
+                onClick={() => setLongTextEditorState(null)}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+            </header>
+
+            <label className="composer-long-text-field">
+              <span>Text</span>
+              <textarea
+                aria-label="Long pasted text"
+                autoFocus
+                value={longTextEditorState.text}
+                onChange={(event) => {
+                  const nextText = event.currentTarget.value
+                  setLongTextEditorState((current) =>
+                    current ? { ...current, text: nextText } : current,
+                  )
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault()
+                    setLongTextEditorState(null)
+                    return
+                  }
+
+                  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                    event.preventDefault()
+                    commitLongTextEditor()
+                  }
+                }}
+              />
+            </label>
+
+            <div className="composer-long-text-actions">
+              <button className="secondary-button" onClick={removeLongTextTag} type="button">
+                Remove
+              </button>
+              <button className="secondary-button" onClick={() => setLongTextEditorState(null)} type="button">
+                Cancel
+              </button>
+              <button className="primary-button" onClick={commitLongTextEditor} type="button">
+                Save
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
 
       {commandMenuState ? (
         <div

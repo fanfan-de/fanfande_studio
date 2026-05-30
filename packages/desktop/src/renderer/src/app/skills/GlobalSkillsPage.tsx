@@ -62,6 +62,7 @@ interface GlobalSkillsPageProps {
   renamingGlobalSkillName: string
   selectedFileContent: string
   selectedFilePath: string | null
+  selectedFileReadOnly: boolean
   selectedGitInstallSkillIDs: string[]
   selectedSkillDirectoryName: string | null
   hideNavigator?: boolean
@@ -394,7 +395,9 @@ function GlobalSkillsTreeNodeRow({
   const [isRowMenuOpen, setIsRowMenuOpen] = useState(false)
   const rowMenuRef = useRef<HTMLDivElement | null>(null)
   const role = node.kind === "directory" ? getDirectoryRole(node) : "resource"
-  const isManagedDirectory = role === "folder" || role === "skill"
+  const isReadOnlyNode = Boolean(node.readOnly)
+  const showPluginBadge = node.scope === "plugin" && node.path.startsWith("plugin-skills://")
+  const isManagedDirectory = !isReadOnlyNode && (role === "folder" || role === "skill")
 
   useEffect(() => {
     if (!isRowMenuOpen) return
@@ -423,7 +426,11 @@ function GlobalSkillsTreeNodeRow({
     return (
       <div className="skill-tree-item skill-tree-item-file">
         <button
-          className={isActive ? "skill-tree-row is-active" : "skill-tree-row"}
+          className={[
+            "skill-tree-row",
+            isActive ? "is-active" : "",
+            isReadOnlyNode ? "is-read-only" : "",
+          ].filter(Boolean).join(" ")}
           title={node.path}
           type="button"
           onClick={() => void onFileSelect(node.path)}
@@ -432,6 +439,7 @@ function GlobalSkillsTreeNodeRow({
             <FileTextIcon />
           </span>
           <span className="skill-tree-label">{node.name}</span>
+          {showPluginBadge ? <span className="skill-tree-source-badge">Plugin</span> : null}
         </button>
       </div>
     )
@@ -443,11 +451,11 @@ function GlobalSkillsTreeNodeRow({
   const isRenamePending = renamingGlobalSkillDirectory === node.path
   const showLeadingDisclosure = role !== "folder"
   const showRoleIcon = role === "folder"
-  const showCreateInDirectory = isCreateGlobalSkillDraftVisible && creatingGlobalSkillParentDirectory === node.path
+  const showCreateInDirectory = !isReadOnlyNode && isCreateGlobalSkillDraftVisible && creatingGlobalSkillParentDirectory === node.path
   const showChildren = isExpanded && (Boolean(node.children?.length) || showCreateInDirectory)
 
   function handleDirectoryContextMenu(event: MouseEvent<HTMLButtonElement>) {
-    if (!isManagedDirectory || isRenameDraftVisible || isRenamePending) return
+    if (isReadOnlyNode || !isManagedDirectory || isRenameDraftVisible || isRenamePending) return
     event.preventDefault()
     event.stopPropagation()
     setIsRowMenuOpen(true)
@@ -476,7 +484,7 @@ function GlobalSkillsTreeNodeRow({
   }
 
   function handleRowMenuToggle() {
-    if (isRenameDraftVisible || isRenamePending) return
+    if (isReadOnlyNode || isRenameDraftVisible || isRenamePending) return
     setIsRowMenuOpen((current) => !current)
   }
 
@@ -537,6 +545,7 @@ function GlobalSkillsTreeNodeRow({
               "skill-tree-row",
               showLeadingDisclosure ? "has-leading-disclosure" : "",
               isActiveDirectory ? "is-active" : "",
+              isReadOnlyNode ? "is-read-only" : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -557,6 +566,7 @@ function GlobalSkillsTreeNodeRow({
               </span>
             ) : null}
             <span className="skill-tree-label">{node.name}</span>
+            {showPluginBadge ? <span className="skill-tree-source-badge">Plugin</span> : null}
           </button>
         )}
         {isManagedDirectory ? (
@@ -1220,6 +1230,7 @@ export function GlobalSkillsPage({
   renamingGlobalSkillName,
   selectedFileContent,
   selectedFilePath,
+  selectedFileReadOnly,
   selectedGitInstallSkillIDs,
   selectedSkillDirectoryName,
   hideNavigator = false,
@@ -1325,6 +1336,7 @@ export function GlobalSkillsPage({
               isSavingFile={isSavingFile}
               selectedFileContent={selectedFileContent}
               selectedFilePath={selectedFilePath}
+              selectedFileReadOnly={selectedFileReadOnly}
               selectedSkillDirectoryName={selectedSkillDirectoryName}
               onChange={onChange}
               onDelete={onDelete}

@@ -3955,6 +3955,113 @@ describe("App", () => {
     expect(gitGetCapabilities).toHaveBeenCalledTimes(1)
   })
 
+  it("keeps git quick menu diff stats visible when opening action panels", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.gitGetCapabilities = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Atlas\\client",
+      root: "C:\\Projects\\Atlas",
+      branch: "main",
+      defaultBranch: "main",
+      isGitRepo: true,
+      canCommit: {
+        enabled: true,
+      },
+      canStageAllCommit: {
+        enabled: true,
+      },
+      canPush: {
+        enabled: true,
+      },
+      canCreatePullRequest: {
+        enabled: false,
+        reason: "Switch to a feature branch before creating a pull request.",
+      },
+      canCreateBranch: {
+        enabled: true,
+      },
+    })
+    window.desktop!.getSessionDiff = vi.fn().mockImplementation(async ({ scope }: { scope?: string }) => {
+      if (scope === "git:unstaged") {
+        return {
+          stats: {
+            files: 1,
+            additions: 33,
+            deletions: 0,
+          },
+          diffs: [
+            {
+              file: "src/App.tsx",
+              additions: 33,
+              deletions: 0,
+            },
+          ],
+        }
+      }
+
+      return {
+        stats: {
+          files: 0,
+          additions: 0,
+          deletions: 0,
+        },
+        diffs: [],
+      }
+    })
+
+    render(<App />)
+
+    await screen.findByRole("button", { name: "Atlas review" })
+    fireEvent.click(await screen.findByRole("button", { name: "Git" }))
+
+    const gitQuickMenu = await screen.findByRole("dialog", { name: "Git quick menu" })
+    await within(gitQuickMenu).findByLabelText("33 additions, 0 deletions")
+
+    const getSessionDiff = window.desktop!.getSessionDiff as ReturnType<typeof vi.fn>
+    await waitFor(() => {
+      expect(getSessionDiff.mock.calls.some(([input]) => input?.scope === "git:unstaged")).toBe(true)
+      expect(getSessionDiff.mock.calls.some(([input]) => input?.scope === "git:staged")).toBe(true)
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    getSessionDiff.mockClear()
+
+    fireEvent.click(within(gitQuickMenu).getByRole("button", { name: "Commit or push" }))
+    const commitPanel = await screen.findByRole("dialog", { name: "Commit or push" })
+
+    expect(within(gitQuickMenu).getAllByLabelText("33 additions, 0 deletions").length).toBeGreaterThanOrEqual(2)
+    expect(within(commitPanel).getByLabelText("33 additions, 0 deletions")).toBeInTheDocument()
+    expect(within(gitQuickMenu).queryByText("...")).not.toBeInTheDocument()
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(getSessionDiff).not.toHaveBeenCalled()
+  })
+
   it("shares a git capability request between the quick menu and branch switcher", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {

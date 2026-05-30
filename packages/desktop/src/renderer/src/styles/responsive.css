@@ -290,7 +290,8 @@
 
   .settings-page-overlay,
   .provider-connect-overlay,
-  .git-branch-create-overlay {
+  .git-branch-create-overlay,
+  .composer-long-text-overlay {
     padding: 12px;
   }
 
@@ -324,7 +325,8 @@
   }
 
   .provider-connect-modal,
-  .git-branch-create-dialog {
+  .git-branch-create-dialog,
+  .composer-long-text-dialog {
     width: 100%;
     padding: 18px 16px;
   }

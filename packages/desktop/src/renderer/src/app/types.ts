@@ -1464,12 +1464,22 @@ export interface ComposerPluginTagData {
   description?: string
 }
 
+export interface ComposerLongTextTagData {
+  kind: "long-text"
+  id: string
+  label: string
+  text: string
+  characterCount: number
+  lineCount: number
+}
+
 export type ComposerTagData =
   | ComposerFileTagData
   | ComposerCommentTagData
   | ComposerSkillTagData
   | ComposerMcpTagData
   | ComposerPluginTagData
+  | ComposerLongTextTagData
 
 export type ColorMode = "system" | "light" | "dark"
 export type BrandTheme = "terra" | "sage"
@@ -1528,6 +1538,10 @@ export interface GlobalSkillTreeNode {
   path: string
   kind: "directory" | "file"
   role?: "folder" | "skill" | "resource"
+  readOnly?: boolean
+  scope?: "user" | "plugin"
+  pluginID?: string
+  enabled?: boolean
   children?: GlobalSkillTreeNode[]
 }
 
@@ -1539,6 +1553,9 @@ export interface GlobalSkillTree {
 export interface GlobalSkillFileDocument {
   path: string
   content: string
+  readOnly?: boolean
+  scope?: "user" | "plugin"
+  pluginID?: string
 }
 
 export interface SkillInstallCandidate {

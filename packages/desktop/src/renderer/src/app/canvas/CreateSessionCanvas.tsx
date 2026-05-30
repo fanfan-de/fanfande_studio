@@ -15,6 +15,7 @@ interface GlobalSkillsCanvasProps {
   isSavingFile: boolean
   selectedFileContent: string
   selectedFilePath: string | null
+  selectedFileReadOnly: boolean
   selectedSkillDirectoryName: string | null
   onChange: (value: string) => void
   onDelete: () => void | Promise<void>
@@ -192,6 +193,7 @@ export function GlobalSkillsCanvas({
   isSavingFile,
   selectedFileContent,
   selectedFilePath,
+  selectedFileReadOnly,
   selectedSkillDirectoryName,
   onChange,
   onDelete,
@@ -225,8 +227,8 @@ export function GlobalSkillsCanvas({
   }
 
   const editorShellClassName = viewMode === "preview"
-    ? "global-skills-editor-shell is-preview"
-    : "global-skills-editor-shell"
+    ? `global-skills-editor-shell is-preview${selectedFileReadOnly ? " is-read-only" : ""}`
+    : `global-skills-editor-shell${selectedFileReadOnly ? " is-read-only" : ""}`
 
   return (
     <section className="global-skills-canvas">
@@ -251,12 +253,17 @@ export function GlobalSkillsCanvas({
               Preview
             </button>
           </div>
-          <button className="secondary-button" disabled={!selectedSkillDirectoryName || deletingGlobalSkillDirectory !== null} type="button" onClick={() => void onDelete()}>
-            {deletingGlobalSkillDirectory ? "Deleting..." : "Delete"}
-          </button>
-          <button className="primary-button" disabled={!isDirty || isSavingFile} type="button" onClick={() => void onSave()}>
-            {isSavingFile ? "Saving..." : "Save"}
-          </button>
+          {selectedFileReadOnly ? <span className="global-skills-readonly-badge">Read-only</span> : null}
+          {!selectedFileReadOnly ? (
+            <>
+              <button className="secondary-button" disabled={!selectedSkillDirectoryName || deletingGlobalSkillDirectory !== null} type="button" onClick={() => void onDelete()}>
+                {deletingGlobalSkillDirectory ? "Deleting..." : "Delete"}
+              </button>
+              <button className="primary-button" disabled={!isDirty || isSavingFile} type="button" onClick={() => void onSave()}>
+                {isSavingFile ? "Saving..." : "Save"}
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -270,11 +277,15 @@ export function GlobalSkillsCanvas({
         ) : viewMode === "edit" ? (
           <textarea
             ref={editorRef}
-            aria-label="Global skill editor"
+            aria-label={selectedFileReadOnly ? "Read-only skill viewer" : "Global skill editor"}
             className="global-skills-editor"
+            readOnly={selectedFileReadOnly}
             spellCheck={false}
             value={selectedFileContent}
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => {
+              if (selectedFileReadOnly) return
+              onChange(event.target.value)
+            }}
           />
         ) : (
           <SkillMarkdownPreview text={selectedFileContent} />

@@ -2417,24 +2417,41 @@ export async function resolveConnectorRemoteServer(connectorID: string): Promise
   }
 }
 
-export function listInstalledPluginSkillRoots(pluginIDs?: string[] | null): Array<{
+export interface InstalledPluginSkillRoot {
   pluginID: string
+  pluginName: string
   root: string
-}> {
+  enabled: boolean
+}
+
+export function listInstalledPluginSkillRoots(
+  pluginIDs?: string[] | null,
+  options: { includeDisabled?: boolean } = {},
+): InstalledPluginSkillRoot[] {
   const selectedPluginIDs = pluginIDs ? new Set(pluginIDs.map((pluginID) => normalizePluginID(pluginID))) : null
+  const installedPlugins = options.includeDisabled
+    ? listInstalled().filter((plugin) => !plugin.missingPackage)
+    : listEnabledInstalled()
   const installedByID = new Map(
-    listEnabledInstalled()
+    installedPlugins
       .filter((plugin) => !selectedPluginIDs || selectedPluginIDs.has(plugin.pluginID))
       .map((plugin) => [plugin.pluginID, plugin]),
   )
 
   return listPackageManifestSources().flatMap((source) => {
     const pluginID = normalizeManifestID(source.manifest.name)
-    if (!installedByID.has(pluginID) || !source.packageRoot) return []
+    const installed = installedByID.get(pluginID)
+    if (!installed || !source.packageRoot) return []
+    const pluginName = source.manifest.interface?.displayName ?? source.manifest.name
 
     return skillDirectoryDeclarations(source.manifest)
       .map((directory) => resolvePackageRelativePath(source.packageRoot!, directory))
       .filter((root): root is string => Boolean(root && existsSync(root)))
-      .map((root) => ({ pluginID, root }))
+      .map((root) => ({
+        pluginID,
+        pluginName,
+        root,
+        enabled: installed.enabled,
+      }))
   })
 }

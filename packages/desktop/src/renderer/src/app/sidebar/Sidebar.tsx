@@ -893,13 +893,20 @@ function SkillsTreeNodeRow({
   onRenameGlobalSkillDraftChange: (value: string) => void
   onRenameGlobalSkillDraftStart: (directoryPath: string) => void
 }) {
+  const isReadOnlyNode = Boolean(node.readOnly)
+  const showPluginBadge = node.scope === "plugin" && node.path.startsWith("plugin-skills://")
+
   if (node.kind === "file") {
     const isActive = node.path === selectedGlobalSkillFilePath
 
     return (
       <div className="skill-tree-item skill-tree-item-file">
         <button
-          className={isActive ? "skill-tree-row is-active" : "skill-tree-row"}
+          className={[
+            "skill-tree-row",
+            isActive ? "is-active" : "",
+            isReadOnlyNode ? "is-read-only" : "",
+          ].filter(Boolean).join(" ")}
           title={node.path}
           type="button"
           onClick={() => void onFileSelect(node.path)}
@@ -908,6 +915,7 @@ function SkillsTreeNodeRow({
             <FileTextIcon />
           </span>
           <span className="skill-tree-label">{node.name}</span>
+          {showPluginBadge ? <span className="skill-tree-source-badge">Plugin</span> : null}
         </button>
       </div>
     )
@@ -915,8 +923,8 @@ function SkillsTreeNodeRow({
 
   const isExpanded = expandedSkillPaths.includes(node.path)
   const isActiveDirectory = containsSkillTreePath(node, selectedGlobalSkillFilePath)
-  const showDeleteAction = depth === 0
-  const isRenameDraftVisible = depth === 0 && renamingGlobalSkillDraftDirectory === node.path
+  const showDeleteAction = depth === 0 && !isReadOnlyNode
+  const isRenameDraftVisible = !isReadOnlyNode && depth === 0 && renamingGlobalSkillDraftDirectory === node.path
   const isRenamePending = renamingGlobalSkillDirectory === node.path
 
   function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
@@ -963,7 +971,11 @@ function SkillsTreeNodeRow({
           </form>
         ) : (
           <button
-            className={isActiveDirectory ? "skill-tree-row is-active" : "skill-tree-row"}
+            className={[
+              "skill-tree-row",
+              isActiveDirectory ? "is-active" : "",
+              isReadOnlyNode ? "is-read-only" : "",
+            ].filter(Boolean).join(" ")}
             aria-expanded={isExpanded}
             title={node.path}
             type="button"
@@ -973,6 +985,7 @@ function SkillsTreeNodeRow({
               {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
             </span>
             <span className="skill-tree-label">{node.name}</span>
+            {showPluginBadge ? <span className="skill-tree-source-badge">Plugin</span> : null}
           </button>
         )}
         {showDeleteAction ? (

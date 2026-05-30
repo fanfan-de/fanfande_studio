@@ -20,6 +20,9 @@ import type {
 import { formatPreviewInteractionContext } from "../preview/interactions/registry"
 import { $createComposerTagNode, $isComposerTagNode, ComposerTagNode } from "./ComposerTagNode"
 
+export const COMPOSER_LONG_TEXT_CHARACTER_THRESHOLD = 1400
+export const COMPOSER_LONG_TEXT_LINE_THRESHOLD = 18
+
 export interface CompiledComposerSubmission {
   commentReferences: ComposerCommentReference[]
   displayText: string
@@ -231,12 +234,61 @@ function getComposerTagIdentity(tag: ComposerTagData) {
       return `comment:${tag.id}`
     case "file":
       return `file:${tag.filePath}`
+    case "long-text":
+      return `long-text:${tag.id}`
     case "mcp":
       return `mcp:${tag.serverID}`
     case "plugin":
       return `plugin:${tag.pluginID}`
     case "skill":
       return `skill:${tag.skillID}`
+  }
+}
+
+function formatComposerLongTextNumber(value: number) {
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+}
+
+export function countComposerTextLines(text: string) {
+  if (!text) return 0
+  return text.split(/\r\n|\r|\n/).length
+}
+
+export function readComposerLongTextStats(text: string) {
+  return {
+    characterCount: text.length,
+    lineCount: countComposerTextLines(text),
+  }
+}
+
+export function shouldCreateComposerLongTextTag(text: string) {
+  if (!text.trim()) return false
+
+  const stats = readComposerLongTextStats(text)
+  return stats.characterCount >= COMPOSER_LONG_TEXT_CHARACTER_THRESHOLD || stats.lineCount >= COMPOSER_LONG_TEXT_LINE_THRESHOLD
+}
+
+function createComposerLongTextTagID() {
+  const randomID = globalThis.crypto?.randomUUID?.()
+  if (randomID) return `long-text:${randomID}`
+
+  return `long-text:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`
+}
+
+export function createComposerLongTextLabel(characterCount: number) {
+  return `Long text · ${formatComposerLongTextNumber(characterCount)} chars`
+}
+
+export function createComposerLongTextTagData(text: string, id = createComposerLongTextTagID()): ComposerTagData {
+  const stats = readComposerLongTextStats(text)
+
+  return {
+    kind: "long-text",
+    id,
+    label: createComposerLongTextLabel(stats.characterCount),
+    text,
+    characterCount: stats.characterCount,
+    lineCount: stats.lineCount,
   }
 }
 
@@ -266,6 +318,28 @@ function createParagraphFromText(text: string) {
     paragraph.append($createTextNode(text))
   }
   return paragraph
+}
+
+function readComposerExpandedTextFromCurrentEditorState() {
+  return $getRoot()
+    .getChildren()
+    .map((paragraph) => {
+      if (!$isParagraphNode(paragraph)) {
+        return paragraph.getTextContent()
+      }
+
+      return paragraph.getChildren()
+        .map((child) => {
+          if (!$isComposerTagNode(child)) {
+            return child.getTextContent()
+          }
+
+          const tag = child.getTagData()
+          return tag.kind === "long-text" ? tag.text : child.getTextContent()
+        })
+        .join("")
+    })
+    .join("\n")
 }
 
 export function createComposerDraftStateFromEditorState(editorState: EditorState): ComposerDraftState {
@@ -388,6 +462,17 @@ export function removeComposerTagFromDraftState(
   }).draftState
 }
 
+export function updateComposerLongTextTagInDraftState(draftState: ComposerDraftState, tagID: string, text: string) {
+  return runComposerEditorUpdate(draftState, () => {
+    for (const node of collectComposerTagNodes()) {
+      const tag = node.getTagData()
+      if (tag.kind !== "long-text" || tag.id !== tagID) continue
+
+      node.replace($createComposerTagNode(createComposerLongTextTagData(text, tag.id)))
+    }
+  }).draftState
+}
+
 export function createComposerFileTagData(filePath: string, label = filePath): ComposerTagData {
   return {
     kind: "file",
@@ -503,6 +588,7 @@ export function compileComposerSubmission(input: {
     ]),
   ]
 
+  const expandedDisplayText = readComposerEditorState(normalizedDraftState, () => readComposerExpandedTextFromCurrentEditorState())
   const transportSections = []
   if (taggedFilePaths.length > 0) {
     transportSections.push(`Referenced files:\n${taggedFilePaths.map((filePath) => `- ${filePath}`).join("\n")}`)
@@ -516,7 +602,7 @@ export function compileComposerSubmission(input: {
     transportSections.push(commentPrompt)
   }
 
-  const displayText = normalizedDraftState.plainText.trim()
+  const displayText = expandedDisplayText.trim()
   const requestText = stripComposerTagTokens(displayText, tags)
   const previewInteractionPrompt = formatPreviewInteractionContext(
     previewInteractionReferences.map((reference) => reference.interaction),

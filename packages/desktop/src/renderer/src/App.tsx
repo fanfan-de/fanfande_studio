@@ -1090,6 +1090,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     selectedGlobalSkillDirectory,
     selectedGlobalSkillFileContent,
     selectedGlobalSkillFilePath,
+    selectedGlobalSkillFileReadOnly,
     selectedGitInstallSkillIDs,
   } = useGlobalSkills({
     onSkillsUpdated: refreshComposerSkills,
@@ -2127,6 +2128,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               renamingGlobalSkillName={renamingGlobalSkillName}
               selectedFileContent={selectedGlobalSkillFileContent}
               selectedFilePath={selectedGlobalSkillFilePath}
+              selectedFileReadOnly={selectedGlobalSkillFileReadOnly}
               selectedGitInstallSkillIDs={selectedGitInstallSkillIDs}
               selectedSkillDirectoryName={selectedGlobalSkillDirectory?.name ?? null}
               windowControls={windowControls}

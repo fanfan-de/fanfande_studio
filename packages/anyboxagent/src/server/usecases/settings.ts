@@ -1,3 +1,5 @@
+import { readFile, readdir, stat } from "node:fs/promises"
+import { basename, isAbsolute, join, relative, resolve } from "node:path"
 import z from "zod"
 import * as ProviderAuth from "#auth/provider-auth.ts"
 import * as Config from "#config/config.ts"
@@ -18,6 +20,8 @@ import * as ToolRegistry from "#tool/registry.ts"
 import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "settings" })
+const SKILL_FILENAME = "SKILL.md"
+const PLUGIN_SKILLS_TREE_ROOT_PATH = "plugin-skills://installed"
 
 export const SkillFileQuery = z.object({
   path: z.string().min(1),
@@ -1087,16 +1091,227 @@ export async function installPromptUrlPreview(input: z.infer<typeof InstallPromp
   }
 }
 
+function getPluginTreeEntrySortRank(node: SkillManager.GlobalSkillTreeNode) {
+  if (node.kind === "file") return node.name === SKILL_FILENAME ? 3 : 4
+  if (node.role === "folder") return 0
+  if (node.role === "skill") return 1
+  return 2
+}
+
+function sortPluginTreeEntries(left: SkillManager.GlobalSkillTreeNode, right: SkillManager.GlobalSkillTreeNode) {
+  const leftRank = getPluginTreeEntrySortRank(left)
+  const rightRank = getPluginTreeEntrySortRank(right)
+  if (leftRank !== rightRank) return leftRank - rightRank
+
+  if (left.name === SKILL_FILENAME && right.name !== SKILL_FILENAME) return -1
+  if (right.name === SKILL_FILENAME && left.name !== SKILL_FILENAME) return 1
+
+  return left.name.localeCompare(right.name)
+}
+
+function isResolvedPathInsideRoot(root: string, path: string) {
+  const resolvedRoot = resolve(root)
+  const resolvedPath = resolve(path)
+  const relativePath = relative(resolvedRoot, resolvedPath)
+  return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath))
+}
+
+async function isSkillFile(path: string) {
+  const info = await stat(path).catch(() => null)
+  return Boolean(info?.isFile())
+}
+
+function toPluginTreeNodeBase(root: Plugin.InstalledPluginSkillRoot) {
+  return {
+    readOnly: true,
+    scope: "plugin" as const,
+    pluginID: root.pluginID,
+    enabled: root.enabled,
+  }
+}
+
+async function readPluginSkillResourceTree(
+  directory: string,
+  root: Plugin.InstalledPluginSkillRoot,
+): Promise<SkillManager.GlobalSkillTreeNode[]> {
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => [])
+  const nodes = await Promise.all(
+    entries
+      .filter((entry) => !entry.name.startsWith("."))
+      .map(async (entry): Promise<SkillManager.GlobalSkillTreeNode> => {
+        const entryPath = join(directory, entry.name)
+
+        if (entry.isDirectory()) {
+          return {
+            ...toPluginTreeNodeBase(root),
+            name: entry.name,
+            path: entryPath,
+            kind: "directory",
+            role: "resource",
+            children: await readPluginSkillResourceTree(entryPath, root),
+          }
+        }
+
+        return {
+          ...toPluginTreeNodeBase(root),
+          name: entry.name,
+          path: entryPath,
+          kind: "file",
+          role: "resource",
+        }
+      }),
+  )
+
+  return nodes.toSorted(sortPluginTreeEntries)
+}
+
+async function readPluginSkillContainerTree(
+  directory: string,
+  root: Plugin.InstalledPluginSkillRoot,
+): Promise<SkillManager.GlobalSkillTreeNode[]> {
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => [])
+  const nodes = await Promise.all(
+    entries
+      .filter((entry) => !entry.name.startsWith("."))
+      .map(async (entry): Promise<SkillManager.GlobalSkillTreeNode> => {
+        const entryPath = join(directory, entry.name)
+
+        if (entry.isDirectory()) {
+          const role = await isSkillFile(join(entryPath, SKILL_FILENAME)) ? "skill" : "folder"
+          return {
+            ...toPluginTreeNodeBase(root),
+            name: entry.name,
+            path: entryPath,
+            kind: "directory",
+            role,
+            children: role === "skill"
+              ? await readPluginSkillResourceTree(entryPath, root)
+              : await readPluginSkillContainerTree(entryPath, root),
+          }
+        }
+
+        return {
+          ...toPluginTreeNodeBase(root),
+          name: entry.name,
+          path: entryPath,
+          kind: "file",
+          role: "resource",
+        }
+      }),
+  )
+
+  return nodes.toSorted(sortPluginTreeEntries)
+}
+
+async function readPluginSkillRootTree(
+  root: Plugin.InstalledPluginSkillRoot,
+): Promise<SkillManager.GlobalSkillTreeNode[]> {
+  if (await isSkillFile(join(root.root, SKILL_FILENAME))) {
+    return [
+      {
+        ...toPluginTreeNodeBase(root),
+        name: basename(root.root),
+        path: root.root,
+        kind: "directory",
+        role: "skill",
+        children: await readPluginSkillResourceTree(root.root, root),
+      },
+    ]
+  }
+
+  return readPluginSkillContainerTree(root.root, root)
+}
+
+async function getInstalledPluginSkillTreeNode(): Promise<SkillManager.GlobalSkillTreeNode | null> {
+  const roots = Plugin.listInstalledPluginSkillRoots(null, { includeDisabled: true })
+  if (roots.length === 0) return null
+
+  const pluginGroups = new Map<string, SkillManager.GlobalSkillTreeNode>()
+
+  for (const root of roots) {
+    const children = await readPluginSkillRootTree(root)
+    if (children.length === 0) continue
+
+    const existing = pluginGroups.get(root.pluginID)
+    if (existing) {
+      existing.children = [...(existing.children ?? []), ...children].toSorted(sortPluginTreeEntries)
+      continue
+    }
+
+    pluginGroups.set(root.pluginID, {
+      name: root.pluginName,
+      path: `${PLUGIN_SKILLS_TREE_ROOT_PATH}/${encodeURIComponent(root.pluginID)}`,
+      kind: "directory",
+      role: "folder",
+      readOnly: true,
+      scope: "plugin",
+      pluginID: root.pluginID,
+      enabled: root.enabled,
+      children,
+    })
+  }
+
+  const children = [...pluginGroups.values()].toSorted((left, right) => left.name.localeCompare(right.name))
+  if (children.length === 0) return null
+
+  return {
+    name: "Plugin skills",
+    path: PLUGIN_SKILLS_TREE_ROOT_PATH,
+    kind: "directory",
+    role: "folder",
+    readOnly: true,
+    scope: "plugin",
+    children,
+  }
+}
+
+async function readInstalledPluginSkillFile(path: string): Promise<SkillManager.GlobalSkillFileDocument | null> {
+  if (!isAbsolute(path)) return null
+
+  const roots = Plugin.listInstalledPluginSkillRoots(null, { includeDisabled: true })
+  const resolvedPath = resolve(path)
+
+  for (const root of roots) {
+    if (!isResolvedPathInsideRoot(root.root, resolvedPath)) continue
+
+    const fileInfo = await stat(resolvedPath).catch(() => null)
+    if (!fileInfo?.isFile()) {
+      throw new SkillManager.SkillManagerError("SKILL_FILE_NOT_FOUND", `Skill file '${path}' was not found.`)
+    }
+
+    return {
+      path: resolvedPath,
+      content: await readFile(resolvedPath, "utf8"),
+      readOnly: true,
+      scope: "plugin",
+      pluginID: root.pluginID,
+    }
+  }
+
+  return null
+}
+
 export async function listSkills() {
   return Skill.listGlobal()
 }
 
 export async function getSkillTree() {
-  return SkillManager.getGlobalSkillTree()
+  const globalTree = await SkillManager.getGlobalSkillTree()
+  const pluginTree = await getInstalledPluginSkillTreeNode()
+
+  if (!pluginTree) return globalTree
+
+  return {
+    ...globalTree,
+    items: [...globalTree.items, pluginTree],
+  }
 }
 
 export async function readSkillFile(input: z.infer<typeof SkillFileQuery>) {
   try {
+    const pluginDocument = await readInstalledPluginSkillFile(input.path)
+    if (pluginDocument) return pluginDocument
+
     return await SkillManager.readGlobalSkillFile(input.path)
   } catch (error) {
     throw toSkillApiError(error)

@@ -171,6 +171,20 @@
   outline-offset: var(--focus-outline-offset);
 }
 
+.global-skills-readonly-badge {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border: 1px solid rgba(166, 186, 208, 0.62);
+  border-radius: 6px;
+  background: var(--seg-panel-muted);
+  color: var(--seg-text-2);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .global-skills-editor-shell {
   min-height: 0;
   height: 100%;
@@ -185,6 +199,10 @@
 }
 
 .global-skills-editor-shell.is-preview {
+  cursor: default;
+}
+
+.global-skills-editor-shell.is-read-only {
   cursor: default;
 }
 
@@ -206,6 +224,12 @@
   pointer-events: auto;
   -webkit-app-region: no-drag;
   user-select: text;
+}
+
+.global-skills-editor[readonly] {
+  background: #f9fbfd;
+  color: var(--seg-text-2);
+  cursor: default;
 }
 
 .global-skills-markdown-preview {

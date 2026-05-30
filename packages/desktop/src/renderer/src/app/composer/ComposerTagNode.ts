@@ -19,6 +19,8 @@ function readComposerTagTitle(tagData: ComposerTagData) {
       return tagData.title
     case "file":
       return tagData.filePath
+    case "long-text":
+      return `${tagData.characterCount} chars, ${tagData.lineCount} lines. Click to edit full pasted text.`
     case "mcp":
     case "plugin":
     case "skill":
@@ -33,9 +35,19 @@ export function formatComposerTagText(tagData: ComposerTagData) {
 function applyComposerTagDomAttributes(element: HTMLElement, tagData: ComposerTagData) {
   element.className = `composer-inline-tag is-${tagData.kind}`
   element.dataset.composerTagKind = tagData.kind
+  if (tagData.kind === "long-text") {
+    element.dataset.composerTagId = tagData.id
+    element.setAttribute("role", "button")
+    element.tabIndex = 0
+    element.setAttribute("aria-label", `Edit ${tagData.label}`)
+  } else {
+    delete element.dataset.composerTagId
+    element.removeAttribute("role")
+    element.removeAttribute("aria-label")
+    element.tabIndex = -1
+  }
   element.contentEditable = "false"
   element.spellcheck = false
-  element.tabIndex = -1
   element.title = readComposerTagTitle(tagData)
 }
 

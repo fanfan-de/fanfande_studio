@@ -2,7 +2,11 @@ import { Component, memo, useEffect, useEffectEvent, useId, useLayoutEffect, use
 import { createPortal } from "react-dom"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
-import { createEmptyComposerDraftState } from "../composer/draft-state"
+import {
+  COMPOSER_LONG_TEXT_CHARACTER_THRESHOLD,
+  COMPOSER_LONG_TEXT_LINE_THRESHOLD,
+  createEmptyComposerDraftState,
+} from "../composer/draft-state"
 import { DiffPreview } from "../diff/DiffPreview"
 import {
   ChangesIcon,
@@ -208,8 +212,8 @@ const THREAD_VIRTUAL_OVERSCAN_ROWS = 2
 const THREAD_VIRTUAL_ROW_GAP_PX = 7
 const THREAD_VIRTUAL_ROW_MIN_HEIGHT_PX = 12
 const THREAD_VIRTUAL_ROW_MEASURE_EPSILON_PX = 1
-const LONG_USER_MESSAGE_CHARACTER_THRESHOLD = 1400
-const LONG_USER_MESSAGE_LINE_THRESHOLD = 18
+const LONG_USER_MESSAGE_CHARACTER_THRESHOLD = COMPOSER_LONG_TEXT_CHARACTER_THRESHOLD
+const LONG_USER_MESSAGE_LINE_THRESHOLD = COMPOSER_LONG_TEXT_LINE_THRESHOLD
 const COLLAPSED_USER_MESSAGE_ESTIMATED_CHARACTERS = 640
 const threadScrollSnapshots = new Map<string, ThreadScrollSnapshot>()
 

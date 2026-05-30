@@ -1157,6 +1157,10 @@ export interface AgentGlobalSkillTreeNode {
   path: string
   kind: "directory" | "file"
   role: "folder" | "skill" | "resource"
+  readOnly?: boolean
+  scope?: "user" | "plugin"
+  pluginID?: string
+  enabled?: boolean
   children?: AgentGlobalSkillTreeNode[]
 }
 
@@ -1168,6 +1172,9 @@ export interface AgentGlobalSkillTree {
 export interface AgentGlobalSkillFileDocument {
   path: string
   content: string
+  readOnly?: boolean
+  scope?: "user" | "plugin"
+  pluginID?: string
 }
 
 export interface AgentGlobalSkillRenameResult {

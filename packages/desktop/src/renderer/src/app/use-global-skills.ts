@@ -214,7 +214,7 @@ function getChildrenForParent(nodes: GlobalSkillTreeNode[], parentPath: string |
 
 function hasDuplicateChildName(nodes: GlobalSkillTreeNode[], parentPath: string | null, input: string) {
   const normalized = input.trim().toLowerCase()
-  return getChildrenForParent(nodes, parentPath).some((node) => node.name.trim().toLowerCase() === normalized)
+  return getChildrenForParent(nodes, parentPath).some((node) => !node.readOnly && node.name.trim().toLowerCase() === normalized)
 }
 
 function hasDuplicateChildNameExcept(
@@ -225,6 +225,7 @@ function hasDuplicateChildNameExcept(
 ) {
   const normalized = input.trim().toLowerCase()
   return getChildrenForParent(nodes, parentPath).some((node) => {
+    if (node.readOnly) return false
     if (node.path === ignoredPath) return false
     return node.name.trim().toLowerCase() === normalized
   })
@@ -239,7 +240,9 @@ function getParentDirectoryPath(nodes: GlobalSkillTreeNode[], targetPath: string
 function suggestNextDirectoryName(nodes: GlobalSkillTreeNode[], parentPath: string | null, kind: CreateGlobalSkillDraftKind) {
   const baseName = kind === "skill" ? "new-skill" : "new-folder"
   const existing = new Set(
-    getChildrenForParent(nodes, parentPath).map((node) => node.name.toLowerCase()),
+    getChildrenForParent(nodes, parentPath)
+      .filter((node) => !node.readOnly)
+      .map((node) => node.name.toLowerCase()),
   )
 
   if (!existing.has(baseName)) return baseName
@@ -255,7 +258,7 @@ function suggestNextDirectoryName(nodes: GlobalSkillTreeNode[], parentPath: stri
 function collectFolderOptions(nodes: GlobalSkillTreeNode[], trail: string[] = []): GlobalSkillFolderOption[] {
   const options: GlobalSkillFolderOption[] = []
   for (const node of nodes) {
-    if (node.kind !== "directory" || getDirectoryRole(node) !== "folder") continue
+    if (node.kind !== "directory" || node.readOnly || getDirectoryRole(node) !== "folder") continue
     const nextTrail = [...trail, node.name]
     options.push({
       path: node.path,
@@ -315,6 +318,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
   const [selectedGlobalSkillFilePath, setSelectedGlobalSkillFilePath] = useState<string | null>(null)
   const [selectedGlobalSkillFileContent, setSelectedGlobalSkillFileContent] = useState("")
   const [savedGlobalSkillFileContent, setSavedGlobalSkillFileContent] = useState("")
+  const [selectedGlobalSkillFileReadOnly, setSelectedGlobalSkillFileReadOnly] = useState(false)
   const [isLoadingGlobalSkillsTree, setIsLoadingGlobalSkillsTree] = useState(false)
   const [isLoadingGlobalSkillFile, setIsLoadingGlobalSkillFile] = useState(false)
   const [isSavingGlobalSkillFile, setIsSavingGlobalSkillFile] = useState(false)
@@ -337,7 +341,10 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
 
   const treeRequestRef = useRef(0)
   const fileRequestRef = useRef(0)
-  const isDirtyGlobalSkillFile = selectedGlobalSkillFilePath !== null && selectedGlobalSkillFileContent !== savedGlobalSkillFileContent
+  const isDirtyGlobalSkillFile =
+    selectedGlobalSkillFilePath !== null &&
+    !selectedGlobalSkillFileReadOnly &&
+    selectedGlobalSkillFileContent !== savedGlobalSkillFileContent
   const selectedGlobalSkillDirectory = useMemo(
     () => findSelectedSkillDirectory(globalSkillsTree, selectedGlobalSkillFilePath),
     [globalSkillsTree, selectedGlobalSkillFilePath],
@@ -397,6 +404,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
       setSelectedGlobalSkillFilePath(document.path)
       setSelectedGlobalSkillFileContent(document.content)
       setSavedGlobalSkillFileContent(document.content)
+      setSelectedGlobalSkillFileReadOnly(Boolean(document.readOnly))
       applyExpandedPaths(document.path, options?.rootPath ?? globalSkillsRoot, options?.tree ?? globalSkillsTree)
     } catch (error) {
       if (fileRequestRef.current !== requestID) return
@@ -441,6 +449,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
         setSelectedGlobalSkillFilePath(null)
         setSelectedGlobalSkillFileContent("")
         setSavedGlobalSkillFileContent("")
+        setSelectedGlobalSkillFileReadOnly(false)
         return
       }
 
@@ -478,6 +487,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
   }
 
   function handleGlobalSkillDraftChange(value: string) {
+    if (selectedGlobalSkillFileReadOnly) return
     setSelectedGlobalSkillFileContent(value)
   }
 
@@ -489,6 +499,14 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
 
   function handleCreateGlobalSkillDraftStart(kind: CreateGlobalSkillDraftKind = "skill", parentDirectory: string | null = null) {
     if (isCreatingGlobalSkill || isCreateGlobalSkillDraftVisible || renamingGlobalSkillDraftDirectory || renamingGlobalSkillDirectory) return
+    const parentNode = parentDirectory ? findDirectoryNode(globalSkillsTree, parentDirectory) : null
+    if (parentNode?.readOnly) {
+      showGlobalSkillsMessage({
+        tone: "error",
+        text: "Plugin skills are read-only.",
+      })
+      return
+    }
 
     setCreatingGlobalSkillDraftKind(kind)
     setCreatingGlobalSkillParentDirectory(parentDirectory)
@@ -691,6 +709,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
 
     const targetDirectory = findDirectoryNode(globalSkillsTree, directoryPath)
     if (!targetDirectory || targetDirectory.path !== directoryPath) return
+    if (targetDirectory.readOnly) return
     const role = getDirectoryRole(targetDirectory)
     if (role !== "skill" && role !== "folder") return
 
@@ -781,6 +800,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
         : null) ?? null
 
     if (!targetDirectory || renamingGlobalSkillDirectory) return
+    if (targetDirectory.readOnly) return
     const targetRole = getDirectoryRole(targetDirectory)
     if (targetRole !== "skill" && targetRole !== "folder") return
     if (targetRole === "skill" && !renameGlobalSkill) return
@@ -854,6 +874,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
 
   async function handleSaveGlobalSkillFile() {
     const updateGlobalSkillFile = window.desktop?.updateGlobalSkillFile
+    if (selectedGlobalSkillFileReadOnly) return
     if (!updateGlobalSkillFile || !selectedGlobalSkillFilePath || !isDirtyGlobalSkillFile || isSavingGlobalSkillFile) return
 
     setIsSavingGlobalSkillFile(true)
@@ -911,6 +932,13 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     const targetDirectory =
       (directoryPath ? findDirectoryNode(globalSkillsTree, directoryPath) : null) ?? selectedGlobalSkillDirectory
     if (!targetDirectory || deletingGlobalSkillDirectory) return
+    if (targetDirectory.readOnly) {
+      showGlobalSkillsMessage({
+        tone: "error",
+        text: "Plugin skills are read-only.",
+      })
+      return
+    }
 
     const targetRole = getDirectoryRole(targetDirectory)
     if (targetRole === "skill" && !deleteGlobalSkill) return
@@ -959,6 +987,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
 
     const targetDirectory = findDirectoryNode(globalSkillsTree, directoryPath)
     if (!targetDirectory) return
+    if (targetDirectory.readOnly) return
     const targetRole = getDirectoryRole(targetDirectory)
     if (targetRole !== "skill" && targetRole !== "folder") return
 
@@ -984,6 +1013,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
 
     const sourceDirectory = findDirectoryNode(globalSkillsTree, movingGlobalSkillDirectory)
     if (!sourceDirectory) return
+    if (sourceDirectory.readOnly) return
     const sourceRole = getDirectoryRole(sourceDirectory)
     if (sourceRole !== "skill" && sourceRole !== "folder") return
 
@@ -1088,6 +1118,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     selectedGlobalSkillDirectory,
     selectedGlobalSkillFileContent,
     selectedGlobalSkillFilePath,
+    selectedGlobalSkillFileReadOnly,
     selectedGitInstallSkillIDs,
   }
 }

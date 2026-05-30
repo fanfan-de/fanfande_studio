@@ -1,7 +1,13 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { Composer } from "./Composer"
-import { appendComposerTagToDraftState, createComposerDraftStateFromPlainText, createComposerFileTagData } from "./draft-state"
+import {
+  appendComposerTagToDraftState,
+  createComposerDraftStateFromPlainText,
+  createComposerFileTagData,
+  createComposerLongTextTagData,
+  readComposerTagsFromDraftState,
+} from "./draft-state"
 
 function renderComposer(input: Partial<Parameters<typeof Composer>[0]> = {}) {
   return render(
@@ -35,6 +41,10 @@ function renderComposer(input: Partial<Parameters<typeof Composer>[0]> = {}) {
       {...input}
     />,
   )
+}
+
+function createLongPastedText(prefix = "Pasted implementation notes") {
+  return Array.from({ length: 20 }, (_, index) => `${prefix} line ${index + 1}`).join("\n")
 }
 
 describe("Composer", () => {
@@ -311,6 +321,112 @@ describe("Composer", () => {
         name: "screenshot.png",
       },
     ])
+  })
+
+  it("turns pasted long text into a compact composer tag", async () => {
+    const onDraftStateChange = vi.fn()
+    const longText = createLongPastedText()
+    const { container } = renderComposer({ onDraftStateChange })
+    const editor = container.querySelector(".composer-editor-input")
+
+    expect(editor).toBeInstanceOf(HTMLElement)
+    expect(
+      fireEvent.paste(editor as HTMLElement, {
+        clipboardData: {
+          getData: (type: string) => (type === "text/plain" ? longText : ""),
+          items: [],
+          files: [],
+        },
+      }),
+    ).toBe(false)
+
+    const tag = await screen.findByRole("button", { name: /Edit Long text/ })
+    expect(tag).toHaveClass("composer-inline-tag", "is-long-text")
+    expect(tag).not.toHaveTextContent("line 20")
+
+    await waitFor(() => expect(onDraftStateChange).toHaveBeenCalled())
+    const nextDraftState = onDraftStateChange.mock.calls.at(-1)?.[0]
+    expect(nextDraftState?.plainText).toContain("@Long text")
+    expect(nextDraftState?.plainText).not.toContain("line 20")
+  })
+
+  it("lets short pasted text flow through the normal editor paste pipeline", () => {
+    const onDraftStateChange = vi.fn()
+    const { container } = renderComposer({ onDraftStateChange })
+    const editor = container.querySelector(".composer-editor-input")
+
+    expect(editor).toBeInstanceOf(HTMLElement)
+    expect(
+      fireEvent.paste(editor as HTMLElement, {
+        clipboardData: {
+          getData: (type: string) => (type === "text/plain" ? "Short pasted text" : ""),
+          items: [],
+          files: [],
+        },
+      }),
+    ).toBe(true)
+    expect(screen.queryByRole("button", { name: /Edit Long text/ })).toBeNull()
+  })
+
+  it("edits a long text tag from the dialog", async () => {
+    const onDraftStateChange = vi.fn()
+    const initialText = createLongPastedText("Original")
+    const nextText = "Edited pasted text that stays stored inside the tag."
+    const draftState = appendComposerTagToDraftState(
+      createComposerDraftStateFromPlainText(""),
+      createComposerLongTextTagData(initialText, "long-text:test"),
+    )
+
+    renderComposer({ draftState, onDraftStateChange })
+
+    fireEvent.click(screen.getByRole("button", { name: /Edit Long text/ }))
+    const dialog = screen.getByRole("dialog", { name: "Edit long pasted text" })
+    const textarea = within(dialog).getByRole("textbox", { name: "Long pasted text" })
+    expect(textarea).toHaveValue(initialText)
+
+    fireEvent.change(textarea, { target: { value: nextText } })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }))
+
+    await waitFor(() => expect(onDraftStateChange).toHaveBeenCalled())
+    const nextDraftState = onDraftStateChange.mock.calls.at(-1)?.[0]
+    const longTextTag = readComposerTagsFromDraftState(nextDraftState)
+      .find((tag) => tag.kind === "long-text")
+
+    expect(longTextTag).toMatchObject({
+      id: "long-text:test",
+      text: nextText,
+      characterCount: nextText.length,
+    })
+    expect(nextDraftState.plainText).toContain("@Long text")
+    expect(nextDraftState.plainText).not.toContain(nextText)
+    expect(screen.queryByRole("dialog", { name: "Edit long pasted text" })).toBeNull()
+  })
+
+  it("cancels and removes a long text tag from the dialog", async () => {
+    const onDraftStateChange = vi.fn()
+    const initialText = createLongPastedText("Removable")
+    const draftState = appendComposerTagToDraftState(
+      createComposerDraftStateFromPlainText(""),
+      createComposerLongTextTagData(initialText, "long-text:test"),
+    )
+
+    renderComposer({ draftState, onDraftStateChange })
+
+    fireEvent.click(screen.getByRole("button", { name: /Edit Long text/ }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Long pasted text" }), {
+      target: { value: "Cancelled edit" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(onDraftStateChange).not.toHaveBeenCalled()
+    expect(screen.getByRole("button", { name: /Edit Long text/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Edit Long text/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }))
+
+    await waitFor(() => expect(onDraftStateChange).toHaveBeenCalled())
+    const nextDraftState = onDraftStateChange.mock.calls.at(-1)?.[0]
+    expect(readComposerTagsFromDraftState(nextDraftState)).toEqual([])
+    expect(screen.queryByRole("button", { name: /Edit Long text/ })).toBeNull()
   })
 
   it("switches the send button to stop while sending with an empty draft", () => {

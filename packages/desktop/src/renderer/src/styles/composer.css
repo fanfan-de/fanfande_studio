@@ -464,6 +464,117 @@
   box-shadow: 0 24px 48px rgba(36, 59, 82, 0.16);
 }
 
+.composer-long-text-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(23, 35, 47, 0.18);
+}
+
+.composer-long-text-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(680px, calc(100vh - 40px));
+  padding: 18px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  border: 1px solid rgba(147, 171, 195, 0.52);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--seg-text-1);
+  box-shadow: 0 24px 48px rgba(36, 59, 82, 0.16);
+}
+
+.composer-long-text-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.composer-long-text-dialog-title {
+  display: grid;
+  gap: 4px;
+}
+
+.composer-long-text-dialog-title h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.composer-long-text-dialog-title p {
+  margin: 0;
+  color: var(--seg-text-3);
+  font-size: 12px;
+}
+
+.composer-long-text-close {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--seg-text-3);
+  cursor: pointer;
+}
+
+.composer-long-text-close:hover,
+.composer-long-text-close:focus-visible {
+  border-color: var(--mix-seg-border-96-transparent-4);
+  background: var(--seg-panel-muted);
+  color: var(--seg-text-1);
+  outline: none;
+}
+
+.composer-long-text-field {
+  min-height: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.composer-long-text-field span {
+  font-size: 12px;
+  color: var(--seg-text-3);
+}
+
+.composer-long-text-field textarea {
+  min-height: 280px;
+  max-height: min(480px, calc(100vh - 250px));
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid var(--mix-seg-border-96-transparent-4);
+  border-radius: 8px;
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  outline: none;
+}
+
+.composer-long-text-field textarea:focus {
+  border-color: var(--mix-seg-accent-44-seg-border-56);
+  box-shadow: 0 0 0 3px var(--mix-seg-accent-12-transparent-88);
+}
+
+.composer-long-text-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.composer-long-text-actions .secondary-button:first-child {
+  margin-right: auto;
+}
+
 .git-branch-create-field {
   display: grid;
   gap: 6px;
@@ -608,6 +719,18 @@
   border-color: rgba(45, 120, 154, 0.26);
   background: #eef8fb;
   color: #20566e;
+}
+
+.composer-inline-tag.is-long-text {
+  cursor: pointer;
+  border-color: rgba(79, 92, 112, 0.26);
+  background: #f3f5f8;
+  color: #354052;
+}
+
+.composer-inline-tag.is-long-text:focus-visible {
+  outline: 2px solid var(--seg-accent);
+  outline-offset: 2px;
 }
 
 .composer-attachment-name {
@@ -1456,7 +1579,8 @@
   box-shadow: var(--shadow-sm);
 }
 
-.git-branch-create-dialog {
+.git-branch-create-dialog,
+.composer-long-text-dialog {
   border: 1px solid var(--seg-border);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-sm);
@@ -1505,6 +1629,12 @@
   border-color: var(--seg-info-border);
   background: var(--seg-info-surface);
   color: var(--seg-info-text);
+}
+
+.composer-inline-tag.is-long-text {
+  border-color: var(--mix-seg-border-96-transparent-4);
+  background: var(--mix-seg-panel-muted-88-seg-panel-12);
+  color: var(--seg-text-2);
 }
 
 .composer-attachment-chip.is-invalid {

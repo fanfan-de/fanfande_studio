@@ -37,6 +37,10 @@ type DiffStats = {
   files: number
 }
 
+type DiffStatsRefreshOptions = {
+  showLoading?: boolean
+}
+
 const EMPTY_DIFF_STATS: DiffStats = {
   additions: 0,
   deletions: 0,
@@ -245,7 +249,7 @@ export function GitQuickMenuButton({
     }
   }
 
-  async function refreshDiffStats(reportError = false) {
+  async function refreshDiffStats(reportError = false, options: DiffStatsRefreshOptions = {}) {
     const getSessionDiff = window.desktop?.getSessionDiff
     if (!sessionID || !getSessionDiff) {
       setDiffStats(null)
@@ -255,7 +259,10 @@ export function GitQuickMenuButton({
 
     const requestID = diffStatsRequestRef.current + 1
     diffStatsRequestRef.current = requestID
-    setIsLoadingDiffStats(true)
+    const showLoading = options.showLoading ?? true
+    if (showLoading) {
+      setIsLoadingDiffStats(true)
+    }
 
     try {
       const [unstagedDiff, stagedDiff] = await Promise.all([
@@ -275,7 +282,9 @@ export function GitQuickMenuButton({
         return null
       }
 
-      setDiffStats(null)
+      if (showLoading || reportError) {
+        setDiffStats(null)
+      }
       if (reportError) {
         setStatus({
           tone: "error",
@@ -299,7 +308,9 @@ export function GitQuickMenuButton({
   })
 
   const refreshDiffStatsSilently = useEffectEvent((reportError = false) => {
-    void refreshDiffStats(reportError)
+    void refreshDiffStats(reportError, {
+      showLoading: diffStats === null,
+    })
   })
 
   const refreshBranchesSilently = useEffectEvent((reportError = false) => {
@@ -331,6 +342,14 @@ export function GitQuickMenuButton({
     scheduleGitStateRefresh()
   })
 
+  const refreshVisibleGitQuickMenuState = useEffectEvent((reportError = false) => {
+    refreshCapabilitiesSilently(reportError)
+    refreshDiffStatsSilently()
+    if (activePanel === "branches") {
+      refreshBranchesSilently()
+    }
+  })
+
   useEffect(() => {
     setIsMenuOpen(false)
     setActivePanel(null)
@@ -360,23 +379,14 @@ export function GitQuickMenuButton({
   useEffect(() => {
     if (!isMenuOpen) return
 
-    refreshCapabilitiesSilently(true)
-    refreshDiffStatsSilently()
-
-    const refreshVisibleState = () => {
-      refreshCapabilitiesSilently()
-      refreshDiffStatsSilently()
-      if (activePanel === "branches") {
-        refreshBranchesSilently()
-      }
-    }
+    refreshVisibleGitQuickMenuState(true)
 
     const handleWindowFocus = () => {
-      refreshVisibleState()
+      refreshVisibleGitQuickMenuState()
     }
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") return
-      refreshVisibleState()
+      refreshVisibleGitQuickMenuState()
     }
 
     window.addEventListener("focus", handleWindowFocus)
@@ -386,7 +396,7 @@ export function GitQuickMenuButton({
       window.removeEventListener("focus", handleWindowFocus)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
-  }, [isMenuOpen, activePanel])
+  }, [isMenuOpen])
 
   useEffect(() => {
     if (!isMenuOpen) return

@@ -9,6 +9,10 @@ export interface GlobalSkillTreeNode {
   path: string
   kind: "directory" | "file"
   role: "folder" | "skill" | "resource"
+  readOnly?: boolean
+  scope?: "user" | "plugin"
+  pluginID?: string
+  enabled?: boolean
   children?: GlobalSkillTreeNode[]
 }
 
@@ -20,6 +24,9 @@ export interface GlobalSkillTree {
 export interface GlobalSkillFileDocument {
   path: string
   content: string
+  readOnly?: boolean
+  scope?: "user" | "plugin"
+  pluginID?: string
 }
 
 export interface GlobalSkillRenameResult {
