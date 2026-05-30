@@ -7952,7 +7952,15 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Close settings" })).toBeInTheDocument()
     expect(screen.queryByText("Global settings")).not.toBeInTheDocument()
     expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
-    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(6)
+    expect(Array.from(settingsDialog.querySelectorAll(".settings-primary-nav-label"), (node) => node.textContent)).toEqual([
+      "General",
+      "Worktrees",
+      "Provider",
+      "Models",
+      "Appearance",
+      "Developer Mode",
+      "Archived Sessions",
+    ])
     expect(screen.getByText("Options")).toBeInTheDocument()
     const providerNavButton = screen.getByRole("button", { name: "Provider" })
     expect(providerNavButton).toBeInTheDocument()
