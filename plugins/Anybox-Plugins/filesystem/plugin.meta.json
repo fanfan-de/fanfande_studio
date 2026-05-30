@@ -1,0 +1,88 @@
+{
+  "id": "filesystem",
+  "name": "filesystem",
+  "version": "1.0.0",
+  "description": "Expose a specific local directory to an MCP filesystem server.",
+  "author": {
+    "name": "Model Context Protocol",
+    "url": "https://github.com/modelcontextprotocol/servers"
+  },
+  "homepage": "https://github.com/modelcontextprotocol/servers",
+  "interface": {
+    "displayName": "Filesystem",
+    "shortDescription": "Expose a local directory to MCP.",
+    "developerName": "Model Context Protocol",
+    "category": "Code",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "logo": "folder",
+    "screenshots": [],
+    "longDescription": "Expose a specific local directory to an MCP filesystem server."
+  },
+  "mcpServers": [
+    {
+      "name": "Filesystem",
+      "risk": "high",
+      "permissions": [
+        "Read access inside the configured root path",
+        "Potential write access inside the configured root path",
+        "Starts an external stdio MCP process"
+      ],
+      "tools": [
+        {
+          "name": "read_file",
+          "title": "Read File",
+          "description": "Read a file below the configured root.",
+          "readOnly": true
+        },
+        {
+          "name": "write_file",
+          "title": "Write File",
+          "description": "Write a file below the configured root.",
+          "readOnly": false,
+          "destructive": true
+        },
+        {
+          "name": "list_directory",
+          "title": "List Directory",
+          "description": "List directory contents below the configured root.",
+          "readOnly": true
+        }
+      ],
+      "configFields": [
+        {
+          "key": "ROOT_PATH",
+          "label": "Root path",
+          "type": "path",
+          "required": true,
+          "defaultValue": "~",
+          "placeholder": "C:\\Projects",
+          "description": "Only expose the smallest directory the plugin needs."
+        }
+      ],
+      "runtime": {
+        "transport": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "${ROOT_PATH}"
+        ],
+        "timeoutMs": 30000
+      },
+      "installReview": [
+        "The configured root path is passed as a command argument.",
+        "Prefer a narrow project folder instead of your full home directory."
+      ]
+    }
+  ],
+  "skillPreviews": [],
+  "package": {
+    "type": "zip",
+    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/filesystem/filesystem-1.0.0.zip",
+    "sha256": "5d3b5ecce545568086b5503cb92eb52a74a8054c1dc868fd32a1d0480cfecc20",
+    "size": 1534
+  }
+}

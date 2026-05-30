@@ -1,0 +1,162 @@
+{
+  "id": "feishu",
+  "name": "feishu",
+  "version": "0.1.0",
+  "description": "Connect to Feishu Open Platform for user lookup, chat discovery, message reading, and bot message sending.",
+  "author": {
+    "name": "Anybox"
+  },
+  "homepage": "https://open.feishu.cn/",
+  "repository": "https://github.com/fanfan-de/Anybox-Plugins",
+  "license": "MIT",
+  "keywords": [
+    "feishu",
+    "lark",
+    "chat",
+    "collaboration",
+    "mcp"
+  ],
+  "interface": {
+    "displayName": "Feishu",
+    "shortDescription": "Use Feishu messages and contacts",
+    "longDescription": "Connect a Feishu custom app to look up users, inspect chats and recent chat messages, and send bot messages through Feishu Open Platform APIs.",
+    "developerName": "Anybox",
+    "category": "Docs",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://open.feishu.cn/",
+    "privacyPolicyURL": "https://www.feishu.cn/privacy",
+    "termsOfServiceURL": "https://www.feishu.cn/terms",
+    "defaultPrompt": [
+      "Find a Feishu user by email and send a message",
+      "List Feishu chats or read recent messages from a chat"
+    ],
+    "brandColor": "#3370FF",
+    "logo": "FS",
+    "screenshots": []
+  },
+  "skills": "./skills/",
+  "connectors": [
+    {
+      "id": "feishu",
+      "name": "Feishu Open Platform",
+      "description": "Local MCP connector for Feishu Open Platform APIs.",
+      "risk": "medium",
+      "permissions": [
+        "Stores the Feishu app secret in connector credential storage.",
+        "Sends HTTPS requests to the configured Feishu Open Platform base URL.",
+        "Can read Feishu contact, chat, and message data allowed by the app permissions.",
+        "Can send bot messages when the user explicitly requests a send operation."
+      ],
+      "configFields": [
+        {
+          "key": "FEISHU_APP_ID",
+          "label": "Feishu app ID",
+          "type": "text",
+          "required": true,
+          "placeholder": "cli_xxxxxxxxxxxxx",
+          "description": "App ID from your Feishu custom app."
+        },
+        {
+          "key": "FEISHU_BASE_URL",
+          "label": "Feishu Open Platform base URL",
+          "type": "url",
+          "required": false,
+          "defaultValue": "https://open.feishu.cn",
+          "description": "Use https://open.larksuite.com for Lark workspaces."
+        }
+      ],
+      "credential": {
+        "kind": "api_key",
+        "key": "FEISHU_APP_SECRET",
+        "label": "Feishu app secret",
+        "type": "password",
+        "required": true,
+        "secret": true,
+        "placeholder": "App secret",
+        "description": "App Secret from your Feishu custom app."
+      },
+      "runtime": {
+        "transport": "stdio",
+        "command": "node",
+        "args": [
+          "${PLUGIN_ROOT}/connectors/feishu/server.js"
+        ],
+        "cwd": "${PLUGIN_ROOT}",
+        "env": {
+          "FEISHU_APP_ID": "${FEISHU_APP_ID}",
+          "FEISHU_APP_SECRET": "${FEISHU_APP_SECRET}",
+          "FEISHU_BASE_URL": "${FEISHU_BASE_URL}"
+        },
+        "timeoutMs": 30000
+      },
+      "tools": [
+        {
+          "name": "feishu_test_auth",
+          "title": "Test Feishu Auth",
+          "description": "Validate Feishu app credentials by fetching a tenant access token.",
+          "readOnly": true
+        },
+        {
+          "name": "feishu_lookup_user_ids",
+          "title": "Lookup Feishu Users",
+          "description": "Resolve Feishu user IDs from email addresses or mobile numbers.",
+          "readOnly": true
+        },
+        {
+          "name": "feishu_list_chats",
+          "title": "List Feishu Chats",
+          "description": "List chats visible to the Feishu app.",
+          "readOnly": true
+        },
+        {
+          "name": "feishu_get_chat",
+          "title": "Get Feishu Chat",
+          "description": "Read details for one Feishu chat.",
+          "readOnly": true
+        },
+        {
+          "name": "feishu_list_messages",
+          "title": "List Feishu Messages",
+          "description": "Read recent messages from a Feishu chat.",
+          "readOnly": true
+        },
+        {
+          "name": "feishu_send_text",
+          "title": "Send Feishu Text",
+          "description": "Send a text message through the Feishu bot.",
+          "readOnly": false,
+          "destructive": false
+        },
+        {
+          "name": "feishu_send_message",
+          "title": "Send Feishu Message",
+          "description": "Send a Feishu bot message with a supported message type and content object.",
+          "readOnly": false,
+          "destructive": false
+        }
+      ],
+      "installReview": [
+        "Requires a Feishu custom app ID and app secret.",
+        "The Feishu app must be granted the Open Platform permissions needed by the selected tools.",
+        "Sending messages requires the bot to be available to the target user or chat."
+      ]
+    }
+  ],
+  "skillPreviews": [
+    {
+      "name": "feishu",
+      "description": "Use Feishu Open Platform tools to look up users, inspect chats and messages, and send bot messages through a connected Feishu custom app.",
+      "directory": "feishu"
+    }
+  ],
+  "package": {
+    "type": "zip",
+    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/feishu/feishu-0.1.0.zip",
+    "sha256": "126efa220f6bfc422c1998f345a3bfb3c26998208715640734daa6998082d575",
+    "size": 7367
+  }
+}

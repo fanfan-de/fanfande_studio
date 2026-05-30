@@ -1,0 +1,44 @@
+{
+  "name": "spreadsheets",
+  "version": "0.1.0",
+  "description": "Create, edit, analyze, visualize, render, and export spreadsheet files in Anybox.",
+  "author": {
+    "name": "Anybox"
+  },
+  "homepage": "https://github.com/fanfan-de/Anybox-Plugins",
+  "repository": "https://github.com/fanfan-de/Anybox-Plugins",
+  "license": "MIT",
+  "keywords": [
+    "sheet",
+    "sheets",
+    "spreadsheet",
+    "spreadsheets",
+    "excel",
+    "csv",
+    "xlsx",
+    "xls",
+    "workbook"
+  ],
+  "interface": {
+    "displayName": "Spreadsheets",
+    "shortDescription": "Create and edit spreadsheet files",
+    "longDescription": "Create, edit, inspect, render, verify, and export XLSX, CSV, and TSV spreadsheets locally. Use Spreadsheets when the durable output or target is a spreadsheet, workbook, sheet, or CSV file.",
+    "developerName": "Anybox",
+    "category": "Docs",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/fanfan-de/Anybox-Plugins",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png",
+    "defaultPrompt": [
+      "Create a spreadsheet to analyze this company's financials",
+      "Create a corporate expense report template for my company",
+      "Take this bank statement CSV and create a full spreadsheet to analyze my transactions"
+    ],
+    "brandColor": "#107C41",
+    "screenshots": []
+  },
+  "skills": "./skills/"
+}
