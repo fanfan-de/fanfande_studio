@@ -1,0 +1,4 @@
+[submodule "plugins/Anybox-Plugins"]
+	path = plugins/Anybox-Plugins
+	url = https://github.com/fanfan-de/Anybox-Plugins.git
+	branch = main
