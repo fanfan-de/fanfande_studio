@@ -58,6 +58,7 @@ interface SessionCanvasTopMenuProps {
   toolPermissionMode: ToolPermissionMode
   toolPermissionModeError: string | null
   onToolPermissionModeChange: (mode: ToolPermissionMode) => void | Promise<void>
+  onOpenReview?: (() => void | Promise<void>) | null
   skillOptions: ComposerSkillOption[]
   selectedSkillIDs: string[]
   selectedSkillLabel: string
@@ -919,6 +920,7 @@ export function SessionCanvasTopMenu({
   toolPermissionMode,
   toolPermissionModeError,
   onToolPermissionModeChange,
+  onOpenReview,
   skillOptions,
   selectedSkillIDs,
   selectedSkillLabel,
@@ -980,7 +982,14 @@ export function SessionCanvasTopMenu({
                 selectedSkillLabel={selectedSkillLabel}
                 onSkillToggle={onSkillToggle}
               />
-              {showGitControls ? <GitQuickMenuButton projectID={gitProjectID} directory={gitDirectory} /> : null}
+              {showGitControls ? (
+                <GitQuickMenuButton
+                  projectID={gitProjectID}
+                  directory={gitDirectory}
+                  sessionID={activeSession?.id ?? null}
+                  onOpenReview={onOpenReview}
+                />
+              ) : null}
             </>
           ) : null}
           {activeSession ? <SessionInfoMenuButton sessionID={activeSession.id} tasks={sessionTasks} /> : null}

@@ -22,22 +22,24 @@ import type {
   ComposerDraftState,
   ConnectionsTab,
   PermissionRequest,
+  ProjectWorktreeCreateRequest,
   SessionDiffFile,
   SessionDiffScope,
   SessionDiffSummary,
   SessionSummary,
   ToolPermissionMode,
   Turn,
+  WorkspaceGroup,
 } from "./app/types"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
 import { useSettingsPage } from "./app/use-settings-page"
-import { ToastProvider } from "./app/toast"
+import { ToastProvider, useToast } from "./app/toast"
 import { RendererProfiler, createRendererProfilerOnRender } from "./app/perf-profiler"
 import { createEmptyComposerDraftState } from "./app/composer/draft-state"
 import type { BuiltinToolKindKey } from "./app/tools/BuiltinToolsPage"
-import { findSession, isSideChatSession } from "./app/workspace"
+import { findSession, isGitWorkspaceProject, isSideChatSession } from "./app/workspace"
 import { WorkbenchShell } from "./app/workbench/WorkbenchShell"
 import {
   createInitialDockviewLayout,
@@ -794,6 +796,9 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
   const [isInstallingAppUpdate, setIsInstallingAppUpdate] = useState(false)
   const [isSavingAutomaticUpdates, setIsSavingAutomaticUpdates] = useState(false)
   const [isPreparingSettingsPage, setIsPreparingSettingsPage] = useState(false)
+  const [creatingWorktreeProjectID, setCreatingWorktreeProjectID] = useState<string | null>(null)
+  const creatingWorktreeProjectIDRef = useRef<string | null>(null)
+  const toast = useToast()
 
   useEffect(() => {
     const preloadTimer = window.setTimeout(() => {
@@ -955,6 +960,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handleWorkspaceFileSelect,
     handleProjectArchiveSessions,
     handleProjectCreateSession,
+    handleCreateSessionForDirectory,
     handleProjectClick,
     handleProjectOpenInExplorer,
     handleProjectPin,
@@ -1288,6 +1294,45 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
       .finally(() => {
         setIsPreparingSettingsPage(false)
       })
+  }
+
+  async function handleProjectCreateWorktree(workspace: WorkspaceGroup, input: ProjectWorktreeCreateRequest) {
+    const projectID = workspace.project.id.trim()
+    if (!projectID || creatingWorktreeProjectIDRef.current || creatingWorktreeProjectID || !isGitWorkspaceProject(workspace)) return false
+
+    const createProjectWorktree = window.desktop?.createProjectWorktree
+    if (!createProjectWorktree) {
+      toast.error("创建工作树不可用。")
+      return false
+    }
+
+    creatingWorktreeProjectIDRef.current = projectID
+    setCreatingWorktreeProjectID(projectID)
+    try {
+      const created = await createProjectWorktree({
+        projectID,
+        branchName: input.branchName?.trim() || undefined,
+        cleanupPolicy: "manual",
+        ownerType: "manual",
+      })
+      const createdSession = await handleCreateSessionForDirectory(projectID, created.path)
+      const label = input.name.trim() || created.branch?.trim() || created.path
+      if (createdSession) {
+        toast.success(`已创建工作树：${label}`)
+      } else {
+        toast.info(`工作树已创建，但未能自动打开会话：${label}`)
+      }
+      return true
+    } catch (error) {
+      console.error("[desktop] create project worktree failed:", error)
+      toast.error(`创建工作树失败：${getErrorMessage(error)}`)
+      return false
+    } finally {
+      if (creatingWorktreeProjectIDRef.current === projectID) {
+        creatingWorktreeProjectIDRef.current = null
+      }
+      setCreatingWorktreeProjectID((current) => (current === projectID ? null : current))
+    }
   }
 
   async function refreshAppUpdateState() {
@@ -1934,6 +1979,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               hoveredFolderID={hoveredFolderID}
               isCreatingProject={isCreatingProject}
               isCreatingSession={isCreatingSession}
+              creatingWorktreeProjectID={creatingWorktreeProjectID}
               isSettingsOpen={isOpen}
               promptPresetsSidebarProps={{
                 deletingPromptPresetID,
@@ -1970,6 +2016,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onOpenRemoteFolderConfig={handleOpenRemoteFolderConfig}
               onProjectArchiveSessions={handleProjectArchiveSessions}
               onProjectCreateSession={handleProjectCreateSession}
+              onProjectCreateWorktree={handleProjectCreateWorktree}
               onProjectClick={handleProjectClick}
               onProjectOpenInExplorer={handleProjectOpenInExplorer}
               onProjectPin={handleProjectPin}
@@ -2509,6 +2556,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               restoringArchivedSessionID={restoringArchivedSessionID}
               savingMcpServerID={savingMcpServerID}
               savingProviderID={savingProviderID}
+              selectedWorkspace={selectedWorkspace}
               testingProviderID={testingProviderID}
               selectionDraft={selectionDraft}
               onBrandThemeChange={handleBrandThemeChange}
@@ -2525,6 +2573,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onAutomaticUpdatesToggle={() => void handleAutomaticUpdatesToggle()}
               onCheckForUpdates={() => void handleCheckForUpdates()}
               onClose={closeSettings}
+              onCreateSessionForDirectory={handleCreateSessionForDirectory}
               onDeleteArchivedSession={deleteArchivedSession}
               onDeleteMcpServer={deleteMcpServer}
               onDeleteProvider={deleteProvider}

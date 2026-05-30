@@ -79,6 +79,7 @@ import type {
   AgentSshProfile,
   AgentSshProfileInput,
   AgentWorkspaceSession,
+  AgentWorktreeRecord,
   MenuAnchor,
   MenuKey,
   PtyTransportIPCEvent,
@@ -184,6 +185,7 @@ export type {
   AgentSshProfile,
   AgentSshProfileInput,
   AgentWorkspaceSession,
+  AgentWorktreeRecord,
   AppearanceConfigDocument,
   AppearanceConfigSnapshot,
   LocaleConfigDocument,
@@ -943,6 +945,30 @@ export interface DesktopIpcContract {
   "desktop:list-project-workspaces": {
     input: void
     output: AgentProjectWorkspace[]
+  }
+  "desktop:list-project-worktrees": {
+    input: { projectID: string }
+    output: AgentWorktreeRecord[]
+  }
+  "desktop:create-project-worktree": {
+    input: {
+      projectID: string
+      baseRef?: string
+      branchName?: string
+      cleanupPolicy?: AgentWorktreeRecord["cleanupPolicy"]
+      ownerRunID?: string
+      ownerSessionID?: string
+      ownerType?: AgentWorktreeRecord["ownerType"]
+    }
+    output: AgentWorktreeRecord
+  }
+  "desktop:refresh-project-worktree": {
+    input: { projectID: string; worktreeID: string }
+    output: AgentWorktreeRecord
+  }
+  "desktop:delete-project-worktree": {
+    input: { projectID: string; worktreeID: string; force?: boolean; ownerRunID?: string; ownerSessionID?: string }
+    output: AgentWorktreeRecord
   }
   "desktop:update-workspace-watch-directories": {
     input: { directories: string[] }
@@ -1724,6 +1750,10 @@ export interface DesktopApiMethods {
   updateWorkspaceWatchDirectories(input: DesktopIpcInput<"desktop:update-workspace-watch-directories">): Promise<DesktopIpcOutput<"desktop:update-workspace-watch-directories">>
   listFolderWorkspaces(): Promise<DesktopIpcOutput<"desktop:list-folder-workspaces">>
   listProjectWorkspaces(): Promise<DesktopIpcOutput<"desktop:list-project-workspaces">>
+  listProjectWorktrees(input: DesktopIpcInput<"desktop:list-project-worktrees">): Promise<DesktopIpcOutput<"desktop:list-project-worktrees">>
+  createProjectWorktree(input: DesktopIpcInput<"desktop:create-project-worktree">): Promise<DesktopIpcOutput<"desktop:create-project-worktree">>
+  refreshProjectWorktree(input: DesktopIpcInput<"desktop:refresh-project-worktree">): Promise<DesktopIpcOutput<"desktop:refresh-project-worktree">>
+  deleteProjectWorktree(input: DesktopIpcInput<"desktop:delete-project-worktree">): Promise<DesktopIpcOutput<"desktop:delete-project-worktree">>
   openFolderWorkspace(input: DesktopIpcInput<"desktop:open-folder-workspace">): Promise<DesktopIpcOutput<"desktop:open-folder-workspace">>
   listSshProfiles(): Promise<DesktopIpcOutput<"desktop:list-ssh-profiles">>
   saveSshProfile(input: DesktopIpcInput<"desktop:save-ssh-profile">): Promise<DesktopIpcOutput<"desktop:save-ssh-profile">>

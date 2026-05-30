@@ -93,6 +93,7 @@ export const AutomationRun = z.object({
   findingCount: z.number(),
   triageStatus: AutomationTriageStatus,
   error: z.string().optional(),
+  worktreeID: Identifier.schema("worktree").optional(),
   worktreePath: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   createdAt: z.number(),
@@ -296,6 +297,8 @@ export function markRunStarted(runID: string, input: {
   projectID?: string
   sessionID?: string
   turnID?: string
+  worktreeID?: string
+  worktreePath?: string
 } = {}) {
   const existing = getRun(runID)
   if (!existing || existing.status === "cancelled") return existing

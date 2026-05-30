@@ -97,6 +97,9 @@ function validateAutomationShape(automation: Pick<Automation.AutomationDefinitio
     if (!automation.scope.sessionID?.trim()) {
       throw new ApiError(400, "INVALID_AUTOMATION_SCOPE", "Thread automations must include scope.sessionID")
     }
+    if (automation.execution.environment === "worktree") {
+      throw new ApiError(400, "UNSUPPORTED_AUTOMATION_ENVIRONMENT", "Worktree execution is only available for project automations")
+    }
     return
   }
 
@@ -104,10 +107,6 @@ function validateAutomationShape(automation: Pick<Automation.AutomationDefinitio
   const directoryCount = automation.scope.directories?.length ?? 0
   if (projectCount + directoryCount === 0) {
     throw new ApiError(400, "INVALID_AUTOMATION_SCOPE", "Project automations must include projectIDs or directories")
-  }
-
-  if (automation.execution.environment === "worktree") {
-    throw new ApiError(400, "UNSUPPORTED_AUTOMATION_ENVIRONMENT", "Worktree automation is planned but not available in this MVP")
   }
 }
 

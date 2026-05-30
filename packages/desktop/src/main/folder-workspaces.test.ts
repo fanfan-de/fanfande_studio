@@ -47,6 +47,7 @@ describe("folder workspace helpers", () => {
         project: {
           id: "project-atlas",
           name: "Atlas",
+          repositoryRoot: "C:\\Projects\\Atlas",
           worktree: "C:\\Projects\\Atlas",
         },
         sessions: [
@@ -92,9 +93,49 @@ describe("folder workspace helpers", () => {
       project: {
         id: "project-orion",
         name: "Orion",
+        repositoryRoot: "C:\\Projects\\Orion",
         worktree: "C:\\Projects\\Orion",
       },
       sessions: [],
+    })
+  })
+
+  it("preserves git project metadata for folder workspace actions", () => {
+    const project = {
+      id: "project-git",
+      kind: "git" as const,
+      repositoryRoot: "C:\\Projects\\GitApp",
+      workspaceRoots: ["C:\\Projects\\GitApp"],
+      worktree: "C:\\Projects\\GitApp",
+      vcs: "git" as const,
+      name: "GitApp",
+      created: 1,
+      updated: 2,
+      sandboxes: [],
+    }
+
+    const workspace = {
+      id: "project-git",
+      kind: "git" as const,
+      repositoryRoot: "C:\\Projects\\GitApp",
+      workspaceRoots: ["C:\\Projects\\GitApp"],
+      worktree: "C:\\Projects\\GitApp",
+      vcs: "git" as const,
+      name: "GitApp",
+      created: 1,
+      updated: 2,
+      sessions: [],
+    }
+
+    const folderWorkspace = buildFolderWorkspaceForDirectory(project, workspace, "C:\\Projects\\GitApp", {
+      existsSync: directoryExists,
+    })
+
+    expect(folderWorkspace.project).toMatchObject({
+      id: "project-git",
+      kind: "git",
+      repositoryRoot: "C:\\Projects\\GitApp",
+      vcs: "git",
     })
   })
 
@@ -135,6 +176,7 @@ describe("folder workspace helpers", () => {
         project: {
           id: "prj_clean-room",
           name: "Clean Room",
+          repositoryRoot: "C:\\Users\\demo\\Clean Room",
           worktree: "C:\\Users\\demo\\Clean Room",
         },
         sessions: [
@@ -193,6 +235,7 @@ describe("folder workspace helpers", () => {
       project: {
         id: "project-missing",
         name: "Ghost",
+        repositoryRoot: "C:\\Projects\\Ghost",
         worktree: "C:\\Projects\\Ghost",
       },
       sessions: [

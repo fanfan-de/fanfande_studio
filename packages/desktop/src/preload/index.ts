@@ -8,6 +8,7 @@ import type {
   AgentFolderWorkspace,
   AgentProjectModelSelection,
   AgentProjectWorkspace,
+  AgentWorktreeRecord,
   AgentProviderAuthFlow,
   AgentProviderAuthState,
   AgentProviderCatalogItem,
@@ -271,6 +272,14 @@ try {
       invokeDesktop("desktop:list-folder-workspaces") as Promise<AgentFolderWorkspace[]>,
     listProjectWorkspaces: () =>
       invokeDesktop("desktop:list-project-workspaces") as Promise<AgentProjectWorkspace[]>,
+    listProjectWorktrees: (input: { projectID: string }) =>
+      invokeDesktop("desktop:list-project-worktrees", input) as Promise<AgentWorktreeRecord[]>,
+    createProjectWorktree: (input: DesktopIpcInput<"desktop:create-project-worktree">) =>
+      invokeDesktop("desktop:create-project-worktree", input) as Promise<AgentWorktreeRecord>,
+    refreshProjectWorktree: (input: DesktopIpcInput<"desktop:refresh-project-worktree">) =>
+      invokeDesktop("desktop:refresh-project-worktree", input) as Promise<AgentWorktreeRecord>,
+    deleteProjectWorktree: (input: DesktopIpcInput<"desktop:delete-project-worktree">) =>
+      invokeDesktop("desktop:delete-project-worktree", input) as Promise<AgentWorktreeRecord>,
     openFolderWorkspace: (input: { directory: string }) =>
       invokeDesktop("desktop:open-folder-workspace", input) as Promise<AgentFolderWorkspace>,
     listSshProfiles: () =>

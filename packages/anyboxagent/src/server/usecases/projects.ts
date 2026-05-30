@@ -9,6 +9,7 @@ import * as Mcp from "#mcp/manager.ts"
 import type { PtyRegistry } from "#pty/registry.ts"
 import { Instance } from "#project/instance.ts"
 import * as Project from "#project/project.ts"
+import * as Worktree from "#project/worktree.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Plugin from "#plugin/plugin.ts"
 import * as Provider from "#provider/provider.ts"
@@ -30,6 +31,21 @@ export const CreateProjectBody = z.object({
 export const CreateProjectSessionBody = z.object({
   directory: z.string().min(1).optional(),
   title: z.string().min(1).optional(),
+})
+
+export const CreateProjectWorktreeBody = z.object({
+  baseRef: z.string().trim().min(1).optional(),
+  branchName: z.string().trim().min(1).optional(),
+  cleanupPolicy: Worktree.WorktreeCleanupPolicy.optional().default("manual"),
+  ownerRunID: z.string().trim().min(1).optional(),
+  ownerSessionID: z.string().trim().min(1).optional(),
+  ownerType: Worktree.WorktreeOwnerType.optional().default("manual"),
+})
+
+export const DeleteProjectWorktreeBody = z.object({
+  force: z.boolean().optional().default(false),
+  ownerRunID: z.string().trim().min(1).optional(),
+  ownerSessionID: z.string().trim().min(1).optional(),
 })
 
 export const UpdateMcpServerBody = Config.McpServerInput
@@ -108,10 +124,10 @@ function isDirectoryInsideProjectRoot(directory: string, root: string) {
 async function resolveProjectBoundaryRoots(project: Project.ProjectInfo) {
   const roots = new Set<string>()
 
-  roots.add(await canonicalizeProjectDirectory(project.worktree))
+  roots.add(await canonicalizeProjectDirectory(Project.getRepositoryRoot(project)))
 
-  for (const sandbox of project.sandboxes ?? []) {
-    roots.add(await canonicalizeProjectDirectory(sandbox))
+  for (const root of Project.getWorkspaceRoots(project)) {
+    roots.add(await canonicalizeProjectDirectory(root))
   }
 
   return [...roots]
@@ -134,8 +150,9 @@ async function resolveProjectGitDirectory(
     throw new ApiError(400, "INVALID_PAYLOAD", "Body must include a non-empty 'directory'")
   }
 
-  if (isSshWorkspaceUri(project.worktree) || isSshWorkspaceUri(directory)) {
-    if (!containsWorkspaceLocation(project.worktree, directory)) {
+  const repositoryRoot = Project.getRepositoryRoot(project)
+  if (isSshWorkspaceUri(repositoryRoot) || isSshWorkspaceUri(directory)) {
+    if (!containsWorkspaceLocation(repositoryRoot, directory)) {
       throw new ApiError(400, "DIRECTORY_NOT_IN_PROJECT", `Directory '${directory}' does not belong to project '${projectID}'`)
     }
     throw new ApiError(409, "GIT_UNAVAILABLE_FOR_SSH", "Git shortcuts are not available for SSH workspaces yet")
@@ -185,6 +202,37 @@ async function runProjectGitOperation<T>(operation: () => Promise<T>) {
   }
 }
 
+function createProjectWorktreeApiError(error: unknown) {
+  if (error instanceof ApiError) return error
+
+  const message = error instanceof Error && error.message.trim()
+    ? error.message
+    : "Worktree operation failed."
+
+  if (message.includes("uncommitted changes") || message.includes("force=true")) {
+    return new ApiError(409, "WORKTREE_DIRTY", message)
+  }
+  if (message.includes("Only managed worktrees")) {
+    return new ApiError(403, "WORKTREE_NOT_MANAGED", message)
+  }
+  if (message.includes("outside the configured worktree parent") || message.includes("ownerRunID") || message.includes("ownerSessionID")) {
+    return new ApiError(403, "WORKTREE_DELETE_FORBIDDEN", message)
+  }
+  if (message.includes("SSH workspaces")) {
+    return new ApiError(409, "WORKTREE_UNAVAILABLE_FOR_SSH", message)
+  }
+
+  return new ApiError(400, "WORKTREE_OPERATION_FAILED", message)
+}
+
+async function runProjectWorktreeOperation<T>(operation: () => Promise<T>) {
+  try {
+    return await operation()
+  } catch (error) {
+    throw createProjectWorktreeApiError(error)
+  }
+}
+
 function parseModelReference(value: string) {
   const [providerID, ...rest] = value.split("/")
   const modelID = rest.join("/")
@@ -221,13 +269,63 @@ export function listProjectSessions(projectID: string) {
   return Session.listByProject(projectID).map(mapSessionSummary)
 }
 
+export async function listProjectWorktrees(projectID: string) {
+  safeReadProject(projectID)
+  return Project.refreshWorktrees(projectID)
+}
+
+export async function createProjectWorktree(
+  projectID: string,
+  input: z.infer<typeof CreateProjectWorktreeBody>,
+) {
+  safeReadProject(projectID)
+  return runProjectWorktreeOperation(async () => {
+    const worktree = await Project.createManagedWorktree(projectID, {
+      baseRef: input.baseRef,
+      branch: input.branchName,
+      cleanupPolicy: input.cleanupPolicy,
+      ownerRunID: input.ownerRunID,
+      ownerSessionID: input.ownerSessionID,
+      ownerType: input.ownerType,
+    })
+    if (!worktree) throw new ApiError(404, "PROJECT_NOT_FOUND", `Project '${projectID}' not found`)
+    return worktree
+  })
+}
+
+export async function refreshProjectWorktree(projectID: string, worktreeID: string) {
+  safeReadProject(projectID)
+  return runProjectWorktreeOperation(async () => {
+    const worktree = await Project.refreshWorktree(projectID, worktreeID)
+    if (!worktree) {
+      throw new ApiError(404, "WORKTREE_NOT_FOUND", `Worktree '${worktreeID}' not found`)
+    }
+    return worktree
+  })
+}
+
+export async function deleteProjectWorktree(
+  projectID: string,
+  worktreeID: string,
+  input: z.infer<typeof DeleteProjectWorktreeBody>,
+) {
+  safeReadProject(projectID)
+  return runProjectWorktreeOperation(async () => {
+    const worktree = await Project.removeManagedWorktree(projectID, worktreeID, input)
+    if (!worktree) {
+      throw new ApiError(404, "WORKTREE_NOT_FOUND", `Worktree '${worktreeID}' not found`)
+    }
+    return worktree
+  })
+}
+
 export async function createProjectSession(
   projectID: string,
   input: z.infer<typeof CreateProjectSessionBody>,
 ) {
   const project = safeReadProject(projectID)
 
-  let directory = input.directory?.trim() || project.worktree
+  let directory = input.directory?.trim() || Project.getRepositoryRoot(project)
   if (input.directory) {
     const resolved = await Project.fromDirectory(directory)
     if (resolved.project.id !== projectID) {
@@ -236,6 +334,7 @@ export async function createProjectSession(
     directory = input.directory.trim()
   }
 
+  Project.listWorktrees(projectID)
   const session = await Session.createSession({
     directory,
     projectID,
@@ -435,20 +534,22 @@ export async function createProjectGitPullRequest(
 
 export async function listProjectSkills(projectID: string) {
   const project = safeReadProject(projectID)
-  if (isSshWorkspaceUri(project.worktree)) return []
-  return Skill.list(project.worktree, {
+  const repositoryRoot = Project.getRepositoryRoot(project)
+  if (isSshWorkspaceUri(repositoryRoot)) return []
+  return Skill.list(repositoryRoot, {
     pluginIDs: await Config.getSelectedPluginIDs(projectID),
   })
 }
 
 export async function getProjectSkillSelection(projectID: string) {
   const project = safeReadProject(projectID)
-  if (isSshWorkspaceUri(project.worktree)) {
+  const repositoryRoot = Project.getRepositoryRoot(project)
+  if (isSshWorkspaceUri(repositoryRoot)) {
     return { skillIDs: [] }
   }
   const pluginIDs = await Config.getSelectedPluginIDs(projectID)
   return {
-    skillIDs: await Skill.resolveSelectedSkillIDs(project.worktree, await Config.getSelectedSkillIDs(projectID), {
+    skillIDs: await Skill.resolveSelectedSkillIDs(repositoryRoot, await Config.getSelectedSkillIDs(projectID), {
       pluginIDs,
     }),
   }
@@ -459,12 +560,13 @@ export async function updateProjectSkillSelection(
   input: z.infer<typeof UpdateProjectSkillSelectionBody>,
 ) {
   const project = safeReadProject(projectID)
-  if (isSshWorkspaceUri(project.worktree)) {
+  const repositoryRoot = Project.getRepositoryRoot(project)
+  if (isSshWorkspaceUri(repositoryRoot)) {
     const config = await Config.setSelectedSkillIDs(projectID, [])
     return { skillIDs: config.selected_skills ?? [] }
   }
   const pluginIDs = await Config.getSelectedPluginIDs(projectID)
-  const skillIDs = await Skill.resolveSelectedSkillIDs(project.worktree, input.skillIDs, {
+  const skillIDs = await Skill.resolveSelectedSkillIDs(repositoryRoot, input.skillIDs, {
     pluginIDs,
   })
   const config = await Config.setSelectedSkillIDs(projectID, skillIDs)
@@ -532,7 +634,7 @@ export async function getProjectMcpServerDiagnostic(projectID: string, serverID:
   }
 
   return Instance.provide({
-    directory: project.worktree,
+    directory: Project.getRepositoryRoot(project),
     fn: async () => await Mcp.diagnose(serverID),
   })
 }
@@ -569,6 +671,7 @@ export function deleteProject(projectID: string, options?: { ptyRegistry?: PtyRe
   if (db.tableExists("permission_audits")) {
     db.deleteMany("permission_audits", [{ column: "projectID", value: projectID }])
   }
+  Project.removeWorktrees(projectID)
 
   return {
     projectID,

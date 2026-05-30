@@ -441,6 +441,30 @@ body.is-resizing-sidebar .sidebar-resizer::before {
   font-weight: 500;
 }
 
+.project-row-worktree-badge {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border: 1px solid var(--mix-seg-accent-24-seg-border-76);
+  border-radius: 999px;
+  background: var(--mix-seg-accent-soft-84-transparent-16);
+  color: var(--seg-accent-strong);
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  justify-content: center;
+}
+
+.project-row-worktree-badge svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .project-row-text {
   min-width: 0;
   flex: 1 1 auto;
@@ -605,6 +629,119 @@ body.is-resizing-sidebar .sidebar-resizer::before {
   height: 1px;
   margin: 4px 6px;
   background: var(--context-menu-border);
+}
+
+.project-worktree-create-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: var(--surface-overlay, rgba(12, 10, 9, 0.42));
+}
+
+.project-worktree-create-dialog {
+  width: min(420px, calc(100vw - 32px));
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--seg-border, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-overlay, 12px);
+  background: var(--surface-elevated, var(--seg-panel, #ffffff));
+  color: var(--seg-text-1, #1f2937);
+  box-shadow: var(--ui-shadow-lg, 0 24px 58px rgba(0, 0, 0, 0.28));
+}
+
+.project-worktree-create-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 12px;
+  align-items: start;
+}
+
+.project-worktree-create-header h2 {
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.18;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.project-worktree-create-header p {
+  margin: 6px 0 0;
+  color: var(--seg-text-2, #6b7280);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.project-worktree-create-close {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--seg-text-2, #6b7280);
+}
+
+.project-worktree-create-close:hover,
+.project-worktree-create-close:focus-visible {
+  background: var(--semantic-sidebar-tree-row-surface-hover, rgba(17, 24, 39, 0.08));
+  color: var(--seg-text-1, #1f2937);
+}
+
+.project-worktree-create-close:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.project-worktree-create-close svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.project-worktree-create-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--seg-border, rgba(17, 24, 39, 0.14));
+  border-radius: 8px;
+  background: var(--seg-panel, #ffffff);
+  color: var(--seg-text-1, #1f2937);
+  font-family: var(--font-sans);
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.project-worktree-create-input:focus-visible {
+  outline: none;
+  border-color: var(--mix-seg-accent-42-seg-border-58, rgba(99, 102, 241, 0.48));
+  box-shadow: 0 0 0 3px var(--mix-seg-accent-12-transparent-88, rgba(99, 102, 241, 0.14));
+}
+
+.project-worktree-create-error {
+  margin: 0;
+  color: var(--semantic-error-text, #b42318);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.project-worktree-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.project-worktree-create-actions .primary-button,
+.project-worktree-create-actions .secondary-button {
+  min-height: 34px;
+  padding: 0 16px;
+  font-size: 18px;
 }
 
 @keyframes ui-context-menu-in {

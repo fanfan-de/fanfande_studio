@@ -193,6 +193,7 @@ interface UseSessionLifecycleControllerOptions {
   setSessionTasksBySession: StateSetter<Record<string, SessionTaskListView>>
   setDockviewLayout: StateSetter<SerializedDockview | null>
   setWorkspaces: StateSetter<WorkspaceGroup[]>
+  refreshWorkspaceFromDirectory: (directory: string) => Promise<WorkspaceGroup | null>
   updateRightSidebarTab: (tabID: string, update: RightSidebarTabUpdate) => void
   clearRuntimeDebugRefreshTimer: (sessionID: string) => void
   clearSessionDiffRefreshTimer: (sessionID: string) => void
@@ -268,6 +269,7 @@ export function useSessionLifecycleController({
   setSessionTasksBySession,
   setDockviewLayout,
   setWorkspaces,
+  refreshWorkspaceFromDirectory,
   updateRightSidebarTab,
   clearRuntimeDebugRefreshTimer,
   clearSessionDiffRefreshTimer,
@@ -951,6 +953,42 @@ export function useSessionLifecycleController({
     openCreateSessionTab(workspace.id)
   }
 
+  async function handleCreateSessionForDirectory(projectID: string, directory: string) {
+    const trimmedProjectID = projectID.trim()
+    const trimmedDirectory = directory.trim()
+    if (!trimmedProjectID || !trimmedDirectory) return null
+
+    const refreshedWorkspace = await refreshWorkspaceFromDirectory(trimmedDirectory)
+    const targetWorkspace =
+      refreshedWorkspace ??
+      workspaces.find((workspace) => (
+        workspace.project.id === trimmedProjectID &&
+        workspace.directory.trim().toLowerCase() === trimmedDirectory.toLowerCase()
+      )) ??
+      null
+
+    if (!targetWorkspace) {
+      console.error("[desktop] create session for worktree failed: workspace was not loaded.", {
+        directory: trimmedDirectory,
+        projectID: trimmedProjectID,
+      })
+      return null
+    }
+
+    if (targetWorkspace.project.id !== trimmedProjectID) {
+      console.error("[desktop] create session for worktree failed: project mismatch.", {
+        expectedProjectID: trimmedProjectID,
+        actualProjectID: targetWorkspace.project.id,
+        directory: trimmedDirectory,
+      })
+      return null
+    }
+
+    return createSessionForWorkspace(targetWorkspace, {
+      paneID: focusedPaneID ?? focusedPane?.id ?? null,
+    })
+  }
+
   function handleProjectRemove(workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation()
 
@@ -1134,6 +1172,7 @@ export function useSessionLifecycleController({
   return {
     cleanupSessionState,
     createSessionForWorkspace,
+    handleCreateSessionForDirectory,
     handleCreateSessionSubmit,
     handleCreateSideChatTab,
     handleDeleteSideChatTab,

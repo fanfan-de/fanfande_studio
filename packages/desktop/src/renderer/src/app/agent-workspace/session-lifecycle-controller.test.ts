@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react"
 import { useRef, useState } from "react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import type { PendingAgentStream, SessionSummary, SideChatLink, WorkspaceGroup } from "../types"
 import { createSessionDataLoadCache } from "./session-data-load-cache"
 import {
@@ -39,8 +39,15 @@ function createWorkspace(id: string, sessions: SessionSummary[]): WorkspaceGroup
   }
 }
 
-function useProjectClickHarness(focusSession = vi.fn()) {
+function useProjectClickHarness(
+  focusSession = vi.fn(),
+  input: {
+    refreshWorkspaceFromDirectory?: (directory: string) => Promise<WorkspaceGroup | null>
+    workspaces?: WorkspaceGroup[]
+  } = {},
+) {
   const workspace = createWorkspace("workspace-1", [createSession("session-1")])
+  const workspaces = input.workspaces ?? [workspace]
   const [selectedFolderID, setSelectedFolderID] = useState<string | null>(null)
   const [expandedFolderIDs, setExpandedFolderIDs] = useState<string[]>([])
   const noop = vi.fn()
@@ -108,6 +115,7 @@ function useProjectClickHarness(focusSession = vi.fn()) {
     setSessionRuntimeDebugStateBySession: noop,
     setSessionTasksBySession: noop,
     setWorkspaces: noop,
+    refreshWorkspaceFromDirectory: input.refreshWorkspaceFromDirectory ?? vi.fn(async () => workspace),
     updateRightSidebarTab: noop,
     clearRuntimeDebugRefreshTimer: noop,
     clearSessionDiffRefreshTimer: noop,
@@ -115,7 +123,7 @@ function useProjectClickHarness(focusSession = vi.fn()) {
     skipNextHistoryLoadRef: useRef({}),
     subscribedSessionStreamsRef: useRef({}),
     workbenchDockviewCommandsRef: useRef(null),
-    workspaces: [workspace],
+    workspaces,
   })
 
   return {
@@ -127,6 +135,11 @@ function useProjectClickHarness(focusSession = vi.fn()) {
 }
 
 describe("session lifecycle cleanup helpers", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete (window as typeof window & { desktop?: unknown }).desktop
+  })
+
   it("toggles folder expansion without focusing a session when the project row is clicked", () => {
     const focusSession = vi.fn()
     const { result } = renderHook(() => useProjectClickHarness(focusSession))
@@ -146,6 +159,45 @@ describe("session lifecycle cleanup helpers", () => {
     expect(result.current.selectedFolderID).toBe("workspace-1")
     expect(result.current.expandedFolderIDs).toEqual([])
     expect(focusSession).not.toHaveBeenCalled()
+  })
+
+  it("refreshes a worktree directory before creating a session there", async () => {
+    const focusSession = vi.fn()
+    const refreshedWorkspace = createWorkspace("worktree-1", [])
+    refreshedWorkspace.directory = "C:/work/worktree-1"
+    refreshedWorkspace.project.id = "project-workspace-1"
+    const refreshWorkspaceFromDirectory = vi.fn(async () => refreshedWorkspace)
+    const createFolderSession = vi.fn(async () => ({
+      session: {
+        id: "session-worktree",
+        projectID: "project-workspace-1",
+        directory: "C:/work/worktree-1",
+        title: "Worktree session",
+        created: 1,
+        updated: 2,
+      },
+    }))
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      writable: true,
+      value: {
+        createFolderSession,
+      },
+    })
+
+    const { result } = renderHook(() => useProjectClickHarness(focusSession, { refreshWorkspaceFromDirectory }))
+
+    await act(async () => {
+      await result.current.controller.handleCreateSessionForDirectory("project-workspace-1", "C:/work/worktree-1")
+    })
+
+    expect(refreshWorkspaceFromDirectory).toHaveBeenCalledWith("C:/work/worktree-1")
+    expect(createFolderSession).toHaveBeenCalledWith({
+      projectID: "project-workspace-1",
+      directory: "C:/work/worktree-1",
+      title: undefined,
+    })
+    expect(focusSession).toHaveBeenCalledWith("worktree-1", "session-worktree", undefined)
   })
 
   it("removes side chat mappings when either parent or side chat session is cleaned up", () => {

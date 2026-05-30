@@ -3651,30 +3651,45 @@ describe("App", () => {
     })
 
     fireEvent.click(await screen.findByRole("button", { name: "Git" }))
-    fireEvent.click(screen.getByRole("button", { name: /Commit changes/i }))
+    let gitQuickMenu = await screen.findByRole("dialog", { name: "Git quick menu" })
+    fireEvent.click(within(gitQuickMenu).getByRole("button", { name: /Changes/i }))
 
-    expect(await screen.findByRole("textbox", { name: "Commit message" })).toBeInTheDocument()
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    expect(await within(inspector).findByRole("tab", { name: /Review/ })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(window.desktop!.getSessionDiff).toHaveBeenCalledWith({
+        sessionID: "session-atlas-review",
+      })
+    })
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Commit message" }), {
+    fireEvent.click(await screen.findByRole("button", { name: "Git" }))
+    gitQuickMenu = await screen.findByRole("dialog", { name: "Git quick menu" })
+    fireEvent.click(within(gitQuickMenu).getByRole("button", { name: "Commit or push" }))
+
+    const commitPanel = await screen.findByRole("dialog", { name: "Commit or push" })
+    expect(within(commitPanel).getByRole("textbox", { name: "Commit message" })).toBeInTheDocument()
+
+    fireEvent.change(within(commitPanel).getByRole("textbox", { name: "Commit message" }), {
       target: {
         value: "chore: wire git quick menu",
       },
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Run commit" }))
+    fireEvent.click(within(commitPanel).getByRole("button", { name: "Commit" }))
 
     await waitFor(() => {
       expect(window.desktop!.gitCommit).toHaveBeenCalledWith({
         projectID: "project-atlas",
         directory: "C:\\Projects\\Atlas\\client",
         message: "chore: wire git quick menu",
+        stageAll: true,
       })
     })
 
     expect(await screen.findByText("Committed to main.")).toBeInTheDocument()
-    expect(screen.getByRole("textbox", { name: "Commit message" })).toBeInTheDocument()
+    expect(within(commitPanel).getByRole("textbox", { name: "Commit message" })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: /Push branch/i }))
+    fireEvent.click(within(commitPanel).getByRole("button", { name: "Push" }))
 
     await waitFor(() => {
       expect(window.desktop!.gitPush).toHaveBeenCalledWith({
@@ -3741,15 +3756,16 @@ describe("App", () => {
     await screen.findByRole("button", { name: "Atlas review" })
 
     fireEvent.click(await screen.findByRole("button", { name: "Git" }))
-    fireEvent.click(screen.getByRole("button", { name: /Commit changes/i }))
+    fireEvent.click(screen.getByRole("button", { name: "Commit or push" }))
 
-    fireEvent.change(await screen.findByRole("textbox", { name: "Commit message" }), {
+    const commitPanel = await screen.findByRole("dialog", { name: "Commit or push" })
+    fireEvent.change(within(commitPanel).getByRole("textbox", { name: "Commit message" }), {
       target: {
         value: "chore: stage all from quick menu",
       },
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Stage all + commit" }))
+    fireEvent.click(within(commitPanel).getByRole("button", { name: "Commit" }))
 
     await waitFor(() => {
       expect(window.desktop!.gitCommit).toHaveBeenCalledWith({
@@ -3831,11 +3847,12 @@ describe("App", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Git" }))
 
-    const commitButton = await screen.findByRole("button", { name: /Commit changes/i })
+    const commitButton = await screen.findByRole("button", { name: "Commit or push" })
     expect(commitButton).toBeEnabled()
     fireEvent.click(commitButton)
-    expect(screen.getByRole("button", { name: "Run commit" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "Stage all + commit" })).toBeEnabled()
+    const commitPanel = await screen.findByRole("dialog", { name: "Commit or push" })
+    fireEvent.click(within(commitPanel).getByRole("checkbox", { name: "Include unstaged changes" }))
+    expect(within(commitPanel).getByRole("button", { name: "Commit" })).toBeDisabled()
     await waitFor(() => {
       expect(gitGetCapabilities).toHaveBeenCalledTimes(1)
     })
@@ -3859,7 +3876,7 @@ describe("App", () => {
       expect(gitGetCapabilities).toHaveBeenCalledTimes(1)
     })
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Run commit" })).toBeEnabled()
+      expect(within(commitPanel).getByRole("button", { name: "Commit" })).toBeEnabled()
     })
   })
 
@@ -4853,13 +4870,15 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Git" }))
 
     const gitQuickMenu = await screen.findByRole("dialog", { name: "Git quick menu" })
-    fireEvent.click(within(gitQuickMenu).getByRole("button", { name: /Create branch/i }))
-    fireEvent.change(screen.getByRole("textbox", { name: "Branch name" }), {
+    fireEvent.click(within(gitQuickMenu).getByRole("button", { name: currentBranch }))
+    const branchesPanel = await screen.findByRole("dialog", { name: "Git branches" })
+    fireEvent.click(within(branchesPanel).getByRole("button", { name: "Create and checkout new branch" }))
+    fireEvent.change(within(branchesPanel).getByRole("textbox", { name: "Branch name" }), {
       target: {
         value: "feature/top-menu-sync",
       },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Create branch" }))
+    fireEvent.click(within(branchesPanel).getByRole("button", { name: "Create branch" }))
 
     await waitFor(() => {
       expect(window.desktop!.gitCreateBranch).toHaveBeenCalledWith({
@@ -4870,7 +4889,7 @@ describe("App", () => {
     })
 
     await waitFor(() => {
-      expect(window.desktop!.gitListBranches).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.gitListBranches).toHaveBeenCalled()
     })
 
     const utilityBar = document.querySelector(".composer-utility-bar") as HTMLElement
@@ -5016,10 +5035,13 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Git" }))
 
     const gitQuickMenu = await screen.findByRole("dialog", { name: "Git quick menu" })
-    const createBranchButton = within(gitQuickMenu).getByRole("button", { name: /Create branch/i })
+    fireEvent.click(within(gitQuickMenu).getByRole("button", { name: "main" }))
+    const branchesPanel = await screen.findByRole("dialog", { name: "Git branches" })
+    const createBranchButton = within(branchesPanel).getByRole("button", { name: "Create and checkout new branch" })
 
     expect(createBranchButton).toBeDisabled()
-    expect(createBranchButton).toHaveTextContent("Create the first commit before creating a branch.")
+    expect(createBranchButton).toHaveAttribute("title", "Create the first commit before creating a branch.")
+    expect(createBranchButton).not.toHaveTextContent("Create the first commit before creating a branch.")
     expect(within(gitQuickMenu).getByText("Current branch: main")).toBeInTheDocument()
   })
 

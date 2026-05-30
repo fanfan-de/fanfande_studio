@@ -98,6 +98,35 @@ describe("automation api", () => {
     expect(listAfterDelete.data?.map((automation) => automation.id)).not.toContain(created.data!.id)
   })
 
+  test("creates project automation with worktree execution", async () => {
+    const app = createServerApp()
+    const createResponse = await app.request("/api/automations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Worktree review",
+        kind: "project",
+        schedule: {
+          type: "cron",
+          expression: "*/10 * * * *",
+          timezone: "UTC",
+        },
+        scope: {
+          projectIDs: ["proj_test"],
+        },
+        execution: {
+          environment: "worktree",
+        },
+        prompt: "Review the project in an isolated worktree.",
+      }),
+    })
+
+    expect(createResponse.status).toBe(201)
+    const created = await readJson<AutomationDefinition>(createResponse)
+    expect(created.success).toBe(true)
+    expect(created.data?.id).toStartWith("aut_")
+  })
+
   test("streams automation run and session events", async () => {
     const app = createServerApp()
     const createResponse = await app.request("/api/automations", {

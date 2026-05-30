@@ -6,8 +6,10 @@ import {
   AutomationIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  CloseIcon,
   DeleteIcon,
   FileTextIcon,
+  ForkIcon,
   FolderIcon,
   FolderOpenIcon,
   NewItemIcon,
@@ -23,11 +25,12 @@ import { BuiltinToolsSidebarView, type BuiltinToolsSidebarViewProps } from "../t
 import type {
   GlobalSkillTreeNode,
   LeftSidebarView,
+  ProjectWorktreeCreateRequest,
   SessionSummary,
   SidebarActionKey,
   WorkspaceGroup
 } from "../types"
-import { isSideChatSession } from "../workspace"
+import { isGitWorkspaceProject, isSideChatSession } from "../workspace"
 
 const MINUTE_MS = 60 * 1000
 const HOUR_MS = 60 * MINUTE_MS
@@ -71,6 +74,7 @@ interface SidebarProps {
   hoveredFolderID: string | null
   isCreatingProject: boolean
   isCreatingSession: boolean
+  creatingWorktreeProjectID: string | null
   isSettingsOpen: boolean
   promptPresetsSidebarProps: PromptPresetsSidebarViewProps
   showSettingsButton?: boolean
@@ -89,6 +93,7 @@ interface SidebarProps {
   onProjectArchiveSessions: (workspace: WorkspaceGroup) => void | Promise<void>
   onProjectClick: (workspace: WorkspaceGroup) => void
   onProjectCreateSession: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void | Promise<void>
+  onProjectCreateWorktree: (workspace: WorkspaceGroup, input: ProjectWorktreeCreateRequest) => boolean | void | Promise<boolean | void>
   onProjectOpenInExplorer: (workspace: WorkspaceGroup) => void | Promise<void>
   onProjectPin: (workspace: WorkspaceGroup) => void
   onProjectRemove: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void
@@ -174,6 +179,7 @@ interface FolderWorkspaceViewProps {
   expandedFolderIDs: string[]
   hoveredFolderID: string | null
   isCreatingSession: boolean
+  creatingWorktreeProjectID: string | null
   projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
   runningSessionIDs: string[]
   selectedFolderID: string | null
@@ -185,6 +191,7 @@ interface FolderWorkspaceViewProps {
   onProjectArchiveSessions: (workspace: WorkspaceGroup) => void | Promise<void>
   onProjectClick: (workspace: WorkspaceGroup) => void
   onProjectCreateSession: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void | Promise<void>
+  onProjectCreateWorktree: (workspace: WorkspaceGroup, input: ProjectWorktreeCreateRequest) => boolean | void | Promise<boolean | void>
   onProjectOpenInExplorer: (workspace: WorkspaceGroup) => void | Promise<void>
   onProjectPin: (workspace: WorkspaceGroup) => void
   onProjectRemove: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void
@@ -198,8 +205,68 @@ type ProjectContextMenuState = {
   y: number
 } | null
 
+function getWorkspaceBaseName(workspace: WorkspaceGroup) {
+  const root = workspace.project.repositoryRoot ?? workspace.project.worktree ?? workspace.directory
+  const trimmed = root.replace(/[\\/]+$/, "")
+  return trimmed.split(/[\\/]/).filter(Boolean).pop() || "worktree"
+}
+
+function normalizeSidebarWorkspacePath(value: string) {
+  const trimmed = value.trim().replace(/\\/g, "/").replace(/\/+$/, "")
+  if (!trimmed) return ""
+  if (trimmed.includes("://")) return trimmed
+
+  const normalized = trimmed.replace(/\/+/g, "/")
+  return /^[a-z]:\//i.test(normalized) ? normalized.toLowerCase() : normalized
+}
+
+function sameSidebarWorkspacePath(left: string, right: string) {
+  return normalizeSidebarWorkspacePath(left) === normalizeSidebarWorkspacePath(right)
+}
+
+function sidebarWorkspacePathContains(root: string, candidate: string) {
+  const normalizedRoot = normalizeSidebarWorkspacePath(root)
+  const normalizedCandidate = normalizeSidebarWorkspacePath(candidate)
+  if (!normalizedRoot || !normalizedCandidate) return false
+  return normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}/`)
+}
+
+function getLinkedWorktreeRoot(workspace: WorkspaceGroup) {
+  if (!isGitWorkspaceProject(workspace)) return null
+
+  const primaryRoots = [workspace.project.worktree, workspace.project.repositoryRoot]
+    .filter((root): root is string => Boolean(root?.trim()))
+  const workspaceRoots = workspace.project.workspaceRoots ?? []
+  const linkedRoot = workspaceRoots.find((root) => (
+    !primaryRoots.some((primaryRoot) => sameSidebarWorkspacePath(root, primaryRoot)) &&
+    sidebarWorkspacePathContains(root, workspace.directory)
+  ))
+  if (linkedRoot) return linkedRoot
+
+  if (workspaceRoots.length > 0 || primaryRoots.length === 0) return null
+  return primaryRoots.some((primaryRoot) => sidebarWorkspacePathContains(primaryRoot, workspace.directory))
+    ? null
+    : workspace.directory
+}
+
+function normalizeDefaultBranchName(value: string) {
+  return value
+    .trim()
+    .replace(/[\s~^:?*\[\\\x00-\x1f\x7f]+/g, "-")
+    .replace(/\.\.+/g, ".")
+    .replace(/\/+/g, "/")
+    .replace(/@{/g, "-")
+    .replace(/(^[./-]+|[./-]+$)/g, "")
+    || "worktree"
+}
+
+function createWorktreeBranchName(workspace: WorkspaceGroup, workspaces: WorkspaceGroup[]) {
+  const projectWorkspaceCount = workspaces.filter((item) => item.project.id === workspace.project.id).length
+  return `${normalizeDefaultBranchName(getWorkspaceBaseName(workspace))}-${Math.max(1, projectWorkspaceCount + 1)}`
+}
+
 const PROJECT_CONTEXT_MENU_WIDTH = 240
-const PROJECT_CONTEXT_MENU_HEIGHT = 152
+const PROJECT_CONTEXT_MENU_HEIGHT = 188
 
 interface WorkspaceSessionTreeNode {
   children: WorkspaceSessionTreeNode[]
@@ -263,10 +330,12 @@ function clampProjectContextMenuPosition(x: number, y: number) {
 
 interface ProjectContextMenuProps {
   deletingSessionID: string | null
+  creatingWorktreeProjectID: string | null
   menu: ProjectContextMenuState
   pinnedWorkspaceIDs: string[]
   onClose: () => void
   onProjectArchiveSessions: (workspace: WorkspaceGroup) => void | Promise<void>
+  onProjectCreateWorktree: (workspace: WorkspaceGroup) => void | Promise<void>
   onProjectOpenInExplorer: (workspace: WorkspaceGroup) => void | Promise<void>
   onProjectPin: (workspace: WorkspaceGroup) => void
   onProjectRemove: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void
@@ -274,10 +343,12 @@ interface ProjectContextMenuProps {
 
 function ProjectContextMenu({
   deletingSessionID,
+  creatingWorktreeProjectID,
   menu,
   pinnedWorkspaceIDs,
   onClose,
   onProjectArchiveSessions,
+  onProjectCreateWorktree,
   onProjectOpenInExplorer,
   onProjectPin,
   onProjectRemove,
@@ -321,6 +392,8 @@ function ProjectContextMenu({
   const hasArchivableSessions = workspace.sessions.some((session) => !isSideChatSession(session)) || workspace.sessions.length > 0
   const isArchiveDisabled = deletingSessionID !== null || !hasArchivableSessions
   const isPinnedFirst = pinnedWorkspaceIDs[0] === workspace.id
+  const isGitProject = isGitWorkspaceProject(workspace)
+  const isCreatingWorktree = creatingWorktreeProjectID === workspace.project.id
 
   return createPortal(
     <div
@@ -358,6 +431,22 @@ function ProjectContextMenu({
         <span className="ui-context-menu__icon" aria-hidden="true"><FolderOpenIcon /></span>
         <span className="ui-context-menu__label">在资源管理器中打开</span>
       </button>
+      {isGitProject ? (
+        <button
+          className="ui-context-menu__item"
+          role="menuitem"
+          type="button"
+          disabled={isMissingWorkspace || isCreatingWorktree}
+          onClick={(event) => {
+            event.stopPropagation()
+            onClose()
+            void onProjectCreateWorktree(workspace)
+          }}
+        >
+          <span className="ui-context-menu__icon" aria-hidden="true"><ForkIcon /></span>
+          <span className="ui-context-menu__label">{isCreatingWorktree ? "正在创建工作树" : "创建工作树"}</span>
+        </button>
+      ) : null}
       <button
         className="ui-context-menu__item"
         role="menuitem"
@@ -391,12 +480,142 @@ function ProjectContextMenu({
   )
 }
 
+interface ProjectWorktreeCreateDialogProps {
+  defaultName: string
+  isCreating: boolean
+  workspace: WorkspaceGroup
+  onClose: () => void
+  onCreate: (workspace: WorkspaceGroup, input: ProjectWorktreeCreateRequest) => boolean | void | Promise<boolean | void>
+}
+
+function ProjectWorktreeCreateDialog({
+  defaultName,
+  isCreating,
+  workspace,
+  onClose,
+  onCreate,
+}: ProjectWorktreeCreateDialogProps) {
+  const [draftName, setDraftName] = useState(defaultName)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const isSubmittingRef = useRef(false)
+  const branchName = draftName.trim()
+  const isBusy = isCreating || isSubmitting
+  const canSubmit = Boolean(branchName) && !isBusy
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [])
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (isSubmittingRef.current) return
+    if (!canSubmit) {
+      setErrorMessage("请输入有效的分支名称。")
+      return
+    }
+
+    setErrorMessage(null)
+    isSubmittingRef.current = true
+    setIsSubmitting(true)
+    try {
+      const result = await onCreate(workspace, {
+        name: branchName,
+        branchName,
+      })
+      if (result !== false) {
+        onClose()
+      } else {
+        isSubmittingRef.current = false
+        setIsSubmitting(false)
+      }
+    } catch (error) {
+      isSubmittingRef.current = false
+      setIsSubmitting(false)
+      setErrorMessage(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  return createPortal(
+    <div
+      className="project-worktree-create-overlay"
+      role="presentation"
+    >
+      <form
+        className="project-worktree-create-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="project-worktree-create-title"
+        onSubmit={handleSubmit}
+      >
+        <header className="project-worktree-create-header">
+          <div>
+            <h2 id="project-worktree-create-title">创建工作树并切换分支</h2>
+            <p>创建新的 Git 工作树并检出这个分支；分支不存在时会从 HEAD 创建，文件夹名将沿用原项目文件夹名</p>
+          </div>
+          <button
+            className="project-worktree-create-close"
+            type="button"
+            aria-label="关闭"
+            title="关闭"
+            disabled={isBusy}
+            onClick={onClose}
+          >
+            <CloseIcon />
+          </button>
+        </header>
+
+        <input
+          ref={inputRef}
+          className="project-worktree-create-input"
+          type="text"
+          aria-label="分支名称"
+          value={draftName}
+          disabled={isBusy}
+          onChange={(event) => {
+            setDraftName(event.target.value)
+            setErrorMessage(null)
+          }}
+        />
+
+        {errorMessage ? (
+          <p className="project-worktree-create-error" role="alert">
+            {errorMessage}
+          </p>
+        ) : null}
+
+        <footer className="project-worktree-create-actions">
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={isBusy}
+            onClick={onClose}
+          >
+            取消
+          </button>
+          <button
+            className="primary-button"
+            type="submit"
+            disabled={!canSubmit}
+          >
+            {isBusy ? "创建中" : "创建"}
+          </button>
+        </footer>
+      </form>
+    </div>,
+    document.body,
+  )
+}
+
 function FolderWorkspaceView({
   activeSessionID,
   deletingSessionID,
   expandedFolderIDs,
   hoveredFolderID,
   isCreatingSession,
+  creatingWorktreeProjectID,
   projectRowRefs,
   runningSessionIDs,
   selectedFolderID,
@@ -408,6 +627,7 @@ function FolderWorkspaceView({
   onProjectArchiveSessions,
   onProjectClick,
   onProjectCreateSession,
+  onProjectCreateWorktree,
   onProjectOpenInExplorer,
   onProjectPin,
   onProjectRemove,
@@ -417,10 +637,16 @@ function FolderWorkspaceView({
   const runningSessionIDSet = new Set(runningSessionIDs)
   const visibleSessionIDSet = new Set(visibleCanvasSessionIDs)
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState>(null)
+  const [worktreeCreateWorkspace, setWorktreeCreateWorkspace] = useState<WorkspaceGroup | null>(null)
   const sessionTimeNow = useSessionTimeNow()
 
   function closeProjectContextMenu() {
     setProjectContextMenu(null)
+  }
+
+  function openWorktreeCreateDialog(workspace: WorkspaceGroup) {
+    closeProjectContextMenu()
+    setWorktreeCreateWorkspace(workspace)
   }
 
   function renderSessionNode(workspace: WorkspaceGroup, node: WorkspaceSessionTreeNode, depth = 0): ReactNode {
@@ -512,6 +738,7 @@ function FolderWorkspaceView({
           const isMissingWorkspace = workspace.exists === false
           const showStateIcon = workspace.id === hoveredFolderID
           const leadingIcon = showStateIcon ? (isExpanded ? "expanded" : "collapsed") : "folder"
+          const linkedWorktreeRoot = getLinkedWorktreeRoot(workspace)
           const createSessionLabel = `Create session for ${workspace.name}`
           const createSessionTitle = isMissingWorkspace
             ? `${workspace.name} has been deleted and cannot create new sessions.`
@@ -553,7 +780,11 @@ function FolderWorkspaceView({
                   ref={(node) => {
                     projectRowRefs.current[workspace.id] = node
                   }}
-                  className={isActiveWorkspace ? "project-row is-active" : "project-row"}
+                  className={joinClassNames(
+                    "project-row",
+                    isActiveWorkspace ? "is-active" : "",
+                    linkedWorktreeRoot ? "is-linked-worktree" : "",
+                  )}
                   aria-label={workspace.name}
                   aria-expanded={isExpanded}
                   data-folder-id={workspace.id}
@@ -564,8 +795,18 @@ function FolderWorkspaceView({
                   </span>
                   <span className="project-row-text">
                     <span className="project-row-label">{workspace.name}</span>
-                    <span className="project-row-meta" title={workspace.project.worktree}>
-                      <span className="project-row-meta-label">{workspace.project.worktree}</span>
+                    {linkedWorktreeRoot ? (
+                      <span
+                        className="project-row-worktree-badge"
+                        title={`Linked worktree: ${linkedWorktreeRoot}`}
+                        data-testid={`project-linked-worktree-${workspace.id}`}
+                        aria-hidden="true"
+                      >
+                        <ForkIcon />
+                      </span>
+                    ) : null}
+                    <span className="project-row-meta" title={workspace.project.repositoryRoot ?? workspace.project.worktree}>
+                      <span className="project-row-meta-label">{workspace.project.repositoryRoot ?? workspace.project.worktree}</span>
                       {isMissingWorkspace ? (
                         <span className="project-row-status is-missing">{"\u5df2\u5220\u9664"}</span>
                       ) : null}
@@ -596,14 +837,25 @@ function FolderWorkspaceView({
       </div>
       <ProjectContextMenu
         deletingSessionID={deletingSessionID}
+        creatingWorktreeProjectID={creatingWorktreeProjectID}
         menu={projectContextMenu}
         pinnedWorkspaceIDs={pinnedWorkspaceIDs}
         onClose={closeProjectContextMenu}
         onProjectArchiveSessions={onProjectArchiveSessions}
+        onProjectCreateWorktree={openWorktreeCreateDialog}
         onProjectOpenInExplorer={onProjectOpenInExplorer}
         onProjectPin={onProjectPin}
         onProjectRemove={onProjectRemove}
       />
+      {worktreeCreateWorkspace ? (
+        <ProjectWorktreeCreateDialog
+          defaultName={createWorktreeBranchName(worktreeCreateWorkspace, workspaces)}
+          isCreating={creatingWorktreeProjectID === worktreeCreateWorkspace.project.id}
+          workspace={worktreeCreateWorkspace}
+          onClose={() => setWorktreeCreateWorkspace(null)}
+          onCreate={onProjectCreateWorktree}
+        />
+      ) : null}
     </section>
   )
 }
@@ -913,6 +1165,7 @@ export function Sidebar({
   hoveredFolderID,
   isCreatingProject,
   isCreatingSession,
+  creatingWorktreeProjectID,
   isSettingsOpen,
   onOpenRemoteFolderConfig,
   promptPresetsSidebarProps,
@@ -931,6 +1184,7 @@ export function Sidebar({
   onProjectArchiveSessions,
   onProjectClick,
   onProjectCreateSession,
+  onProjectCreateWorktree,
   onProjectOpenInExplorer,
   onProjectPin,
   onProjectRemove,
@@ -958,6 +1212,7 @@ export function Sidebar({
             expandedFolderIDs={expandedFolderIDs}
             hoveredFolderID={hoveredFolderID}
             isCreatingSession={isCreatingSession}
+            creatingWorktreeProjectID={creatingWorktreeProjectID}
             projectRowRefs={projectRowRefs}
             runningSessionIDs={runningSessionIDs}
             selectedFolderID={selectedFolderID}
@@ -969,6 +1224,7 @@ export function Sidebar({
             onProjectArchiveSessions={onProjectArchiveSessions}
             onProjectClick={onProjectClick}
             onProjectCreateSession={onProjectCreateSession}
+            onProjectCreateWorktree={onProjectCreateWorktree}
             onProjectOpenInExplorer={onProjectOpenInExplorer}
             onProjectPin={onProjectPin}
             onProjectRemove={onProjectRemove}

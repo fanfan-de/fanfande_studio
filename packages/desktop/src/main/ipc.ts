@@ -96,6 +96,7 @@ import type {
   AgentProjectPluginSelection,
   AgentProjectSkillSelection,
   AgentProjectWorkspace,
+  AgentWorktreeRecord,
   AgentPromptPresetDocument,
   AgentPromptPresetSelection,
   AgentPromptPresetSummary,
@@ -311,6 +312,7 @@ function mapSessionInfo(session: AgentSessionInfo) {
   return {
     id: session.id,
     projectID: session.projectID,
+    worktreeID: session.worktreeID,
     directory: session.directory,
     title: session.title,
     kind: session.kind,
@@ -387,6 +389,49 @@ async function listProjectWorkspaces() {
     const rightUpdated = right.sessions[0]?.updated ?? right.updated
     return rightUpdated - leftUpdated
   })
+}
+
+async function listProjectWorktrees(projectID: string) {
+  const result = await requestAgentJSON<AgentWorktreeRecord[]>(
+    `/api/projects/${encodeURIComponent(projectID)}/worktrees`,
+  )
+  return result.data
+}
+
+async function createProjectWorktree(input: DesktopIpcInput<"desktop:create-project-worktree">) {
+  const { projectID, ...body } = input
+  const result = await requestAgentJSON<AgentWorktreeRecord>(
+    `/api/projects/${encodeURIComponent(projectID)}/worktrees`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  )
+  return result.data
+}
+
+async function refreshProjectWorktree(input: DesktopIpcInput<"desktop:refresh-project-worktree">) {
+  const result = await requestAgentJSON<AgentWorktreeRecord>(
+    `/api/projects/${encodeURIComponent(input.projectID)}/worktrees/${encodeURIComponent(input.worktreeID)}/refresh`,
+    {
+      method: "POST",
+    },
+  )
+  return result.data
+}
+
+async function deleteProjectWorktree(input: DesktopIpcInput<"desktop:delete-project-worktree">) {
+  const { projectID, worktreeID, ...body } = input
+  const result = await requestAgentJSON<AgentWorktreeRecord>(
+    `/api/projects/${encodeURIComponent(projectID)}/worktrees/${encodeURIComponent(worktreeID)}`,
+    {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  )
+  return result.data
 }
 
 async function listFolderWorkspaces() {
@@ -1839,6 +1884,18 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
 
   handleDesktopIpc("desktop:list-folder-workspaces", async () => listFolderWorkspaces())
   handleDesktopIpc("desktop:list-project-workspaces", async () => listProjectWorkspaces())
+  handleDesktopIpc("desktop:list-project-worktrees", async (_event, input: { projectID: string }) =>
+    listProjectWorktrees(input.projectID),
+  )
+  handleDesktopIpc("desktop:create-project-worktree", async (_event, input: DesktopIpcInput<"desktop:create-project-worktree">) =>
+    createProjectWorktree(input),
+  )
+  handleDesktopIpc("desktop:refresh-project-worktree", async (_event, input: DesktopIpcInput<"desktop:refresh-project-worktree">) =>
+    refreshProjectWorktree(input),
+  )
+  handleDesktopIpc("desktop:delete-project-worktree", async (_event, input: DesktopIpcInput<"desktop:delete-project-worktree">) =>
+    deleteProjectWorktree(input),
+  )
   handleDesktopIpc("desktop:update-workspace-watch-directories", async (event, input: { directories: string[] }) => ({
     directories: workspaceWatchManager.updateDirectories(
       event.sender,

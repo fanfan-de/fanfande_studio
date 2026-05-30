@@ -2,8 +2,9 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ComponentProps } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { DesktopAppUpdateState } from "../../../../shared/desktop-ipc-contract"
+import type { AgentWorktreeRecord } from "../../../../main/types"
 import { I18nProvider } from "../i18n/I18nProvider"
-import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type McpServerDraftState } from "../types"
+import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type McpServerDraftState, type WorkspaceGroup } from "../types"
 import { SettingsPage } from "./SettingsPage"
 
 function setDesktopMock(value: unknown) {
@@ -46,6 +47,46 @@ function createAppUpdateState(overrides: Partial<DesktopAppUpdateState> = {}): D
     error: null,
     lastCheckedAt: null,
     releaseNotes: null,
+    ...overrides,
+  }
+}
+
+function createWorkspace(overrides: Partial<WorkspaceGroup> = {}): WorkspaceGroup {
+  return {
+    id: "workspace-1",
+    name: "Project One",
+    directory: "C:\\Projects\\one",
+    created: 1,
+    updated: 1,
+    project: {
+      id: "project-1",
+      name: "Project One",
+      repositoryRoot: "C:\\Projects\\one",
+      worktree: "C:\\Projects\\one",
+    },
+    sessions: [],
+    ...overrides,
+  }
+}
+
+function createWorktreeRecord(
+  id: string,
+  overrides: Partial<AgentWorktreeRecord> = {},
+): AgentWorktreeRecord {
+  return {
+    id,
+    projectID: "project-1",
+    path: `C:\\Projects\\one-${id}`,
+    branch: "main",
+    baseRef: "main",
+    baseSha: "0123456789abcdef",
+    kind: "managed",
+    managed: true,
+    ownerType: "manual",
+    status: "active",
+    cleanupPolicy: "manual",
+    createdAt: 1,
+    updatedAt: 1,
     ...overrides,
   }
 }
@@ -98,6 +139,7 @@ function createSettingsPageProps(
     onCancelProviderAuthFlow: vi.fn(),
     onCheckForUpdates: vi.fn(),
     onClose: vi.fn(),
+    onCreateSessionForDirectory: vi.fn(),
     onColorModeChange: vi.fn(),
     onFontFamilyChange: vi.fn(),
     onDebugLineColorsChange: vi.fn(),
@@ -123,6 +165,7 @@ function createSettingsPageProps(
     restoringArchivedSessionID: null,
     savingMcpServerID: null,
     savingProviderID: null,
+    selectedWorkspace: null,
     selectionDraft: {
       model: null,
       smallModel: null,
@@ -199,6 +242,12 @@ function createModel(
       output: 8192,
     },
   }
+}
+
+function getWorktreeRow(text: string) {
+  const row = screen.getByText(text).closest("article")
+  if (!row) throw new Error(`Unable to find worktree row for ${text}`)
+  return row as HTMLElement
 }
 
 describe("SettingsPage built-in tools", () => {
@@ -290,6 +339,192 @@ describe("SettingsPage built-in tools", () => {
 
     expect(screen.queryByRole("button", { name: "Tools" })).not.toBeInTheDocument()
     expect(screen.queryByText("Global tool availability")).not.toBeInTheDocument()
+  })
+
+  it("shows an empty worktrees state when no workspace is selected", () => {
+    render(<SettingsPage {...createSettingsPageProps()} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Worktrees" }))
+
+    expect(screen.getByText("Select a workspace first")).toBeInTheDocument()
+    expect(screen.queryByRole("list", { name: "Project worktrees" })).not.toBeInTheDocument()
+  })
+
+  it("loads and displays project worktree records", async () => {
+    const listProjectWorktrees = vi.fn().mockResolvedValue([
+      createWorktreeRecord("managed", {
+        branch: "feature/task",
+        path: "C:\\Projects\\one-feature",
+        status: "dirty",
+      }),
+      createWorktreeRecord("external", {
+        branch: "experiment",
+        cleanupPolicy: "never",
+        kind: "external",
+        managed: false,
+        path: "C:\\Projects\\external",
+      }),
+      createWorktreeRecord("primary", {
+        branch: "main",
+        cleanupPolicy: "never",
+        kind: "primary",
+        managed: false,
+        path: "C:\\Projects\\one",
+      }),
+    ])
+    setDesktopMock({ listProjectWorktrees })
+
+    render(<SettingsPage {...createSettingsPageProps({ selectedWorkspace: createWorkspace() })} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Worktrees" }))
+
+    await waitFor(() => {
+      expect(listProjectWorktrees).toHaveBeenCalledWith({ projectID: "project-1" })
+    })
+    expect(await screen.findByText("feature/task")).toBeInTheDocument()
+    expect(screen.getByText("Primary")).toBeInTheDocument()
+    expect(screen.getByText("External")).toBeInTheDocument()
+    expect(screen.getAllByText("Managed").length).toBeGreaterThan(0)
+    expect(screen.getByText("dirty")).toBeInTheDocument()
+    expect(screen.getAllByText("main @ 01234567").length).toBeGreaterThan(0)
+  })
+
+  it("refreshes, blocks dirty delete, and exposes force delete for managed worktrees", async () => {
+    const dirtyWorktree = createWorktreeRecord("dirty", {
+      branch: "feature/dirty",
+      path: "C:\\Projects\\one-dirty",
+      status: "dirty",
+    })
+    const listProjectWorktrees = vi.fn().mockResolvedValue([dirtyWorktree])
+    const refreshProjectWorktree = vi.fn().mockResolvedValue({
+      ...dirtyWorktree,
+      updatedAt: 2,
+    })
+    const deleteProjectWorktree = vi.fn()
+      .mockRejectedValueOnce(new Error("Worktree is dirty and has uncommitted changes."))
+      .mockResolvedValueOnce({
+        ...dirtyWorktree,
+        status: "removed",
+      })
+    setDesktopMock({
+      deleteProjectWorktree,
+      listProjectWorktrees,
+      refreshProjectWorktree,
+    })
+
+    render(<SettingsPage {...createSettingsPageProps({ selectedWorkspace: createWorkspace() })} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Worktrees" }))
+    const row = await screen.findByText("feature/dirty").then(() => getWorktreeRow("feature/dirty"))
+
+    fireEvent.click(within(row).getByRole("button", { name: "Refresh" }))
+    await waitFor(() => {
+      expect(refreshProjectWorktree).toHaveBeenCalledWith({
+        projectID: "project-1",
+        worktreeID: "dirty",
+      })
+    })
+
+    fireEvent.click(within(row).getByRole("button", { name: "Delete" }))
+    await waitFor(() => {
+      expect(deleteProjectWorktree).toHaveBeenCalledWith({
+        projectID: "project-1",
+        worktreeID: "dirty",
+        force: false,
+      })
+    })
+
+    expect(await within(row).findByText(/uncommitted changes/i)).toBeInTheDocument()
+    fireEvent.click(within(row).getByRole("button", { name: "Force delete" }))
+    await waitFor(() => {
+      expect(deleteProjectWorktree).toHaveBeenLastCalledWith({
+        projectID: "project-1",
+        worktreeID: "dirty",
+        force: true,
+      })
+    })
+  })
+
+  it("creates a managed worktree and reloads the list", async () => {
+    const created = createWorktreeRecord("created", {
+      branch: "feature/new-worktree",
+      baseRef: "main",
+      path: "C:\\Projects\\one-new",
+    })
+    const listProjectWorktrees = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([created])
+    const createProjectWorktree = vi.fn().mockResolvedValue(created)
+    setDesktopMock({
+      createProjectWorktree,
+      listProjectWorktrees,
+    })
+
+    render(<SettingsPage {...createSettingsPageProps({ selectedWorkspace: createWorkspace() })} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Worktrees" }))
+    await waitFor(() => {
+      expect(listProjectWorktrees).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Branch name" }), {
+      target: { value: "feature/new-worktree" },
+    })
+    fireEvent.change(screen.getByRole("textbox", { name: "Base ref" }), {
+      target: { value: "main" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Create worktree" }))
+
+    await waitFor(() => {
+      expect(createProjectWorktree).toHaveBeenCalledWith({
+        projectID: "project-1",
+        branchName: "feature/new-worktree",
+        baseRef: "main",
+        ownerType: "manual",
+        cleanupPolicy: "manual",
+      })
+    })
+    await waitFor(() => {
+      expect(listProjectWorktrees).toHaveBeenCalledTimes(2)
+    })
+    expect(await screen.findByText("feature/new-worktree")).toBeInTheDocument()
+  })
+
+  it("creates sessions from available worktrees and disables missing worktrees", async () => {
+    const onCreateSessionForDirectory = vi.fn()
+    const activeWorktree = createWorktreeRecord("active", {
+      branch: "feature/active",
+      path: "C:\\Projects\\one-active",
+      status: "active",
+    })
+    const missingWorktree = createWorktreeRecord("missing", {
+      branch: "feature/missing",
+      path: "C:\\Projects\\one-missing",
+      status: "missing",
+    })
+    setDesktopMock({
+      listProjectWorktrees: vi.fn().mockResolvedValue([activeWorktree, missingWorktree]),
+    })
+
+    render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          onCreateSessionForDirectory,
+          selectedWorkspace: createWorkspace(),
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Worktrees" }))
+    const activeRow = await screen.findByText("feature/active").then(() => getWorktreeRow("feature/active"))
+    const missingRow = getWorktreeRow("feature/missing")
+
+    expect(within(missingRow).getByRole("button", { name: "Create session here" })).toBeDisabled()
+    fireEvent.click(within(activeRow).getByRole("button", { name: "Create session here" }))
+
+    await waitFor(() => {
+      expect(onCreateSessionForDirectory).toHaveBeenCalledWith("project-1", "C:\\Projects\\one-active")
+    })
   })
 
   it("opens the monitor app from developer mode settings", async () => {

@@ -8291,6 +8291,239 @@ body.is-dragging-settings-page {
   color: #8f3127;
 }
 
+.settings-worktrees-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-worktrees-layout .settings-section-summary {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main)
+  .settings-worktrees-layout
+  .settings-section-summary
+  > .settings-summary-card {
+  min-height: 118px;
+  padding: 14px 16px;
+  border: 1px solid var(--seg-border);
+  border-radius: 10px;
+  background: var(--mix-seg-panel-72-seg-panel-muted-28);
+  box-shadow: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 6px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main)
+  .settings-worktrees-layout
+  .settings-section-summary
+  > .settings-summary-card
+  strong {
+  color: #1f1f1f;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main)
+  .settings-worktrees-layout
+  .settings-section-summary
+  > .settings-summary-card
+  p {
+  color: #6d6a66;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.settings-worktree-create-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(220px, 0.85fr);
+  align-items: start;
+  gap: 14px 16px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-worktree-create-form .settings-field {
+  min-height: 0;
+  padding: 0;
+  border-bottom: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-worktree-create-form .settings-field-label {
+  color: #1f1f1f;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-worktree-create-form .settings-field input {
+  width: 100%;
+  min-height: 38px;
+  justify-self: stretch;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-worktree-create-form .settings-field small {
+  margin: 0;
+  color: #6d6a66;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.settings-worktree-create-actions {
+  grid-column: 1 / -1;
+  align-self: end;
+  justify-content: flex-start;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main)
+  .settings-worktree-create-form
+  .settings-worktree-create-actions {
+  min-height: auto;
+  padding: 2px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-worktree-create-actions .primary-button,
+.settings-worktree-row-actions .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-worktree-create-actions svg,
+.settings-worktree-row-actions svg {
+  width: 15px;
+  height: 15px;
+}
+
+.settings-worktree-row {
+  align-items: stretch;
+}
+
+.settings-worktree-row .provider-row-heading {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.settings-worktree-row .provider-row-title {
+  min-width: 0;
+}
+
+.settings-worktree-row h4 {
+  font-size: 16px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.settings-worktree-row .provider-row-statuses {
+  flex: 0 0 auto;
+}
+
+.settings-worktree-path {
+  max-width: min(620px, 54vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-worktree-path code {
+  color: inherit;
+  font-size: 12px;
+}
+
+.settings-worktree-meta-grid {
+  padding-top: 10px;
+  border-top: 1px solid var(--seg-border);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-worktree-meta-grid span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  color: var(--seg-text-2);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.settings-worktree-meta-grid strong {
+  color: var(--seg-text-3);
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.settings-worktree-row-error {
+  color: #8f3127;
+}
+
+.settings-worktree-row-actions {
+  width: min(100%, 240px);
+  flex: 0 0 240px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.settings-worktree-row-actions .secondary-button {
+  min-height: 34px;
+  width: 100%;
+  justify-content: center;
+  font-size: 13px;
+}
+
+@media (max-width: 980px) {
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-worktrees-layout .settings-section-summary,
+  .settings-worktree-create-form,
+  .settings-worktree-meta-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-worktree-row {
+    flex-direction: column;
+  }
+
+  .settings-worktree-row-actions {
+    width: 100%;
+    flex-basis: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-worktree-path {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .settings-worktree-row-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .sidebar-toggle-button.is-rail.is-collapsed {
   border-color: transparent;
   background: transparent;

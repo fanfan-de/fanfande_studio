@@ -39,7 +39,6 @@
   gap: 12px;
 }
 
-.git-quick-menu-option:disabled .composer-menu-option-copy small,
 .git-quick-menu-option:disabled .composer-menu-option-check {
   color: #94a3b2;
 }

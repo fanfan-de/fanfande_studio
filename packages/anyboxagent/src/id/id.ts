@@ -14,6 +14,7 @@ const prefixes = {
   automation: "aut",
   automationRun: "arn",
   user: "usr",
+  worktree: "wtr",
   part: "prt",
   pty: "pty",
   task: "tsk",

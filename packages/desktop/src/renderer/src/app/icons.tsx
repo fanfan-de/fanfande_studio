@@ -25,7 +25,9 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  GitCommitHorizontal,
   GitFork,
+  GitPullRequest,
   Globe,
   Info,
   LayoutPanelLeft,
@@ -56,6 +58,7 @@ import {
   Sun,
   Terminal,
   Trash2,
+  UploadCloud,
   Wrench,
   X,
   type LucideIcon,
@@ -83,6 +86,9 @@ export const ExpandIcon = createIcon(Expand)
 export const OpenInEditorIcon = createIcon(Expand)
 export const OpenExternalIcon = createIcon(ArrowUpRight)
 export const ChangesIcon = createIcon(FileDiff)
+export const CommitIcon = createIcon(GitCommitHorizontal)
+export const PushIcon = createIcon(UploadCloud)
+export const PullRequestIcon = createIcon(GitPullRequest)
 export const PreviewIcon = createIcon(Globe)
 export const FileSearchIcon = createIcon(FileSearch)
 export const FileTextIcon = createIcon(FileText)

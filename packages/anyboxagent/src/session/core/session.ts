@@ -12,6 +12,7 @@ import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
 import * as TaskSchema from "#session/tasks/task-schema.ts"
 import * as ToolResultPersistence from "#session/support/tool-result-persistence.ts"
 import * as TurnError from "#session/core/turn-error.ts"
+import * as Worktree from "#project/worktree.ts"
 
 interface TableRecordMap {
   projects: never
@@ -134,6 +135,7 @@ export const SessionInfo = z
     slug: z.string().optional(),
     projectID: z.string(),
     directory: z.string(),
+    worktreeID: Identifier.schema("worktree").optional(),
     summary: z
       .object({
         additions: z.number(),
@@ -799,10 +801,12 @@ async function createSession(input: {
   automation?: SessionAutomationMetadata
 }): Promise<SessionInfo> {
   const now = Date.now()
+  const worktree = Worktree.findForDirectory(input.projectID, input.directory)
   const result = normalizeSessionInfo({
     id: Identifier.descending("session"),
     projectID: input.projectID,
     directory: input.directory,
+    worktreeID: worktree?.id,
     title: normalizeSessionTitle(input.title),
     version: Installation.VERSION,
     kind: "main",
@@ -1050,6 +1054,7 @@ async function createSideChat(input: {
     id: Identifier.descending("session"),
     projectID: parentSession.projectID,
     directory: parentSession.directory,
+    worktreeID: parentSession.worktreeID,
     title: buildSideChatTitle(linkSeed.anchorPreview),
     version: Installation.VERSION,
     kind: "side-chat",

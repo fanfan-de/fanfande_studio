@@ -32,6 +32,8 @@ export type SidebarActionKey = "project"
 export type LeftSidebarView = "workspace" | "automations" | "skills" | "prompts" | "connections" | "tools"
 export type ConnectionsTab = "plugins" | "connectors" | "mcp" | "ssh"
 export type AppMode = "Autopilot" | "Review"
+export type ProjectKind = "directory" | "git"
+export type ProjectVcs = "git"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
 export type PreviewLoadStatus = "idle" | "resolving" | "ready" | "error"
 export type PreviewRenderer = DesktopPreviewRenderer
@@ -200,6 +202,7 @@ export interface SideChatLink {
 export interface SessionSummary {
   id: string
   title: string
+  worktreeID?: string
   branch: string
   status: SessionStatus
   created?: number
@@ -234,6 +237,11 @@ export type WorkbenchTabReference =
       createSessionTabID: string
     }
 
+export interface ProjectWorktreeCreateRequest {
+  name: string
+  branchName?: string
+}
+
 export interface WorkspaceGroup {
   id: string
   name: string
@@ -243,8 +251,12 @@ export interface WorkspaceGroup {
   updated: number
   project: {
     id: string
+    kind?: ProjectKind
     name: string
+    repositoryRoot?: string
+    workspaceRoots?: string[]
     worktree: string
+    vcs?: ProjectVcs
   }
   sessions: SessionSummary[]
 }
@@ -252,6 +264,7 @@ export interface WorkspaceGroup {
 export interface LoadedSessionSnapshot {
   id: string
   projectID: string
+  worktreeID?: string
   directory: string
   title: string
   kind?: SessionKind
@@ -291,8 +304,12 @@ export interface LoadedFolderWorkspace {
   updated: number
   project: {
     id: string
+    kind?: ProjectKind
     name: string
+    repositoryRoot?: string
+    workspaceRoots?: string[]
     worktree: string
+    vcs?: ProjectVcs
   }
   sessions: LoadedSessionSnapshot[]
 }

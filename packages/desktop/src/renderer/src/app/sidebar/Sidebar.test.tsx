@@ -78,6 +78,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) 
     hoveredFolderID: null,
     isCreatingProject: false,
     isCreatingSession: false,
+    creatingWorktreeProjectID: null,
     isSettingsOpen: false,
     promptPresetsSidebarProps: {
       deletingPromptPresetID: null,
@@ -113,6 +114,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) 
     onProjectArchiveSessions: vi.fn(),
     onProjectClick: vi.fn(),
     onProjectCreateSession: vi.fn(),
+    onProjectCreateWorktree: vi.fn(),
     onProjectOpenInExplorer: vi.fn(),
     onProjectPin: vi.fn(),
     onProjectRemove: vi.fn(),
@@ -155,6 +157,49 @@ describe("Sidebar", () => {
 
     expect(screen.getByRole("button", { name: "Workspace" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Unread" })).toBeInTheDocument()
+  })
+
+  it("marks linked worktree folders with a worktree badge", () => {
+    const primaryWorkspace = createWorkspace("workspace-primary", "Primary")
+    primaryWorkspace.directory = "C:/repo/app/client"
+    primaryWorkspace.project = {
+      ...primaryWorkspace.project,
+      kind: "git",
+      repositoryRoot: "C:/repo/app",
+      workspaceRoots: ["C:/repo/app", "C:/worktrees/app-feature"],
+      worktree: "C:/repo/app",
+      vcs: "git",
+    }
+
+    const linkedWorkspace = createWorkspace("workspace-linked", "Feature")
+    linkedWorkspace.directory = "C:/worktrees/app-feature"
+    linkedWorkspace.project = {
+      ...linkedWorkspace.project,
+      id: primaryWorkspace.project.id,
+      kind: "git",
+      repositoryRoot: "C:/repo/app",
+      workspaceRoots: ["C:/repo/app", "C:/worktrees/app-feature"],
+      worktree: "C:/repo/app",
+      vcs: "git",
+    }
+
+    renderSidebar({
+      expandedFolderIDs: [],
+      selectedFolderID: "workspace-linked",
+      workspaces: [primaryWorkspace, linkedWorkspace],
+    })
+
+    const primaryRow = screen.getByRole("button", { name: "Primary" })
+    const linkedRow = screen.getByRole("button", { name: "Feature" })
+
+    expect(primaryRow).not.toHaveClass("is-linked-worktree")
+    expect(within(primaryRow).queryByTestId("project-linked-worktree-workspace-primary")).not.toBeInTheDocument()
+    expect(linkedRow).toHaveClass("is-linked-worktree")
+    expect(within(linkedRow).getByTestId("project-linked-worktree-workspace-linked")).toHaveAttribute(
+      "title",
+      "Linked worktree: C:/worktrees/app-feature",
+    )
+    expect(linkedRow.querySelector(".lucide-git-fork")).toBeInTheDocument()
   })
 
   it("marks automation-created sessions", () => {
@@ -335,5 +380,126 @@ describe("Sidebar", () => {
     })
     fireEvent.click(screen.getByRole("menuitem", { name: "移除" }))
     expect(onProjectRemove).toHaveBeenCalledWith(expect.objectContaining({ id: "workspace-1" }), expect.anything())
+  })
+
+  it("shows the create worktree action only for git projects", () => {
+    const onProjectCreateWorktree = vi.fn()
+    const gitWorkspace = createWorkspace("workspace-git", "Git Workspace")
+    gitWorkspace.project = {
+      ...gitWorkspace.project,
+      kind: "git",
+      repositoryRoot: gitWorkspace.project.worktree,
+      vcs: "git",
+    }
+    const plainWorkspace = createWorkspace("workspace-plain", "Plain Workspace")
+
+    renderSidebar({
+      expandedFolderIDs: [],
+      selectedFolderID: "workspace-git",
+      workspaces: [gitWorkspace, plainWorkspace],
+      onProjectCreateWorktree,
+    })
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Plain Workspace" }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    expect(screen.queryByRole("menuitem", { name: "创建工作树" })).not.toBeInTheDocument()
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Git Workspace" }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    fireEvent.click(screen.getByRole("menuitem", { name: "创建工作树" }))
+
+    const nameInput = screen.getByLabelText("分支名称")
+    expect(nameInput).toHaveValue("workspace-git-2")
+
+    fireEvent.change(nameInput, {
+      target: { value: "功能开发" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "创建" }))
+
+    expect(onProjectCreateWorktree).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "workspace-git" }),
+      {
+        name: "功能开发",
+        branchName: "功能开发",
+      },
+    )
+  })
+
+  it("keeps the create worktree dialog open when clicking outside it", () => {
+    const gitWorkspace = createWorkspace("workspace-git", "Git Workspace")
+    gitWorkspace.project = {
+      ...gitWorkspace.project,
+      kind: "git",
+      repositoryRoot: gitWorkspace.project.worktree,
+      vcs: "git",
+    }
+
+    renderSidebar({
+      expandedFolderIDs: [],
+      selectedFolderID: "workspace-git",
+      workspaces: [gitWorkspace],
+    })
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Git Workspace" }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    fireEvent.click(screen.getByRole("menuitem", { name: "创建工作树" }))
+
+    const dialog = screen.getByRole("dialog", { name: "创建工作树并切换分支" })
+    const overlay = dialog.closest(".project-worktree-create-overlay")
+    expect(overlay).toBeInstanceOf(HTMLElement)
+
+    fireEvent.click(overlay as HTMLElement)
+    expect(screen.getByRole("dialog", { name: "创建工作树并切换分支" })).toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: "Escape" })
+    expect(screen.getByRole("dialog", { name: "创建工作树并切换分支" })).toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }))
+    expect(screen.queryByRole("dialog", { name: "创建工作树并切换分支" })).not.toBeInTheDocument()
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Git Workspace" }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    fireEvent.click(screen.getByRole("menuitem", { name: "创建工作树" }))
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }))
+    expect(screen.queryByRole("dialog", { name: "创建工作树并切换分支" })).not.toBeInTheDocument()
+  })
+
+  it("submits the create worktree dialog only once while creation is pending", () => {
+    const onProjectCreateWorktree = vi.fn(() => new Promise<boolean>(() => undefined))
+    const gitWorkspace = createWorkspace("workspace-git", "Git Workspace")
+    gitWorkspace.project = {
+      ...gitWorkspace.project,
+      kind: "git",
+      repositoryRoot: gitWorkspace.project.worktree,
+      vcs: "git",
+    }
+
+    renderSidebar({
+      expandedFolderIDs: [],
+      selectedFolderID: "workspace-git",
+      workspaces: [gitWorkspace],
+      onProjectCreateWorktree,
+    })
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Git Workspace" }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    fireEvent.click(screen.getByRole("menuitem", { name: "创建工作树" }))
+
+    const createButton = screen.getByRole("button", { name: "创建" })
+    fireEvent.click(createButton)
+
+    expect(screen.getByRole("button", { name: "创建中" })).toBeDisabled()
+    fireEvent.click(screen.getByRole("button", { name: "创建中" }))
+    expect(onProjectCreateWorktree).toHaveBeenCalledTimes(1)
   })
 })

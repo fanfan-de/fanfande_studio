@@ -154,7 +154,7 @@ function resolveProjectRunDirectory(input: {
 
   const project = Project.get(projectID)
   if (!project) throw new Error(`Project '${projectID}' was not found.`)
-  return project.worktree
+  return Project.getRepositoryRoot(project)
 }
 
 async function enqueuePrompt(input: {
@@ -163,6 +163,8 @@ async function enqueuePrompt(input: {
   projectID?: string
   runID: string
   sessionID: string
+  worktreeID?: string
+  worktreePath?: string
 }) {
   const handle = await Instance.provide({
     directory: input.directory,
@@ -192,6 +194,8 @@ async function enqueuePrompt(input: {
     projectID: input.projectID,
     sessionID: input.sessionID,
     turnID: handle.turnID,
+    worktreeID: input.worktreeID,
+    worktreePath: input.worktreePath,
   })
 
   return {
@@ -204,14 +208,19 @@ async function runProjectAutomation(input: {
   automation: Automation.AutomationDefinition
   run: Automation.AutomationRun
 }) {
-  if (input.automation.execution.environment === "worktree") {
-    throw new Error("Worktree automation execution is not implemented in this MVP.")
-  }
-
   const directory = resolveProjectRunDirectory(input)
   const { project } = await Project.fromDirectory(directory)
+  const worktree = input.automation.execution.environment === "worktree"
+    ? await Project.createManagedWorktree(project.id, {
+        ownerRunID: input.run.id,
+        ownerType: "automation-run",
+        cleanupPolicy: "on-success-if-clean",
+      })
+    : null
+  const runDirectory = worktree?.path ?? directory
+
   const session = await Session.createSession({
-    directory,
+    directory: runDirectory,
     projectID: project.id,
     title: input.automation.name,
     automation: {
@@ -224,17 +233,21 @@ async function runProjectAutomation(input: {
 
   applyReadOnlyPolicy(session, input.automation)
   Automation.markRunStarted(input.run.id, {
-    directory,
+    directory: runDirectory,
     projectID: session.projectID,
     sessionID: session.id,
+    worktreeID: worktree?.id,
+    worktreePath: worktree?.path,
   })
 
   return enqueuePrompt({
     automation: input.automation,
-    directory,
+    directory: runDirectory,
     projectID: session.projectID,
     runID: input.run.id,
     sessionID: session.id,
+    worktreeID: worktree?.id,
+    worktreePath: worktree?.path,
   })
 }
 
@@ -255,6 +268,25 @@ async function runThreadAutomation(input: {
     runID: input.run.id,
     sessionID,
   })
+}
+
+async function cleanupCompletedRunWorktree(runID: string, status: Automation.AutomationRunStatus) {
+  if (status !== "completed") return
+
+  const run = Automation.getRun(runID)
+  if (!run?.projectID || !run.worktreeID) return
+
+  try {
+    await Project.removeManagedWorktree(run.projectID, run.worktreeID, {
+      ownerRunID: run.id,
+    })
+  } catch (error) {
+    log.warn("worktree-cleanup-skipped", {
+      runID,
+      worktreeID: run.worktreeID,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
 }
 
 export async function executeRun(runID: string) {
@@ -310,6 +342,7 @@ export async function executeRun(runID: string) {
       turnID: execution.handle.turnID,
       error: promptResult.errorInfo?.message,
     })
+    await cleanupCompletedRunWorktree(runID, status)
   } catch (error) {
     const current = Automation.getRun(runID)
     if (current?.status === "cancelled") return

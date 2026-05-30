@@ -21,6 +21,7 @@ import { existsSync, realpathSync } from "fs"
 import * as Session from "#session/core/session.ts"
 import * as Identifier from "#id/id.ts"
 import * as Ssh from "#remote/ssh/index.ts"
+import * as Worktree from "#project/worktree.ts"
 
 const log = Log.create({ service: "project" })
 const ProjectKind = z.enum(["directory", "git"])
@@ -41,6 +42,8 @@ export const ProjectInfo = z
   .object({
     id: z.string(),
     kind: ProjectKind.optional(),
+    repositoryRoot: z.string().optional(),
+    workspaceRoots: z.array(z.string()).optional(),
     worktree: z.string(),
     gitCommonDir: z.string().optional(),
     vcs: z.literal("git").optional(),
@@ -135,6 +138,14 @@ function resolveStoredProjectName(worktree: string, currentName?: string) {
   return trimmed || resolveProjectName(worktree)
 }
 
+function resolveProjectRepositoryRoot(project: Pick<ProjectInfo, "repositoryRoot" | "worktree">) {
+  return project.repositoryRoot?.trim() || project.worktree
+}
+
+function isSameProjectPath(left: string, right: string) {
+  return normalizeProjectPath(left) === normalizeProjectPath(right)
+}
+
 function isPathInsideProject(directory: string, worktree: string) {
   if (isSshWorkspaceUri(directory) || isSshWorkspaceUri(worktree)) {
     return containsWorkspaceLocation(worktree, directory)
@@ -161,7 +172,10 @@ function uniqueProjectPaths(input: string[]) {
 }
 
 function projectRoots(project: ProjectInfo) {
-  return uniqueProjectPaths([project.worktree, ...(project.sandboxes ?? [])])
+  return uniqueProjectPaths(project.workspaceRoots?.length ? project.workspaceRoots : [
+    resolveProjectRepositoryRoot(project),
+    ...(project.sandboxes ?? []),
+  ])
 }
 
 function projectContainsDirectory(project: ProjectInfo, directory: string) {
@@ -177,23 +191,36 @@ function matchingRootLength(project: ProjectInfo, directory: string) {
 
 function normalizeProjectRecord(project: ProjectInfo): ProjectInfo {
   const kind = resolveProjectKind(project)
-  const sandboxes =
+  const repositoryRoot = resolveProjectRepositoryRoot(project)
+  const candidateWorkspaceRoots = uniqueProjectPaths([
+    repositoryRoot,
+    ...(project.workspaceRoots ?? []),
+    ...(project.sandboxes ?? []),
+  ])
+  const workspaceRoots =
     kind === "git"
-      ? uniqueProjectPaths(project.sandboxes ?? []).filter(
+      ? candidateWorkspaceRoots.filter(
           (item) =>
-            !isSshWorkspaceUri(item) &&
-            !isSshWorkspaceUri(project.worktree) &&
-            existsSync(item) &&
-            isAdditionalSandboxDirectory(item, project.worktree),
+            isSameProjectPath(item, repositoryRoot) ||
+            (
+              !isSshWorkspaceUri(item) &&
+              !isSshWorkspaceUri(repositoryRoot) &&
+              existsSync(item) &&
+              isAdditionalSandboxDirectory(item, repositoryRoot)
+            ),
         )
-      : []
+      : [repositoryRoot]
+  const sandboxes = workspaceRoots.filter((item) => !isSameProjectPath(item, repositoryRoot))
 
   return {
     ...project,
     kind,
+    repositoryRoot,
+    workspaceRoots,
+    worktree: repositoryRoot,
     gitCommonDir: kind === "git" ? project.gitCommonDir : undefined,
     vcs: kind === "git" ? "git" : undefined,
-    name: resolveStoredProjectName(project.worktree, project.name),
+    name: resolveStoredProjectName(repositoryRoot, project.name),
     sandboxes,
   }
 }
@@ -202,7 +229,7 @@ function listStoredProjects() {
   return db
     .findManyWithSchema("projects", ProjectInfo)
     .map(normalizeProjectRecord)
-    .filter((project) => isGeneratedProjectID(project.id) && project.worktree.trim() !== "/")
+    .filter((project) => isGeneratedProjectID(project.id) && getRepositoryRoot(project).trim() !== "/")
 }
 
 function findProjectByID(projects: ProjectInfo[], projectID: string | undefined) {
@@ -310,6 +337,10 @@ function migrateProjectReferences(fromProjectID: string, toProjectID: string) {
   if (db.tableExists("permission_audits")) {
     db.updateMany("permission_audits", { projectID: toProjectID }, [{ column: "projectID", value: fromProjectID }])
   }
+
+  if (db.tableExists("worktrees")) {
+    db.updateMany("worktrees", { projectID: toProjectID }, [{ column: "projectID", value: fromProjectID }])
+  }
 }
 
 function buildProjectRecord(input: ResolvedProjectIdentity, seed?: ProjectInfo) {
@@ -319,20 +350,31 @@ function buildProjectRecord(input: ResolvedProjectIdentity, seed?: ProjectInfo) 
     (input.kind === "git" && isGeneratedProjectID(input.storedProjectID) ? input.storedProjectID : undefined) ??
     createProjectID()
   const now = Date.now()
-  const sandboxes =
+  const workspaceRoots =
     input.kind === "git"
-      ? uniqueProjectPaths([...(normalizedSeed?.sandboxes ?? []), input.sandbox]).filter(
+      ? uniqueProjectPaths([
+          input.worktree,
+          ...(normalizedSeed?.workspaceRoots ?? []),
+          ...(normalizedSeed?.sandboxes ?? []),
+          input.sandbox,
+        ]).filter(
           (item) =>
-            !isSshWorkspaceUri(item) &&
-            !isSshWorkspaceUri(input.worktree) &&
-            existsSync(item) &&
-            isAdditionalSandboxDirectory(item, input.worktree),
+            isSameProjectPath(item, input.worktree) ||
+            (
+              !isSshWorkspaceUri(item) &&
+              !isSshWorkspaceUri(input.worktree) &&
+              existsSync(item) &&
+              isAdditionalSandboxDirectory(item, input.worktree)
+            ),
         )
-      : []
+      : [input.worktree]
+  const sandboxes = workspaceRoots.filter((item) => !isSameProjectPath(item, input.worktree))
 
   return normalizeProjectRecord({
     id,
     kind: input.kind,
+    repositoryRoot: input.worktree,
+    workspaceRoots,
     worktree: input.worktree,
     gitCommonDir: input.kind === "git" ? input.gitCommonDir : undefined,
     vcs: input.vcs,
@@ -360,6 +402,12 @@ function persistProjectRecord(input: ResolvedProjectIdentity) {
     migrateProjectReferences(project.id, nextProject.id)
     db.deleteById("projects", project.id)
   }
+
+  Worktree.ensureProjectWorktrees({
+    projectID: nextProject.id,
+    repositoryRoot: getRepositoryRoot(nextProject),
+    workspaceRoots: getWorkspaceRoots(nextProject),
+  })
 
   return nextProject
 }
@@ -576,19 +624,41 @@ export async function list() {
       ...(previous ?? project),
       ...project,
       updated: Math.max(previous?.updated ?? 0, project.updated),
+      workspaceRoots: uniqueProjectPaths([
+        ...(previous?.workspaceRoots ?? []),
+        ...(project.workspaceRoots ?? []),
+        ...(previous?.sandboxes ?? []),
+        ...(project.sandboxes ?? []),
+      ]),
       sandboxes: uniqueProjectPaths([...(previous?.sandboxes ?? []), ...(project.sandboxes ?? [])]),
     })
 
     normalizedProjects.set(nextProject.id, nextProject)
   }
 
-  return [...normalizedProjects.values()]
+  const result = [...normalizedProjects.values()]
+  for (const project of result) {
+    Worktree.ensureProjectWorktrees({
+      projectID: project.id,
+      repositoryRoot: getRepositoryRoot(project),
+      workspaceRoots: getWorkspaceRoots(project),
+    })
+  }
+  return result
 }
 
 export function get(id: string): ProjectInfo | undefined {
   ensureProjectTable()
   const row = db.findById("projects", ProjectInfo, id)
   return row ? normalizeProjectRecord(row) : undefined
+}
+
+export function getRepositoryRoot(project: ProjectInfo): string {
+  return normalizeProjectRecord(project).repositoryRoot ?? project.worktree
+}
+
+export function getWorkspaceRoots(project: ProjectInfo): string[] {
+  return normalizeProjectRecord(project).workspaceRoots ?? [getRepositoryRoot(project)]
 }
 
 export const update = fn(
@@ -624,11 +694,70 @@ export async function sandboxes(projectID: string) {
   if (!project?.sandboxes) return []
 
   const valid: string[] = []
+  const repositoryRoot = getRepositoryRoot(project)
   for (const directory of project.sandboxes) {
-    if (isSshWorkspaceUri(directory) || isSshWorkspaceUri(project.worktree)) continue
+    if (isSshWorkspaceUri(directory) || isSshWorkspaceUri(repositoryRoot)) continue
     const stat = await fs.stat(directory).catch(() => undefined)
-    if (stat?.isDirectory() && isAdditionalSandboxDirectory(directory, project.worktree)) valid.push(directory)
+    if (stat?.isDirectory() && isAdditionalSandboxDirectory(directory, repositoryRoot)) valid.push(directory)
   }
 
   return valid
+}
+
+export function listWorktrees(projectID: string) {
+  ensureProjectTable()
+  const project = get(projectID)
+  if (!project) return []
+  Worktree.ensureProjectWorktrees({
+    projectID: project.id,
+    repositoryRoot: getRepositoryRoot(project),
+    workspaceRoots: getWorkspaceRoots(project),
+  })
+  return Worktree.listByProject(projectID)
+}
+
+export async function refreshWorktrees(projectID: string) {
+  listWorktrees(projectID)
+  return Worktree.refreshProjectWorktrees(projectID)
+}
+
+export async function refreshWorktree(projectID: string, worktreeID: string) {
+  listWorktrees(projectID)
+  return Worktree.refreshByID(projectID, worktreeID)
+}
+
+export async function createManagedWorktree(projectID: string, input: {
+  baseRef?: string | null
+  branch?: string | null
+  cleanupPolicy?: Worktree.WorktreeCleanupPolicy
+  ownerRunID?: string
+  ownerSessionID?: string
+  ownerType?: Worktree.WorktreeOwnerType
+}) {
+  const project = get(projectID)
+  if (!project) return null
+  return Worktree.createManaged({
+    ...input,
+    projectID,
+    repositoryRoot: getRepositoryRoot(project),
+  })
+}
+
+export async function removeManagedWorktree(projectID: string, worktreeID: string, input: {
+  force?: boolean
+  ownerRunID?: string
+  ownerSessionID?: string
+} = {}) {
+  const project = get(projectID)
+  if (!project) return null
+  return Worktree.removeManaged({
+    ...input,
+    projectID,
+    worktreeID,
+    repositoryRoot: getRepositoryRoot(project),
+  })
+}
+
+export function removeWorktrees(projectID: string) {
+  Worktree.removeProjectWorktrees(projectID)
 }

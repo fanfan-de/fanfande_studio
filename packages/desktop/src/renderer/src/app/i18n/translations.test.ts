@@ -16,6 +16,14 @@ describe("i18n translations", () => {
     expect(translateLiteral("en-US", "3 of 10 enabled")).toBe("3 of 10 enabled")
   })
 
+  it("translates Git quick menu literals", () => {
+    expect(translateLiteral("zh-CN", "Commit or push")).toBe("提交或推送")
+    expect(translateLiteral("zh-CN", "Create pull request")).toBe("创建 Pull Request")
+    expect(translateLiteral("zh-CN", "Current branch: master")).toBe("当前分支：master")
+    expect(translateLiteral("zh-CN", "Create and checkout new branch...")).toBe("创建并检出新分支...")
+    expect(translateLiteral("zh-CN", "Switched to master.")).toBe("已切换到 master。")
+  })
+
   it("exposes dictionaries by locale", () => {
     expect(getTranslationDictionary("zh-CN")["settings.appearance.languageTitle"]).toBe("显示语言")
     expect(getTranslationDictionary("en-US")["settings.appearance.languageTitle"]).toBe("Display Language")

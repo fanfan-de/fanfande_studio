@@ -4,6 +4,10 @@ export function isWorkspaceAvailable(workspace: Pick<WorkspaceGroup, "exists"> |
   return workspace?.exists !== false
 }
 
+export function isGitWorkspaceProject(workspace: Pick<WorkspaceGroup, "project"> | null | undefined) {
+  return workspace?.project.kind === "git" || workspace?.project.vcs === "git"
+}
+
 export function isSideChatSession(session: Pick<SessionSummary, "kind"> | null | undefined) {
   return session?.kind === "side-chat"
 }
@@ -94,6 +98,7 @@ export function mapLoadedSession(session: LoadedSessionSnapshot, sessionIndex: n
   return {
     id: session.id,
     title: session.title.trim() || `Session ${sessionIndex + 1}`,
+    worktreeID: session.worktreeID,
     branch: session.directory,
     status: "Ready",
     created: session.created,

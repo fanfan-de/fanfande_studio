@@ -381,6 +381,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
               toolPermissionMode={toolPermissionMode}
               toolPermissionModeError={toolPermissionModeError}
               onToolPermissionModeChange={onToolPermissionModeChange}
+              onOpenReview={() => onTurnDiffReview([], pane.sessionID, pane.id)}
               skillOptions={composer.skillOptions}
               selectedSkillIDs={composer.selectedSkillIDs}
               selectedSkillLabel={composer.selectedSkillLabel}

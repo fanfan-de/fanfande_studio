@@ -27,11 +27,39 @@ export interface AgentConfig {
 
 export interface AgentProjectInfo {
   id: string
+  kind?: "directory" | "git"
+  repositoryRoot?: string
+  workspaceRoots?: string[]
   worktree: string
+  vcs?: "git"
   name?: string
   created: number
   updated: number
   sandboxes: string[]
+}
+
+export type AgentWorktreeKind = "primary" | "external" | "managed"
+export type AgentWorktreeOwnerType = "session" | "automation-run" | "subagent" | "manual"
+export type AgentWorktreeStatus = "active" | "missing" | "dirty" | "archived" | "removing" | "removed" | "failed"
+export type AgentWorktreeCleanupPolicy = "never" | "on-session-archive" | "on-success-if-clean" | "manual"
+
+export interface AgentWorktreeRecord {
+  id: string
+  projectID: string
+  path: string
+  branch?: string | null
+  baseRef?: string | null
+  baseSha?: string | null
+  kind: AgentWorktreeKind
+  managed: boolean
+  ownerType?: AgentWorktreeOwnerType
+  ownerSessionID?: string
+  ownerRunID?: string
+  status: AgentWorktreeStatus
+  cleanupPolicy: AgentWorktreeCleanupPolicy
+  createdAt: number
+  updatedAt: number
+  lastSeenAt?: number
 }
 
 export type AgentAutomationKind = "project" | "thread"
@@ -127,6 +155,7 @@ export interface AgentAutomationRun {
   findingCount: number
   triageStatus: AgentAutomationTriageStatus
   error?: string
+  worktreeID?: string
   worktreePath?: string
   metadata?: Record<string, unknown>
   createdAt: number
@@ -268,6 +297,7 @@ export interface AgentSessionModelSelection {
 export interface AgentSessionInfo {
   id: string
   projectID: string
+  worktreeID?: string
   directory: string
   title: string
   version?: string
@@ -287,6 +317,7 @@ export interface AgentSessionInfo {
 export interface AgentWorkspaceSession {
   id: string
   projectID: string
+  worktreeID?: string
   directory: string
   title: string
   kind?: AgentSessionKind
@@ -302,7 +333,11 @@ export interface AgentWorkspaceSession {
 
 export interface AgentProjectWorkspace {
   id: string
+  kind?: "directory" | "git"
+  repositoryRoot?: string
+  workspaceRoots?: string[]
   worktree: string
+  vcs?: "git"
   name?: string
   created: number
   updated: number
@@ -311,8 +346,12 @@ export interface AgentProjectWorkspace {
 
 export interface AgentFolderProjectSummary {
   id: string
+  kind?: "directory" | "git"
   name: string
+  repositoryRoot?: string
+  workspaceRoots?: string[]
   worktree: string
+  vcs?: "git"
 }
 
 export interface AgentFolderWorkspace {

@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "re
 import {
   ArchiveIcon,
   AutomationIcon,
+  BackIcon,
   CheckIcon,
+  ChevronRightIcon,
   DeleteIcon,
+  PlusIcon,
   SessionRunningIcon,
   StopIcon,
 } from "../icons"
@@ -126,8 +129,8 @@ function getScheduleLabel(schedule: AgentAutomationSchedule) {
   return schedule.expression
 }
 
-function formatDate(timestamp: number | undefined) {
-  if (!timestamp) return "Not scheduled"
+function formatDate(timestamp: number | undefined, fallback = "Not scheduled") {
+  if (!timestamp) return fallback
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "2-digit",
@@ -173,9 +176,32 @@ function getRunSummary(run: AgentAutomationRun) {
   return "No summary"
 }
 
+function getRunTimestamp(run: AgentAutomationRun) {
+  return run.startedAt ?? run.createdAt
+}
+
+function getLatestRunByAutomationID(runs: AgentAutomationRun[]) {
+  const latestRuns = new Map<string, AgentAutomationRun>()
+  for (const run of runs) {
+    const current = latestRuns.get(run.automationID)
+    if (!current || getRunTimestamp(run) > getRunTimestamp(current)) {
+      latestRuns.set(run.automationID, run)
+    }
+  }
+  return latestRuns
+}
+
+function getOutputPolicyLabel(automation: AgentAutomationDefinition) {
+  if (automation.outputPolicy.triage === "always") return "Always send to inbox"
+  if (automation.outputPolicy.triage === "never") return "Never triage"
+  return automation.outputPolicy.autoArchiveNoFindings ? "Findings only" : "Findings review"
+}
+
 export function AutomationsPage({ projects, windowControls, onOpenSession }: AutomationsPageProps) {
   const [automations, setAutomations] = useState<AgentAutomationDefinition[]>([])
   const [runs, setRuns] = useState<AgentAutomationRun[]>([])
+  const [selectedAutomationID, setSelectedAutomationID] = useState<string | null>(null)
+  const [isCreatePanelOpen, setIsCreatePanelOpen] = useState(false)
   const [selectedProjectID, setSelectedProjectID] = useState("")
   const [draftName, setDraftName] = useState(AUTOMATION_TEMPLATES[0]?.name ?? "")
   const [draftPrompt, setDraftPrompt] = useState(AUTOMATION_TEMPLATES[0]?.prompt ?? "")
@@ -191,14 +217,24 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
     () => new Map(automations.map((automation) => [automation.id, automation])),
     [automations],
   )
+  const latestRunByAutomationID = useMemo(() => getLatestRunByAutomationID(runs), [runs])
+  const selectedAutomation = selectedAutomationID ? automationsByID.get(selectedAutomationID) ?? null : null
+  const selectedAutomationRuns = selectedAutomationID
+    ? runs.filter((run) => run.automationID === selectedAutomationID)
+    : []
   const activeAutomationCount = automations.filter((automation) => automation.status === "active").length
-  const inboxRuns = runs.filter((run) => run.triageStatus === "inbox" || ACTIVE_RUN_STATUSES.has(run.status))
 
   useEffect(() => {
     if (!selectedProjectID && projects[0]) {
       setSelectedProjectID(projects[0].id)
     }
   }, [projects, selectedProjectID])
+
+  useEffect(() => {
+    if (selectedAutomationID && !automationsByID.has(selectedAutomationID)) {
+      setSelectedAutomationID(null)
+    }
+  }, [automationsByID, selectedAutomationID])
 
   async function refreshAutomations(options: { silent?: boolean } = {}) {
     if (!options.silent) setIsLoading(true)
@@ -286,8 +322,10 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
 
     setIsSaving(true)
     try {
-      await requireDesktopApi().createAutomation(input)
+      const createdAutomation = await requireDesktopApi().createAutomation(input)
       setError(null)
+      setIsCreatePanelOpen(false)
+      setSelectedAutomationID(createdAutomation.id)
       await refreshAutomations({ silent: true })
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : String(createError))
@@ -312,6 +350,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
     if (!window.confirm(`Delete automation "${automation.name}"?`)) return
     try {
       await requireDesktopApi().deleteAutomation({ automationID: automation.id })
+      setSelectedAutomationID(null)
       await refreshAutomations({ silent: true })
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : String(deleteError))
@@ -354,6 +393,99 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
     }
   }
 
+  const createPanel = isCreatePanelOpen ? (
+    <div className="automations-create-overlay">
+      <section className="automations-create-panel" role="dialog" aria-modal="true" aria-label="Create automation">
+        <div className="automations-create-header">
+          <div className="automations-panel-heading">
+            <span className="label">Create</span>
+            <h2>New automation</h2>
+          </div>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => setIsCreatePanelOpen(false)}
+          >
+            Cancel
+          </button>
+        </div>
+
+        <div className="automations-template-grid" aria-label="Automation templates">
+          {AUTOMATION_TEMPLATES.map((template) => (
+            <button
+              key={template.id}
+              className="automations-template-button"
+              type="button"
+              onClick={() => applyTemplate(template.id)}
+            >
+              <strong>{template.name}</strong>
+              <span>{SCHEDULE_OPTIONS.find((option) => option.key === template.cadence)?.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <form className="automations-form" onSubmit={handleCreateAutomation}>
+          <label className="automations-field">
+            <span>Name</span>
+            <input
+              type="text"
+              value={draftName}
+              onChange={(event) => setDraftName(event.target.value)}
+            />
+          </label>
+
+          <label className="automations-field">
+            <span>Project</span>
+            <select
+              value={selectedProjectID}
+              disabled={projects.length === 0}
+              onChange={(event) => setSelectedProjectID(event.target.value)}
+            >
+              {projects.length === 0 ? <option value="">No projects</option> : null}
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <fieldset className="automations-segmented" aria-label="Cadence">
+            {SCHEDULE_OPTIONS.map((option) => (
+              <label key={option.key} className={cadence === option.key ? "is-active" : ""}>
+                <input
+                  type="radio"
+                  name="automation-cadence"
+                  value={option.key}
+                  checked={cadence === option.key}
+                  onChange={() => setCadence(option.key)}
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </fieldset>
+
+          <label className="automations-field">
+            <span>Prompt</span>
+            <textarea
+              rows={9}
+              value={draftPrompt}
+              onChange={(event) => setDraftPrompt(event.target.value)}
+            />
+          </label>
+
+          <button
+            className="primary-button automations-create-button"
+            type="submit"
+            disabled={isSaving || projects.length === 0}
+          >
+            {isSaving ? "Creating..." : "Create automation"}
+          </button>
+        </form>
+      </section>
+    </div>
+  ) : null
+
   return (
     <section className="automations-page" aria-label="Automations">
       <ShellTopMenu
@@ -380,97 +512,241 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
           </div>
         ) : null}
 
-        <section className="automations-layout" aria-label="Automation workspace">
-          <aside className="automations-composer-panel" aria-label="Create automation">
-            <div className="automations-panel-heading">
-              <span className="label">Create</span>
-              <h2>New automation</h2>
-            </div>
-
-            <div className="automations-template-grid" aria-label="Automation templates">
-              {AUTOMATION_TEMPLATES.map((template) => (
-                <button
-                  key={template.id}
-                  className="automations-template-button"
-                  type="button"
-                  onClick={() => applyTemplate(template.id)}
-                >
-                  <strong>{template.name}</strong>
-                  <span>{SCHEDULE_OPTIONS.find((option) => option.key === template.cadence)?.label}</span>
-                </button>
-              ))}
-            </div>
-
-            <form className="automations-form" onSubmit={handleCreateAutomation}>
-              <label className="automations-field">
-                <span>Name</span>
-                <input
-                  type="text"
-                  value={draftName}
-                  onChange={(event) => setDraftName(event.target.value)}
-                />
-              </label>
-
-              <label className="automations-field">
-                <span>Project</span>
-                <select
-                  value={selectedProjectID}
-                  disabled={projects.length === 0}
-                  onChange={(event) => setSelectedProjectID(event.target.value)}
-                >
-                  {projects.length === 0 ? <option value="">No projects</option> : null}
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <fieldset className="automations-segmented" aria-label="Cadence">
-                {SCHEDULE_OPTIONS.map((option) => (
-                  <label key={option.key} className={cadence === option.key ? "is-active" : ""}>
-                    <input
-                      type="radio"
-                      name="automation-cadence"
-                      value={option.key}
-                      checked={cadence === option.key}
-                      onChange={() => setCadence(option.key)}
-                    />
-                    <span>{option.label}</span>
-                  </label>
-                ))}
-              </fieldset>
-
-              <label className="automations-field">
-                <span>Prompt</span>
-                <textarea
-                  rows={9}
-                  value={draftPrompt}
-                  onChange={(event) => setDraftPrompt(event.target.value)}
-                />
-              </label>
-
+        {selectedAutomation ? (
+          <section className="automation-detail" aria-label={`Automation details for ${selectedAutomation.name}`}>
+            <header className="automation-detail-header">
               <button
-                className="primary-button automations-create-button"
-                type="submit"
-                disabled={isSaving || projects.length === 0}
+                className="icon-button"
+                type="button"
+                aria-label="Back to automations"
+                title="Back to automations"
+                onClick={() => setSelectedAutomationID(null)}
               >
-                {isSaving ? "Creating..." : "Create automation"}
+                <BackIcon />
               </button>
-            </form>
-          </aside>
 
-          <section className="automations-list-panel" aria-label="Automations list">
-            <div className="automations-summary-row">
-              <div className="automations-panel-heading">
-                <span className="label">Schedules</span>
-                <h2>{activeAutomationCount} active</h2>
+              <div className="automation-detail-title">
+                <div className="automation-detail-breadcrumb">
+                  <span>Automations</span>
+                  <ChevronRightIcon />
+                  <strong>{selectedAutomation.name}</strong>
+                </div>
+                <h1>{selectedAutomation.name}</h1>
               </div>
-              <button className="secondary-button" type="button" onClick={() => void refreshAutomations()}>
-                Refresh
-              </button>
+
+              <div className="automation-detail-actions">
+                {(() => {
+                  const isRunning = runningAutomationID === selectedAutomation.id
+                  const activeRun = runs.find((run) => run.automationID === selectedAutomation.id && ACTIVE_RUN_STATUSES.has(run.status))
+                  const isActive = selectedAutomation.status === "active"
+                  return (
+                    <>
+                      <button
+                        className="primary-button"
+                        type="button"
+                        disabled={isRunning || Boolean(activeRun)}
+                        onClick={() => void runAutomation(selectedAutomation.id)}
+                      >
+                        {isRunning || activeRun ? <SessionRunningIcon /> : <AutomationIcon />}
+                        <span>{isRunning || activeRun ? "Running" : "Run now"}</span>
+                      </button>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={() => void updateAutomationStatus(selectedAutomation, isActive ? "paused" : "active")}
+                      >
+                        {isActive ? "Pause" : "Resume"}
+                      </button>
+                      <button
+                        className="icon-button is-danger"
+                        type="button"
+                        aria-label={`Delete ${selectedAutomation.name}`}
+                        title={`Delete ${selectedAutomation.name}`}
+                        onClick={() => void deleteAutomation(selectedAutomation)}
+                      >
+                        <DeleteIcon />
+                      </button>
+                    </>
+                  )
+                })()}
+              </div>
+            </header>
+
+            <div className="automation-detail-layout">
+              <main className="automation-detail-main">
+                <section className="automation-detail-section">
+                  <div className="automations-panel-heading">
+                    <span className="label">Prompt</span>
+                    <h2>Instructions</h2>
+                  </div>
+                  <p className="automation-detail-prompt">{selectedAutomation.prompt}</p>
+                </section>
+
+                <section className="automation-detail-section">
+                  <div className="automation-section-title-row">
+                    <div className="automations-panel-heading">
+                      <span className="label">Runs</span>
+                      <h2>Run history</h2>
+                    </div>
+                    <button className="secondary-button" type="button" onClick={() => void refreshAutomations()}>
+                      Refresh
+                    </button>
+                  </div>
+
+                  {selectedAutomationRuns.length === 0 ? (
+                    <article className="automations-empty-state">
+                      <h3>No runs yet</h3>
+                      <p>This automation has not produced a run history.</p>
+                    </article>
+                  ) : (
+                    <div className="automations-run-list">
+                      {selectedAutomationRuns.map((run) => {
+                        const isActiveRun = ACTIVE_RUN_STATUSES.has(run.status)
+                        const isMutating = mutatingRunID === run.id
+
+                        return (
+                          <article key={run.id} className={joinClassNames("automations-run-card", isActiveRun && "is-active")}>
+                            <div className="automations-run-header">
+                              <strong>{getRunTitle(run, automationsByID)}</strong>
+                              <span className={getStatusBadgeClassName(run.status)}>{run.status}</span>
+                            </div>
+                            <p>{getRunSummary(run)}</p>
+                            <div className="automations-run-meta">
+                              <span>{run.trigger}</span>
+                              <span>{run.findingCount} findings</span>
+                              <span>{formatDate(getRunTimestamp(run), "Unknown time")}</span>
+                            </div>
+                            <div className="automations-run-actions">
+                              {run.sessionID ? (
+                                <button
+                                  className="secondary-button"
+                                  type="button"
+                                  onClick={() => onOpenSession?.(run.sessionID!)}
+                                >
+                                  Open
+                                </button>
+                              ) : null}
+                              {isActiveRun ? (
+                                <button
+                                  className="icon-button"
+                                  type="button"
+                                  aria-label="Cancel run"
+                                  title="Cancel run"
+                                  disabled={isMutating}
+                                  onClick={() => void cancelRun(run.id)}
+                                >
+                                  <StopIcon />
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    className="icon-button"
+                                    type="button"
+                                    aria-label="Mark run read"
+                                    title="Mark run read"
+                                    disabled={isMutating}
+                                    onClick={() => void setRunTriage(run.id, "read")}
+                                  >
+                                    <CheckIcon />
+                                  </button>
+                                  <button
+                                    className="icon-button"
+                                    type="button"
+                                    aria-label="Archive run"
+                                    title="Archive run"
+                                    disabled={isMutating}
+                                    onClick={() => void setRunTriage(run.id, "archived")}
+                                  >
+                                    <ArchiveIcon />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </article>
+                        )
+                      })}
+                    </div>
+                  )}
+                </section>
+              </main>
+
+              <aside className="automation-detail-sidebar" aria-label="Automation details">
+                <section className="automation-sidebar-section">
+                  <h2>Status</h2>
+                  <dl className="automation-detail-list">
+                    <div>
+                      <dt>Status</dt>
+                      <dd><span className={getStatusBadgeClassName(selectedAutomation.status)}>{selectedAutomation.status}</span></dd>
+                    </div>
+                    <div>
+                      <dt>Next run</dt>
+                      <dd>{formatDate(selectedAutomation.nextRunAt)}</dd>
+                    </div>
+                    <div>
+                      <dt>Last run</dt>
+                      <dd>{formatDate(selectedAutomation.lastRunAt, "Never")}</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section className="automation-sidebar-section">
+                  <h2>Details</h2>
+                  <dl className="automation-detail-list">
+                    <div>
+                      <dt>Target</dt>
+                      <dd>{formatProjectTarget(selectedAutomation, projectsByID)}</dd>
+                    </div>
+                    <div>
+                      <dt>Cadence</dt>
+                      <dd>{getScheduleLabel(selectedAutomation.schedule)}</dd>
+                    </div>
+                    <div>
+                      <dt>Timezone</dt>
+                      <dd>{selectedAutomation.schedule.timezone}</dd>
+                    </div>
+                    <div>
+                      <dt>Environment</dt>
+                      <dd>{selectedAutomation.execution.environment}</dd>
+                    </div>
+                    <div>
+                      <dt>Permission</dt>
+                      <dd>{selectedAutomation.execution.permissionMode ?? "default"}</dd>
+                    </div>
+                    <div>
+                      <dt>Model</dt>
+                      <dd>{selectedAutomation.execution.model ?? "Default"}</dd>
+                    </div>
+                    <div>
+                      <dt>Reasoning</dt>
+                      <dd>{selectedAutomation.execution.reasoning_effort ?? "Default"}</dd>
+                    </div>
+                    <div>
+                      <dt>Output</dt>
+                      <dd>{getOutputPolicyLabel(selectedAutomation)}</dd>
+                    </div>
+                  </dl>
+                </section>
+              </aside>
             </div>
+          </section>
+        ) : (
+          <section className="automations-index" aria-label="Automations list">
+            <header className="automations-index-header">
+              <div className="automations-index-title">
+                <h1>Automations</h1>
+                <p>{activeAutomationCount} active of {automations.length} total</p>
+              </div>
+
+              <div className="automations-index-actions">
+                <button className="secondary-button" type="button" onClick={() => void refreshAutomations()}>
+                  Refresh
+                </button>
+                <button className="primary-button" type="button" onClick={() => setIsCreatePanelOpen(true)}>
+                  <PlusIcon />
+                  <span>New automation</span>
+                </button>
+              </div>
+            </header>
 
             {isLoading ? (
               <article className="automations-empty-state">
@@ -483,159 +759,78 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                 <p>Create a project automation to start scheduled checks.</p>
               </article>
             ) : (
-              <div className="automations-card-list">
+              <div className="automations-index-list">
                 {automations.map((automation) => {
+                  const latestRun = latestRunByAutomationID.get(automation.id)
+                  const activeRun = runs.find((run) => run.automationID === automation.id && ACTIVE_RUN_STATUSES.has(run.status))
                   const isRunning = runningAutomationID === automation.id
                   const isActive = automation.status === "active"
-                  const activeRun = runs.find((run) => run.automationID === automation.id && ACTIVE_RUN_STATUSES.has(run.status))
 
                   return (
-                    <article key={automation.id} className="automations-card">
-                      <div className="automations-card-main">
-                        <div className="automations-card-title-row">
-                          <h3>{automation.name}</h3>
-                          <span className={getStatusBadgeClassName(automation.status)}>
-                            {automation.status}
+                    <article
+                      key={automation.id}
+                      className="automations-index-row"
+                    >
+                      <span className={joinClassNames("automations-status-dot", automation.status === "active" && "is-active")} />
+                      <button
+                        className="automations-index-row-open"
+                        type="button"
+                        aria-label={`Open ${automation.name}`}
+                        onClick={() => setSelectedAutomationID(automation.id)}
+                      >
+                        <span className="automations-index-row-main">
+                          <span className="automations-index-row-title">
+                            <strong>{automation.name}</strong>
+                            <span>{formatProjectTarget(automation, projectsByID)}</span>
                           </span>
-                        </div>
-                        <p>{automation.prompt}</p>
-                        <dl className="automations-meta-grid">
-                          <div>
-                            <dt>Target</dt>
-                            <dd>{formatProjectTarget(automation, projectsByID)}</dd>
-                          </div>
-                          <div>
-                            <dt>Cadence</dt>
-                            <dd>{getScheduleLabel(automation.schedule)}</dd>
-                          </div>
-                          <div>
-                            <dt>Next</dt>
-                            <dd>{formatDate(automation.nextRunAt)}</dd>
-                          </div>
-                          <div>
-                            <dt>Last</dt>
-                            <dd>{formatDate(automation.lastRunAt)}</dd>
-                          </div>
-                        </dl>
-                      </div>
-
-                      <div className="automations-card-actions">
+                          <span className="automations-index-row-summary">
+                            {activeRun ? getRunSummary(activeRun) : latestRun ? getRunSummary(latestRun) : "No runs yet"}
+                          </span>
+                        </span>
+                        <span className="automations-index-row-meta">
+                          <span>{getScheduleLabel(automation.schedule)}</span>
+                          <span>{formatDate(automation.nextRunAt)}</span>
+                        </span>
+                        <span className={getStatusBadgeClassName(activeRun?.status ?? automation.status)}>
+                          {activeRun?.status ?? automation.status}
+                        </span>
+                      </button>
+                      <span className="automations-index-row-actions">
                         <button
-                          className="icon-button"
+                          className="secondary-button"
                           type="button"
-                          aria-label={`Run ${automation.name}`}
-                          title={`Run ${automation.name}`}
+                          aria-label={`运行 ${automation.name}`}
                           disabled={isRunning || Boolean(activeRun)}
                           onClick={() => void runAutomation(automation.id)}
                         >
-                          {isRunning || activeRun ? <SessionRunningIcon /> : <AutomationIcon />}
+                          运行
                         </button>
                         <button
                           className="secondary-button"
                           type="button"
+                          aria-label={`${isActive ? "暂停" : "恢复"} ${automation.name}`}
                           onClick={() => void updateAutomationStatus(automation, isActive ? "paused" : "active")}
                         >
-                          {isActive ? "Pause" : "Resume"}
+                          {isActive ? "暂停" : "恢复"}
                         </button>
                         <button
-                          className="icon-button is-danger"
+                          className="secondary-button is-danger"
                           type="button"
-                          aria-label={`Delete ${automation.name}`}
-                          title={`Delete ${automation.name}`}
+                          aria-label={`删除 ${automation.name}`}
                           onClick={() => void deleteAutomation(automation)}
                         >
-                          <DeleteIcon />
+                          删除
                         </button>
-                      </div>
+                      </span>
                     </article>
                   )
                 })}
               </div>
             )}
           </section>
+        )}
 
-          <aside className="automations-runs-panel" aria-label="Automation inbox">
-            <div className="automations-panel-heading">
-              <span className="label">Inbox</span>
-              <h2>{inboxRuns.length} runs</h2>
-            </div>
-
-            {inboxRuns.length === 0 ? (
-              <article className="automations-empty-state">
-                <h3>No pending runs</h3>
-                <p>Completed runs without findings are archived automatically.</p>
-              </article>
-            ) : (
-              <div className="automations-run-list">
-                {inboxRuns.map((run) => {
-                  const isActiveRun = ACTIVE_RUN_STATUSES.has(run.status)
-                  const isMutating = mutatingRunID === run.id
-
-                  return (
-                    <article key={run.id} className={joinClassNames("automations-run-card", isActiveRun && "is-active")}>
-                      <div className="automations-run-header">
-                        <strong>{getRunTitle(run, automationsByID)}</strong>
-                        <span className={getStatusBadgeClassName(run.status)}>{run.status}</span>
-                      </div>
-                      <p>{getRunSummary(run)}</p>
-                      <div className="automations-run-meta">
-                        <span>{run.trigger}</span>
-                        <span>{run.findingCount} findings</span>
-                        <span>{formatDate(run.startedAt ?? run.createdAt)}</span>
-                      </div>
-                      <div className="automations-run-actions">
-                        {run.sessionID ? (
-                          <button
-                            className="secondary-button"
-                            type="button"
-                            onClick={() => onOpenSession?.(run.sessionID!)}
-                          >
-                            Open
-                          </button>
-                        ) : null}
-                        {isActiveRun ? (
-                          <button
-                            className="icon-button"
-                            type="button"
-                            aria-label="Cancel run"
-                            title="Cancel run"
-                            disabled={isMutating}
-                            onClick={() => void cancelRun(run.id)}
-                          >
-                            <StopIcon />
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              className="icon-button"
-                              type="button"
-                              aria-label="Mark run read"
-                              title="Mark run read"
-                              disabled={isMutating}
-                              onClick={() => void setRunTriage(run.id, "read")}
-                            >
-                              <CheckIcon />
-                            </button>
-                            <button
-                              className="icon-button"
-                              type="button"
-                              aria-label="Archive run"
-                              title="Archive run"
-                              disabled={isMutating}
-                              onClick={() => void setRunTriage(run.id, "archived")}
-                            >
-                              <ArchiveIcon />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </article>
-                  )
-                })}
-              </div>
-            )}
-          </aside>
-        </section>
+        {createPanel}
       </div>
     </section>
   )

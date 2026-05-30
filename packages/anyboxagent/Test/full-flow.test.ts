@@ -68,6 +68,7 @@ test("instance worktree resolves to the git worktree root instead of a nested di
           directory: Instance.directory,
           worktree: Instance.worktree,
           projectWorktree: Instance.project.worktree,
+          projectRepositoryRoot: Instance.project.repositoryRoot,
         }
       },
     })
@@ -75,6 +76,7 @@ test("instance worktree resolves to the git worktree root instead of a nested di
     expect(result.directory).toBe(nestedDirectory)
     expect(result.worktree).toBe(repositoryRoot)
     expect(result.projectWorktree).toBe(repositoryRoot)
+    expect(result.projectRepositoryRoot).toBe(repositoryRoot)
   } finally {
     await rm(repositoryRoot, { recursive: true, force: true })
   }

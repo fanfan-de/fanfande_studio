@@ -19,14 +19,19 @@ function samePath(left: string, right: string) {
   return normalizePath(left) === normalizePath(right)
 }
 
-function getProjectName(project: { name?: string; worktree: string }) {
+function getProjectRoot(project: { repositoryRoot?: string; worktree: string }) {
+  return project.repositoryRoot?.trim() || project.worktree
+}
+
+function getProjectName(project: { name?: string; repositoryRoot?: string; worktree: string }) {
   const trimmed = project.name?.trim()
   if (trimmed) return trimmed
 
-  if (isSshWorkspaceUri(project.worktree)) return getWorkspaceBasename(project.worktree)
+  const root = getProjectRoot(project)
+  if (isSshWorkspaceUri(root)) return getWorkspaceBasename(root)
 
-  const fallback = project.worktree.split(/[\\/]/).filter(Boolean).pop()
-  return fallback || project.worktree
+  const fallback = root.split(/[\\/]/).filter(Boolean).pop()
+  return fallback || root
 }
 
 function getFolderName(directory: string) {
@@ -71,8 +76,12 @@ export function buildFolderWorkspaceForDirectory(
     updated: sessions[0]?.updated ?? workspace.updated,
     project: {
       id: project.id,
+      ...(project.kind ? { kind: project.kind } : {}),
       name: getProjectName(project),
+      repositoryRoot: getProjectRoot(project),
+      ...(project.workspaceRoots ? { workspaceRoots: project.workspaceRoots } : {}),
       worktree: project.worktree,
+      ...(project.vcs ? { vcs: project.vcs } : {}),
     },
     sessions,
   }

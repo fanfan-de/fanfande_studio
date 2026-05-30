@@ -20,6 +20,32 @@ export function ProjectRoutes(options: { ptyRegistry: PtyRegistry }) {
 
   app.get("/:id/sessions", (c) => ok(c, ProjectUseCase.listProjectSessions(c.req.param("id"))))
 
+  app.get("/:id/worktrees", async (c) => ok(c, await ProjectUseCase.listProjectWorktrees(c.req.param("id"))))
+
+  app.post("/:id/worktrees", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      ProjectUseCase.CreateProjectWorktreeBody,
+      "Body must include optional non-empty 'baseRef', 'branchName', owner fields, and cleanupPolicy",
+      {},
+    )
+    return ok(c, await ProjectUseCase.createProjectWorktree(c.req.param("id"), payload), 201)
+  })
+
+  app.post("/:id/worktrees/:worktreeID/refresh", async (c) =>
+    ok(c, await ProjectUseCase.refreshProjectWorktree(c.req.param("id"), c.req.param("worktreeID"))),
+  )
+
+  app.delete("/:id/worktrees/:worktreeID", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      ProjectUseCase.DeleteProjectWorktreeBody,
+      "Body must include optional boolean 'force' and owner fields",
+      {},
+    )
+    return ok(c, await ProjectUseCase.deleteProjectWorktree(c.req.param("id"), c.req.param("worktreeID"), payload))
+  })
+
   app.post("/:id/sessions", async (c) => {
     const payload = await parseJsonBody(
       c,

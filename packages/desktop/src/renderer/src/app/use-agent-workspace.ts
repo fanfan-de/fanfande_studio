@@ -610,6 +610,7 @@ export function useAgentWorkspace({
 
   const {
     createSessionForWorkspace,
+    handleCreateSessionForDirectory,
     handleCreateSessionSubmit,
     handleCreateSideChatTab,
     handleDeleteSideChatTab,
@@ -687,6 +688,7 @@ export function useAgentWorkspace({
     setSessionTasksBySession,
     setDockviewLayout,
     setWorkspaces,
+    refreshWorkspaceFromDirectory,
     updateRightSidebarTab,
     clearRuntimeDebugRefreshTimer,
     clearSessionDiffRefreshTimer,
@@ -1004,6 +1006,7 @@ export function useAgentWorkspace({
     handleCreateSessionTabSelect,
     handleCloseCreateSessionTab,
     handleCreateSessionSubmit,
+    handleCreateSessionForDirectory,
     handleCreateSideChatTab,
     handleClearComposerParentMessage,
     handleDeleteSideChatTab,

@@ -3,7 +3,7 @@ import "./sqlite.cleanup.ts"
 import { $ } from "bun"
 import { mkdtemp, mkdir, readFile, realpath, rm, stat, symlink, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { createServerApp } from "#server/server.ts"
 import { createSessionExecutionStream } from "#server/routes/session.ts"
 import * as Identifier from "#id/id.ts"
@@ -33,12 +33,15 @@ interface JsonEnvelope<T = Record<string, unknown>> {
 type SessionResponseEnvelope = JsonEnvelope<{
   id: string
   projectID: string
+  worktreeID?: string
   directory: string
   title: string
 }>
 
 interface ProjectRecord {
   id: string
+  repositoryRoot: string
+  workspaceRoots: string[]
   worktree: string
   name?: string
   created: number
@@ -46,12 +49,31 @@ interface ProjectRecord {
   sandboxes: string[]
 }
 
+interface WorktreeRecord {
+  id: string
+  projectID: string
+  path: string
+  branch?: string | null
+  baseRef?: string | null
+  baseSha?: string | null
+  kind: "primary" | "external" | "managed"
+  managed: boolean
+  status: "active" | "missing" | "dirty" | "archived" | "removing" | "removed" | "failed"
+  cleanupPolicy: "never" | "on-session-archive" | "on-success-if-clean" | "manual"
+  createdAt: number
+  updatedAt: number
+  lastSeenAt?: number
+}
+
 type ProjectsResponseEnvelope = JsonEnvelope<ProjectRecord[]>
+type WorktreesResponseEnvelope = JsonEnvelope<WorktreeRecord[]>
+type WorktreeResponseEnvelope = JsonEnvelope<WorktreeRecord>
 
 type ProjectSessionsResponseEnvelope = JsonEnvelope<
   Array<{
     id: string
     projectID: string
+    worktreeID?: string
     directory: string
     title: string
     modelSelection?: {
@@ -2934,6 +2956,10 @@ describe("server api", () => {
       expect(firstBody.data?.id).toBe(secondBody.data?.id)
       expect(firstBody.data?.worktree).toBe(repositoryRoot)
       expect(secondBody.data?.worktree).toBe(repositoryRoot)
+      expect(firstBody.data?.repositoryRoot).toBe(repositoryRoot)
+      expect(secondBody.data?.repositoryRoot).toBe(repositoryRoot)
+      expect(firstBody.data?.workspaceRoots).toContain(repositoryRoot)
+      expect(secondBody.data?.workspaceRoots).toContain(repositoryRoot)
       expect(secondBody.data?.name).toBe(repositoryRoot.split(/[\\/]/).filter(Boolean).pop())
 
       const listResponse = await app.request("http://localhost/api/projects")
@@ -2945,6 +2971,8 @@ describe("server api", () => {
           (project) =>
             project.id === firstBody.data?.id &&
             project.worktree === repositoryRoot &&
+            project.repositoryRoot === repositoryRoot &&
+            project.workspaceRoots.includes(repositoryRoot) &&
             project.sandboxes.length === 0,
         ),
       ).toBe(true)
@@ -3273,8 +3301,35 @@ describe("server api", () => {
       expect(extraBody.data?.id).toBe(rootBody.data?.id)
       expect(rootBody.data?.worktree).toBe(repositoryRoot)
       expect(extraBody.data?.worktree).toBe(repositoryRoot)
+      expect(rootBody.data?.repositoryRoot).toBe(repositoryRoot)
+      expect(extraBody.data?.repositoryRoot).toBe(repositoryRoot)
+      expect(extraBody.data?.workspaceRoots).toContain(repositoryRoot)
+      expect(extraBody.data?.workspaceRoots).toContain(extraWorktree)
       expect(extraBody.data?.sandboxes).toContain(extraWorktree)
       expect(extraBody.data?.sandboxes).not.toContain(repositoryRoot)
+
+      const worktreesResponse = await app.request(`http://localhost/api/projects/${rootBody.data?.id}/worktrees`)
+      const worktreesBody = (await worktreesResponse.json()) as WorktreesResponseEnvelope
+
+      expect(worktreesResponse.status).toBe(200)
+      expect(worktreesBody.data).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            projectID: rootBody.data?.id,
+            path: repositoryRoot,
+            kind: "primary",
+            managed: false,
+            cleanupPolicy: "manual",
+          }),
+          expect.objectContaining({
+            projectID: rootBody.data?.id,
+            path: extraWorktree,
+            kind: "external",
+            managed: false,
+            cleanupPolicy: "manual",
+          }),
+        ]),
+      )
 
       const listResponse = await app.request("http://localhost/api/projects")
       const listBody = (await listResponse.json()) as ProjectsResponseEnvelope
@@ -3285,11 +3340,203 @@ describe("server api", () => {
           (project) =>
             project.id === rootBody.data?.id &&
             project.worktree === repositoryRoot &&
+            project.repositoryRoot === repositoryRoot &&
+            project.workspaceRoots.includes(extraWorktree) &&
             project.sandboxes.includes(extraWorktree),
         ),
       ).toBe(true)
     } finally {
       await rm(extraWorktree, { recursive: true, force: true })
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("project worktree lifecycle should create, refresh, and delete managed worktrees safely", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await createTempDirectory("anybox-managed-worktree-root-")
+
+    try {
+      await createGitRepo(repositoryRoot, "managed-worktree")
+      await $`git branch ${"功能开发"}`.cwd(repositoryRoot).quiet()
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+      if (!projectID) throw new Error("Expected created project id")
+
+      const initialWorktreesResponse = await app.request(`http://localhost/api/projects/${projectID}/worktrees`)
+      const initialWorktreesBody = (await initialWorktreesResponse.json()) as WorktreesResponseEnvelope
+      const primary = initialWorktreesBody.data?.find((record) => record.kind === "primary")
+
+      expect(primary?.id).toBeString()
+
+      const primaryDeleteResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/worktrees/${primary?.id}`,
+        {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      )
+      const primaryDeleteBody = (await primaryDeleteResponse.json()) as JsonEnvelope
+
+      expect(primaryDeleteResponse.status).toBe(403)
+      expect(primaryDeleteBody.error?.code).toBe("WORKTREE_NOT_MANAGED")
+
+      const createResponse = await app.request(`http://localhost/api/projects/${projectID}/worktrees`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          branchName: "功能开发",
+          cleanupPolicy: "manual",
+        }),
+      })
+      const createBody = (await createResponse.json()) as WorktreeResponseEnvelope
+      const created = createBody.data
+
+      expect(createResponse.status).toBe(201)
+      expect(created).toMatchObject({
+        projectID,
+        kind: "managed",
+        managed: true,
+        branch: "功能开发",
+        cleanupPolicy: "manual",
+        status: "active",
+      })
+      expect(created?.path).toBeString()
+      expect(basename(created!.path)).toBe(basename(repositoryRoot))
+      expect((await stat(created!.path)).isDirectory()).toBe(true)
+
+      await writeFile(join(created!.path, "scratch.txt"), "dirty\n")
+
+      const refreshResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/worktrees/${created!.id}/refresh`,
+        {
+          method: "POST",
+        },
+      )
+      const refreshBody = (await refreshResponse.json()) as WorktreeResponseEnvelope
+
+      expect(refreshResponse.status).toBe(200)
+      expect(refreshBody.data?.status).toBe("dirty")
+
+      const dirtyDeleteResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/worktrees/${created!.id}`,
+        {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      )
+      const dirtyDeleteBody = (await dirtyDeleteResponse.json()) as JsonEnvelope
+
+      expect(dirtyDeleteResponse.status).toBe(409)
+      expect(dirtyDeleteBody.error?.code).toBe("WORKTREE_DIRTY")
+
+      const forceDeleteResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/worktrees/${created!.id}`,
+        {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ force: true }),
+        },
+      )
+      const forceDeleteBody = (await forceDeleteResponse.json()) as WorktreeResponseEnvelope
+
+      expect(forceDeleteResponse.status).toBe(200)
+      expect(forceDeleteBody.data).toMatchObject({
+        id: created!.id,
+        status: "removed",
+      })
+      await expect(stat(created!.path)).rejects.toThrow()
+
+      const listResponse = await app.request(`http://localhost/api/projects/${projectID}/worktrees`)
+      const listBody = (await listResponse.json()) as WorktreesResponseEnvelope
+
+      expect(listResponse.status).toBe(200)
+      expect(listBody.data?.map((record) => record.id)).not.toContain(created!.id)
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("project worktree lifecycle should create managed worktrees before the first commit", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await createTempDirectory("anybox-managed-unborn-worktree-root-")
+    let createdPath: string | undefined
+
+    try {
+      await mkdir(repositoryRoot, { recursive: true })
+      await writeFile(join(repositoryRoot, "README.md"), "# unborn worktree\n")
+      await $`git init`.cwd(repositoryRoot).quiet()
+      await $`git config user.email test@example.com`.cwd(repositoryRoot).quiet()
+      await $`git config user.name anybox-test`.cwd(repositoryRoot).quiet()
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+      if (!projectID) throw new Error("Expected created project id")
+
+      const createResponse = await app.request(`http://localhost/api/projects/${projectID}/worktrees`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          branchName: "unborn-worktree",
+          cleanupPolicy: "manual",
+        }),
+      })
+      const createBody = (await createResponse.json()) as WorktreeResponseEnvelope
+      const created = createBody.data
+      createdPath = created?.path
+
+      expect(createResponse.status).toBe(201)
+      expect(created).toMatchObject({
+        projectID,
+        kind: "managed",
+        managed: true,
+        branch: "unborn-worktree",
+        baseRef: null,
+        baseSha: null,
+        cleanupPolicy: "manual",
+        status: "active",
+      })
+      expect(created?.path).toBeString()
+      expect((await stat(created!.path)).isDirectory()).toBe(true)
+
+      const activeBranch = (await $`git symbolic-ref --quiet --short HEAD`.cwd(created!.path).text()).trim()
+      const headResult = await $`git rev-parse --verify HEAD`.cwd(created!.path).quiet().nothrow()
+
+      expect(activeBranch).toBe("unborn-worktree")
+      expect(headResult.exitCode).not.toBe(0)
+
+      const deleteResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/worktrees/${created!.id}`,
+        {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ force: true }),
+        },
+      )
+
+      expect(deleteResponse.status).toBe(200)
+    } finally {
+      if (createdPath) {
+        await rm(createdPath, { recursive: true, force: true })
+      }
       await rm(repositoryRoot, { recursive: true, force: true })
     }
   })
@@ -4417,6 +4664,7 @@ describe("server api", () => {
     expect(createSessionResponse.status).toBe(201)
     expect(createSessionBody.success).toBe(true)
     expect(createSessionBody.data?.projectID).toBe(projectBody.data?.id)
+    expect(createSessionBody.data?.worktreeID).toBeString()
     expect(createSessionBody.data?.title).toBe("Backend chat")
 
     const sessionsResponse = await app.request(`http://localhost/api/projects/${projectBody.data!.id}/sessions`)
@@ -4424,6 +4672,9 @@ describe("server api", () => {
 
     expect(sessionsResponse.status).toBe(200)
     expect(sessionsBody.data?.some((session) => session.id === createSessionBody.data?.id)).toBe(true)
+    expect(sessionsBody.data?.find((session) => session.id === createSessionBody.data?.id)?.worktreeID).toBe(
+      createSessionBody.data?.worktreeID,
+    )
   })
 
   test("DELETE /api/sessions/:id should remove the session", async () => {

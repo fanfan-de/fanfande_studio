@@ -58,13 +58,14 @@ describe("AutomationsPage", () => {
       name: input.name,
       prompt: input.prompt,
     }))
+    const runAutomationMock = vi.fn(async () => ({ runs: [] }))
     setDesktopMock({
       cancelAutomationRun: vi.fn(),
       createAutomation: createAutomationMock,
       deleteAutomation: vi.fn(),
       listAutomationRuns: vi.fn(async () => [] satisfies AgentAutomationRun[]),
       listAutomations: vi.fn(async () => [createAutomation()]),
-      runAutomation: vi.fn(),
+      runAutomation: runAutomationMock,
       updateAutomation: vi.fn(),
       updateAutomationRunTriage: vi.fn(),
     })
@@ -80,6 +81,23 @@ describe("AutomationsPage", () => {
     )
 
     expect(await screen.findByText("Existing automation")).toBeInTheDocument()
+    expect(screen.queryByText("Review the project.")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "运行 Existing automation" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "暂停 Existing automation" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "删除 Existing automation" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "运行 Existing automation" }))
+
+    await waitFor(() => expect(runAutomationMock).toHaveBeenCalledWith({ automationID: "aut_existing" }))
+    expect(screen.queryByRole("heading", { name: "Instructions" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Existing automation" }))
+
+    expect(await screen.findByRole("heading", { name: "Instructions" })).toBeInTheDocument()
+    expect(screen.getByText("Review the project.")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to automations" }))
+    fireEvent.click(screen.getByRole("button", { name: "New automation" }))
 
     fireEvent.click(screen.getByRole("button", { name: "Create automation" }))
 
