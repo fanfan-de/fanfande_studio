@@ -69,6 +69,41 @@ describe("workspace primary session selection", () => {
     expect(workspace?.sessions[0]?.created).toBe(123)
   })
 
+  it("preserves automation session metadata", () => {
+    const [workspace] = mapLoadedWorkspaces([
+      {
+        id: "workspace-1",
+        name: "Workspace",
+        directory: "C:/workspace",
+        created: 10,
+        updated: 20,
+        project: {
+          id: "project-1",
+          name: "Project",
+          worktree: "C:/workspace",
+        },
+        sessions: [
+          {
+            id: "session-1",
+            projectID: "project-1",
+            directory: "C:/workspace",
+            title: "Automation Session",
+            automation: {
+              automationID: "aut_1",
+              runID: "arn_1",
+              name: "Daily review",
+              trigger: "manual",
+            },
+            created: 123,
+            updated: 456,
+          },
+        ],
+      },
+    ])
+
+    expect(workspace?.sessions[0]?.automation?.name).toBe("Daily review")
+  })
+
   it("does not treat side chats as primary sessions", () => {
     const sessions = [buildSession("side-chat-1", "side-chat"), buildSession("main-1", "main")]
 

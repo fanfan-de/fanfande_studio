@@ -29,7 +29,7 @@ export type {
 
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type SidebarActionKey = "project"
-export type LeftSidebarView = "workspace" | "skills" | "prompts" | "connections" | "tools"
+export type LeftSidebarView = "workspace" | "automations" | "skills" | "prompts" | "connections" | "tools"
 export type ConnectionsTab = "plugins" | "connectors" | "mcp" | "ssh"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
@@ -134,6 +134,13 @@ export interface SessionPolicy {
   ignoreFullAccess?: boolean
 }
 
+export interface SessionAutomationMetadata {
+  automationID: string
+  runID: string
+  name: string
+  trigger: "manual" | "schedule"
+}
+
 export interface SessionOrigin {
   parentSessionID: string
   anchorMessageID: string
@@ -201,6 +208,7 @@ export interface SessionSummary {
   summary: string
   kind?: SessionKind
   policy?: SessionPolicy
+  automation?: SessionAutomationMetadata
   origin?: SessionOrigin
   subagent?: SessionSubagentOrigin
   workflow?: SessionWorkflowSummary
@@ -248,6 +256,7 @@ export interface LoadedSessionSnapshot {
   title: string
   kind?: SessionKind
   policy?: SessionPolicy
+  automation?: SessionAutomationMetadata
   origin?: SessionOrigin
   subagent?: SessionSubagentOrigin
   created: number

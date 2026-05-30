@@ -11,6 +11,7 @@ import {
   ChevronRight,
   CircleCheck,
   CircleX,
+  Clock,
   CloudCog,
   Code2,
   Copy,
@@ -118,6 +119,7 @@ export const RestoreIcon = createIcon(Copy)
 export const CloseIcon = createIcon(X)
 export const TerminalIcon = createIcon(Terminal)
 export const ToolsIcon = createIcon(Wrench)
+export const AutomationIcon = createIcon(Clock)
 export const ArrowUpIcon = createIcon(ArrowUp)
 export const StopIcon = createIcon(Square, { fill: "currentColor", strokeWidth: 0 })
 export const PaletteIcon = createIcon(Palette)

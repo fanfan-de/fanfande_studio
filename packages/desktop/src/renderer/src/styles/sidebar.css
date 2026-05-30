@@ -637,6 +637,7 @@ body.is-resizing-sidebar .sidebar-resizer::before {
   flex: 1 1 auto;
   display: inline-flex;
   align-items: center;
+  gap: 6px;
 }
 
 @keyframes session-row-status-spin {
@@ -755,6 +756,29 @@ body.is-resizing-sidebar .sidebar-resizer::before {
   white-space: nowrap;
   font-size: 13px;
   font-weight: 500;
+}
+
+.session-row-source-badge {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border: 1px solid var(--mix-seg-accent-24-seg-border-76);
+  border-radius: 999px;
+  background: var(--mix-seg-accent-soft-84-transparent-16);
+  color: var(--seg-accent-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.session-row-source-badge svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .session-row:hover .session-row-label,

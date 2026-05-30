@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react"
 import {
   ChevronDownIcon,
   ChevronRightIcon,
+  AutomationIcon,
   ConnectedStatusIcon,
   FileTextIcon,
   LayoutSidebarLeftIcon,
@@ -25,6 +26,7 @@ interface ActivityRailProps {
 
 const primaryLeftRailViews = [
   { view: "workspace" as const, label: "Open workspace", Icon: LayoutSidebarLeftIcon },
+  { view: "automations" as const, label: "Open automations", Icon: AutomationIcon },
 ]
 
 const configurationLeftRailViews = [

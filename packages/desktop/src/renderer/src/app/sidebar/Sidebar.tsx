@@ -3,6 +3,7 @@ import { createPortal } from "react-dom"
 import { sidebarActions } from "../constants"
 import {
   ArchiveIcon,
+  AutomationIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   DeleteIcon,
@@ -462,6 +463,15 @@ function FolderWorkspaceView({
             </span>
             <span className="session-row-copy">
               <span className="session-row-label">{session.title}</span>
+              {session.automation ? (
+                <span
+                  className="session-row-source-badge is-automation"
+                  title={`Automation: ${session.automation.name}`}
+                  aria-label={`Automation: ${session.automation.name}`}
+                >
+                  <AutomationIcon />
+                </span>
+              ) : null}
             </span>
           </button>
           <span className="session-row-trailing">

@@ -34,6 +34,124 @@ export interface AgentProjectInfo {
   sandboxes: string[]
 }
 
+export type AgentAutomationKind = "project" | "thread"
+export type AgentAutomationStatus = "active" | "paused" | "deleted"
+export type AgentAutomationRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "blocked"
+  | "cancelled"
+  | "skipped"
+export type AgentAutomationRunTrigger = "manual" | "schedule"
+export type AgentAutomationTriageStatus = "inbox" | "read" | "archived" | "none"
+
+export interface AgentAutomationSchedule {
+  type: "rrule" | "cron"
+  expression: string
+  timezone: string
+}
+
+export interface AgentAutomationScope {
+  projectIDs?: string[]
+  directories?: string[]
+  sessionID?: string
+}
+
+export interface AgentAutomationExecution {
+  environment: "local" | "worktree"
+  model?: string
+  small_model?: string
+  reasoning_effort?: ReasoningEffort
+  permissionMode?: "read-only" | "default" | "full_access"
+  selectedSkillIDs?: string[]
+  selectedPluginIDs?: string[]
+  selectedMcpServerIDs?: string[]
+}
+
+export interface AgentAutomationOutputPolicy {
+  triage: "findings-only" | "always" | "never"
+  autoArchiveNoFindings: boolean
+}
+
+export interface AgentAutomationDefinition {
+  id: string
+  name: string
+  kind: AgentAutomationKind
+  status: AgentAutomationStatus
+  schedule: AgentAutomationSchedule
+  scope: AgentAutomationScope
+  execution: AgentAutomationExecution
+  prompt: string
+  promptVersion: number
+  outputPolicy: AgentAutomationOutputPolicy
+  createdAt: number
+  updatedAt: number
+  lastRunAt?: number
+  nextRunAt?: number
+  leaseOwner?: string
+  leaseExpiresAt?: number
+  runningRunID?: string
+}
+
+export interface AgentAutomationCreateInput {
+  name: string
+  kind?: AgentAutomationKind
+  status?: Exclude<AgentAutomationStatus, "deleted">
+  schedule: AgentAutomationSchedule
+  scope: AgentAutomationScope
+  execution?: Partial<AgentAutomationExecution>
+  prompt: string
+  outputPolicy?: Partial<AgentAutomationOutputPolicy>
+}
+
+export type AgentAutomationUpdateInput = Omit<Partial<AgentAutomationCreateInput>, "status"> & {
+  status?: AgentAutomationStatus
+}
+
+export interface AgentAutomationRun {
+  id: string
+  automationID: string
+  trigger: AgentAutomationRunTrigger
+  status: AgentAutomationRunStatus
+  projectID?: string
+  directory?: string
+  sessionID?: string
+  turnID?: string
+  promptSnapshot?: string
+  promptVersion?: number
+  startedAt?: number
+  completedAt?: number
+  summary?: string
+  findingCount: number
+  triageStatus: AgentAutomationTriageStatus
+  error?: string
+  worktreePath?: string
+  metadata?: Record<string, unknown>
+  createdAt: number
+  updatedAt: number
+}
+
+export interface AgentAutomationRunListInput {
+  automationID?: string
+  triageStatus?: AgentAutomationTriageStatus
+  limit?: number
+}
+
+export interface AgentAutomationRunCreateResult {
+  runs: AgentAutomationRun[]
+}
+
+export interface AgentAutomationDeleteResult {
+  automationID: string
+  deleted: boolean
+}
+
+export interface AgentAutomationIPCEvent extends AgentSSEEvent {
+  receivedAt: number
+}
+
 export interface AgentSessionWorkflowSummary {
   mode: "execution" | "planning"
   plan: {
@@ -118,6 +236,13 @@ export interface AgentSessionPolicy {
   ignoreFullAccess?: boolean
 }
 
+export interface AgentSessionAutomationMetadata {
+  automationID: string
+  runID: string
+  name: string
+  trigger: "manual" | "schedule"
+}
+
 export interface AgentSessionOrigin {
   parentSessionID: string
   anchorMessageID: string
@@ -148,6 +273,7 @@ export interface AgentSessionInfo {
   version?: string
   kind?: AgentSessionKind
   policy?: AgentSessionPolicy
+  automation?: AgentSessionAutomationMetadata
   origin?: AgentSessionOrigin
   subagent?: AgentSessionSubagentOrigin
   workflow?: AgentSessionWorkflowSummary
@@ -165,6 +291,7 @@ export interface AgentWorkspaceSession {
   title: string
   kind?: AgentSessionKind
   policy?: AgentSessionPolicy
+  automation?: AgentSessionAutomationMetadata
   origin?: AgentSessionOrigin
   subagent?: AgentSessionSubagentOrigin
   created: number
@@ -226,6 +353,7 @@ export interface AgentArchivedSessionSummary {
   title: string
   kind?: AgentSessionKind
   policy?: AgentSessionPolicy
+  automation?: AgentSessionAutomationMetadata
   origin?: AgentSessionOrigin
   created: number
   updated: number

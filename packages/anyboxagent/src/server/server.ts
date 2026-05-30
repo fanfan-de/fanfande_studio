@@ -3,6 +3,8 @@ import type { Context } from "hono"
 import { createBunWebSocket } from "hono/bun"
 import { cors } from "hono/cors"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
+import { AutomationEventRoutes } from "#server/routes/automation-events.ts"
+import { AutomationRoutes, AutomationRunRoutes } from "#server/routes/automations.ts"
 import { ProjectRoutes } from "#server/routes/projects.ts"
 import { PermissionsRoutes } from "#server/routes/permissions.ts"
 import { PtyRoutes } from "#server/routes/pty.ts"
@@ -20,6 +22,7 @@ import { isPtyRuntimeError } from "#pty/runtime.ts"
 import * as Log from "#util/log.ts"
 import { getProcessEnvValue } from "#env/compat.ts"
 import { getServerBaseURL, setServerBaseURL } from "#server/base-url.ts"
+import { startAutomationScheduler } from "#automation/scheduler.ts"
 
 export interface ServerOptions {
   host?: string
@@ -124,6 +127,9 @@ export function createServerRuntime(options: Pick<ServerOptions, "corsWhitelist"
   app.route("/api/workspace-files", WorkspaceFilesRoutes())
   app.route("/api/browser-extension", BrowserExtensionRoutes({ upgradeWebSocket }))
   app.route("/api/pty", PtyRoutes({ registry: ptyRegistry, upgradeWebSocket }))
+  app.route("/api/automation-events", AutomationEventRoutes())
+  app.route("/api/automations", AutomationRoutes())
+  app.route("/api/automation-runs", AutomationRunRoutes())
   app.route("/api/projects", ProjectRoutes({ ptyRegistry }))
   app.route("/api/sessions", SessionRoutes({ ptyRegistry }))
 
@@ -175,6 +181,7 @@ export function startServer(options: ServerOptions = {}) {
     websocket: runtime.websocket,
   })
   setServerBaseURL(`http://${host}:${port}`)
+  startAutomationScheduler()
   log.info("server-started", {
     host,
     port,

@@ -4,6 +4,7 @@ import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type {
   AgentArchivedSessionSummary,
+  AgentAutomationIPCEvent,
   AgentFolderWorkspace,
   AgentProjectModelSelection,
   AgentProjectWorkspace,
@@ -91,6 +92,7 @@ import type {
 import {
   DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL,
   DESKTOP_AGENT_SESSION_EVENT_CHANNEL,
+  DESKTOP_AUTOMATION_EVENT_CHANNEL,
   DESKTOP_PTY_EVENT_CHANNEL,
   DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL,
   DESKTOP_WINDOW_STATE_EVENT_CHANNEL,
@@ -592,6 +594,22 @@ try {
       invokeDesktop("desktop:get-tool-permission-mode") as Promise<ToolPermissionModePayload>,
     updateToolPermissionMode: (input: ToolPermissionModePayload) =>
       invokeDesktop("desktop:update-tool-permission-mode", input) as Promise<ToolPermissionModePayload>,
+    listAutomations: () =>
+      invokeDesktop("desktop:list-automations") as Promise<DesktopIpcOutput<"desktop:list-automations">>,
+    createAutomation: (input: DesktopIpcInput<"desktop:create-automation">) =>
+      invokeDesktop("desktop:create-automation", input) as Promise<DesktopIpcOutput<"desktop:create-automation">>,
+    updateAutomation: (input: DesktopIpcInput<"desktop:update-automation">) =>
+      invokeDesktop("desktop:update-automation", input) as Promise<DesktopIpcOutput<"desktop:update-automation">>,
+    deleteAutomation: (input: DesktopIpcInput<"desktop:delete-automation">) =>
+      invokeDesktop("desktop:delete-automation", input) as Promise<DesktopIpcOutput<"desktop:delete-automation">>,
+    runAutomation: (input: DesktopIpcInput<"desktop:run-automation">) =>
+      invokeDesktop("desktop:run-automation", input) as Promise<DesktopIpcOutput<"desktop:run-automation">>,
+    listAutomationRuns: (input?: DesktopIpcInput<"desktop:list-automation-runs">) =>
+      invokeDesktop("desktop:list-automation-runs", input) as Promise<DesktopIpcOutput<"desktop:list-automation-runs">>,
+    updateAutomationRunTriage: (input: DesktopIpcInput<"desktop:update-automation-run-triage">) =>
+      invokeDesktop("desktop:update-automation-run-triage", input) as Promise<DesktopIpcOutput<"desktop:update-automation-run-triage">>,
+    cancelAutomationRun: (input: DesktopIpcInput<"desktop:cancel-automation-run">) =>
+      invokeDesktop("desktop:cancel-automation-run", input) as Promise<DesktopIpcOutput<"desktop:cancel-automation-run">>,
     getGlobalSkills: () =>
       invokeDesktop("desktop:get-global-skills") as Promise<SkillInfo[]>,
     getPromptPresets: () =>
@@ -846,6 +864,17 @@ try {
 
       return () => {
         ipcRenderer.removeListener(DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL, wrappedListener)
+      }
+    },
+    onAutomationEvent: (listener: (event: AgentAutomationIPCEvent) => void) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, automationEvent: AgentAutomationIPCEvent) => {
+        listener(automationEvent)
+      }
+
+      ipcRenderer.on(DESKTOP_AUTOMATION_EVENT_CHANNEL, wrappedListener)
+
+      return () => {
+        ipcRenderer.removeListener(DESKTOP_AUTOMATION_EVENT_CHANNEL, wrappedListener)
       }
     },
     onWorkspaceFileChange: (listener: (event: WorkspaceFileChangeIPCEvent) => void) => {

@@ -157,6 +157,25 @@ describe("Sidebar", () => {
     expect(screen.getByRole("button", { name: "Unread" })).toBeInTheDocument()
   })
 
+  it("marks automation-created sessions", () => {
+    const workspace = createWorkspace()
+    workspace.sessions = [
+      {
+        ...createSession("automation-session", "Automation run"),
+        automation: {
+          automationID: "aut_1",
+          runID: "arn_1",
+          name: "Daily review",
+          trigger: "manual",
+        },
+      },
+    ]
+
+    renderSidebar({ workspaces: [workspace] })
+
+    expect(screen.getByLabelText("Automation: Daily review")).toBeInTheDocument()
+  })
+
   it("shows the green dot only for unread session canvases that are not visible", () => {
     renderSidebar({
       activeSessionID: "workspace-1-session-visible",

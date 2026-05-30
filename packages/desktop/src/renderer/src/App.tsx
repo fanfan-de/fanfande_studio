@@ -52,6 +52,7 @@ import {
   workbenchPublishSnapshotsAreEqual,
 } from "./app/agent-workspace/workspace-derived-state"
 import type {
+  AgentAutomationIPCEvent,
   DesktopAppUpdateState,
   WorkbenchSharedState,
   WorkbenchWindowContext,
@@ -68,6 +69,7 @@ const GlobalSkillsPage = lazy(() => import("./app/skills/GlobalSkillsPage").then
 const ConnectorsPage = lazy(() => import("./app/connectors/ConnectorsPage").then((module) => ({ default: module.ConnectorsPage })))
 const PluginsPage = lazy(() => import("./app/plugins/PluginsPage").then((module) => ({ default: module.PluginsPage })))
 const PromptPresetsPage = lazy(() => import("./app/prompts/PromptPresetsPage").then((module) => ({ default: module.PromptPresetsPage })))
+const AutomationsPage = lazy(() => import("./app/automations/AutomationsPage").then((module) => ({ default: module.AutomationsPage })))
 
 function importSettingsPage() {
   return import("./app/settings/SettingsPage").then((module) => ({ default: module.SettingsPage }))
@@ -143,6 +145,31 @@ function rightSidebarSideChatPanelStatesAreEqual(
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
+}
+
+function readObject(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function readOptionalString(value: unknown) {
+  return typeof value === "string" ? value.trim() : ""
+}
+
+function readAutomationSessionRefreshTarget(event: AgentAutomationIPCEvent) {
+  if (event.event === "automation.session.created") {
+    const data = readObject(event.data)
+    const sessionID = readOptionalString(data?.sessionID)
+    const directory = readOptionalString(data?.directory)
+    return sessionID && directory ? { sessionID, directory } : null
+  }
+
+  const data = readObject(event.data)
+  const run = readObject(data?.run)
+  const sessionID = readOptionalString(run?.sessionID)
+  const directory = readOptionalString(run?.directory)
+  return sessionID && directory ? { sessionID, directory } : null
 }
 
 function getManualUpdateCheckStatusText(result: Awaited<ReturnType<typeof checkForAppUpdates>> | null) {
@@ -1217,6 +1244,35 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     onProviderModelsUpdated: refreshComposerModels,
   })
 
+  const automationRefreshKnownSessionIDsRef = useRef<Set<string>>(new Set())
+  const refreshWorkspaceFromDirectoryRef = useRef(refreshWorkspaceFromDirectory)
+
+  useEffect(() => {
+    refreshWorkspaceFromDirectoryRef.current = refreshWorkspaceFromDirectory
+  }, [refreshWorkspaceFromDirectory])
+
+  useEffect(() => {
+    const knownSessionIDs = automationRefreshKnownSessionIDsRef.current
+    for (const workspace of workspaces) {
+      for (const session of workspace.sessions) {
+        knownSessionIDs.add(session.id)
+      }
+    }
+  }, [workspaces])
+
+  useEffect(() => {
+    return window.desktop?.onAutomationEvent?.((event) => {
+      const target = readAutomationSessionRefreshTarget(event)
+      if (!target) return
+      if (automationRefreshKnownSessionIDsRef.current.has(target.sessionID)) return
+
+      automationRefreshKnownSessionIDsRef.current.add(target.sessionID)
+      void Promise.resolve(refreshWorkspaceFromDirectoryRef.current(target.directory)).catch(() => {
+        automationRefreshKnownSessionIDsRef.current.delete(target.sessionID)
+      })
+    })
+  }, [])
+
   function handleOpenSettings() {
     if (isOpen || isPreparingSettingsPage) return
 
@@ -1798,10 +1854,11 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     .join(" ")
   const isPromptEditorView = leftSidebarView === "prompts"
   const isGlobalSkillsView = leftSidebarView === "skills"
+  const isAutomationsView = leftSidebarView === "automations"
   const isConnectionsView = leftSidebarView === "connections"
   const isBuiltinToolsView = leftSidebarView === "tools"
   const isShellSidebarManagedView = isPromptEditorView || isGlobalSkillsView || isBuiltinToolsView
-  const isFullSurfaceView = isConnectionsView
+  const isFullSurfaceView = isConnectionsView || isAutomationsView
   const windowControls = useMemo(
     () => <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />,
     [handleWindowAction, isWindowMaximized, windowControlsRef],
@@ -2056,6 +2113,18 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onRenameGlobalSkillDraftChange={handleRenameGlobalSkillDraftChange}
               onRenameGlobalSkillDraftStart={handleRenameGlobalSkillDraftStart}
                 onSave={handleSaveGlobalSkillFile}
+              />
+            </Suspense>
+          ) : isAutomationsView ? (
+            <Suspense fallback={null}>
+              <AutomationsPage
+                projects={workspaces.map((workspace) => ({
+                  directory: workspace.directory,
+                  id: workspace.project.id,
+                  name: workspace.name,
+                }))}
+                windowControls={windowControls}
+                onOpenSession={(sessionID) => handleCanvasSessionTabSelect(sessionID)}
               />
             </Suspense>
           ) : isConnectionsView ? (

@@ -45,6 +45,18 @@ export const SessionPolicy = z
   })
 export type SessionPolicy = z.output<typeof SessionPolicy>
 
+export const SessionAutomationMetadata = z
+  .object({
+    automationID: Identifier.schema("automation"),
+    runID: Identifier.schema("automationRun"),
+    name: z.string(),
+    trigger: z.enum(["manual", "schedule"]),
+  })
+  .meta({
+    ref: "SessionAutomationMetadata",
+  })
+export type SessionAutomationMetadata = z.output<typeof SessionAutomationMetadata>
+
 export const SessionModelSelection = z
   .object({
     model: z.string().optional(),
@@ -154,6 +166,7 @@ export const SessionInfo = z
     modelSelection: SessionModelSelection.optional(),
     kind: SessionKind.optional(),
     policy: SessionPolicy.optional(),
+    automation: SessionAutomationMetadata.optional(),
     time: z.object({
       created: z.number(),
       updated: z.number(),
@@ -783,6 +796,7 @@ async function createSession(input: {
   directory: string
   projectID: string
   title?: string
+  automation?: SessionAutomationMetadata
 }): Promise<SessionInfo> {
   const now = Date.now()
   const result = normalizeSessionInfo({
@@ -793,6 +807,7 @@ async function createSession(input: {
     version: Installation.VERSION,
     kind: "main",
     policy: DEFAULT_SESSION_POLICY,
+    automation: input.automation,
     workflow: defaultWorkflowState(now),
     time: {
       created: now,

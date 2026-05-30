@@ -104,6 +104,7 @@ export function mapLoadedSession(session: LoadedSessionSnapshot, sessionIndex: n
       : `Loaded from ${session.directory}`,
     kind: session.kind,
     policy: session.policy,
+    automation: session.automation,
     origin: session.origin,
     subagent: session.subagent,
     workflow: session.workflow,

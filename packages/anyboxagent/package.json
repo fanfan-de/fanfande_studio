@@ -39,6 +39,7 @@
   "imports": {
     "#acp/*": "./src/acp/*",
     "#agent/*": "./src/agent/*",
+    "#automation/*": "./src/automation/*",
     "#auth/*": "./src/auth/*",
     "#bun/*": "./src/bun/*",
     "#bus/*": "./src/bus/*",

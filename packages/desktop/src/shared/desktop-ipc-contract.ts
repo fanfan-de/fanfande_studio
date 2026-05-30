@@ -1,6 +1,15 @@
 import type {
   AgentArchivedSessionDeleteResult,
   AgentArchivedSessionSummary,
+  AgentAutomationCreateInput,
+  AgentAutomationDefinition,
+  AgentAutomationDeleteResult,
+  AgentAutomationIPCEvent,
+  AgentAutomationRun,
+  AgentAutomationRunCreateResult,
+  AgentAutomationRunListInput,
+  AgentAutomationTriageStatus,
+  AgentAutomationUpdateInput,
   AgentBuiltinToolSelection,
   AgentBuiltinToolSummary,
   AgentBuiltinToolsPayload,
@@ -85,6 +94,7 @@ import type {
 } from "./permission"
 
 export const DESKTOP_AGENT_SESSION_EVENT_CHANNEL = "desktop:agent-session-event"
+export const DESKTOP_AUTOMATION_EVENT_CHANNEL = "desktop:automation-event"
 export const DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL = "desktop:workspace-file-change"
 export const DESKTOP_PTY_EVENT_CHANNEL = "desktop:pty-event"
 export const DESKTOP_WINDOW_STATE_EVENT_CHANNEL = "desktop:window-state-changed"
@@ -98,6 +108,15 @@ export interface DesktopPluginCatalogInput {
 export type {
   AgentArchivedSessionDeleteResult,
   AgentArchivedSessionSummary,
+  AgentAutomationCreateInput,
+  AgentAutomationDefinition,
+  AgentAutomationDeleteResult,
+  AgentAutomationIPCEvent,
+  AgentAutomationRun,
+  AgentAutomationRunCreateResult,
+  AgentAutomationRunListInput,
+  AgentAutomationTriageStatus,
+  AgentAutomationUpdateInput,
   AgentBuiltinToolSelection,
   AgentBuiltinToolSummary,
   AgentBuiltinToolsPayload,
@@ -1333,6 +1352,38 @@ export interface DesktopIpcContract {
     input: AgentToolPermissionModePayload
     output: AgentToolPermissionModePayload
   }
+  "desktop:list-automations": {
+    input: void
+    output: AgentAutomationDefinition[]
+  }
+  "desktop:create-automation": {
+    input: AgentAutomationCreateInput
+    output: AgentAutomationDefinition
+  }
+  "desktop:update-automation": {
+    input: { automationID: string; automation: AgentAutomationUpdateInput }
+    output: AgentAutomationDefinition
+  }
+  "desktop:delete-automation": {
+    input: { automationID: string }
+    output: AgentAutomationDeleteResult
+  }
+  "desktop:run-automation": {
+    input: { automationID: string }
+    output: AgentAutomationRunCreateResult
+  }
+  "desktop:list-automation-runs": {
+    input: AgentAutomationRunListInput | undefined
+    output: AgentAutomationRun[]
+  }
+  "desktop:update-automation-run-triage": {
+    input: { runID: string; triageStatus: AgentAutomationTriageStatus }
+    output: AgentAutomationRun | null
+  }
+  "desktop:cancel-automation-run": {
+    input: { runID: string }
+    output: AgentAutomationRun | null
+  }
   "desktop:get-global-skills": {
     input: void
     output: AgentSkillInfo[]
@@ -1574,6 +1625,7 @@ export interface DesktopIpcContract {
 export interface DesktopIpcEventPayloads {
   [DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL]: DesktopAppUpdateState
   [DESKTOP_AGENT_SESSION_EVENT_CHANNEL]: AgentSessionBridgeIPCEvent
+  [DESKTOP_AUTOMATION_EVENT_CHANNEL]: AgentAutomationIPCEvent
   [DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL]: WorkspaceFileChangeIPCEvent
   [DESKTOP_PTY_EVENT_CHANNEL]: PtyTransportIPCEvent
   [DESKTOP_WINDOW_STATE_EVENT_CHANNEL]: DesktopWindowState
@@ -1754,6 +1806,15 @@ export interface DesktopApiMethods {
   updateBuiltinToolSelection(input: DesktopIpcInput<"desktop:update-builtin-tool-selection">): Promise<DesktopIpcOutput<"desktop:update-builtin-tool-selection">>
   getToolPermissionMode(): Promise<DesktopIpcOutput<"desktop:get-tool-permission-mode">>
   updateToolPermissionMode(input: DesktopIpcInput<"desktop:update-tool-permission-mode">): Promise<DesktopIpcOutput<"desktop:update-tool-permission-mode">>
+  listAutomations(): Promise<DesktopIpcOutput<"desktop:list-automations">>
+  createAutomation(input: DesktopIpcInput<"desktop:create-automation">): Promise<DesktopIpcOutput<"desktop:create-automation">>
+  updateAutomation(input: DesktopIpcInput<"desktop:update-automation">): Promise<DesktopIpcOutput<"desktop:update-automation">>
+  deleteAutomation(input: DesktopIpcInput<"desktop:delete-automation">): Promise<DesktopIpcOutput<"desktop:delete-automation">>
+  runAutomation(input: DesktopIpcInput<"desktop:run-automation">): Promise<DesktopIpcOutput<"desktop:run-automation">>
+  listAutomationRuns(input?: DesktopIpcInput<"desktop:list-automation-runs">): Promise<DesktopIpcOutput<"desktop:list-automation-runs">>
+  updateAutomationRunTriage(input: DesktopIpcInput<"desktop:update-automation-run-triage">): Promise<DesktopIpcOutput<"desktop:update-automation-run-triage">>
+  cancelAutomationRun(input: DesktopIpcInput<"desktop:cancel-automation-run">): Promise<DesktopIpcOutput<"desktop:cancel-automation-run">>
+  onAutomationEvent(listener: (event: DesktopIpcEventPayload<typeof DESKTOP_AUTOMATION_EVENT_CHANNEL>) => void): () => void
   getGlobalSkills(): Promise<DesktopIpcOutput<"desktop:get-global-skills">>
   getPromptPresets(): Promise<DesktopIpcOutput<"desktop:get-prompt-presets">>
   getPromptPresetSelection(): Promise<DesktopIpcOutput<"desktop:get-prompt-preset-selection">>

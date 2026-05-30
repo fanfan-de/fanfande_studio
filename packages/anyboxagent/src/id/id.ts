@@ -11,6 +11,8 @@ const prefixes = {
   permission: "per",
   question: "que",
   compaction: "cmp",
+  automation: "aut",
+  automationRun: "arn",
   user: "usr",
   part: "prt",
   pty: "pty",

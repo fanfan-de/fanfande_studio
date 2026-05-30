@@ -22,6 +22,7 @@ import type {
 import {
   DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL,
   DESKTOP_AGENT_SESSION_EVENT_CHANNEL,
+  DESKTOP_AUTOMATION_EVENT_CHANNEL,
 } from "../shared/desktop-ipc-contract"
 import { getAgentConfig, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
 import { readAppearanceConfigSnapshot, writeAppearanceConfigSnapshot } from "./appearance-config"
@@ -56,6 +57,15 @@ import {
 import type {
   AgentArchivedSessionDeleteResult,
   AgentArchivedSessionSummary,
+  AgentAutomationCreateInput,
+  AgentAutomationDefinition,
+  AgentAutomationDeleteResult,
+  AgentAutomationIPCEvent,
+  AgentAutomationRun,
+  AgentAutomationRunCreateResult,
+  AgentAutomationRunListInput,
+  AgentAutomationTriageStatus,
+  AgentAutomationUpdateInput,
   AgentBuiltinToolSelection,
   AgentBuiltinToolsPayload,
   AgentConnectorDefinition,
@@ -138,7 +148,9 @@ import { WorkspaceWatchManager } from "./workspace-watch"
 import type { WorkbenchWindowManager } from "./workbench-window-manager"
 
 const AGENT_SESSION_EVENT_CHANNEL = DESKTOP_AGENT_SESSION_EVENT_CHANNEL
+const AUTOMATION_EVENT_CHANNEL = DESKTOP_AUTOMATION_EVENT_CHANNEL
 let appUpdateStateBridgeRegistered = false
+let automationEventBridgeRegistered = false
 
 const GIT_DIFF_SCOPES = new Set<AgentSessionDiffScope>([
   "git:unstaged",
@@ -303,6 +315,7 @@ function mapSessionInfo(session: AgentSessionInfo) {
     title: session.title,
     kind: session.kind,
     policy: session.policy,
+    automation: session.automation,
     origin: session.origin,
     subagent: session.subagent,
     modelSelection: session.modelSelection,
@@ -1129,6 +1142,96 @@ export interface IpcHandlerOptions {
   workbenchWindowManager?: WorkbenchWindowManager
 }
 
+interface AutomationEventBridge {
+  readonly lastEventID: string | undefined
+  readonly disposed: boolean
+  start(): void
+  dispose(): void
+}
+
+function createAutomationEventBridge(): AutomationEventBridge {
+  let lastEventID: string | undefined
+  let disposed = false
+  let abortController: AbortController | null = null
+  let restartTimer: ReturnType<typeof setTimeout> | null = null
+
+  const sendToAllWindows = (event: AgentAutomationIPCEvent) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.isDestroyed()) continue
+      sendDesktopIpcEvent(window.webContents, AUTOMATION_EVENT_CHANNEL, event)
+    }
+  }
+
+  const scheduleRestart = () => {
+    if (disposed || restartTimer) return
+    restartTimer = setTimeout(() => {
+      restartTimer = null
+      void connect()
+    }, 500)
+  }
+
+  const connect = async () => {
+    if (disposed) return
+
+    abortController?.abort()
+    abortController = new AbortController()
+
+    try {
+      const response = await fetch(resolveAgentURL("/api/automation-events/stream"), {
+        headers: lastEventID
+          ? {
+              "Last-Event-ID": lastEventID,
+            }
+          : undefined,
+        signal: abortController.signal,
+      })
+
+      if (!response.ok) {
+        const envelope = (await response.json().catch(() => null)) as AgentEnvelope<unknown> | null
+        throw new Error(envelope?.error?.message || `Automation event stream failed (${response.status})`)
+      }
+
+      await readAgentSSEStream(response, (item) => {
+        if (disposed) return
+        if (item.id) lastEventID = item.id
+        sendToAllWindows({
+          id: item.id,
+          event: item.event,
+          data: item.data,
+          receivedAt: Date.now(),
+        })
+      })
+
+      if (!disposed) scheduleRestart()
+    } catch (error) {
+      if (disposed || isAbortError(error)) return
+      safeWarn("[desktop] automation event stream failed:", error)
+      scheduleRestart()
+    }
+  }
+
+  return {
+    get lastEventID() {
+      return lastEventID
+    },
+    get disposed() {
+      return disposed
+    },
+    start() {
+      void connect()
+    },
+    dispose() {
+      disposed = true
+      if (restartTimer) {
+        clearTimeout(restartTimer)
+        restartTimer = null
+      }
+      abortController?.abort()
+      abortController = null
+    },
+  }
+}
+
 export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandlerOptions = {}) {
   const platformAdapter = createPlatformAdapter({
     platform: process.platform,
@@ -1147,6 +1250,11 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
         sendDesktopIpcEvent(window.webContents, DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL, state)
       }
     })
+  }
+
+  if (!automationEventBridgeRegistered) {
+    automationEventBridgeRegistered = true
+    createAutomationEventBridge().start()
   }
 
   function getCachedAvailableExternalEditors() {
@@ -3025,6 +3133,103 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   handleDesktopIpc("desktop:update-tool-permission-mode", async (_event, input: AgentToolPermissionModePayload) =>
     updateToolPermissionMode(input),
   )
+
+  handleDesktopIpc("desktop:list-automations", async () => {
+    const result = await requestAgentJSON<AgentAutomationDefinition[]>("/api/automations")
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:create-automation", async (_event, input: AgentAutomationCreateInput) => {
+    const result = await requestAgentJSON<AgentAutomationDefinition>("/api/automations", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
+    })
+    return result.data
+  })
+
+  handleDesktopIpc(
+    "desktop:update-automation",
+    async (_event, input: { automationID: string; automation: AgentAutomationUpdateInput }) => {
+      const automationID = input.automationID.trim()
+      const result = await requestAgentJSON<AgentAutomationDefinition>(
+        `/api/automations/${encodeURIComponent(automationID)}`,
+        {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input.automation),
+        },
+      )
+      return result.data
+    },
+  )
+
+  handleDesktopIpc("desktop:delete-automation", async (_event, input: { automationID: string }) => {
+    const automationID = input.automationID.trim()
+    const result = await requestAgentJSON<AgentAutomationDeleteResult>(
+      `/api/automations/${encodeURIComponent(automationID)}`,
+      {
+        method: "DELETE",
+      },
+    )
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:run-automation", async (_event, input: { automationID: string }) => {
+    const automationID = input.automationID.trim()
+    const result = await requestAgentJSON<AgentAutomationRunCreateResult>(
+      `/api/automations/${encodeURIComponent(automationID)}/run`,
+      {
+        method: "POST",
+      },
+    )
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:list-automation-runs", async (_event, input?: AgentAutomationRunListInput) => {
+    const params = new URLSearchParams()
+    if (input?.automationID?.trim()) params.set("automationID", input.automationID.trim())
+    if (input?.triageStatus) params.set("triageStatus", input.triageStatus)
+    if (input?.limit) params.set("limit", String(input.limit))
+    const suffix = params.size > 0 ? `?${params.toString()}` : ""
+    const result = await requestAgentJSON<AgentAutomationRun[]>(`/api/automation-runs${suffix}`)
+    return result.data
+  })
+
+  handleDesktopIpc(
+    "desktop:update-automation-run-triage",
+    async (_event, input: { runID: string; triageStatus: AgentAutomationTriageStatus }) => {
+      const runID = input.runID.trim()
+      const result = await requestAgentJSON<AgentAutomationRun | null>(
+        `/api/automation-runs/${encodeURIComponent(runID)}/triage`,
+        {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            triageStatus: input.triageStatus,
+          }),
+        },
+      )
+      return result.data
+    },
+  )
+
+  handleDesktopIpc("desktop:cancel-automation-run", async (_event, input: { runID: string }) => {
+    const runID = input.runID.trim()
+    const result = await requestAgentJSON<AgentAutomationRun | null>(
+      `/api/automation-runs/${encodeURIComponent(runID)}/cancel`,
+      {
+        method: "POST",
+      },
+    )
+    return result.data
+  })
 
   handleDesktopIpc("desktop:get-global-skills", async () => {
     const result = await requestAgentJSON<AgentSkillInfo[]>("/api/skills")
