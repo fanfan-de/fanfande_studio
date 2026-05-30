@@ -1,0 +1,21 @@
+{
+  "name": "test-plugin",
+  "version": "1.0.0",
+  "description": "一个测试版插件，用于验证插件创建流程。",
+  "author": {
+    "name": "Test Developer"
+  },
+  "license": "MIT",
+  "keywords": ["test", "demo"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "测试插件",
+    "shortDescription": "一个简单的测试插件，演示插件基本结构。",
+    "longDescription": "这是一个测试版插件，包含一个 hello-world skill，用于验证 Fanfande Studio 插件系统的创建、加载和运行流程。",
+    "developerName": "Test Developer",
+    "category": "Docs",
+    "capabilities": ["Read"],
+    "defaultPrompt": ["用测试插件打个招呼。"],
+    "logo": "docs"
+  }
+}

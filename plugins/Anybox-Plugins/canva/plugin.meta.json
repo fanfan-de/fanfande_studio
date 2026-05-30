@@ -1,0 +1,56 @@
+{
+  "id": "canva",
+  "name": "canva",
+  "version": "1.0.0",
+  "description": "Search, create, edit designs",
+  "author": {
+    "name": "Canva",
+    "url": "https://www.canva.com"
+  },
+  "homepage": "https://www.canva.com",
+  "repository": "https://github.com/openai/plugins",
+  "license": "MIT",
+  "keywords": [],
+  "interface": {
+    "displayName": "Canva",
+    "developerName": "Canva",
+    "shortDescription": "Search, create, edit designs",
+    "longDescription": "Search, create, edit designs",
+    "category": "Docs",
+    "capabilities": [],
+    "websiteURL": "https://www.canva.com",
+    "privacyPolicyURL": "https://www.canva.com/policies/privacy-policy/",
+    "termsOfServiceURL": "https://www.canva.com/policies/terms-of-use/",
+    "brandColor": "#00C4CC",
+    "defaultPrompt": [
+      "Create or adapt a Canva design for presentations, resized social variants, or translated versions"
+    ],
+    "screenshots": [],
+    "composerIcon": "./assets/app-icon.png",
+    "logo": "./assets/app-icon.png"
+  },
+  "skills": "./skills/",
+  "skillPreviews": [
+    {
+      "name": "canva-branded-presentation",
+      "description": "Create on-brand Canva presentations from a brief, outline, existing Canva doc, or design link. Use when the user wants a branded slide deck, wants to turn notes into a presentation, or needs a presentation generated in Canva with the right brand kit and a clear slide plan.",
+      "directory": "canva-branded-presentation"
+    },
+    {
+      "name": "canva-resize-for-all-social-media",
+      "description": "Resize a Canva design into standard social media formats and prepare export-ready results. Use when the user wants one Canva design adapted across multiple social platforms such as Facebook, Instagram, and LinkedIn, especially when they want all variants produced in one pass.",
+      "directory": "canva-resize-for-all-social-media"
+    },
+    {
+      "name": "canva-translate-design",
+      "description": "Translate the text in a Canva design into another language while preserving the original layout as much as possible. Use when the user wants a localized or translated version of an existing Canva design and expects the original file to remain unchanged.",
+      "directory": "canva-translate-design"
+    }
+  ],
+  "package": {
+    "type": "zip",
+    "url": "https://raw.githubusercontent.com/fanfan-de/Anybox-Plugins/main/canva/canva-1.0.0.zip",
+    "sha256": "d00ea06c8415bae02625fb20b1d3db470a79f6b79a4a0d5bd7eb1346d512a6b4",
+    "size": 1100930
+  }
+}

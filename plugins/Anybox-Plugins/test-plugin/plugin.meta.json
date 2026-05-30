@@ -1,0 +1,43 @@
+{
+  "id": "test-plugin",
+  "name": "test-plugin",
+  "version": "1.0.0",
+  "description": "一个测试版插件，用于验证插件创建流程。",
+  "author": {
+    "name": "Test Developer"
+  },
+  "license": "MIT",
+  "keywords": [
+    "test",
+    "demo"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "测试插件",
+    "shortDescription": "一个简单的测试插件，演示插件基本结构。",
+    "longDescription": "这是一个测试版插件，包含一个 hello-world skill，用于验证 Fanfande Studio 插件系统的创建、加载和运行流程。",
+    "developerName": "Test Developer",
+    "category": "Docs",
+    "capabilities": [
+      "Read"
+    ],
+    "logo": "docs",
+    "screenshots": [],
+    "defaultPrompt": [
+      "用测试插件打个招呼。"
+    ]
+  },
+  "skillPreviews": [
+    {
+      "name": "hello-world",
+      "description": "一个简单的打招呼 skill，用于测试插件是否正常工作。当用户说\"打个招呼\"、\"测试插件\"或\"hello\"时触发。",
+      "directory": "hello-world"
+    }
+  ],
+  "package": {
+    "type": "zip",
+    "url": "https://raw.githubusercontent.com/fanfan-de/Anybox-Plugins/main/test-plugin/test-plugin-1.0.0.zip",
+    "sha256": "16e079980561e07bcf299196ce04c271119d9125e3224dcd8f80f4c938da7f37",
+    "size": 1272
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "id": "context7",
+  "name": "context7",
+  "version": "1.0.0",
+  "description": "Fetch library and framework documentation through the remote Context7 MCP endpoint.",
+  "author": {
+    "name": "Context7",
+    "url": "https://context7.com"
+  },
+  "homepage": "https://context7.com",
+  "interface": {
+    "displayName": "Context7 Docs",
+    "shortDescription": "Fetch library and framework docs.",
+    "developerName": "Context7",
+    "category": "Docs",
+    "capabilities": [
+      "Read"
+    ],
+    "logo": "docs",
+    "screenshots": [],
+    "longDescription": "Fetch library and framework documentation through the remote Context7 MCP endpoint."
+  },
+  "mcpServers": [
+    {
+      "name": "Context7 Docs",
+      "risk": "low",
+      "permissions": [
+        "Network access to https://mcp.context7.com",
+        "Read-only documentation lookup tools"
+      ],
+      "tools": [
+        {
+          "name": "resolve-library-id",
+          "title": "Resolve Library",
+          "description": "Resolve a package or library name to a documentation identifier.",
+          "readOnly": true
+        },
+        {
+          "name": "get-library-docs",
+          "title": "Get Docs",
+          "description": "Read documentation snippets for a resolved library.",
+          "readOnly": true
+        }
+      ],
+      "runtime": {
+        "transport": "remote",
+        "serverUrl": "https://mcp.context7.com/mcp",
+        "allowedTools": {
+          "readOnly": true
+        },
+        "requireApproval": "never",
+        "timeoutMs": 30000
+      },
+      "installReview": [
+        "The remote endpoint is limited to tools annotated as read-only.",
+        "No local command is started for this plugin."
+      ]
+    }
+  ],
+  "skillPreviews": [],
+  "package": {
+    "type": "zip",
+    "url": "https://raw.githubusercontent.com/fanfan-de/Anybox-Plugins/main/context7/context7-1.0.0.zip",
+    "sha256": "a641d2f2a5cfe1ec095bb7923dbee36819db46409b799e5fffeb2fbd074caa05",
+    "size": 1364
+  }
+}

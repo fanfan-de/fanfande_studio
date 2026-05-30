@@ -1,0 +1,111 @@
+{
+  "id": "github",
+  "name": "github",
+  "version": "1.0.0",
+  "description": "Inspect repositories, issues, pull requests, and GitHub metadata through a GitHub MCP server.",
+  "author": {
+    "name": "Model Context Protocol",
+    "url": "https://github.com/modelcontextprotocol/servers"
+  },
+  "homepage": "https://github.com/modelcontextprotocol/servers",
+  "interface": {
+    "displayName": "GitHub",
+    "shortDescription": "Inspect repositories, issues, and pull requests.",
+    "developerName": "Model Context Protocol",
+    "category": "Git",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "logo": "git",
+    "screenshots": [],
+    "longDescription": "Inspect repositories, issues, pull requests, and GitHub metadata through a GitHub MCP server."
+  },
+  "mcpServers": [
+    {
+      "name": "GitHub",
+      "risk": "medium",
+      "permissions": [
+        "Network access to GitHub APIs",
+        "Uses GITHUB_PERSONAL_ACCESS_TOKEN as a process environment variable",
+        "Can expose repository, issue, and pull request tools"
+      ],
+      "tools": [
+        {
+          "name": "search_repositories",
+          "title": "Search Repositories",
+          "description": "Search GitHub repositories.",
+          "readOnly": true
+        },
+        {
+          "name": "get_file_contents",
+          "title": "Read File",
+          "description": "Read file contents from a repository.",
+          "readOnly": true
+        },
+        {
+          "name": "create_issue",
+          "title": "Create Issue",
+          "description": "Create an issue in a repository.",
+          "readOnly": false
+        }
+      ],
+      "configFields": [
+        {
+          "key": "GITHUB_PERSONAL_ACCESS_TOKEN",
+          "label": "GitHub token",
+          "type": "password",
+          "required": true,
+          "secret": true,
+          "placeholder": "ghp_...",
+          "description": "A personal access token with the repository scopes needed for the tools you enable."
+        }
+      ],
+      "runtime": {
+        "transport": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-github"
+        ],
+        "env": {
+          "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+        },
+        "timeoutMs": 30000
+      },
+      "installReview": [
+        "The token is passed only to the external MCP process as GITHUB_PERSONAL_ACCESS_TOKEN.",
+        "Write actions still require runtime tool permission approval."
+      ]
+    }
+  ],
+  "skillPreviews": [
+    {
+      "name": "gh-address-comments",
+      "description": "Address actionable GitHub pull request review feedback. Use when the user wants to inspect unresolved review threads, requested changes, or inline review comments on a PR, then implement selected fixes. Use the GitHub app for PR metadata and flat comment reads, and use the bundled GraphQL script via `gh` whenever thread-level state, resolution status, or inline review context matters.",
+      "directory": "gh-address-comments"
+    },
+    {
+      "name": "gh-fix-ci",
+      "description": "Use when a user asks to debug or fix failing GitHub PR checks that run in GitHub Actions. Use the GitHub app from this plugin for PR metadata and patch context, and use `gh` for Actions check and log inspection before implementing any approved fix.",
+      "directory": "gh-fix-ci"
+    },
+    {
+      "name": "github",
+      "description": "Triage and orient GitHub repository, pull request, and issue work through the connected GitHub app. Use when the user asks for general GitHub help, wants PR or issue summaries, or needs repository context before choosing a more specific GitHub workflow.",
+      "directory": "github"
+    },
+    {
+      "name": "yeet",
+      "description": "Publish local changes to GitHub by confirming scope, committing intentionally, pushing the branch, and opening a draft PR through the GitHub app from this plugin, with `gh` used only as a fallback where connector coverage is insufficient.",
+      "directory": "yeet"
+    }
+  ],
+  "package": {
+    "type": "zip",
+    "url": "https://raw.githubusercontent.com/fanfan-de/Anybox-Plugins/main/github/github-1.0.0.zip",
+    "sha256": "1dad01fb6c4c270249e647f1bc2462c03ae7ed58e34b8e173caa0801cc6acb06",
+    "size": 70366
+  },
+  "skills": "./skills/"
+}

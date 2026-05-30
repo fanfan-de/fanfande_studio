@@ -1,0 +1,78 @@
+{
+  "id": "playwright",
+  "name": "playwright",
+  "version": "1.0.0",
+  "description": "Drive a local browser through MCP for page inspection, screenshots, and interaction testing.",
+  "author": {
+    "name": "Microsoft Playwright",
+    "url": "https://github.com/microsoft/playwright-mcp"
+  },
+  "homepage": "https://github.com/microsoft/playwright-mcp",
+  "interface": {
+    "displayName": "Playwright Browser",
+    "shortDescription": "Drive a local browser through MCP.",
+    "developerName": "Microsoft Playwright",
+    "category": "Browser",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "logo": "PW",
+    "screenshots": [],
+    "longDescription": "Drive a local browser through MCP for page inspection, screenshots, and interaction testing.",
+    "iconUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij4KICA8cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjI4IiBmaWxsPSIjMTExODI3Ii8+CiAgPHBhdGggZD0iTTI3IDQ4YzAtMTIgMTAtMjIgMjItMjJoN3Y1M2MwIDEzLTEwIDIzLTIzIDIzaC02VjQ4WiIgZmlsbD0iIzJFQUQzMyIvPgogIDxwYXRoIGQ9Ik03MiAyNmg3YzEyIDAgMjIgMTAgMjIgMjJ2NTRoLTZjLTEzIDAtMjMtMTAtMjMtMjNWMjZaIiBmaWxsPSIjOEI1Q0Y2Ii8+CiAgPHBhdGggZD0iTTM5IDU4YzQtNSAxMC01IDE0IDBNNzcgNThjNC01IDEwLTUgMTQgMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjRkZGRkZGIiBzdHJva2Utd2lkdGg9IjYiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik00NCA4M2MxMCA3IDMwIDcgNDAgMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjRkZGRkZGIiBzdHJva2Utd2lkdGg9IjciIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik01NiAyNmgxNnY0Mkg1NnoiIGZpbGw9IiMxMTE4MjciIG9wYWNpdHk9IjAuMjgiLz4KPC9zdmc+",
+    "brandColor": "#2EAD33"
+  },
+  "mcpServers": [
+    {
+      "name": "Playwright Browser",
+      "risk": "medium",
+      "permissions": [
+        "Starts a local browser process",
+        "Can navigate to network URLs",
+        "Can click and type on pages"
+      ],
+      "tools": [
+        {
+          "name": "browser_navigate",
+          "title": "Navigate",
+          "description": "Open a URL in the controlled browser.",
+          "readOnly": false
+        },
+        {
+          "name": "browser_snapshot",
+          "title": "Snapshot",
+          "description": "Read the current page accessibility snapshot.",
+          "readOnly": true
+        },
+        {
+          "name": "browser_click",
+          "title": "Click",
+          "description": "Click a visible element on the page.",
+          "readOnly": false
+        }
+      ],
+      "runtime": {
+        "transport": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@playwright/mcp@latest"
+        ],
+        "timeoutMs": 30000
+      },
+      "installReview": [
+        "The plugin launches a browser automation server as an external process.",
+        "Tool calls can interact with pages after the existing permission layer approves them."
+      ]
+    }
+  ],
+  "skillPreviews": [],
+  "package": {
+    "type": "zip",
+    "url": "https://raw.githubusercontent.com/fanfan-de/Anybox-Plugins/main/playwright/playwright-1.0.0.zip",
+    "sha256": "80a73e1490830f7d5dd1b052a9240a52cd1786c1e58bdd0b389062e2316e8f27",
+    "size": 1415
+  }
+}

@@ -1,0 +1,9 @@
+Obsidian logo asset
+
+Source: https://commons.wikimedia.org/wiki/File:2023_Obsidian_logo.svg
+Original SVG: https://upload.wikimedia.org/wikipedia/commons/1/10/2023_Obsidian_logo.svg
+Author listed by source: Stephan Ango
+License listed by source: Creative Commons Attribution-Share Alike 4.0 International
+Downloaded variants:
+- icon.png: https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/2023_Obsidian_logo.svg/500px-2023_Obsidian_logo.svg.png
+- logo.png: https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/2023_Obsidian_logo.svg/960px-2023_Obsidian_logo.svg.png
