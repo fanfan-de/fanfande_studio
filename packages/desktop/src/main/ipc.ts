@@ -1432,6 +1432,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   }
 
   const computerUseOverlay = new ComputerUseOverlayManager({
+    appName: "Anybox",
     onCancel: cancelAgentSessionFromComputerUseOverlay,
   })
 

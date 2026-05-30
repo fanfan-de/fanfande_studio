@@ -3,6 +3,7 @@ import { safeError, safeWarn } from "./safe-console"
 
 const COMPUTER_USE_TOOL_PREFIX = "mcp_plugin_computer_use_windows_windows_"
 const COMPUTER_USE_TITLE_PREFIX = "Computer Use Windows/"
+const COMPUTER_USE_PRESS_KEY_TOOL = `${COMPUTER_USE_TOOL_PREFIX}press_key`
 const COMPUTER_USE_SHORTCUTS = ["Esc", "Escape"] as const
 const DEFAULT_MIN_VISIBLE_MS = 700
 const DEFAULT_IDLE_HIDE_MS = 250
@@ -22,6 +23,7 @@ export type ComputerUseRuntimeEvent =
       type: "tool-started"
       callKey: string
       callID: string
+      suppressCancelShortcut?: boolean
       title?: string
       tool: string
       turnID?: string
@@ -40,6 +42,7 @@ export type ComputerUseRuntimeEvent =
     }
 
 interface ComputerUseOverlayManagerOptions {
+  appName?: string
   idleHideMs?: number
   minVisibleMs?: number
   onCancel?: (context: ComputerUseOverlayContext) => Promise<void> | void
@@ -70,11 +73,48 @@ function readToolPart(data: unknown) {
 }
 
 function readToolTitle(part: Record<string, unknown>) {
-  const state = part.state
+  const state = readToolState(part)
   if (isRecord(state)) {
     return readString(state.title)
   }
   return undefined
+}
+
+function readToolState(part: Record<string, unknown>) {
+  return isRecord(part.state) ? part.state : null
+}
+
+function readToolInput(part: Record<string, unknown>) {
+  const state = readToolState(part)
+  if (!state) return null
+
+  if (isRecord(state.input)) {
+    if (Object.keys(state.input).length > 0) {
+      return state.input
+    }
+  }
+
+  const raw = readString(state.raw)
+  if (!raw) return isRecord(state.input) ? state.input : null
+
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return isRecord(parsed) ? parsed : null
+  } catch {
+    return isRecord(state.input) ? state.input : null
+  }
+}
+
+function isEscapeKey(value: unknown) {
+  if (typeof value !== "string") return false
+  const key = value.trim().toLowerCase()
+  return key === "esc" || key === "escape"
+}
+
+function shouldSuppressCancelShortcut(part: Record<string, unknown>, tool: string) {
+  if (tool !== COMPUTER_USE_PRESS_KEY_TOOL) return false
+  const input = readToolInput(part)
+  return Array.isArray(input?.keys) && input.keys.some(isEscapeKey)
 }
 
 function isComputerUseToolPart(part: Record<string, unknown>) {
@@ -116,11 +156,21 @@ export function readComputerUseRuntimeEvent(input: {
   const tool = readString(part.tool)
   if (!callID || !tool) return null
 
-  if (runtimeType === "tool.call.started" || runtimeType === "tool.call.waiting_approval") {
+  const shouldSuppress = shouldSuppressCancelShortcut(part, tool)
+  if (
+    runtimeType === "tool.call.started" ||
+    runtimeType === "tool.call.waiting_approval" ||
+    (runtimeType === "tool.call.pending" && shouldSuppress)
+  ) {
     return {
       type: "tool-started",
       callKey: buildCallKey(input.data, callID),
       callID,
+      ...(shouldSuppress
+        ? {
+            suppressCancelShortcut: true,
+          }
+        : {}),
       title: readToolTitle(part),
       tool,
       turnID: readString(input.data.turnID),
@@ -147,6 +197,9 @@ export function readComputerUseRuntimeEvent(input: {
 
 export class ComputerUseOverlayManager {
   private readonly activeCalls = new Map<string, ComputerUseOverlayContext>()
+  private readonly activeTurns = new Map<string, ComputerUseOverlayContext>()
+  private readonly appName: string
+  private readonly cancelShortcutSuppressedCallKeys = new Set<string>()
   private readonly idleHideMs: number
   private latestContext: ComputerUseOverlayContext | null = null
   private readonly minVisibleMs: number
@@ -158,6 +211,7 @@ export class ComputerUseOverlayManager {
   private hideTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(options: ComputerUseOverlayManagerOptions = {}) {
+    this.appName = options.appName?.trim() || "Anybox"
     this.idleHideMs = options.idleHideMs ?? DEFAULT_IDLE_HIDE_MS
     this.minVisibleMs = options.minVisibleMs ?? DEFAULT_MIN_VISIBLE_MS
     this.onCancel = options.onCancel
@@ -170,6 +224,7 @@ export class ComputerUseOverlayManager {
     if (event.type === "turn-settled") {
       this.clearForTurn({
         backendSessionID: input.backendSessionID,
+        clientTurnID: input.clientTurnID,
         turnID: event.turnID,
         webContentsID: input.target.id,
       })
@@ -186,17 +241,25 @@ export class ComputerUseOverlayManager {
         turnID: event.turnID,
         webContentsID: input.target.id,
       }
+      if (event.suppressCancelShortcut) {
+        this.cancelShortcutSuppressedCallKeys.add(event.callKey)
+      }
       this.activeCalls.set(event.callKey, context)
+      this.activeTurns.set(this.contextTurnKey(context), context)
       this.latestContext = context
       this.show()
       return
     }
 
     this.activeCalls.delete(event.callKey)
+    this.cancelShortcutSuppressedCallKeys.delete(event.callKey)
     this.latestContext = this.lastActiveContext()
-    if (this.activeCalls.size === 0) {
+    if (this.activeCalls.size === 0 && this.activeTurns.size === 0) {
+      this.syncCancelShortcut()
       this.scheduleHide()
+      return
     }
+    this.syncCancelShortcut()
   }
 
   clearForRequest(input: { backendSessionID: string; clientTurnID?: string; webContentsID: number }) {
@@ -205,50 +268,91 @@ export class ComputerUseOverlayManager {
       if (context.backendSessionID !== input.backendSessionID) continue
       if (input.clientTurnID && context.clientTurnID && context.clientTurnID !== input.clientTurnID) continue
       this.activeCalls.delete(key)
+      this.cancelShortcutSuppressedCallKeys.delete(key)
+    }
+    for (const [key, context] of this.activeTurns.entries()) {
+      if (context.webContentsID !== input.webContentsID) continue
+      if (context.backendSessionID !== input.backendSessionID) continue
+      if (input.clientTurnID && context.clientTurnID && context.clientTurnID !== input.clientTurnID) continue
+      this.activeTurns.delete(key)
     }
 
     this.latestContext = this.lastActiveContext()
-    if (this.activeCalls.size === 0) {
+    if (this.activeCalls.size === 0 && this.activeTurns.size === 0) {
+      this.syncCancelShortcut()
       this.scheduleHide()
+      return
     }
+    this.syncCancelShortcut()
   }
 
   clearForWebContents(webContentsID: number) {
     for (const [key, context] of this.activeCalls.entries()) {
       if (context.webContentsID === webContentsID) {
         this.activeCalls.delete(key)
+        this.cancelShortcutSuppressedCallKeys.delete(key)
+      }
+    }
+    for (const [key, context] of this.activeTurns.entries()) {
+      if (context.webContentsID === webContentsID) {
+        this.activeTurns.delete(key)
       }
     }
 
     this.latestContext = this.lastActiveContext()
-    if (this.activeCalls.size === 0) {
+    if (this.activeCalls.size === 0 && this.activeTurns.size === 0) {
+      this.syncCancelShortcut()
       this.scheduleHide()
+      return
     }
+    this.syncCancelShortcut()
   }
 
   destroy() {
     this.activeCalls.clear()
+    this.activeTurns.clear()
+    this.cancelShortcutSuppressedCallKeys.clear()
     this.latestContext = null
     this.hideNow()
   }
 
-  private clearForTurn(input: { backendSessionID: string; turnID?: string; webContentsID: number }) {
+  private clearForTurn(input: { backendSessionID: string; clientTurnID?: string; turnID?: string; webContentsID: number }) {
     for (const [key, context] of this.activeCalls.entries()) {
       if (context.webContentsID !== input.webContentsID) continue
       if (context.backendSessionID !== input.backendSessionID) continue
-      if (input.turnID && context.turnID !== input.turnID) continue
+      if (input.turnID && context.turnID && context.turnID !== input.turnID) continue
+      if (input.clientTurnID && context.clientTurnID && context.clientTurnID !== input.clientTurnID) continue
       this.activeCalls.delete(key)
+      this.cancelShortcutSuppressedCallKeys.delete(key)
+    }
+    for (const [key, context] of this.activeTurns.entries()) {
+      if (context.webContentsID !== input.webContentsID) continue
+      if (context.backendSessionID !== input.backendSessionID) continue
+      if (input.turnID && context.turnID && context.turnID !== input.turnID) continue
+      if (input.clientTurnID && context.clientTurnID && context.clientTurnID !== input.clientTurnID) continue
+      this.activeTurns.delete(key)
     }
 
     this.latestContext = this.lastActiveContext()
-    if (this.activeCalls.size === 0) {
+    if (this.activeCalls.size === 0 && this.activeTurns.size === 0) {
+      this.syncCancelShortcut()
       this.scheduleHide()
+      return
     }
+    this.syncCancelShortcut()
   }
 
   private lastActiveContext() {
-    const contexts = [...this.activeCalls.values()]
+    const contexts = [...this.activeCalls.values(), ...this.activeTurns.values()]
     return contexts.length ? contexts[contexts.length - 1] : null
+  }
+
+  private contextTurnKey(context: ComputerUseOverlayContext) {
+    return [
+      context.webContentsID,
+      context.backendSessionID,
+      context.turnID ?? context.clientTurnID ?? "unknown-turn",
+    ].join(":")
   }
 
   private show() {
@@ -260,7 +364,7 @@ export class ComputerUseOverlayManager {
       this.registerDisplayListeners()
     }
 
-    this.registerCancelShortcut()
+    this.syncCancelShortcut()
   }
 
   private createWindows() {
@@ -293,7 +397,7 @@ export class ComputerUseOverlayManager {
 
       win.setIgnoreMouseEvents(true, { forward: true })
       this.applyAlwaysOnTop(win)
-      win.loadURL(createOverlayDataURL()).catch((error) => {
+      win.loadURL(createOverlayDataURL(this.appName)).catch((error) => {
         safeError("[desktop][computer-use-overlay] failed to load overlay", error)
       })
       win.once("ready-to-show", () => {
@@ -364,9 +468,23 @@ export class ComputerUseOverlayManager {
     this.registeredShortcut = null
   }
 
+  private syncCancelShortcut() {
+    const hasActiveContext = this.activeCalls.size > 0 || this.activeTurns.size > 0
+    if (!hasActiveContext || this.cancelShortcutSuppressedCallKeys.size > 0) {
+      this.unregisterCancelShortcut()
+      return
+    }
+
+    this.registerCancelShortcut()
+  }
+
   private async cancelFromShortcut() {
+    if (this.cancelShortcutSuppressedCallKeys.size > 0) return
+
     const context = this.latestContext
     this.activeCalls.clear()
+    this.activeTurns.clear()
+    this.cancelShortcutSuppressedCallKeys.clear()
     this.latestContext = null
     this.hideNow()
 
@@ -413,7 +531,17 @@ export class ComputerUseOverlayManager {
   }
 }
 
-function createOverlayDataURL() {
+function escapeHTML(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;")
+}
+
+function createOverlayDataURL(appName: string) {
+  const safeAppName = escapeHTML(appName)
   const html = `<!doctype html>
 <html>
   <head>
@@ -499,7 +627,7 @@ function createOverlayDataURL() {
   </head>
   <body>
     <main class="computer-use-overlay" aria-hidden="true">
-      <div class="computer-use-banner">Codex is using your computer&nbsp;&nbsp;<span>- Esc to cancel</span></div>
+      <div class="computer-use-banner">${safeAppName} is using your computer&nbsp;&nbsp;<span>- Esc to cancel</span></div>
     </main>
   </body>
 </html>`
