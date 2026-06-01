@@ -5,6 +5,8 @@ import type {
   AgentWorkspaceFileDocument,
   AgentWorkspaceFileSearchResult,
 } from "./types"
+import { getLocalImageMimeType, LOCAL_IMAGE_MAX_BYTES } from "./local-image-protocol"
+import { toLocalImageProtocolUrl } from "../shared/local-image-protocol"
 
 const EXCLUDED_DIRECTORY_NAMES = new Set([".git", "node_modules", "dist", "build", "out"])
 const HIDDEN_DIRECTORY_NAMES = new Set([".git"])
@@ -25,6 +27,7 @@ const TEXT_FILE_EXTENSIONS = new Set([
 ])
 const SEARCH_RESULT_LIMIT = 200
 const UNSUPPORTED_FILE_MESSAGE = "This file type is not supported in the Files panel yet."
+const IMAGE_TOO_LARGE_MESSAGE = "This image is too large to preview in the Files panel."
 
 function getFileExtension(fileName: string) {
   const extension = extname(fileName).slice(1).toLowerCase()
@@ -196,6 +199,30 @@ export async function readWorkspaceFile(
   const name = basename(resolvedFilePath)
   const extension = getFileExtension(name)
   const normalizedPath = toRelativeWorkspacePath(workspaceRoot, resolvedFilePath)
+  const imageMimeType = getLocalImageMimeType(resolvedFilePath)
+  if (imageMimeType) {
+    const previewUrl = toLocalImageProtocolUrl(resolvedFilePath)
+    if (fileStats.size > LOCAL_IMAGE_MAX_BYTES || !previewUrl) {
+      return {
+        path: normalizedPath,
+        name,
+        extension,
+        kind: "unsupported",
+        unsupportedReason: IMAGE_TOO_LARGE_MESSAGE,
+      }
+    }
+
+    return {
+      path: normalizedPath,
+      name,
+      extension,
+      kind: "image",
+      mimeType: imageMimeType,
+      previewUrl,
+      size: fileStats.size,
+    }
+  }
+
   if (!extension || !TEXT_FILE_EXTENSIONS.has(extension)) {
     return {
       path: normalizedPath,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import {
   ChevronDownIcon,
@@ -75,17 +75,21 @@ const CATEGORY_FILTERS: Array<PluginCategory | "All"> = [
 
 const CATEGORY_LABELS: Record<PluginCategory | "All", string> = {
   All: "全部",
-  Code: "Coding",
+  Code: "开发",
   Browser: "Browser",
   Git: "Git",
-  Database: "Database",
-  Docs: "Docs",
-  Automation: "Automation",
-  Design: "Design",
+  Database: "数据",
+  Docs: "文档",
+  Automation: "自动化",
+  Design: "设计",
 }
 
 const PUBLISHER_FILTER_ALL = "All"
 const FEATURED_PLUGIN_LIMIT = 3
+
+type PluginVisualStyle = CSSProperties & {
+  "--plugins-brand-color"?: string
+}
 
 function runtimeTitle(runtime: PluginRuntimeTemplate) {
   if (runtime.transport === "stdio") {
@@ -188,6 +192,28 @@ function pluginBrandColor(plugin: PluginCatalogItem) {
   return color && /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color) ? color : undefined
 }
 
+function pluginBrandStyle(plugin: PluginCatalogItem): PluginVisualStyle | undefined {
+  const color = pluginBrandColor(plugin)
+  return color ? { "--plugins-brand-color": color } : undefined
+}
+
+function pluginCapabilityCount(plugin: PluginCatalogItem) {
+  return plugin.mcpServers.length + plugin.skills.length + plugin.connectorRequirements.length + plugin.apps.length
+}
+
+function pluginCapabilityLabel(plugin: PluginCatalogItem) {
+  const count = pluginCapabilityCount(plugin)
+  if (count > 0) return `${count} 项能力`
+  if (plugin.tools.length > 0) return `${plugin.tools.length} 个工具`
+  return "基础插件"
+}
+
+function pluginStoreSourceLabel(plugin: PluginCatalogItem) {
+  if (plugin.source === "package") return "本地包"
+  if (plugin.source === "registry") return "Registry"
+  return "Catalog"
+}
+
 function pluginDetailDescription(plugin: PluginCatalogItem) {
   if (plugin.longDescription?.trim()) return plugin.longDescription.trim()
 
@@ -229,11 +255,13 @@ function PluginMark({ plugin }: { plugin: PluginCatalogItem }) {
 function PluginMarketVisual({ plugin }: { plugin: PluginCatalogItem }) {
   const thumbnail = pluginImageURL(plugin, "thumbnail")
 
-  if (!thumbnail) return <PluginMark plugin={plugin} />
-
   return (
-    <span className="plugins-market-item-visual" aria-hidden="true">
-      <img src={thumbnail} alt="" />
+    <span
+      className={thumbnail ? "plugins-market-item-visual has-image" : "plugins-market-item-visual is-fallback"}
+      aria-hidden="true"
+      style={pluginBrandStyle(plugin)}
+    >
+      {thumbnail ? <img src={thumbnail} alt="" /> : <span className="plugins-market-item-visual-surface" />}
       <span className="plugins-market-item-visual-mark">
         <PluginMark plugin={plugin} />
       </span>
@@ -264,9 +292,15 @@ function PluginMarketItem({
   const installState = packageMissing
     ? "package missing"
     : installed ? (installed.enabled ? "installed enabled" : "installed disabled") : "not installed"
+  const visibleStatus = packageMissing ? "需重新下载" : installed ? (installed.enabled ? "已安装" : "已停用") : null
+  const tags = plugin.tags.slice(0, 2)
+  const sourceLabel = pluginStoreSourceLabel(plugin)
 
   return (
-    <div className={isActive ? "plugins-market-item is-active" : "plugins-market-item"}>
+    <div
+      className={isActive ? "plugins-market-item is-active" : "plugins-market-item"}
+      style={pluginBrandStyle(plugin)}
+    >
       <button
         className="plugins-market-item-main"
         type="button"
@@ -276,8 +310,22 @@ function PluginMarketItem({
       >
         <PluginMarketVisual plugin={plugin} />
         <span className="plugins-market-item-copy">
-          <strong>{plugin.name}</strong>
-          <span>{plugin.description}</span>
+          <span className="plugins-market-item-title-row">
+            <strong>{plugin.name}</strong>
+            {visibleStatus ? <span className="plugins-market-item-state">{visibleStatus}</span> : null}
+          </span>
+          <span className="plugins-market-item-description">{plugin.description}</span>
+          <span className="plugins-market-item-meta" aria-hidden="true">
+            <span>由 {plugin.publisher} 开发</span>
+            <span>{CATEGORY_LABELS[plugin.category]}</span>
+            <span>{pluginCapabilityLabel(plugin)}</span>
+            <span>{sourceLabel}</span>
+          </span>
+          {tags.length > 0 ? (
+            <span className="plugins-market-item-tags" aria-hidden="true">
+              {tags.map((tag) => <span key={tag}>{tag}</span>)}
+            </span>
+          ) : null}
         </span>
       </button>
       <span className="plugins-market-item-status">
@@ -845,7 +893,25 @@ export function PluginsPage({
               {!activePlugin ? (
               <>
                 <header className="plugins-marketplace-header">
-                  <h1>让 Anybox 按你的方式工作</h1>
+                  <div className="plugins-marketplace-title-block">
+                    <span className="plugins-marketplace-eyebrow">Plugin Store</span>
+                    <h1>插件商店</h1>
+                    <p>让 Anybox 按你的方式工作</p>
+                  </div>
+                  <div className="plugins-marketplace-stats" aria-label="Plugin marketplace summary">
+                    <span>
+                      <strong>{pluginCatalog.length}</strong>
+                      <span>插件</span>
+                    </span>
+                    <span>
+                      <strong>{installedPlugins.length}</strong>
+                      <span>已安装</span>
+                    </span>
+                    <span>
+                      <strong>{publisherFilters.length}</strong>
+                      <span>开发者</span>
+                    </span>
+                  </div>
                   <div className="plugins-filter-row" aria-label="Plugin filters">
                     {!hasExternalSearch ? (
                       <label className="plugins-search-control">
@@ -861,10 +927,10 @@ export function PluginsPage({
                     ) : null}
                     <label className="plugins-select-control">
                       <select aria-label="Builder" value={publisherFilter} onChange={(event) => setPublisherFilter(event.target.value)}>
-                        <option value={PUBLISHER_FILTER_ALL}>Built by All</option>
+                        <option value={PUBLISHER_FILTER_ALL}>全部开发者</option>
                         {publisherFilters.map((publisher) => (
                           <option key={publisher} value={publisher}>
-                            Built by {publisher}
+                            由 {publisher} 开发
                           </option>
                         ))}
                       </select>
@@ -1381,7 +1447,7 @@ export function PluginsPage({
                     <div className="plugins-info-table">
                       <div>
                         <span>类别</span>
-                        <strong>Built by {activePlugin.publisher}, {activePlugin.category}</strong>
+                        <strong>由 {activePlugin.publisher} 开发 · {CATEGORY_LABELS[activePlugin.category]}</strong>
                       </div>
                       <div>
                         <span>功能</span>

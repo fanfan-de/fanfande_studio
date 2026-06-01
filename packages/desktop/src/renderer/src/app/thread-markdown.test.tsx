@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { normalizeMarkdownLinkTarget, ThreadMarkdown } from "./thread-markdown"
+import { normalizeMarkdownLinkTarget, ThreadMarkdown, type MarkdownLinkTarget } from "./thread-markdown"
 
 describe("ThreadMarkdown", () => {
   beforeEach(() => {
@@ -212,5 +212,50 @@ describe("ThreadMarkdown", () => {
     expect(screen.getByText("Bad")).toHaveClass("thread-markdown-image-alt")
     expect(screen.getByText("Ftp")).toHaveClass("thread-markdown-image-alt")
     expect(screen.getByText("Relative")).toHaveClass("thread-markdown-image-alt")
+  })
+
+  it("uses optional resolvers for scoped relative links and images", () => {
+    const onLocalFileLinkOpen = vi.fn()
+    const resolveLinkTarget = vi.fn((href: string): MarkdownLinkTarget | null => {
+      if (href !== "../setup.md#L4-L6") return null
+      return {
+        href,
+        kind: "local-file",
+        target: {
+          lineRange: {
+            startLineNumber: 4,
+            endLineNumber: 6,
+          },
+          path: "docs/setup.md",
+        },
+      }
+    })
+    const resolveImageSrc = vi.fn((src: string) =>
+      src === "./assets/logo.png" ? "anybox-local-image://image?source=logo" : null,
+    )
+
+    render(
+      <ThreadMarkdown
+        text="![Logo](./assets/logo.png) [Setup](../setup.md#L4-L6)"
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+        resolveImageSrc={resolveImageSrc}
+        resolveLinkTarget={resolveLinkTarget}
+      />,
+    )
+
+    expect(screen.getByRole("img", { name: "Logo" })).toHaveAttribute(
+      "src",
+      "anybox-local-image://image?source=logo",
+    )
+
+    fireEvent.click(screen.getByRole("link", { name: "Setup" }))
+
+    expect(onLocalFileLinkOpen).toHaveBeenCalledWith({
+      lineRange: {
+        startLineNumber: 4,
+        endLineNumber: 6,
+      },
+      path: "docs/setup.md",
+    })
   })
 })

@@ -908,12 +908,9 @@ body.is-resizing-sidebar .sidebar-resizer::before {
 }
 
 .session-row-source-badge {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  border: 1px solid var(--mix-seg-accent-24-seg-border-76);
-  border-radius: 999px;
-  background: var(--mix-seg-accent-soft-84-transparent-16);
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
   color: var(--seg-accent-strong);
   display: inline-flex;
   align-items: center;
@@ -921,8 +918,8 @@ body.is-resizing-sidebar .sidebar-resizer::before {
 }
 
 .session-row-source-badge svg {
-  width: 11px;
-  height: 11px;
+  width: 13px;
+  height: 13px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;

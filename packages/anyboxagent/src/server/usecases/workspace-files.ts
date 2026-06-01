@@ -1,6 +1,9 @@
+import { readFile } from "node:fs/promises"
 import { posix as path } from "node:path"
+import { isSshWorkspaceUri } from "@anybox/shared"
 import z from "zod"
 import { Instance } from "#project/instance.ts"
+import * as Ssh from "#remote/ssh/index.ts"
 import {
   listDirectoryEntries,
   readTextFile,
@@ -28,6 +31,19 @@ const TEXT_FILE_EXTENSIONS = new Set([
 ])
 const SEARCH_RESULT_LIMIT = 200
 const UNSUPPORTED_FILE_MESSAGE = "This file type is not supported in the Files panel yet."
+const REMOTE_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+const IMAGE_TOO_LARGE_MESSAGE = "This image is too large to preview in the Files panel."
+
+const IMAGE_MIME_TYPES = new Map([
+  ["avif", "image/avif"],
+  ["bmp", "image/bmp"],
+  ["gif", "image/gif"],
+  ["ico", "image/x-icon"],
+  ["jpeg", "image/jpeg"],
+  ["jpg", "image/jpeg"],
+  ["png", "image/png"],
+  ["webp", "image/webp"],
+])
 
 type WorkspaceDirectoryEntryResult = {
   path: string
@@ -55,6 +71,15 @@ export const WorkspaceSearchQuery = z.object({
 function getFileExtension(fileName: string) {
   const extension = path.extname(fileName).slice(1).toLowerCase()
   return extension.length > 0 ? extension : null
+}
+
+function getImageMimeType(extension: string | null) {
+  return extension ? IMAGE_MIME_TYPES.get(extension) ?? null : null
+}
+
+async function readWorkspaceFileBuffer(resolvedPath: string) {
+  if (isSshWorkspaceUri(resolvedPath)) return await Ssh.readFileBuffer(resolvedPath)
+  return await readFile(resolvedPath)
 }
 
 export async function searchWorkspaceFiles(input: z.infer<typeof WorkspaceSearchQuery>) {
@@ -139,6 +164,30 @@ export async function readWorkspaceFile(input: z.infer<typeof WorkspaceFileQuery
       const name = workspacePathBasename(resolved)
       const extension = getFileExtension(name)
       const normalizedPath = toDisplayPath(resolved)
+      const imageMimeType = getImageMimeType(extension)
+      if (imageMimeType) {
+        if (stats.size > REMOTE_IMAGE_MAX_BYTES) {
+          return {
+            path: normalizedPath,
+            name,
+            extension,
+            kind: "unsupported" as const,
+            unsupportedReason: IMAGE_TOO_LARGE_MESSAGE,
+          }
+        }
+
+        const bytes = await readWorkspaceFileBuffer(resolved)
+        return {
+          path: normalizedPath,
+          name,
+          extension,
+          kind: "image" as const,
+          mimeType: imageMimeType,
+          previewUrl: `data:${imageMimeType};base64,${Buffer.from(bytes).toString("base64")}`,
+          size: stats.size,
+        }
+      }
+
       if (!extension || !TEXT_FILE_EXTENSIONS.has(extension)) {
         return {
           path: normalizedPath,

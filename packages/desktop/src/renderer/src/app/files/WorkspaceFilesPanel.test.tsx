@@ -21,6 +21,9 @@ function createFileReviewState(overrides: Partial<WorkspaceFileReviewState> = {}
     selectedFileContent: null,
     selectedFileExtension: null,
     selectedFileKind: null,
+    selectedFileMimeType: null,
+    selectedFilePreviewUrl: null,
+    selectedFileSize: null,
     selectedFilePath: null,
     status: "idle",
     ...overrides,
@@ -33,7 +36,7 @@ function renderWorkspaceFilesPanel(
     onDirectoryLoad: (path: string) => void
     onDirectoryToggle: (path: string) => void
     onQueryChange: (value: string) => void
-    onSelectFile: (path: string) => void
+    onSelectFile: (path: string, options?: { linkedLineRange?: { startLineNumber: number; endLineNumber: number } | null }) => void
     onTreeInvalidate: (paths: string[]) => void
   }> = {},
 ) {
@@ -159,6 +162,86 @@ describe("WorkspaceFilesPanel", () => {
     expect(screen.getByText("src/camera.js")).toBeVisible()
     expect(screen.getByTestId("workspace-file-line-1")).toHaveTextContent("const camera = { x: 0, y: 0 };")
     expect(screen.getByTestId("workspace-file-line-4")).toHaveTextContent("return camera.x;")
+  })
+
+  it("renders Markdown files by default and can switch back to source", () => {
+    renderWorkspaceFilesPanel(
+      createFileReviewState({
+        selectedFileContent: "# Guide\n\n**Ready**",
+        selectedFileExtension: "md",
+        selectedFileKind: "text",
+        selectedFilePath: "README.md",
+        status: "ready",
+      }),
+    )
+
+    expect(screen.getByRole("heading", { name: "Guide" })).toBeVisible()
+    expect(screen.queryByTestId("workspace-file-line-1")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Source/ }))
+
+    expect(screen.getByTestId("workspace-file-line-1")).toHaveTextContent("# Guide")
+    expect(screen.queryByRole("heading", { name: "Guide" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Rendered/ }))
+
+    expect(screen.getByRole("heading", { name: "Guide" })).toBeVisible()
+  })
+
+  it("resolves Markdown relative links and images from the current file directory", () => {
+    const onSelectFile = vi.fn()
+
+    renderWorkspaceFilesPanel(
+      createFileReviewState({
+        selectedFileContent: "![Logo](./assets/logo.png)\n\n[Setup](../setup.md#L4-L6)",
+        selectedFileExtension: "md",
+        selectedFileKind: "text",
+        selectedFilePath: "docs/guides/README.md",
+        status: "ready",
+      }),
+      { onSelectFile },
+    )
+
+    expect(screen.getByRole("img", { name: "Logo" })).toHaveAttribute(
+      "src",
+      `anybox-local-image://image?source=${encodeURIComponent("C:/workspace/docs/guides/assets/logo.png")}`,
+    )
+
+    fireEvent.click(screen.getByRole("link", { name: "Setup" }))
+
+    expect(onSelectFile).toHaveBeenCalledWith("docs/setup.md", {
+      linkedLineRange: {
+        startLineNumber: 4,
+        endLineNumber: 6,
+      },
+    })
+  })
+
+  it("renders image files with preview metadata", () => {
+    renderWorkspaceFilesPanel(
+      createFileReviewState({
+        selectedFileExtension: "png",
+        selectedFileKind: "image",
+        selectedFileMimeType: "image/png",
+        selectedFilePath: "assets/logo.png",
+        selectedFilePreviewUrl: "anybox-local-image://image?source=C%3A%5Cworkspace%5Cassets%5Clogo.png",
+        selectedFileSize: 2048,
+        status: "ready",
+      }),
+    )
+
+    expect(screen.getByText("image/png")).toBeVisible()
+    expect(screen.getByText("2.00 KB")).toBeVisible()
+    expect(screen.getByRole("img", { name: "assets/logo.png" })).toHaveAttribute(
+      "src",
+      "anybox-local-image://image?source=C%3A%5Cworkspace%5Cassets%5Clogo.png",
+    )
+
+    expect(screen.getByRole("button", { name: "Fit" })).toHaveClass("is-active")
+    fireEvent.click(screen.getByRole("button", { name: "100%" }))
+    expect(screen.getByRole("button", { name: "100%" })).toHaveClass("is-active")
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in image" }))
+    expect(screen.getByText("125%")).toBeVisible()
   })
 
   it("highlights and scrolls to linked line ranges without opening a comment draft", () => {

@@ -20,6 +20,7 @@ import {
   EyeOff,
   Expand,
   FileDiff,
+  FileImage,
   FilePlus2,
   FileSearch,
   FileText,
@@ -46,13 +47,16 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Paperclip,
+  Pause,
   Pin,
+  Play,
   Plus,
   Puzzle,
   RotateCcw,
   Search,
   Settings,
   SlidersHorizontal,
+  Smartphone,
   SortAsc,
   Square,
   Sun,
@@ -76,7 +80,9 @@ export const BackIcon = createIcon(ArrowLeft)
 export const ForwardIcon = createIcon(ArrowRight)
 export const FolderOpenIcon = createIcon(FolderOpen)
 export const PaperclipIcon = createIcon(Paperclip)
+export const PauseIcon = createIcon(Pause)
 export const PinIcon = createIcon(Pin)
+export const PlayIcon = createIcon(Play)
 export const CopyIcon = createIcon(Copy)
 export const DownloadIcon = createIcon(Download)
 export const CheckIcon = createIcon(Check)
@@ -91,6 +97,7 @@ export const PushIcon = createIcon(UploadCloud)
 export const PullRequestIcon = createIcon(GitPullRequest)
 export const PreviewIcon = createIcon(Globe)
 export const FileSearchIcon = createIcon(FileSearch)
+export const FileImageIcon = createIcon(FileImage)
 export const FileTextIcon = createIcon(FileText)
 export const SortIcon = createIcon(SortAsc)
 export const NewItemIcon = createIcon(FilePlus2)
@@ -134,6 +141,7 @@ export const SearchIcon = createIcon(Search)
 export const SunIcon = createIcon(Sun)
 export const MoonIcon = createIcon(Moon)
 export const MonitorIcon = createIcon(Monitor)
+export const SmartphoneIcon = createIcon(Smartphone)
 export const GeneralSettingsIcon = createIcon(SlidersHorizontal)
 export const ProviderSettingsIcon = createIcon(CloudCog)
 export const ModelSettingsIcon = createIcon(BrainCircuit)

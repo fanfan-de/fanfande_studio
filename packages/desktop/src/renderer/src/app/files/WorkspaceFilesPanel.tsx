@@ -8,9 +8,14 @@ import {
 import {
   ChevronDownIcon,
   ChevronRightIcon,
+  CodeModeIcon,
+  EyeIcon,
+  ExpandIcon,
+  FileImageIcon,
   FileTextIcon,
   FolderIcon,
   FolderOpenIcon,
+  MinimizeIcon,
   PlusIcon,
   SearchIcon,
 } from "../icons"
@@ -20,9 +25,21 @@ import type {
   WorkspaceFileReviewState,
 } from "../types"
 import { formatTime } from "../utils"
+import {
+  ThreadMarkdown,
+  type MarkdownLinkTarget,
+  type MarkdownLocalFileLinkTarget,
+} from "../thread-markdown"
 import { formatWorkspaceFileLineRangeLabel, normalizeWorkspaceFileLineRange } from "./utils"
+import { toLocalImageProtocolUrl } from "../../../../shared/local-image-protocol"
 
 const ROOT_DIRECTORY_PATH = ""
+const MARKDOWN_FILE_EXTENSIONS = new Set(["md", "markdown"])
+const HASH_LINE_RANGE_PATTERN = /#L(\d+)(?:-L?(\d+))?$/i
+const COLON_LINE_RANGE_PATTERN = /:(\d+)(?:-(\d+))?$/
+const URI_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i
+const URI_WITH_AUTHORITY_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i
+const WINDOWS_DRIVE_PATH_PATTERN = /^[A-Za-z]:[\\/]/
 
 interface WorkspaceFilesPanelProps {
   canInsertCommentsIntoDraft: boolean
@@ -36,7 +53,7 @@ interface WorkspaceFilesPanelProps {
   onPendingCommentConfirm: () => void
   onPendingCommentStart: (startLineNumber: number, endLineNumber?: number) => void
   onQueryChange: (value: string) => void
-  onSelectFile: (path: string) => void
+  onSelectFile: (path: string, options?: { linkedLineRange?: WorkspaceFileLineRange | null }) => void
   onTreeInvalidate: (paths: string[]) => void
 }
 
@@ -48,6 +65,118 @@ function normalizeTreePath(path: string | null | undefined) {
   const normalized = path?.trim().replace(/\\/g, "/").replace(/\/+/g, "/") ?? ""
   if (!normalized || normalized === "." || normalized === "/") return ROOT_DIRECTORY_PATH
   return normalized.replace(/^\/+/, "").replace(/\/+$/, "")
+}
+
+function normalizeFileExtension(extension: string | null | undefined) {
+  const normalized = extension?.trim().replace(/^\./, "").toLowerCase() ?? ""
+  return normalized || null
+}
+
+function isMarkdownExtension(extension: string | null | undefined) {
+  const normalized = normalizeFileExtension(extension)
+  return normalized ? MARKDOWN_FILE_EXTENSIONS.has(normalized) : false
+}
+
+function formatFileSize(size: number | null | undefined) {
+  if (!Number.isFinite(size) || size == null || size < 0) return null
+  const units = ["B", "KB", "MB", "GB"] as const
+  let value = size
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  const formatted = unitIndex === 0 ? String(value) : value.toFixed(value >= 10 ? 1 : 2)
+  return `${formatted} ${units[unitIndex]}`
+}
+
+function isRemoteWorkspaceDirectory(scopeDirectory: string | null | undefined) {
+  const directory = scopeDirectory?.trim() ?? ""
+  return URI_WITH_AUTHORITY_PATTERN.test(directory) && !WINDOWS_DRIVE_PATH_PATTERN.test(directory)
+}
+
+function hasNonFilePathUriScheme(value: string) {
+  return URI_SCHEME_PATTERN.test(value) && !WINDOWS_DRIVE_PATH_PATTERN.test(value)
+}
+
+function decodeMarkdownResource(value: string) {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+function normalizeMarkdownLineRange(startLineNumber: number, endLineNumber = startLineNumber): WorkspaceFileLineRange | null {
+  if (!Number.isSafeInteger(startLineNumber) || !Number.isSafeInteger(endLineNumber)) return null
+  if (startLineNumber < 1 || endLineNumber < 1) return null
+  return startLineNumber <= endLineNumber
+    ? { startLineNumber, endLineNumber }
+    : { startLineNumber: endLineNumber, endLineNumber: startLineNumber }
+}
+
+function splitMarkdownResourcePath(value: string) {
+  const trimmed = decodeMarkdownResource(value).trim()
+  const hashLineMatch = trimmed.match(HASH_LINE_RANGE_PATTERN)
+  if (hashLineMatch?.index !== undefined) {
+    return {
+      lineRange: normalizeMarkdownLineRange(Number(hashLineMatch[1]), Number(hashLineMatch[2] ?? hashLineMatch[1])),
+      path: trimmed.slice(0, hashLineMatch.index),
+    }
+  }
+
+  const colonMatch = trimmed.match(COLON_LINE_RANGE_PATTERN)
+  if (colonMatch?.index !== undefined) {
+    const pathValue = trimmed.slice(0, colonMatch.index)
+    if (!/^[A-Za-z]:$/.test(pathValue)) {
+      return {
+        lineRange: normalizeMarkdownLineRange(Number(colonMatch[1]), Number(colonMatch[2] ?? colonMatch[1])),
+        path: pathValue,
+      }
+    }
+  }
+
+  const hashIndex = trimmed.indexOf("#")
+  return {
+    lineRange: null,
+    path: hashIndex >= 0 ? trimmed.slice(0, hashIndex) : trimmed,
+  }
+}
+
+function getWorkspaceFileDirectoryPath(filePath: string | null | undefined) {
+  const normalized = normalizeTreePath(filePath)
+  const segments = normalized.split("/").filter(Boolean)
+  segments.pop()
+  return segments.join("/")
+}
+
+function normalizeWorkspaceRelativeResourcePath(baseDirectory: string, targetPath: string) {
+  const trimmedTarget = targetPath.trim().replace(/\\/g, "/")
+  if (!trimmedTarget || trimmedTarget.startsWith("#") || hasNonFilePathUriScheme(trimmedTarget)) return null
+
+  const sourceSegments = trimmedTarget.startsWith("/")
+    ? []
+    : baseDirectory.split("/").filter(Boolean)
+  const targetSegments = trimmedTarget.replace(/^\/+/, "").split("/").filter(Boolean)
+  const resolvedSegments = [...sourceSegments]
+
+  for (const segment of targetSegments) {
+    if (segment === ".") continue
+    if (segment === "..") {
+      if (resolvedSegments.length === 0) return null
+      resolvedSegments.pop()
+      continue
+    }
+    resolvedSegments.push(segment)
+  }
+
+  return resolvedSegments.join("/")
+}
+
+function joinLocalWorkspacePath(workspaceRoot: string, workspaceRelativePath: string) {
+  const trimmedRoot = workspaceRoot.trim().replace(/[\\/]+$/, "")
+  const separator = trimmedRoot.includes("\\") ? "\\" : "/"
+  return `${trimmedRoot}${separator}${workspaceRelativePath.split("/").filter(Boolean).join(separator)}`
 }
 
 function resolveWorkspaceRelativePath(scopeDirectory: string, changedPath: string) {
@@ -174,7 +303,7 @@ interface WorkspaceFileTreeNodeProps {
   state: WorkspaceFileReviewState
   onDirectoryLoad: (path: string) => void
   onDirectoryToggle: (path: string) => void
-  onSelectFile: (path: string) => void
+  onSelectFile: (path: string, options?: { linkedLineRange?: WorkspaceFileLineRange | null }) => void
 }
 
 function WorkspaceFileTreeNode({
@@ -273,6 +402,9 @@ export function WorkspaceFilesPanel({
 }: WorkspaceFilesPanelProps) {
   const [hoveredLineNumber, setHoveredLineNumber] = useState<number | null>(null)
   const [dragSelection, setDragSelection] = useState<WorkspaceFileLineRange | null>(null)
+  const [markdownViewMode, setMarkdownViewMode] = useState<"preview" | "source">("preview")
+  const [imageViewMode, setImageViewMode] = useState<"fit" | "actual">("fit")
+  const [imageScale, setImageScale] = useState(1)
   const dragSelectionRef = useRef<WorkspaceFileLineRange | null>(null)
   const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const fileLines = state.selectedFileContent?.split(/\r?\n/) ?? []
@@ -288,6 +420,25 @@ export function WorkspaceFilesPanel({
   const rootEntries = getVisibleDirectoryEntries(ROOT_DIRECTORY_PATH, state, normalizedFilter)
   const isRootLoading = state.treeLoadingDirectoryPaths.includes(ROOT_DIRECTORY_PATH)
   const rootErrorMessage = state.treeErrorByDirectoryPath[ROOT_DIRECTORY_PATH] ?? null
+  const selectedFileExtension = normalizeFileExtension(state.selectedFileExtension)
+  const isSelectedMarkdown = state.selectedFileKind === "text" && isMarkdownExtension(selectedFileExtension)
+  const shouldRenderMarkdownPreview =
+    Boolean(state.selectedFilePath) &&
+    state.selectedFileContent !== null &&
+    isSelectedMarkdown &&
+    markdownViewMode === "preview"
+  const shouldRenderSourceReader =
+    Boolean(state.selectedFilePath) &&
+    state.selectedFileContent !== null &&
+    state.selectedFileKind === "text" &&
+    (!isSelectedMarkdown || markdownViewMode === "source")
+  const shouldRenderImagePreview =
+    Boolean(state.selectedFilePath) &&
+    state.selectedFileKind === "image" &&
+    Boolean(state.selectedFilePreviewUrl)
+  const imageFileSizeLabel = formatFileSize(state.selectedFileSize)
+  const selectedFileDirectoryPath = getWorkspaceFileDirectoryPath(state.selectedFilePath)
+  const imageZoomLabel = imageViewMode === "fit" ? "Fit" : `${Math.round(imageScale * 100)}%`
 
   for (const comment of state.comments) {
     const currentComments = commentsByEndLine.get(comment.endLineNumber) ?? []
@@ -334,12 +485,31 @@ export function WorkspaceFilesPanel({
   }, [state.selectedFilePath, state.pendingComment?.startLineNumber, state.pendingComment?.endLineNumber])
 
   useEffect(() => {
+    if (!isSelectedMarkdown) {
+      setMarkdownViewMode("preview")
+      return
+    }
+    setMarkdownViewMode(linkedRange ? "source" : "preview")
+  }, [isSelectedMarkdown, linkedRange?.startLineNumber, linkedRange?.endLineNumber, state.selectedFilePath])
+
+  useEffect(() => {
+    setImageViewMode("fit")
+    setImageScale(1)
+  }, [state.selectedFilePath, state.selectedFilePreviewUrl])
+
+  useEffect(() => {
     if (!linkedRange || state.selectedFileContent === null) return
     lineRefs.current.get(linkedRange.startLineNumber)?.scrollIntoView?.({
       block: "center",
       inline: "nearest",
     })
-  }, [linkedRange?.startLineNumber, linkedRange?.endLineNumber, state.selectedFileContent, state.selectedFilePath])
+  }, [
+    linkedRange?.startLineNumber,
+    linkedRange?.endLineNumber,
+    shouldRenderSourceReader,
+    state.selectedFileContent,
+    state.selectedFilePath,
+  ])
 
   useEffect(() => {
     function finalizeDragSelection() {
@@ -409,6 +579,52 @@ export function WorkspaceFilesPanel({
     }
   }
 
+  function resolveWorkspaceMarkdownRelativeTarget(value: string): MarkdownLocalFileLinkTarget | null {
+    if (!state.selectedFilePath) return null
+
+    const resource = splitMarkdownResourcePath(value)
+    const workspaceRelativePath = normalizeWorkspaceRelativeResourcePath(selectedFileDirectoryPath, resource.path)
+    if (!workspaceRelativePath) return null
+
+    return {
+      lineRange: resource.lineRange,
+      path: workspaceRelativePath,
+    }
+  }
+
+  function resolveWorkspaceMarkdownLinkTarget(value: string): MarkdownLinkTarget | null {
+    const target = resolveWorkspaceMarkdownRelativeTarget(value)
+    if (!target) return null
+
+    return {
+      href: value.trim(),
+      kind: "local-file",
+      target,
+    }
+  }
+
+  function resolveWorkspaceMarkdownImageSrc(value: string) {
+    const target = resolveWorkspaceMarkdownRelativeTarget(value)
+    if (!target || !scopeDirectory || isRemoteWorkspaceDirectory(scopeDirectory)) return null
+
+    return toLocalImageProtocolUrl(joinLocalWorkspacePath(scopeDirectory, target.path))
+  }
+
+  function handleMarkdownLocalFileOpen(target: MarkdownLocalFileLinkTarget) {
+    onSelectFile(target.path, {
+      linkedLineRange: target.lineRange ?? null,
+    })
+  }
+
+  function setActualImageScale(nextScale: number) {
+    setImageViewMode("actual")
+    setImageScale(Math.min(4, Math.max(0.25, nextScale)))
+  }
+
+  function zoomImage(direction: "in" | "out") {
+    setActualImageScale(imageScale + (direction === "in" ? 0.25 : -0.25))
+  }
+
   function renderTreeContent() {
     if (!scopeDirectory) {
       return <div className="workspace-files-tree-empty">Select a workspace to browse files.</div>
@@ -446,6 +662,271 @@ export function WorkspaceFilesPanel({
     )
   }
 
+  function renderReaderHeader() {
+    if (!state.selectedFilePath) return null
+
+    return (
+      <div className="workspace-files-panel-header">
+        <div className="workspace-files-reader-title">
+          <span className="label">Reader</span>
+          <strong>{state.selectedFilePath}</strong>
+          {state.selectedFileKind === "image" ? (
+            <span className="workspace-files-reader-meta">
+              {state.selectedFileMimeType ? <span>{state.selectedFileMimeType}</span> : null}
+              {imageFileSizeLabel ? <span>{imageFileSizeLabel}</span> : null}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="workspace-files-reader-actions">
+          {state.comments.length > 0 ? (
+            <span className="settings-badge">{String(state.comments.length)} comments</span>
+          ) : null}
+          {isSelectedMarkdown ? (
+            <div className="workspace-files-view-toggle" role="group" aria-label="Markdown view mode">
+              <button
+                type="button"
+                className={markdownViewMode === "preview" ? "is-active" : ""}
+                aria-pressed={markdownViewMode === "preview"}
+                onClick={() => setMarkdownViewMode("preview")}
+              >
+                <EyeIcon />
+                <span>Rendered</span>
+              </button>
+              <button
+                type="button"
+                className={markdownViewMode === "source" ? "is-active" : ""}
+                aria-pressed={markdownViewMode === "source"}
+                onClick={() => setMarkdownViewMode("source")}
+              >
+                <CodeModeIcon />
+                <span>Source</span>
+              </button>
+            </div>
+          ) : null}
+          {shouldRenderImagePreview ? (
+            <div className="workspace-files-image-toolbar" role="group" aria-label="Image zoom controls">
+              <button
+                type="button"
+                className={imageViewMode === "fit" ? "is-active" : ""}
+                aria-pressed={imageViewMode === "fit"}
+                title="Fit image"
+                onClick={() => {
+                  setImageViewMode("fit")
+                  setImageScale(1)
+                }}
+              >
+                <ExpandIcon />
+                <span>Fit</span>
+              </button>
+              <button
+                type="button"
+                className={imageViewMode === "actual" && imageScale === 1 ? "is-active" : ""}
+                aria-pressed={imageViewMode === "actual" && imageScale === 1}
+                title="Actual size"
+                onClick={() => setActualImageScale(1)}
+              >
+                <span>100%</span>
+              </button>
+              <button
+                type="button"
+                aria-label="Zoom out image"
+                title="Zoom out"
+                disabled={imageViewMode === "actual" && imageScale <= 0.25}
+                onClick={() => zoomImage("out")}
+              >
+                <MinimizeIcon />
+              </button>
+              <span className="workspace-files-image-zoom-label">{imageZoomLabel}</span>
+              <button
+                type="button"
+                aria-label="Zoom in image"
+                title="Zoom in"
+                disabled={imageViewMode === "actual" && imageScale >= 4}
+                onClick={() => zoomImage("in")}
+              >
+                <PlusIcon />
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
+
+  function renderSourceReader() {
+    return (
+      <div className="workspace-files-code" role="presentation">
+        {fileLines.map((line, index) => {
+          const lineNumber = index + 1
+          const isCommenting = isLineWithinRange(pendingRange, lineNumber)
+          const lineComments = commentsByEndLine.get(lineNumber) ?? []
+          const showCommentAction =
+            dragSelection === null &&
+            (hoveredLineNumber === lineNumber ||
+              (pendingRange?.startLineNumber === lineNumber && pendingRange.endLineNumber === lineNumber))
+          const lineLabel = pendingRange && isCommenting
+            ? formatWorkspaceFileLineRangeLabel(pendingRange.startLineNumber, pendingRange.endLineNumber)
+            : formatWorkspaceFileLineRangeLabel(lineNumber)
+          const commentTargetLabel = pendingRange && isCommenting
+            ? pendingRange.startLineNumber === pendingRange.endLineNumber
+              ? `对第 L${String(pendingRange.startLineNumber)} 行发表评论`
+              : `对第 L${String(pendingRange.startLineNumber)} 至第 L${String(pendingRange.endLineNumber)} 行发表评论`
+            : ""
+          const isSelectionHighlighted = isLineWithinRange(highlightedRange, lineNumber)
+          const isLinkedLine = isLineWithinRange(linkedRange, lineNumber)
+
+          return (
+            <div key={`${state.selectedFilePath}:${lineNumber}`} className="workspace-files-code-block">
+              <div
+                ref={registerLineRef(lineNumber)}
+                className={[
+                  "workspace-files-line",
+                  showCommentAction ? "is-hovered" : "",
+                  isSelectionHighlighted ? "is-selected" : "",
+                  isLinkedLine ? "is-linked" : "",
+                ].filter(Boolean).join(" ")}
+                data-testid={`workspace-file-line-${lineNumber}`}
+                onMouseEnter={() => setHoveredLineNumber(lineNumber)}
+                onMouseLeave={() => setHoveredLineNumber((current) => (current === lineNumber ? null : current))}
+              >
+                <div
+                  className="workspace-files-line-gutter"
+                  data-testid={`workspace-file-line-gutter-${lineNumber}`}
+                  onMouseDown={(event) => handleLineSelectionStart(lineNumber, event)}
+                  onMouseOver={() => handleLineSelectionMove(lineNumber)}
+                  onMouseUp={() => handleLineSelectionEnd()}
+                >
+                  <span className="workspace-files-line-number">{String(lineNumber)}</span>
+                  {showCommentAction ? (
+                    <button
+                      type="button"
+                      className="workspace-files-line-comment-button"
+                      aria-label={`Add comment on line ${String(lineNumber)}`}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={() => onPendingCommentStart(lineNumber)}
+                    >
+                      <PlusIcon />
+                    </button>
+                  ) : null}
+                </div>
+                <pre className="workspace-files-line-content">
+                  <code>{line.length > 0 ? line : " "}</code>
+                </pre>
+              </div>
+
+              {pendingRange?.endLineNumber === lineNumber ? (
+                <div className="workspace-files-comment-composer">
+                  <div className="workspace-files-comment-editor">
+                    <div className="workspace-files-comment-header">
+                      <strong>本地评论</strong>
+                      <span>{commentTargetLabel}</span>
+                    </div>
+                    <textarea
+                      aria-label={`File comment on ${lineLabel.toLowerCase()}`}
+                      rows={3}
+                      placeholder="请求更改"
+                      value={state.pendingComment?.text ?? ""}
+                      onChange={(event) => onPendingCommentChange(event.target.value)}
+                    />
+                    <div className="workspace-files-comment-actions">
+                      <button
+                        type="button"
+                        className="workspace-files-comment-cancel"
+                        onClick={() => onPendingCommentCancel()}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        className="workspace-files-comment-confirm"
+                        disabled={!state.pendingComment?.text.trim() || !canInsertCommentsIntoDraft}
+                        onClick={() => onPendingCommentConfirm()}
+                      >
+                        确认
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {lineComments.length > 0 ? (
+                <div className="workspace-files-line-comments">
+                  {lineComments.map((comment) => (
+                    <article key={comment.id} className="workspace-files-line-comment">
+                      <div className="workspace-files-line-comment-meta">
+                        <strong>{formatWorkspaceFileLineRangeLabel(comment.startLineNumber, comment.endLineNumber)}</strong>
+                        <time>{formatTime(comment.createdAt)}</time>
+                      </div>
+                      <p>{comment.text}</p>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  function renderMarkdownPreview() {
+    return (
+      <div className="workspace-files-markdown-stage">
+        <ThreadMarkdown
+          className="workspace-files-markdown thread-markdown"
+          onLocalFileLinkOpen={handleMarkdownLocalFileOpen}
+          resolveImageSrc={resolveWorkspaceMarkdownImageSrc}
+          resolveLinkTarget={resolveWorkspaceMarkdownLinkTarget}
+          text={state.selectedFileContent ?? ""}
+        />
+      </div>
+    )
+  }
+
+  function renderImagePreview() {
+    if (!state.selectedFilePreviewUrl) return null
+
+    return (
+      <div className="workspace-files-image-stage">
+        <div
+          className={[
+            "workspace-files-image-frame",
+            imageViewMode === "actual" ? "is-actual-size" : "is-fit",
+          ].join(" ")}
+          style={{ "--workspace-files-image-scale": String(imageScale) } as Record<string, string>}
+        >
+          <img
+            className="workspace-files-image"
+            src={state.selectedFilePreviewUrl}
+            alt={state.selectedFilePath ?? "Workspace image preview"}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  function renderReaderContent() {
+    if (shouldRenderSourceReader || shouldRenderMarkdownPreview || shouldRenderImagePreview) {
+      return (
+        <>
+          {renderReaderHeader()}
+          {shouldRenderMarkdownPreview ? renderMarkdownPreview() : null}
+          {shouldRenderSourceReader ? renderSourceReader() : null}
+          {shouldRenderImagePreview ? renderImagePreview() : null}
+        </>
+      )
+    }
+
+    return (
+      <div className="workspace-files-open-empty">
+        {state.selectedFileKind === "image" ? <FileImageIcon /> : <FileTextIcon />}
+        <strong>{state.selectedFilePath ? "无法打开文件" : "打开文件"}</strong>
+        <p>{getReaderEmptyStateCopy(state, scopeDirectory)}</p>
+      </div>
+    )
+  }
+
   return (
     <section className="right-sidebar-section workspace-files-panel">
       <div className="workspace-files-pathbar" title={scopeDirectory ?? undefined}>
@@ -455,135 +936,7 @@ export function WorkspaceFilesPanel({
 
       <div className="workspace-files-split">
         <section className="workspace-files-reader" aria-label="Workspace file reader">
-          {state.selectedFilePath && state.selectedFileContent !== null && state.selectedFileKind === "text" ? (
-            <>
-              <div className="workspace-files-panel-header">
-                <div className="workspace-files-reader-title">
-                  <span className="label">Reader</span>
-                  <strong>{state.selectedFilePath}</strong>
-                </div>
-                {state.comments.length > 0 ? <span className="settings-badge">{String(state.comments.length)} comments</span> : null}
-              </div>
-
-              <div className="workspace-files-code" role="presentation">
-                {fileLines.map((line, index) => {
-                  const lineNumber = index + 1
-                  const isCommenting = isLineWithinRange(pendingRange, lineNumber)
-                  const lineComments = commentsByEndLine.get(lineNumber) ?? []
-                  const showCommentAction =
-                    dragSelection === null &&
-                    (hoveredLineNumber === lineNumber ||
-                      (pendingRange?.startLineNumber === lineNumber && pendingRange.endLineNumber === lineNumber))
-                  const lineLabel = pendingRange && isCommenting
-                    ? formatWorkspaceFileLineRangeLabel(pendingRange.startLineNumber, pendingRange.endLineNumber)
-                    : formatWorkspaceFileLineRangeLabel(lineNumber)
-                  const commentTargetLabel = pendingRange && isCommenting
-                    ? pendingRange.startLineNumber === pendingRange.endLineNumber
-                      ? `对第 L${String(pendingRange.startLineNumber)} 行发表评论`
-                      : `对第 L${String(pendingRange.startLineNumber)} 至第 L${String(pendingRange.endLineNumber)} 行发表评论`
-                    : ""
-                  const isSelectionHighlighted = isLineWithinRange(highlightedRange, lineNumber)
-                  const isLinkedLine = isLineWithinRange(linkedRange, lineNumber)
-
-                  return (
-                    <div key={`${state.selectedFilePath}:${lineNumber}`} className="workspace-files-code-block">
-                      <div
-                        ref={registerLineRef(lineNumber)}
-                        className={[
-                          "workspace-files-line",
-                          showCommentAction ? "is-hovered" : "",
-                          isSelectionHighlighted ? "is-selected" : "",
-                          isLinkedLine ? "is-linked" : "",
-                        ].filter(Boolean).join(" ")}
-                        data-testid={`workspace-file-line-${lineNumber}`}
-                        onMouseEnter={() => setHoveredLineNumber(lineNumber)}
-                        onMouseLeave={() => setHoveredLineNumber((current) => (current === lineNumber ? null : current))}
-                      >
-                        <div
-                          className="workspace-files-line-gutter"
-                          data-testid={`workspace-file-line-gutter-${lineNumber}`}
-                          onMouseDown={(event) => handleLineSelectionStart(lineNumber, event)}
-                          onMouseOver={() => handleLineSelectionMove(lineNumber)}
-                          onMouseUp={() => handleLineSelectionEnd()}
-                        >
-                          <span className="workspace-files-line-number">{String(lineNumber)}</span>
-                          {showCommentAction ? (
-                            <button
-                              type="button"
-                              className="workspace-files-line-comment-button"
-                              aria-label={`Add comment on line ${String(lineNumber)}`}
-                              onMouseDown={(event) => event.stopPropagation()}
-                              onClick={() => onPendingCommentStart(lineNumber)}
-                            >
-                              <PlusIcon />
-                            </button>
-                          ) : null}
-                        </div>
-                        <pre className="workspace-files-line-content">
-                          <code>{line.length > 0 ? line : " "}</code>
-                        </pre>
-                      </div>
-
-                      {pendingRange?.endLineNumber === lineNumber ? (
-                        <div className="workspace-files-comment-composer">
-                          <div className="workspace-files-comment-editor">
-                            <div className="workspace-files-comment-header">
-                              <strong>本地评论</strong>
-                              <span>{commentTargetLabel}</span>
-                            </div>
-                            <textarea
-                              aria-label={`File comment on ${lineLabel.toLowerCase()}`}
-                              rows={3}
-                              placeholder="请求更改"
-                              value={state.pendingComment?.text ?? ""}
-                              onChange={(event) => onPendingCommentChange(event.target.value)}
-                            />
-                            <div className="workspace-files-comment-actions">
-                              <button
-                                type="button"
-                                className="workspace-files-comment-cancel"
-                                onClick={() => onPendingCommentCancel()}
-                              >
-                                取消
-                              </button>
-                              <button
-                                type="button"
-                                className="workspace-files-comment-confirm"
-                                disabled={!state.pendingComment?.text.trim() || !canInsertCommentsIntoDraft}
-                                onClick={() => onPendingCommentConfirm()}
-                              >
-                                确认
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      {lineComments.length > 0 ? (
-                        <div className="workspace-files-line-comments">
-                          {lineComments.map((comment) => (
-                            <article key={comment.id} className="workspace-files-line-comment">
-                              <div className="workspace-files-line-comment-meta">
-                                <strong>{formatWorkspaceFileLineRangeLabel(comment.startLineNumber, comment.endLineNumber)}</strong>
-                                <time>{formatTime(comment.createdAt)}</time>
-                              </div>
-                              <p>{comment.text}</p>
-                            </article>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  )
-                })}
-              </div>
-            </>
-          ) : (
-            <div className="workspace-files-open-empty">
-              <FileTextIcon />
-              <strong>{state.selectedFilePath ? "无法打开文件" : "打开文件"}</strong>
-              <p>{getReaderEmptyStateCopy(state, scopeDirectory)}</p>
-            </div>
-          )}
+          {renderReaderContent()}
         </section>
 
         <aside className="workspace-files-tree" aria-label="Workspace file tree">

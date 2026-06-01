@@ -8,6 +8,7 @@ import { registerLocalPreviewProtocolHandler, registerLocalPreviewProtocolScheme
 import { readLocaleConfigSnapshot } from "./locale-config"
 import { ensureManagedAgentRunning, stopManagedAgent } from "./managed-agent"
 import { createApplicationMenus, type ApplicationMenuOptions } from "./menu"
+import { ensureMobileBridgeServerRunning, stopMobileBridgeServer } from "./mobile-bridge-server"
 import { stopRendererHttpServer } from "./renderer-http-server"
 import { safeError } from "./safe-console"
 import { checkForAppUpdates, initializeAutoUpdater } from "./updater"
@@ -28,6 +29,9 @@ void app.whenReady().then(async () => {
   }
   await registerBrowserNativeMessagingHost().catch((error) => {
     safeError("[desktop] failed to register browser native messaging host", error)
+  })
+  await ensureMobileBridgeServerRunning().catch((error) => {
+    safeError("[desktop] failed to start mobile bridge", error)
   })
 
   const menuOptions: ApplicationMenuOptions = {
@@ -80,6 +84,7 @@ void app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   void stopManagedAgent()
+  void stopMobileBridgeServer()
   void stopRendererHttpServer()
 })
 

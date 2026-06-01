@@ -672,8 +672,11 @@ export interface AgentWorkspaceFileDocument {
   path: string
   name: string
   extension: string | null
-  kind: "text" | "unsupported"
+  kind: "text" | "image" | "unsupported"
   content?: string
+  mimeType?: string
+  previewUrl?: string
+  size?: number
   unsupportedReason?: string
 }
 

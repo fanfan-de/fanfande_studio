@@ -144,15 +144,32 @@ describe("workspace files", () => {
     })
   })
 
-  it("marks unsupported file types without reading them as text", async () => {
+  it("returns local image preview metadata without reading images as text", async () => {
     const workspaceRoot = await createWorkspaceFixture()
 
     const file = await readWorkspaceFile(workspaceRoot, "src/image.png")
 
-    expect(file).toEqual({
+    expect(file).toMatchObject({
       path: "src/image.png",
       name: "image.png",
       extension: "png",
+      kind: "image",
+      mimeType: "image/png",
+      size: 6,
+    })
+    expect(file.previewUrl).toMatch(/^anybox-local-image:\/\/image\?source=/)
+  })
+
+  it("marks unsupported non-previewable file types without reading them as text", async () => {
+    const workspaceRoot = await createWorkspaceFixture()
+    await writeFile(join(workspaceRoot, "src", "archive.zip"), "binary", "utf8")
+
+    const file = await readWorkspaceFile(workspaceRoot, "src/archive.zip")
+
+    expect(file).toEqual({
+      path: "src/archive.zip",
+      name: "archive.zip",
+      extension: "zip",
       kind: "unsupported",
       unsupportedReason: "This file type is not supported in the Files panel yet.",
     })

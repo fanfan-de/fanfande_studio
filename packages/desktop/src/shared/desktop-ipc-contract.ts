@@ -580,6 +580,16 @@ export interface DesktopAgentHealth {
   error?: string
 }
 
+export interface DesktopMobileBridgeStatus {
+  running: boolean
+  host: string
+  port: number | null
+  token: string
+  localUrl: string | null
+  urls: string[]
+  startedAt: number | null
+}
+
 export interface DesktopComposerPastedImageAttachment {
   dataUrl: string
   mimeType: string
@@ -937,6 +947,14 @@ export interface DesktopIpcContract {
   "desktop:agent-health": {
     input: void
     output: DesktopAgentHealth
+  }
+  "desktop:get-mobile-bridge-status": {
+    input: void
+    output: DesktopMobileBridgeStatus
+  }
+  "desktop:rotate-mobile-bridge-token": {
+    input: void
+    output: DesktopMobileBridgeStatus
   }
   "desktop:list-folder-workspaces": {
     input: void
@@ -1726,6 +1744,8 @@ export interface DesktopApiMethods {
   windowAction(action: DesktopIpcInput<"desktop:window-action">): Promise<DesktopIpcOutput<"desktop:window-action">>
   getAgentConfig(): Promise<DesktopIpcOutput<"desktop:get-agent-config">>
   getAgentHealth(): Promise<DesktopIpcOutput<"desktop:agent-health">>
+  getMobileBridgeStatus(): Promise<DesktopIpcOutput<"desktop:get-mobile-bridge-status">>
+  rotateMobileBridgeToken(): Promise<DesktopIpcOutput<"desktop:rotate-mobile-bridge-token">>
   createPtySession(input: DesktopIpcInput<"desktop:create-pty-session">): Promise<DesktopIpcOutput<"desktop:create-pty-session">>
   getPtySession(input: DesktopIpcInput<"desktop:get-pty-session">): Promise<DesktopIpcOutput<"desktop:get-pty-session">>
   updatePtySession(input: DesktopIpcInput<"desktop:update-pty-session">): Promise<DesktopIpcOutput<"desktop:update-pty-session">>

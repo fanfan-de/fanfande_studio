@@ -149,7 +149,7 @@ interface RightSidebarProps {
   onWorkspaceDirectoryToggle: (path: string) => void
   onWorkspaceFileTreeInvalidate: (paths: string[]) => void
   onWorkspaceFileQueryChange: (value: string) => void
-  onWorkspaceFileSelect: (path: string) => void
+  onWorkspaceFileSelect: (path: string, options?: { linkedLineRange?: MarkdownLocalFileLinkTarget["lineRange"] }) => void
   renderTerminalTab: (sessionID: string | null) => ReactNode
   windowControls?: ReactNode
 }

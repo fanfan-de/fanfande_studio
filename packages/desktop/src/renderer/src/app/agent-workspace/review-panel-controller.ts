@@ -153,11 +153,15 @@ export function useReviewPanelController({
   }
 
   function resolveFileReviewStatusForTreeFilter(
-    state: Pick<WorkspaceFileReviewState, "errorMessage" | "selectedFileContent" | "selectedFileKind" | "selectedFilePath">,
+    state: Pick<
+      WorkspaceFileReviewState,
+      "errorMessage" | "selectedFileContent" | "selectedFileKind" | "selectedFilePath" | "selectedFilePreviewUrl"
+    >,
   ): WorkspaceFileReviewState["status"] {
     if (state.errorMessage) return "error"
     if (state.selectedFileKind === "unsupported") return "unsupported"
     if (state.selectedFilePath && state.selectedFileKind === "text" && state.selectedFileContent !== null) return "ready"
+    if (state.selectedFilePath && state.selectedFileKind === "image" && state.selectedFilePreviewUrl) return "ready"
     return "idle"
   }
 
@@ -841,6 +845,9 @@ export function useReviewPanelController({
       selectedFileContent: null,
       selectedFileKind: null,
       selectedFileExtension: null,
+      selectedFileMimeType: null,
+      selectedFilePreviewUrl: null,
+      selectedFileSize: null,
       comments: [],
       linkedLineRange,
       pendingComment: null,
@@ -874,11 +881,14 @@ export function useReviewPanelController({
         selectedFileContent: nextFile.kind === "text" ? nextFile.content ?? "" : null,
         selectedFileKind: nextFile.kind,
         selectedFileExtension: nextFile.extension,
+        selectedFileMimeType: nextFile.mimeType ?? null,
+        selectedFilePreviewUrl: nextFile.previewUrl ?? null,
+        selectedFileSize: nextFile.size ?? null,
         comments: nextComments,
         linkedLineRange: nextFile.kind === "text" ? linkedLineRange : null,
         pendingComment: null,
         errorMessage: nextErrorMessage,
-        status: nextFile.kind === "text" ? "ready" : "unsupported",
+        status: nextFile.kind === "text" || nextFile.kind === "image" ? "ready" : "unsupported",
       }))
       updateRightSidebarTab(tabID, {
         targetKey: getFilesTabTargetKey(scopeDirectory, nextFile.path),
@@ -894,6 +904,9 @@ export function useReviewPanelController({
         selectedFileContent: null,
         selectedFileKind: null,
         selectedFileExtension: null,
+        selectedFileMimeType: null,
+        selectedFilePreviewUrl: null,
+        selectedFileSize: null,
         comments: [],
         linkedLineRange,
         pendingComment: null,

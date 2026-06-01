@@ -8,6 +8,8 @@ interface ThreadMarkdownProps {
   className?: string
   onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
+  resolveImageSrc?: (src: string) => string | null
+  resolveLinkTarget?: (href: string) => MarkdownLinkTarget | null
   text: string
 }
 
@@ -333,13 +335,15 @@ function MarkdownLink({
   href,
   onArtifactLinkOpen,
   onLocalFileLinkOpen,
+  resolveLinkTarget,
 }: {
   children?: ReactNode
   href?: string
   onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
+  resolveLinkTarget?: (href: string) => MarkdownLinkTarget | null
 }) {
-  const linkTarget = href ? normalizeMarkdownLinkTarget(href) : null
+  const linkTarget = href ? resolveLinkTarget?.(href) ?? normalizeMarkdownLinkTarget(href) : null
   if (!linkTarget) return <>{children}</>
 
   if (linkTarget.kind === "artifact") {
@@ -423,26 +427,43 @@ const MarkdownTable: NonNullable<Components["table"]> = ({ children, node: _node
   </div>
 )
 
-const transformMarkdownUrl: UrlTransform = (url, key) => {
-  if (key === "href") return normalizeMarkdownLinkTarget(url)?.href ?? ""
-  if (key === "src") return normalizeMarkdownImageSrc(url) ?? ""
-  return ""
+function createMarkdownUrlTransform({
+  resolveImageSrc,
+  resolveLinkTarget,
+}: Pick<ThreadMarkdownProps, "resolveImageSrc" | "resolveLinkTarget">): UrlTransform {
+  return (url, key) => {
+    if (key === "href") return (resolveLinkTarget?.(url) ?? normalizeMarkdownLinkTarget(url))?.href ?? ""
+    if (key === "src") return resolveImageSrc?.(url) ?? normalizeMarkdownImageSrc(url) ?? ""
+    return ""
+  }
 }
 
-export const ThreadMarkdown = memo(function ThreadMarkdown({ className, onArtifactLinkOpen, onLocalFileLinkOpen, text }: ThreadMarkdownProps) {
+export const ThreadMarkdown = memo(function ThreadMarkdown({
+  className,
+  onArtifactLinkOpen,
+  onLocalFileLinkOpen,
+  resolveImageSrc,
+  resolveLinkTarget,
+  text,
+}: ThreadMarkdownProps) {
   const markdownText = useMemo(() => normalizeLooseLocalFileMarkdownLinks(text), [text])
+  const transformMarkdownUrl = useMemo(
+    () => createMarkdownUrlTransform({ resolveImageSrc, resolveLinkTarget }),
+    [resolveImageSrc, resolveLinkTarget],
+  )
   const components = useMemo<Components>(() => ({
     a: (props) => (
       <MarkdownLink
         {...props}
         onArtifactLinkOpen={onArtifactLinkOpen}
         onLocalFileLinkOpen={onLocalFileLinkOpen}
+        resolveLinkTarget={resolveLinkTarget}
       />
     ),
     code: MarkdownCode,
     img: MarkdownImage,
     table: MarkdownTable,
-  }), [onArtifactLinkOpen, onLocalFileLinkOpen])
+  }), [onArtifactLinkOpen, onLocalFileLinkOpen, resolveLinkTarget])
 
   return (
     <div className={className}>

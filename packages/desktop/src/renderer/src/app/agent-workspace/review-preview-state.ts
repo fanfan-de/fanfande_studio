@@ -51,6 +51,9 @@ export const DEFAULT_WORKSPACE_FILE_REVIEW_STATE: WorkspaceFileReviewState = {
   selectedFileContent: null,
   selectedFileKind: null,
   selectedFileExtension: null,
+  selectedFileMimeType: null,
+  selectedFilePreviewUrl: null,
+  selectedFileSize: null,
   status: "idle",
   errorMessage: null,
   comments: [],
@@ -79,12 +82,19 @@ export function getWorkspaceFileCommentKey(
 export function resolveWorkspaceFileReviewStatus(
   state: Pick<
     WorkspaceFileReviewState,
-    "errorMessage" | "query" | "results" | "selectedFileContent" | "selectedFileKind" | "selectedFilePath"
+    | "errorMessage"
+    | "query"
+    | "results"
+    | "selectedFileContent"
+    | "selectedFileKind"
+    | "selectedFilePath"
+    | "selectedFilePreviewUrl"
   >,
 ): WorkspaceFileReviewState["status"] {
   if (state.errorMessage) return "error"
   if (state.selectedFileKind === "unsupported") return "unsupported"
   if (state.selectedFilePath && state.selectedFileKind === "text" && state.selectedFileContent !== null) return "ready"
+  if (state.selectedFilePath && state.selectedFileKind === "image" && state.selectedFilePreviewUrl) return "ready"
   if (state.query.trim() && state.results.length === 0) return "empty"
   return "idle"
 }

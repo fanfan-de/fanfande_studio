@@ -223,6 +223,10 @@ try {
         requestId?: string
         error?: string
       }>,
+    getMobileBridgeStatus: () =>
+      invokeDesktop("desktop:get-mobile-bridge-status") as Promise<DesktopIpcOutput<"desktop:get-mobile-bridge-status">>,
+    rotateMobileBridgeToken: () =>
+      invokeDesktop("desktop:rotate-mobile-bridge-token") as Promise<DesktopIpcOutput<"desktop:rotate-mobile-bridge-token">>,
     createPtySession: (input: { sessionID: string; title?: string; shell?: string; rows?: number; cols?: number }) =>
       invokeDesktop("desktop:create-pty-session", input) as Promise<PtySessionInfo>,
     getPtySession: (input: { id: string }) =>

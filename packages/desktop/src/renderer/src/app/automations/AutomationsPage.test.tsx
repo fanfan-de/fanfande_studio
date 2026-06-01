@@ -4,6 +4,7 @@ import type {
   AgentAutomationCreateInput,
   AgentAutomationDefinition,
   AgentAutomationRun,
+  AgentAutomationUpdateInput,
 } from "../../../../shared/desktop-ipc-contract"
 import { I18nProvider } from "../i18n/I18nProvider"
 import { AutomationsPage } from "./AutomationsPage"
@@ -61,6 +62,12 @@ describe("AutomationsPage", () => {
       prompt: input.prompt,
     }))
     const runAutomationMock = vi.fn(async () => ({ runs: [] }))
+    const updateAutomationMock = vi.fn(async (input: { automationID: string; automation: AgentAutomationUpdateInput }) => createAutomation({
+      id: input.automationID,
+      name: input.automation.name ?? "Existing automation",
+      prompt: input.automation.prompt ?? "Review the project.",
+      status: input.automation.status ?? "active",
+    }))
     setDesktopMock({
       cancelAutomationRun: vi.fn(),
       createAutomation: createAutomationMock,
@@ -68,7 +75,7 @@ describe("AutomationsPage", () => {
       listAutomationRuns: vi.fn(async () => [] satisfies AgentAutomationRun[]),
       listAutomations: vi.fn(async () => [createAutomation()]),
       runAutomation: runAutomationMock,
-      updateAutomation: vi.fn(),
+      updateAutomation: updateAutomationMock,
       updateAutomationRunTriage: vi.fn(),
     })
 
@@ -91,12 +98,32 @@ describe("AutomationsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run Existing automation" }))
 
     await waitFor(() => expect(runAutomationMock).toHaveBeenCalledWith({ automationID: "aut_existing" }))
-    expect(screen.queryByRole("heading", { name: "Instructions" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Prompt" })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Open Existing automation" }))
 
-    expect(await screen.findByRole("heading", { name: "Instructions" })).toBeInTheDocument()
-    expect(screen.getByText("Review the project.")).toBeInTheDocument()
+    const titleInput = await screen.findByRole("textbox", { name: "Automation title" })
+    const promptInput = screen.getByRole("textbox", { name: "Automation prompt" })
+    expect(titleInput).toHaveValue("Existing automation")
+    expect(promptInput).toHaveValue("Review the project.")
+    expect(screen.queryByRole("heading", { name: "Prompt" })).not.toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Run history" })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Instructions" })).not.toBeInTheDocument()
+    expect(screen.queryByText("Runs")).not.toBeInTheDocument()
+
+    fireEvent.change(titleInput, { target: { value: "Edited automation" } })
+    fireEvent.blur(titleInput)
+    await waitFor(() => expect(updateAutomationMock).toHaveBeenCalledWith({
+      automationID: "aut_existing",
+      automation: { name: "Edited automation" },
+    }))
+
+    fireEvent.change(promptInput, { target: { value: "Edited prompt." } })
+    fireEvent.blur(promptInput)
+    await waitFor(() => expect(updateAutomationMock).toHaveBeenCalledWith({
+      automationID: "aut_existing",
+      automation: { prompt: "Edited prompt." },
+    }))
 
     fireEvent.click(screen.getByRole("button", { name: "Back to automations" }))
     fireEvent.click(screen.getByRole("button", { name: "New automation" }))
@@ -142,7 +169,7 @@ describe("AutomationsPage", () => {
     )
 
     expect(await screen.findByRole("heading", { name: "自动化" })).toBeInTheDocument()
-    expect(screen.getByText("1 个启用，共 1 个")).toBeInTheDocument()
+    expect(screen.queryByText("1 个启用，共 1 个")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "运行 Existing automation" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "暂停 Existing automation" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "删除 Existing automation" })).toBeInTheDocument()

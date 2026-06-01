@@ -7,6 +7,7 @@ interface ConnectionsPageProps {
   activeTab: ConnectionsTab
   children: ReactNode
   connectorCount: number
+  mobileCount?: number
   mcpCount: number
   pluginCount: number
   sshCount?: number
@@ -24,12 +25,14 @@ const CONNECTION_TABS: Array<{
   { key: "connectors", label: "连接器" },
   { key: "mcp", label: "MCP" },
   { key: "ssh", label: "SSH" },
+  { key: "mobile", label: "手机" },
 ]
 
 function getSearchPlaceholder(tab: ConnectionsTab) {
   if (tab === "connectors") return "搜索连接器"
   if (tab === "mcp") return "搜索 MCP"
   if (tab === "ssh") return "搜索 SSH"
+  if (tab === "mobile") return "搜索手机"
   return "搜索插件"
 }
 
@@ -37,6 +40,7 @@ export function ConnectionsPage({
   activeTab,
   children,
   connectorCount,
+  mobileCount = 1,
   mcpCount,
   pluginCount,
   sshCount = 0,
@@ -50,6 +54,7 @@ export function ConnectionsPage({
     connectors: connectorCount,
     mcp: mcpCount,
     ssh: sshCount,
+    mobile: mobileCount,
   }
 
   return (
@@ -82,27 +87,6 @@ export function ConnectionsPage({
                 )
               })}
             </nav>
-
-            <label className="connections-search-control">
-              <SearchIcon />
-              <input
-                aria-label={getSearchPlaceholder(activeTab)}
-                type="search"
-                value={searchQuery}
-                placeholder={getSearchPlaceholder(activeTab)}
-                onChange={(event) => onSearchQueryChange(event.target.value)}
-              />
-              {searchQuery ? (
-                <button
-                  type="button"
-                  aria-label="清除搜索"
-                  title="清除搜索"
-                  onClick={() => onSearchQueryChange("")}
-                >
-                  <CloseIcon />
-                </button>
-              ) : null}
-            </label>
           </div>
         )}
         dragRegion
@@ -112,7 +96,31 @@ export function ConnectionsPage({
       />
 
       <div id="connections-tab-panel" className="connections-page-main" role="tabpanel">
-        {children}
+        <div className="connections-page-search-row">
+          <label className="connections-search-control">
+            <SearchIcon />
+            <input
+              aria-label={getSearchPlaceholder(activeTab)}
+              type="search"
+              value={searchQuery}
+              placeholder={getSearchPlaceholder(activeTab)}
+              onChange={(event) => onSearchQueryChange(event.target.value)}
+            />
+            {searchQuery ? (
+              <button
+                type="button"
+                aria-label="清除搜索"
+                title="清除搜索"
+                onClick={() => onSearchQueryChange("")}
+              >
+                <CloseIcon />
+              </button>
+            ) : null}
+          </label>
+        </div>
+        <div className="connections-page-content">
+          {children}
+        </div>
       </div>
     </section>
   )

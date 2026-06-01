@@ -30,7 +30,7 @@ export type {
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type SidebarActionKey = "project"
 export type LeftSidebarView = "workspace" | "automations" | "skills" | "prompts" | "connections" | "tools"
-export type ConnectionsTab = "plugins" | "connectors" | "mcp" | "ssh"
+export type ConnectionsTab = "plugins" | "connectors" | "mcp" | "ssh" | "mobile"
 export type AppMode = "Autopilot" | "Review"
 export type ProjectKind = "directory" | "git"
 export type ProjectVcs = "git"
@@ -546,8 +546,11 @@ export interface WorkspaceFileReviewState {
   treeLoadingDirectoryPaths: string[]
   selectedFilePath: string | null
   selectedFileContent: string | null
-  selectedFileKind: "text" | "unsupported" | null
+  selectedFileKind: "text" | "image" | "unsupported" | null
   selectedFileExtension: string | null
+  selectedFileMimeType: string | null
+  selectedFilePreviewUrl: string | null
+  selectedFileSize: number | null
   status: WorkspaceFileReviewStatus
   errorMessage: string | null
   comments: WorkspaceFileComment[]

@@ -42,6 +42,7 @@ import type { ApplicationMenus } from "./menu"
 import { readLocaleConfigSnapshot, writeLocaleConfigSnapshot } from "./locale-config"
 import { detectLocalPreviewServices } from "./local-preview-services"
 import { resolveManagedAgentDataDir } from "./managed-agent"
+import { getMobileBridgeStatus, rotateMobileBridgeToken } from "./mobile-bridge-server"
 import { openMonitorWindow } from "./monitor-window"
 import { readPreviewText, resolvePreviewTarget } from "./preview-targets"
 import { PtyProxyManager } from "./pty-proxy"
@@ -1931,6 +1932,9 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
       }
     }
   })
+
+  handleDesktopIpc("desktop:get-mobile-bridge-status", () => getMobileBridgeStatus())
+  handleDesktopIpc("desktop:rotate-mobile-bridge-token", () => rotateMobileBridgeToken())
 
   handleDesktopIpc("desktop:list-folder-workspaces", async () => listFolderWorkspaces())
   handleDesktopIpc("desktop:list-project-workspaces", async () => listProjectWorkspaces())

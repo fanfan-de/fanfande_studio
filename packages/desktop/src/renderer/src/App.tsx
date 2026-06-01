@@ -3,6 +3,7 @@ import type { SerializedDockview } from "dockview-react"
 import { ActivityRail } from "./app/sidebar/ActivityRail"
 import { BuiltinToolsPage } from "./app/tools/BuiltinToolsPage"
 import { ConnectionsPage } from "./app/connections/ConnectionsPage"
+import { MobileConnectionPage } from "./app/connections/MobileConnectionPage"
 import { SshConnectionsPage } from "./app/connections/SshConnectionsPage"
 import { McpServersPage } from "./app/mcp/McpServersPage"
 import { RightSidebar } from "./app/sidebar/RightSidebar"
@@ -92,6 +93,7 @@ const EMPTY_CONNECTION_SEARCH_QUERIES: Record<ConnectionsTab, string> = {
   connectors: "",
   mcp: "",
   ssh: "",
+  mobile: "",
 }
 const EMPTY_SIDE_CHAT_DRAFT_STATE = createEmptyComposerDraftState()
 const EMPTY_SIDE_CHAT_ATTACHMENTS: ComposerAttachment[] = []
@@ -2278,6 +2280,8 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                   onSearchQueryChange={handleConnectionSearchQueryChange}
                   onStartNewMcpServer={startNewMcpServer}
                 />
+              ) : activeConnectionsTab === "mobile" ? (
+                <MobileConnectionPage />
               ) : (
                 <SshConnectionsPage
                   searchQuery={connectionSearchQueries.ssh}
