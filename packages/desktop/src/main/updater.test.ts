@@ -146,6 +146,23 @@ describe("app updater state", () => {
     expect(await updater.getAppUpdateStateSnapshot()).toMatchObject({
       phase: "downloading",
       downloadPercent: 42,
+      downloadTransferredBytes: null,
+      downloadTotalBytes: null,
+      downloadBytesPerSecond: null,
+    })
+
+    electronUpdaterMock.handlers.get("download-progress")?.({
+      bytesPerSecond: 1_250_000,
+      percent: 45,
+      total: 100_000_000,
+      transferred: 45_000_000,
+    })
+    expect(await updater.getAppUpdateStateSnapshot()).toMatchObject({
+      phase: "downloading",
+      downloadPercent: 45,
+      downloadTransferredBytes: 45_000_000,
+      downloadTotalBytes: 100_000_000,
+      downloadBytesPerSecond: 1_250_000,
     })
 
     electronUpdaterMock.handlers.get("update-downloaded")?.({ version: "1.2.4" })
@@ -153,6 +170,9 @@ describe("app updater state", () => {
       phase: "downloaded",
       latestVersion: "1.2.4",
       downloadPercent: 100,
+      downloadTransferredBytes: 100_000_000,
+      downloadTotalBytes: 100_000_000,
+      downloadBytesPerSecond: null,
     })
   })
 

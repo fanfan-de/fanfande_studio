@@ -37,18 +37,21 @@ function createMcpDraft(): McpServerDraftState {
 }
 
 function createAppUpdateState(overrides: Partial<DesktopAppUpdateState> = {}): DesktopAppUpdateState {
-  return {
+  const baseState: DesktopAppUpdateState = {
     phase: "idle",
     version: "1.2.3",
     automaticUpdates: true,
     updateChecksSupported: true,
     latestVersion: null,
     downloadPercent: null,
+    downloadTransferredBytes: null,
+    downloadTotalBytes: null,
+    downloadBytesPerSecond: null,
     error: null,
     lastCheckedAt: null,
     releaseNotes: null,
-    ...overrides,
   }
+  return { ...baseState, ...overrides }
 }
 
 function createWorkspace(overrides: Partial<WorkspaceGroup> = {}): WorkspaceGroup {

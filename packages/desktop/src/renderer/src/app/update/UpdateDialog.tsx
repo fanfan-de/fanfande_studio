@@ -1,6 +1,5 @@
 import type { MouseEvent } from "react"
 import type { DesktopAppUpdateState } from "../../../../shared/desktop-ipc-contract"
-import { CheckIcon, CloseIcon, DownloadIcon, FileTextIcon } from "../icons"
 
 export type AppUpdateStatus = {
   tone: "success" | "error" | "muted"
@@ -28,6 +27,10 @@ export function getAppUpdatePhaseLabel(state: DesktopAppUpdateState | null) {
   }
 }
 
+function getUpdateVersionLabel(state: DesktopAppUpdateState | null) {
+  return state?.latestVersion ? `Anybox ${state.latestVersion}` : "The update"
+}
+
 export function getAppUpdateSummary(state: DesktopAppUpdateState | null) {
   if (!state) return "Loading update status..."
 
@@ -37,15 +40,15 @@ export function getAppUpdateSummary(state: DesktopAppUpdateState | null) {
     case "available":
       return state.latestVersion
         ? `Anybox ${state.latestVersion} is available and will download automatically.`
-        : "A new Anybox desktop update is available."
-    case "downloading": {
-      const percent = typeof state.downloadPercent === "number" ? ` ${Math.round(state.downloadPercent)}%` : ""
-      return `Downloading the update.${percent}`
-    }
+        : "A new Anybox desktop update is available and will download automatically."
+    case "downloading":
+      return state.latestVersion
+        ? `Downloading Anybox ${state.latestVersion}.`
+        : "Downloading the latest Anybox update."
     case "downloaded":
       return state.latestVersion
-        ? `Anybox ${state.latestVersion} is ready. Restart to finish installing.`
-        : "An update is ready. Restart to finish installing."
+        ? `Anybox ${state.latestVersion} has downloaded. Restart the app to finish updating.`
+        : "An update has downloaded. Restart the app to finish updating."
     case "up-to-date":
       return "Anybox is running the latest available version."
     case "error":
@@ -66,7 +69,7 @@ function getUpdateDialogTitle(state: DesktopAppUpdateState | null) {
     case "checking":
       return "Checking for updates"
     case "available":
-      return "A new version is available"
+      return "Preparing update download"
     case "downloading":
       return "Downloading update"
     case "downloaded":
@@ -82,18 +85,38 @@ function getUpdateDialogTitle(state: DesktopAppUpdateState | null) {
   }
 }
 
-function formatUpdateCheckTime(value: number | null | undefined) {
-  if (!value) return "Not checked yet"
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value))
+function formatByteCount(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null
+
+  const units = ["B", "KB", "MB", "GB"] as const
+  let unitIndex = 0
+  let nextValue = value
+  while (nextValue >= 1024 && unitIndex < units.length - 1) {
+    nextValue /= 1024
+    unitIndex += 1
+  }
+
+  if (unitIndex === 0) return `${Math.round(nextValue)} ${units[unitIndex]}`
+  return `${nextValue.toFixed(1)} ${units[unitIndex]}`
 }
 
 function getUpdateProgressPercent(state: DesktopAppUpdateState | null) {
   if (state?.phase === "downloaded") return 100
   if (typeof state?.downloadPercent !== "number") return 0
   return Math.max(0, Math.min(100, state.downloadPercent))
+}
+
+function getProgressTransferLabel(state: DesktopAppUpdateState | null, progressPercent: number) {
+  const transferred = formatByteCount(state?.downloadTransferredBytes)
+  const total = formatByteCount(state?.downloadTotalBytes)
+  if (transferred && total) return `${transferred} / ${total}`
+  if (transferred) return transferred
+  return `${Math.round(progressPercent)}%`
+}
+
+function getProgressSpeedLabel(state: DesktopAppUpdateState | null) {
+  const speed = formatByteCount(state?.downloadBytesPerSecond)
+  return speed ? `${speed}/s` : null
 }
 
 interface UpdateDialogProps {
@@ -117,9 +140,14 @@ export function UpdateDialog({
 }: UpdateDialogProps) {
   const phase = state?.phase ?? "idle"
   const progressPercent = getUpdateProgressPercent(state)
-  const showProgress = phase === "downloading" || phase === "downloaded"
-  const canCheck = phase !== "checking" && phase !== "downloading" && !isChecking
+  const progressSpeed = getProgressSpeedLabel(state)
+  const showProgress = phase === "available" || phase === "downloading"
+  const showCheckAction = phase !== "available" && phase !== "downloading" && phase !== "downloaded"
+  const canCheck = phase !== "checking" && !isChecking
   const canInstall = phase === "downloaded"
+  const secondaryActionLabel = phase === "available" || phase === "downloading" || phase === "checking"
+    ? "Download in background"
+    : "Later"
 
   function handleOverlayClick(event: MouseEvent<HTMLElement>) {
     if (event.target === event.currentTarget) {
@@ -129,64 +157,34 @@ export function UpdateDialog({
 
   return (
     <section className="update-center-overlay" role="presentation" onClick={handleOverlayClick}>
-      <article className="update-center-dialog" role="dialog" aria-modal="true" aria-labelledby="update-center-title">
-        <header className="update-center-header">
-          <div className="update-center-brand">
-            <span className="update-center-app-icon" aria-hidden="true">
-              A
-            </span>
-            <div>
-              <span className="label">Anybox Desktop</span>
-              <h2 id="update-center-title">{getUpdateDialogTitle(state)}</h2>
-            </div>
-          </div>
-          <button className="settings-page-close-button" type="button" aria-label="Close update center" onClick={onClose}>
-            <CloseIcon size={18} />
-          </button>
+      <article
+        className={`update-center-dialog is-${phase}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="update-center-title"
+      >
+        <header className="update-center-titlebar">
+          <h2 id="update-center-title">{getUpdateDialogTitle(state)}</h2>
+          <p>{getAppUpdateSummary(state)}</p>
         </header>
 
-        <div className="update-center-status-card">
-          <div className={`update-center-status-badge is-${phase}`}>
-            <span className="update-center-status-dot" aria-hidden="true" />
-            {getAppUpdatePhaseLabel(state)}
-          </div>
-          <p>{getAppUpdateSummary(state)}</p>
-
-          {showProgress ? (
+        {showProgress ? (
+          <div className="update-center-progress-panel">
             <div className="update-center-progress" aria-label={`Download progress ${Math.round(progressPercent)}%`}>
               <span className="update-center-progress-track">
                 <span className="update-center-progress-fill" style={{ width: `${progressPercent}%` }} />
               </span>
-              <strong>{Math.round(progressPercent)}%</strong>
             </div>
-          ) : null}
-        </div>
+            <div className="update-center-progress-details">
+              <span>{getProgressTransferLabel(state, progressPercent)}</span>
+              {progressSpeed ? <span>{progressSpeed}</span> : null}
+            </div>
+          </div>
+        ) : null}
 
-        <dl className="update-center-meta">
-          <div>
-            <dt>Current version</dt>
-            <dd>{state?.version ?? "Unknown"}</dd>
-          </div>
-          <div>
-            <dt>Latest version</dt>
-            <dd>{state?.latestVersion ?? (phase === "up-to-date" ? state?.version ?? "Unknown" : "Not checked")}</dd>
-          </div>
-          <div>
-            <dt>Last checked</dt>
-            <dd>{formatUpdateCheckTime(state?.lastCheckedAt)}</dd>
-          </div>
-          <div>
-            <dt>Automatic updates</dt>
-            <dd>{state?.automaticUpdates === false ? "Off" : "On"}</dd>
-          </div>
-        </dl>
-
-        {state?.releaseNotes ? (
+        {phase === "downloaded" && state?.releaseNotes ? (
           <section className="update-center-release-notes" aria-label="Release notes">
-            <div>
-              <FileTextIcon size={16} />
-              <h3>Release notes</h3>
-            </div>
+            <h3>{getUpdateVersionLabel(state)}</h3>
             <p>{state.releaseNotes}</p>
           </section>
         ) : null}
@@ -201,19 +199,17 @@ export function UpdateDialog({
 
         <footer className="update-center-actions">
           <button className="secondary-button" type="button" onClick={onClose}>
-            Later
+            {secondaryActionLabel}
           </button>
           {canInstall ? (
             <button className="primary-button" type="button" disabled={isInstalling} onClick={onInstall}>
-              <CheckIcon size={16} />
               {isInstalling ? "Restarting..." : "Restart to install"}
             </button>
-          ) : (
+          ) : showCheckAction ? (
             <button className="primary-button" type="button" disabled={!canCheck} onClick={onCheck}>
-              <DownloadIcon size={16} />
               {isChecking || phase === "checking" ? "Checking..." : "Check for updates"}
             </button>
-          )}
+          ) : null}
         </footer>
       </article>
     </section>

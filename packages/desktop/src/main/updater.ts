@@ -37,6 +37,9 @@ type AppUpdateRuntimeState = {
   phase: DesktopAppUpdatePhase
   latestVersion: string | null
   downloadPercent: number | null
+  downloadTransferredBytes: number | null
+  downloadTotalBytes: number | null
+  downloadBytesPerSecond: number | null
   error: string | null
   lastCheckedAt: number | null
   releaseNotes: string | null
@@ -81,6 +84,9 @@ function createInitialAppUpdateRuntimeState(): AppUpdateRuntimeState {
     phase: "idle",
     latestVersion: null,
     downloadPercent: null,
+    downloadTransferredBytes: null,
+    downloadTotalBytes: null,
+    downloadBytesPerSecond: null,
     error: null,
     lastCheckedAt: null,
     releaseNotes: null,
@@ -232,6 +238,9 @@ function handleUpdaterError(error: Error) {
   setAppUpdateRuntimeState({
     phase: "error",
     downloadPercent: null,
+    downloadTransferredBytes: null,
+    downloadTotalBytes: null,
+    downloadBytesPerSecond: null,
     error: error.message,
     lastCheckedAt: Date.now(),
   })
@@ -254,6 +263,9 @@ function registerUpdaterEvents() {
     setAppUpdateRuntimeState({
       phase: "checking",
       downloadPercent: null,
+      downloadTransferredBytes: null,
+      downloadTotalBytes: null,
+      downloadBytesPerSecond: null,
       error: null,
       lastCheckedAt: Date.now(),
     })
@@ -265,6 +277,9 @@ function registerUpdaterEvents() {
       phase: "available",
       latestVersion: info.version ?? null,
       downloadPercent: null,
+      downloadTransferredBytes: null,
+      downloadTotalBytes: null,
+      downloadBytesPerSecond: null,
       error: null,
       releaseNotes: normalizeReleaseNotes(info.releaseNotes),
     })
@@ -278,6 +293,9 @@ function registerUpdaterEvents() {
       phase: "up-to-date",
       latestVersion: info.version ?? app.getVersion(),
       downloadPercent: null,
+      downloadTransferredBytes: null,
+      downloadTotalBytes: null,
+      downloadBytesPerSecond: null,
       error: null,
       lastCheckedAt: Date.now(),
       releaseNotes: normalizeReleaseNotes(info.releaseNotes),
@@ -295,15 +313,21 @@ function registerUpdaterEvents() {
 
   autoUpdater.on("download-progress", (progress) => {
     const percent = Number.isFinite(progress.percent) ? progress.percent : 0
+    const transferred = Number.isFinite(progress.transferred) ? progress.transferred : null
+    const total = Number.isFinite(progress.total) ? progress.total : null
+    const bytesPerSecond = Number.isFinite(progress.bytesPerSecond) ? progress.bytesPerSecond : null
     const bucket = Math.floor(percent / 10) * 10
-    if (bucket === lastLoggedProgressBucket) return
-
-    lastLoggedProgressBucket = bucket
     setAppUpdateRuntimeState({
       phase: "downloading",
       downloadPercent: Math.max(0, Math.min(100, percent)),
+      downloadTransferredBytes: transferred,
+      downloadTotalBytes: total,
+      downloadBytesPerSecond: bytesPerSecond,
       error: null,
     })
+    if (bucket === lastLoggedProgressBucket) return
+
+    lastLoggedProgressBucket = bucket
     safeLog("[desktop][updater] download progress", `${Math.round(percent)}%`)
   })
 
@@ -315,6 +339,9 @@ function registerUpdaterEvents() {
       phase: "downloaded",
       latestVersion: info.version ?? appUpdateRuntimeState.latestVersion,
       downloadPercent: 100,
+      downloadTransferredBytes: appUpdateRuntimeState.downloadTotalBytes ?? appUpdateRuntimeState.downloadTransferredBytes,
+      downloadTotalBytes: appUpdateRuntimeState.downloadTotalBytes,
+      downloadBytesPerSecond: null,
       error: null,
       releaseNotes: normalizeReleaseNotes(info.releaseNotes) ?? appUpdateRuntimeState.releaseNotes,
     })
@@ -369,6 +396,9 @@ export async function checkForAppUpdates(options: CheckOptions = {}) {
     setAppUpdateRuntimeState({
       phase: "unsupported",
       downloadPercent: null,
+      downloadTransferredBytes: null,
+      downloadTotalBytes: null,
+      downloadBytesPerSecond: null,
       error: "Update checks run in packaged builds.",
       lastCheckedAt: Date.now(),
     })
@@ -409,6 +439,9 @@ export async function checkForAppUpdates(options: CheckOptions = {}) {
   setAppUpdateRuntimeState({
     phase: "checking",
     downloadPercent: null,
+    downloadTransferredBytes: null,
+    downloadTotalBytes: null,
+    downloadBytesPerSecond: null,
     error: null,
     lastCheckedAt: Date.now(),
   })

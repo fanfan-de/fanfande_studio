@@ -329,6 +329,9 @@ export interface DesktopAppUpdateState extends DesktopAppUpdateSettings {
   phase: DesktopAppUpdatePhase
   latestVersion: string | null
   downloadPercent: number | null
+  downloadTransferredBytes: number | null
+  downloadTotalBytes: number | null
+  downloadBytesPerSecond: number | null
   error: string | null
   lastCheckedAt: number | null
   releaseNotes: string | null

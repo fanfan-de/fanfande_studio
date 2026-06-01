@@ -30,18 +30,21 @@ function readBundledStyles() {
 const styles = readBundledStyles()
 
 function createAppUpdateState(overrides: Partial<DesktopAppUpdateState> = {}): DesktopAppUpdateState {
-  return {
+  const baseState: DesktopAppUpdateState = {
     phase: "idle",
     version: "1.2.3",
     automaticUpdates: true,
     updateChecksSupported: true,
     latestVersion: null,
     downloadPercent: null,
+    downloadTransferredBytes: null,
+    downloadTotalBytes: null,
+    downloadBytesPerSecond: null,
     error: null,
     lastCheckedAt: null,
     releaseNotes: null,
-    ...overrides,
   }
+  return { ...baseState, ...overrides }
 }
 
 declare global {
@@ -8141,6 +8144,12 @@ describe("App", () => {
 
     const { container } = render(<App />)
 
+    const automaticUpdateDialog = await screen.findByRole("dialog", { name: "Update ready to install" })
+    fireEvent.click(within(automaticUpdateDialog).getByRole("button", { name: "Later" }))
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Update ready to install" })).not.toBeInTheDocument()
+    })
+
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
 
@@ -8149,7 +8158,7 @@ describe("App", () => {
     const updateDialog = await screen.findByRole("dialog", { name: "Update ready to install" })
     expect(updateDialog.closest(".settings-page")).toBeNull()
     expect(container.querySelector(".app-shell > .update-center-overlay")).not.toBeNull()
-    expect(screen.getByText("1.2.4")).toBeInTheDocument()
+    expect(screen.getAllByText(/Anybox 1\.2\.4/).length).toBeGreaterThan(0)
     expect(screen.getByText("Improved update experience.")).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: "Escape" })
@@ -8163,6 +8172,55 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Restart to install/i }))
     await waitFor(() => expect(window.desktop!.installAppUpdate).toHaveBeenCalledTimes(1))
+  })
+
+  it("opens automatic update prompts while downloading and when ready", async () => {
+    let appUpdateListener: ((state: DesktopAppUpdateState) => void) | null = null
+    window.desktop!.onAppUpdateStateChange = vi.fn((listener: (state: DesktopAppUpdateState) => void) => {
+      appUpdateListener = listener
+      return vi.fn()
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.onAppUpdateStateChange).toHaveBeenCalledTimes(1)
+    })
+
+    act(() => {
+      appUpdateListener?.(createAppUpdateState({
+        phase: "downloading",
+        latestVersion: "1.2.4",
+        downloadPercent: 39.4,
+        downloadTransferredBytes: 62_495_334,
+        downloadTotalBytes: 158_544_691,
+        downloadBytesPerSecond: 20_866_662,
+      }))
+    })
+
+    const downloadDialog = await screen.findByRole("dialog", { name: "Downloading update" })
+    expect(within(downloadDialog).getByText("59.6 MB / 151.2 MB")).toBeInTheDocument()
+    expect(within(downloadDialog).getByText("19.9 MB/s")).toBeInTheDocument()
+
+    fireEvent.click(within(downloadDialog).getByRole("button", { name: "Download in background" }))
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Downloading update" })).not.toBeInTheDocument()
+    })
+
+    act(() => {
+      appUpdateListener?.(createAppUpdateState({
+        phase: "downloaded",
+        latestVersion: "1.2.4",
+        downloadPercent: 100,
+        downloadTransferredBytes: 158_544_691,
+        downloadTotalBytes: 158_544_691,
+        releaseNotes: "Improved update experience.",
+      }))
+    })
+
+    const readyDialog = await screen.findByRole("dialog", { name: "Update ready to install" })
+    expect(within(readyDialog).getAllByText(/Anybox 1\.2\.4/).length).toBeGreaterThan(0)
+    expect(within(readyDialog).getByRole("button", { name: "Restart to install" })).toBeInTheDocument()
   })
 
   it("edits prompt presets from the prompts page", async () => {

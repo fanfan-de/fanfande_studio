@@ -192,6 +192,9 @@ function createFallbackAppUpdateState(enabled: boolean, version = "Unknown"): De
     updateChecksSupported: false,
     latestVersion: null,
     downloadPercent: null,
+    downloadTransferredBytes: null,
+    downloadTotalBytes: null,
+    downloadBytesPerSecond: null,
     error: null,
     lastCheckedAt: null,
     releaseNotes: null,
@@ -798,6 +801,8 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
   const [isInstallingAppUpdate, setIsInstallingAppUpdate] = useState(false)
   const [isSavingAutomaticUpdates, setIsSavingAutomaticUpdates] = useState(false)
   const [isPreparingSettingsPage, setIsPreparingSettingsPage] = useState(false)
+  const autoPromptedDownloadingUpdateRef = useRef<string | null>(null)
+  const autoPromptedDownloadedUpdateRef = useRef<string | null>(null)
   const [creatingWorktreeProjectID, setCreatingWorktreeProjectID] = useState<string | null>(null)
   const creatingWorktreeProjectIDRef = useRef<string | null>(null)
   const toast = useToast()
@@ -902,6 +907,24 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     window.addEventListener("keydown", handleUpdateDialogKeyDown, { capture: true })
     return () => window.removeEventListener("keydown", handleUpdateDialogKeyDown, { capture: true })
   }, [isUpdateDialogOpen])
+
+  useEffect(() => {
+    if (!appUpdateState?.updateChecksSupported) return
+
+    const updateKey = appUpdateState.latestVersion ?? appUpdateState.version ?? "unknown"
+    if (appUpdateState.phase === "downloading") {
+      if (autoPromptedDownloadingUpdateRef.current !== updateKey) {
+        autoPromptedDownloadingUpdateRef.current = updateKey
+        setIsUpdateDialogOpen(true)
+      }
+      return
+    }
+
+    if (appUpdateState.phase === "downloaded" && autoPromptedDownloadedUpdateRef.current !== updateKey) {
+      autoPromptedDownloadedUpdateRef.current = updateKey
+      setIsUpdateDialogOpen(true)
+    }
+  }, [appUpdateState])
 
   const {
     activeSession,
