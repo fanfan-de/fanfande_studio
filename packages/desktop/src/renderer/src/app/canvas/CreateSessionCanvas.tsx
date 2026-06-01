@@ -1,4 +1,5 @@
-import { type ChangeEvent, type PointerEvent, useEffect, useRef, useState } from "react"
+import { type KeyboardEvent, type PointerEvent, useEffect, useId, useRef, useState } from "react"
+import { joinClassNames } from "../shared-ui"
 import { ThreadMarkdown } from "../thread-markdown"
 import type { WorkspaceGroup } from "../types"
 
@@ -306,22 +307,240 @@ function CreateSessionLogo() {
   return <span className="create-session-logo" role="img" aria-label="Anybox logo" />
 }
 
+function getWorkspaceLabel(workspace: WorkspaceGroup) {
+  return `${workspace.project.name} / ${workspace.name}`
+}
+
+function CreateSessionWorkspaceSelect({
+  disabled,
+  selectedWorkspaceID,
+  workspaces,
+  onWorkspaceChange,
+}: {
+  disabled: boolean
+  selectedWorkspaceID: string | null
+  workspaces: WorkspaceGroup[]
+  onWorkspaceChange: (workspaceID: string) => void
+}) {
+  const menuID = useId()
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const selectedIndex = workspaces.findIndex((workspace) => workspace.id === selectedWorkspaceID)
+  const selectedOptionIndex = selectedIndex >= 0 ? selectedIndex : workspaces.length > 0 ? 0 : -1
+  const selectedWorkspace = selectedOptionIndex >= 0 ? workspaces[selectedOptionIndex] : null
+  const selectedLabel = selectedWorkspace ? getWorkspaceLabel(selectedWorkspace) : "No project available"
+  const isDisabled = disabled || workspaces.length === 0
+  const [activeIndex, setActiveIndex] = useState(selectedOptionIndex >= 0 ? selectedOptionIndex : 0)
+
+  useEffect(() => {
+    setActiveIndex(selectedOptionIndex >= 0 ? selectedOptionIndex : 0)
+  }, [selectedOptionIndex])
+
+  useEffect(() => {
+    if (!isMenuOpen) return
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return
+      setIsMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      setIsMenuOpen(false)
+      buttonRef.current?.focus({ preventScroll: true })
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [isMenuOpen])
+
+  function focusOption(index: number) {
+    if (index < 0 || index >= workspaces.length) return
+    setActiveIndex(index)
+    window.requestAnimationFrame(() => {
+      optionRefs.current[index]?.focus({ preventScroll: true })
+    })
+  }
+
+  function openMenu(index = selectedOptionIndex >= 0 ? selectedOptionIndex : 0) {
+    if (isDisabled) return
+    setIsMenuOpen(true)
+    focusOption(index)
+  }
+
+  function closeMenu(focusTrigger = false) {
+    setIsMenuOpen(false)
+    if (focusTrigger) {
+      window.requestAnimationFrame(() => {
+        buttonRef.current?.focus({ preventScroll: true })
+      })
+    }
+  }
+
+  function selectWorkspace(index: number) {
+    const workspace = workspaces[index]
+    if (!workspace || isDisabled) return
+
+    closeMenu(true)
+    if (workspace.id !== selectedWorkspaceID) {
+      onWorkspaceChange(workspace.id)
+    }
+  }
+
+  function handleTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (isDisabled) return
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault()
+      openMenu(selectedOptionIndex >= 0 ? selectedOptionIndex : 0)
+      return
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault()
+      openMenu(0)
+      return
+    }
+
+    if (event.key === "End") {
+      event.preventDefault()
+      openMenu(workspaces.length - 1)
+    }
+  }
+
+  function handleOptionKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      focusOption((index + 1) % workspaces.length)
+      return
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault()
+      focusOption((index - 1 + workspaces.length) % workspaces.length)
+      return
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault()
+      focusOption(0)
+      return
+    }
+
+    if (event.key === "End") {
+      event.preventDefault()
+      focusOption(workspaces.length - 1)
+      return
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      selectWorkspace(index)
+      return
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault()
+      closeMenu(true)
+      return
+    }
+
+    if (event.key === "Tab") {
+      setIsMenuOpen(false)
+    }
+  }
+
+  return (
+    <div className="create-session-workspace-select">
+      <button
+        ref={buttonRef}
+        type="button"
+        className={joinClassNames("create-session-select-trigger", isMenuOpen && "is-active")}
+        aria-controls={isMenuOpen ? menuID : undefined}
+        aria-expanded={isMenuOpen}
+        aria-haspopup="listbox"
+        aria-label={`Session project: ${selectedLabel}`}
+        disabled={isDisabled}
+        title={selectedLabel}
+        onClick={() => {
+          if (isMenuOpen) {
+            closeMenu()
+            return
+          }
+          openMenu()
+        }}
+        onKeyDown={handleTriggerKeyDown}
+      >
+        <span>{selectedLabel}</span>
+      </button>
+
+      {isMenuOpen ? (
+        <div
+          ref={menuRef}
+          id={menuID}
+          className="create-session-select-panel"
+          role="listbox"
+          aria-label="Session project"
+        >
+          {workspaces.map((workspace, index) => {
+            const isSelected = index === selectedOptionIndex
+
+            return (
+              <button
+                key={workspace.id}
+                ref={(node) => {
+                  optionRefs.current[index] = node
+                }}
+                type="button"
+                className={joinClassNames(
+                  "create-session-select-option",
+                  isSelected && "is-selected",
+                  index === activeIndex && "is-active",
+                )}
+                aria-selected={isSelected}
+                role="option"
+                title={getWorkspaceLabel(workspace)}
+                onClick={() => selectWorkspace(index)}
+                onFocus={() => setActiveIndex(index)}
+                onKeyDown={(event) => handleOptionKeyDown(event, index)}
+                onMouseEnter={() => setActiveIndex(index)}
+              >
+                <span>{getWorkspaceLabel(workspace)}</span>
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export function CreateSessionCanvas({
   isCreatingSession,
   selectedWorkspaceID,
   workspaces,
   onWorkspaceChange,
 }: CreateSessionCanvasProps) {
-  const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID) ?? null
-
   if (workspaces.length === 0) {
     return (
       <section className="thread-shell create-session-shell">
         <article className="create-session-card">
           <CreateSessionLogo />
-          <select className="create-session-native-select" aria-label="Session project" disabled value="">
-            <option value="">No project available</option>
-          </select>
+          <CreateSessionWorkspaceSelect
+            disabled
+            selectedWorkspaceID={selectedWorkspaceID}
+            workspaces={workspaces}
+            onWorkspaceChange={onWorkspaceChange}
+          />
         </article>
       </section>
     )
@@ -331,19 +550,12 @@ export function CreateSessionCanvas({
     <section className="thread-shell create-session-shell">
       <article className="create-session-card">
         <CreateSessionLogo />
-        <select
-          className="create-session-native-select"
-          aria-label="Session project"
+        <CreateSessionWorkspaceSelect
           disabled={isCreatingSession}
-          value={selectedWorkspaceID ?? selectedWorkspace?.id ?? ""}
-          onChange={(event: ChangeEvent<HTMLSelectElement>) => onWorkspaceChange(event.target.value)}
-        >
-          {workspaces.map((workspace) => (
-            <option key={workspace.id} value={workspace.id}>
-              {workspace.project.name} / {workspace.name}
-            </option>
-          ))}
-        </select>
+          selectedWorkspaceID={selectedWorkspaceID}
+          workspaces={workspaces}
+          onWorkspaceChange={onWorkspaceChange}
+        />
       </article>
     </section>
   )

@@ -55,7 +55,7 @@
   --dockview-tab-bar-bg: var(--seg-pane-tab-bar-surface);
   --dockview-tab-border: var(--seg-border);
   --dockview-tab-divider: var(--seg-divider);
-  --dockview-tab-radius: 6px;
+  --dockview-tab-radius: 0px;
   --dockview-tab-active-bg: var(--seg-shell);
   --dockview-tab-hover-bg: var(--mix-seg-panel-66-seg-panel-muted-34);
   --dockview-tab-icon-color: var(--semantic-accent-icon);
