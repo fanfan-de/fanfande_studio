@@ -256,6 +256,43 @@ describe("PluginsPage", () => {
     expect(onInstallPlugin).toHaveBeenCalledWith("filesystem")
   })
 
+  it("renders primary category navigation and promotion content", () => {
+    render(
+      <PluginsPage
+        {...createProps({
+          pluginCatalog: [
+            createPlugin(),
+            createDocsPlugin(),
+            createPlugin({
+              id: "designer",
+              name: "Designer",
+              description: "Create design assets.",
+              category: "Design",
+              configFields: [],
+              mcpServers: [],
+            }),
+          ],
+        })}
+      />,
+    )
+
+    const categoryNav = screen.getByRole("navigation", { name: "Plugin categories" })
+    expect(within(categoryNav).getByRole("button", { name: "全部，3 个插件" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("region", { name: "Plugin promotion" })).toBeInTheDocument()
+
+    fireEvent.click(within(categoryNav).getByRole("button", { name: "文档，1 个插件" }))
+
+    expect(within(categoryNav).getByRole("button", { name: "文档，1 个插件" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Docs not installed" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Filesystem not installed" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "查看全部插件" }))
+
+    expect(within(categoryNav).getByRole("button", { name: "全部，3 个插件" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Filesystem not installed" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Docs not installed" })).toBeInTheDocument()
+  })
+
   it("lists installed plugins in the installed sidebar", () => {
     const onPluginSelect = vi.fn()
 
@@ -382,7 +419,7 @@ describe("PluginsPage", () => {
     expect(onPluginDeselect).toHaveBeenCalledTimes(1)
   })
 
-  it("filters plugins by search and category and selects a plugin from the list", () => {
+  it("filters plugins by external search and category navigation and selects a plugin from the list", () => {
     const onPluginSelect = vi.fn()
     render(
       <PluginsPage
@@ -391,25 +428,17 @@ describe("PluginsPage", () => {
             createPlugin(),
             createDocsPlugin(),
           ],
+          searchQuery: "docs",
           onPluginSelect,
         })}
       />,
     )
 
-    fireEvent.change(screen.getByLabelText("Search"), {
-      target: {
-        value: "docs",
-      },
-    })
-
     expect(screen.getByRole("button", { name: "Docs not installed" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Filesystem not installed" })).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText("Category"), {
-      target: {
-        value: "Docs",
-      },
-    })
+    const categoryNav = screen.getByRole("navigation", { name: "Plugin categories" })
+    fireEvent.click(within(categoryNav).getByRole("button", { name: "文档，1 个插件" }))
     expect(screen.getByRole("button", { name: "Docs not installed" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Docs not installed" }))

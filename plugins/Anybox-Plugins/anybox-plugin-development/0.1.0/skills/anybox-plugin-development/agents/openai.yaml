@@ -1,0 +1,4 @@
+interface:
+  display_name: "Anybox 插件开发"
+  short_description: "创建和验证 Fanfande 插件包。"
+  default_prompt: "使用 $anybox-plugin-development 创建或验证一个 Fanfande/Anybox 插件包。"

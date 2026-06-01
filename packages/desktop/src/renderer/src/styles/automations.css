@@ -1105,6 +1105,10 @@
   min-width: 190px;
 }
 
+.automations-environment-menu {
+  min-width: 160px;
+}
+
 .automations-cadence-menu .automations-create-menu-option {
   min-height: 32px;
   padding: 4px 8px;

@@ -6,7 +6,8 @@ import {
   ChevronRightIcon,
   CloseIcon,
   DeleteIcon,
-  OpenExternalIcon,
+  FolderIcon,
+  ForkIcon,
   PauseIcon,
   PlayIcon,
   SessionRunningIcon,
@@ -25,8 +26,9 @@ import type { TranslationKey } from "../i18n/translations"
 
 type AgentAutomationSchedule = AgentAutomationDefinition["schedule"]
 type AgentAutomationStatus = AgentAutomationDefinition["status"]
-type CreateMenuKey = "cadence" | "project"
+type CreateMenuKey = "cadence" | "environment" | "project"
 type CreatePanelMode = "manual" | "templates"
+type CreateTargetMode = "local" | "worktree"
 type AutomationDetailDraft = {
   automationID: string
   name: string
@@ -51,6 +53,12 @@ interface AutomationProjectOption {
   directory: string
   id: string
   name: string
+  projectID?: string
+  projectKind?: "directory" | "git"
+  repositoryRoot?: string
+  vcs?: "git"
+  worktree?: string
+  workspaceRoots?: string[]
 }
 
 interface AutomationsPageProps {
@@ -256,6 +264,67 @@ function getOutputPolicyLabel(automation: AgentAutomationDefinition, translate: 
     : translate("automations.output.findingsReview")
 }
 
+function normalizeAutomationTargetPath(value: string | undefined) {
+  const trimmed = value?.trim().replace(/\\/g, "/").replace(/\/+$/, "") ?? ""
+  if (!trimmed) return ""
+  if (trimmed.includes("://")) return trimmed
+
+  const normalized = trimmed.replace(/\/+/g, "/")
+  return /^[a-z]:\//i.test(normalized) ? normalized.toLowerCase() : normalized
+}
+
+function automationTargetPathEquals(left: string | undefined, right: string | undefined) {
+  return normalizeAutomationTargetPath(left) === normalizeAutomationTargetPath(right)
+}
+
+function automationTargetPathContains(root: string | undefined, candidate: string | undefined) {
+  const normalizedRoot = normalizeAutomationTargetPath(root)
+  const normalizedCandidate = normalizeAutomationTargetPath(candidate)
+  if (!normalizedRoot || !normalizedCandidate) return false
+  return normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}/`)
+}
+
+function isGitAutomationTarget(project: AutomationProjectOption) {
+  return project.projectKind === "git" || project.vcs === "git"
+}
+
+function isLinkedWorktreeAutomationTarget(project: AutomationProjectOption) {
+  if (!isGitAutomationTarget(project)) return false
+
+  const primaryRoots = [project.worktree, project.repositoryRoot]
+    .filter((root): root is string => Boolean(root?.trim()))
+  if (primaryRoots.some((root) => automationTargetPathContains(root, project.directory))) return false
+
+  const workspaceRoots = project.workspaceRoots ?? []
+  const linkedRoot = workspaceRoots.find((root) => (
+    !primaryRoots.some((primaryRoot) => automationTargetPathEquals(root, primaryRoot)) &&
+    automationTargetPathContains(root, project.directory)
+  ))
+  if (linkedRoot) return true
+
+  if (workspaceRoots.length > 0 || primaryRoots.length === 0) return false
+  return true
+}
+
+function getAutomationTargetProjectID(project: AutomationProjectOption) {
+  return project.projectID?.trim() || project.id.trim()
+}
+
+function getTargetModeLabel(targetMode: CreateTargetMode, translate: Translate) {
+  return targetMode === "local"
+    ? translate("automations.environment.local")
+    : translate("automations.environment.worktree")
+}
+
+function createAutomationScopeForTarget(project: AutomationProjectOption): AgentAutomationCreateInput["scope"] {
+  if (isLinkedWorktreeAutomationTarget(project)) {
+    return { directories: [project.directory] }
+  }
+
+  const projectID = getAutomationTargetProjectID(project)
+  return projectID ? { projectIDs: [projectID] } : { directories: [project.directory] }
+}
+
 export function AutomationsPage({ projects, windowControls, onOpenSession }: AutomationsPageProps) {
   const { locale, t } = useI18n()
   const defaultTemplate = AUTOMATION_TEMPLATES[0]
@@ -272,6 +341,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
   const [draftPrompt, setDraftPrompt] = useState(defaultTemplateDraft.prompt)
   const [detailDraft, setDetailDraft] = useState<AutomationDetailDraft | null>(null)
   const [cadence, setCadence] = useState<CadenceKey>(AUTOMATION_TEMPLATES[0]?.cadence ?? "daily")
+  const [targetMode, setTargetMode] = useState<CreateTargetMode>("worktree")
   const [createPanelMode, setCreatePanelMode] = useState<CreatePanelMode>("manual")
   const [openCreateMenu, setOpenCreateMenu] = useState<CreateMenuKey | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -282,7 +352,29 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
   const detailSaveTimeoutRef = useRef<number | null>(null)
   const pendingDetailSaveRef = useRef<{ automationID: string; patch: AutomationTextPatch } | null>(null)
 
-  const projectsByID = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
+  const selectableProjects = useMemo(
+    () => targetMode === "worktree"
+      ? projects
+      : projects.filter((project) => !isLinkedWorktreeAutomationTarget(project)),
+    [projects, targetMode],
+  )
+  const selectableProjectsByID = useMemo(
+    () => new Map(selectableProjects.map((project) => [project.id, project])),
+    [selectableProjects],
+  )
+  const projectsByID = useMemo(() => {
+    const nextProjectsByID = new Map<string, AutomationProjectOption>()
+    for (const project of projects) {
+      const projectID = getAutomationTargetProjectID(project)
+      if (!projectID) continue
+
+      const existing = nextProjectsByID.get(projectID)
+      if (!existing || (isLinkedWorktreeAutomationTarget(existing) && !isLinkedWorktreeAutomationTarget(project))) {
+        nextProjectsByID.set(projectID, project)
+      }
+    }
+    return nextProjectsByID
+  }, [projects])
   const automationsByID = useMemo(
     () => new Map(automations.map((automation) => [automation.id, automation])),
     [automations],
@@ -304,14 +396,20 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
   const selectedScheduleLabel = selectedScheduleOption
     ? t(selectedScheduleOption.labelKey)
     : t("automations.schedule.label")
-  const selectedProject = selectedProjectID ? projectsByID.get(selectedProjectID) : undefined
+  const selectedTargetModeLabel = getTargetModeLabel(targetMode, t)
+  const selectedProject = selectedProjectID ? selectableProjectsByID.get(selectedProjectID) : undefined
   const selectedTemplateID = draftTemplateID
 
   useEffect(() => {
-    if (!selectedProjectID && projects[0]) {
-      setSelectedProjectID(projects[0].id)
+    if (selectableProjects.length === 0) {
+      if (selectedProjectID) setSelectedProjectID("")
+      return
     }
-  }, [projects, selectedProjectID])
+
+    if (!selectedProjectID || !selectableProjectsByID.has(selectedProjectID)) {
+      setSelectedProjectID(selectableProjects[0]?.id ?? "")
+    }
+  }, [selectableProjects, selectableProjectsByID, selectedProjectID])
 
   useEffect(() => {
     if (selectedAutomationID && !automationsByID.has(selectedAutomationID)) {
@@ -512,7 +610,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
 
   async function handleCreateAutomation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const project = projectsByID.get(selectedProjectID)
+    const project = selectableProjectsByID.get(selectedProjectID)
     const name = draftName.trim()
     const prompt = draftPrompt.trim()
     if (!project) {
@@ -535,9 +633,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
         expression: scheduleOption.expression,
         timezone,
       },
-      scope: {
-        projectIDs: [project.id],
-      },
+      scope: createAutomationScopeForTarget(project),
       execution: {
         environment: "local",
         permissionMode: "default",
@@ -727,16 +823,48 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
 
           <div className="automations-create-footer">
             <div className="automations-create-controls" aria-label={t("automations.create.configurationLabel")}>
-              <span className="automations-create-control-pill" title={selectedProject?.directory ?? t("automations.project.noneSelected")}>
-                <OpenExternalIcon />
-                <span>{t("automations.create.worktree")}</span>
-              </span>
+              <div className="automations-create-menu-anchor">
+                <button
+                  className={joinClassNames("automations-create-control-button", openCreateMenu === "environment" && "is-active")}
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={openCreateMenu === "environment"}
+                  title={t("automations.environment.menuLabel")}
+                  onClick={() => setOpenCreateMenu((current) => current === "environment" ? null : "environment")}
+                >
+                  {targetMode === "local" ? <FolderIcon /> : <ForkIcon />}
+                  <span>{selectedTargetModeLabel}</span>
+                </button>
+
+                {openCreateMenu === "environment" ? (
+                  <div className="automations-create-menu automations-environment-menu" role="menu" aria-label={t("automations.environment.menuLabel")}>
+                    {(["local", "worktree"] satisfies CreateTargetMode[]).map((mode) => (
+                      <button
+                        key={mode}
+                        className={joinClassNames("automations-create-menu-option", targetMode === mode && "is-selected")}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={targetMode === mode}
+                        onClick={() => {
+                          setTargetMode(mode)
+                          setOpenCreateMenu(null)
+                        }}
+                      >
+                        <span className="automations-create-menu-copy">
+                          <strong>{getTargetModeLabel(mode, t)}</strong>
+                        </span>
+                        {targetMode === mode ? <CheckIcon /> : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
 
               <div className="automations-create-menu-anchor">
                 <button
                   className={joinClassNames("automations-create-control-button", openCreateMenu === "project" && "is-active")}
                   type="button"
-                  disabled={projects.length === 0}
+                  disabled={selectableProjects.length === 0}
                   aria-haspopup="menu"
                   aria-expanded={openCreateMenu === "project"}
                   onClick={() => setOpenCreateMenu((current) => current === "project" ? null : "project")}
@@ -746,7 +874,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
 
                 {openCreateMenu === "project" ? (
                   <div className="automations-create-menu automations-project-menu" role="menu" aria-label={t("automations.project.menuLabel")}>
-                    {projects.map((project) => (
+                    {selectableProjects.map((project) => (
                       <button
                         key={project.id}
                         className={joinClassNames("automations-create-menu-option", selectedProjectID === project.id && "is-selected")}
@@ -761,6 +889,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                         <span className="automations-create-menu-copy">
                           <strong>{project.name}</strong>
                         </span>
+                        {selectedProjectID === project.id ? <CheckIcon /> : null}
                       </button>
                     ))}
                   </div>
@@ -815,7 +944,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                 className="primary-button automations-create-button"
                 type="submit"
                 aria-label={t("automations.create.submit")}
-                disabled={isSaving || projects.length === 0}
+                disabled={isSaving || selectableProjects.length === 0}
               >
                 {isSaving ? t("automations.create.creating") : t("automations.create.create")}
               </button>

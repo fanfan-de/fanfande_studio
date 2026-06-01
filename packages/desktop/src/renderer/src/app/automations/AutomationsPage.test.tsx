@@ -136,9 +136,98 @@ describe("AutomationsPage", () => {
       scope: {
         projectIDs: ["proj_1"],
       },
+      execution: expect.objectContaining({
+        environment: "local",
+      }),
       schedule: expect.objectContaining({
         type: "rrule",
       }),
+    }))
+  })
+
+  it("filters linked worktree targets in local mode and scopes linked worktrees by directory", async () => {
+    const createAutomationMock = vi.fn(async (input: AgentAutomationCreateInput) => createAutomation({
+      id: "aut_created",
+      name: input.name,
+      prompt: input.prompt,
+      scope: input.scope,
+      execution: {
+        environment: input.execution?.environment ?? "local",
+        permissionMode: input.execution?.permissionMode ?? "default",
+      },
+    }))
+    setDesktopMock({
+      cancelAutomationRun: vi.fn(),
+      createAutomation: createAutomationMock,
+      deleteAutomation: vi.fn(),
+      listAutomationRuns: vi.fn(async () => [] satisfies AgentAutomationRun[]),
+      listAutomations: vi.fn(async () => [] satisfies AgentAutomationDefinition[]),
+      runAutomation: vi.fn(),
+      updateAutomation: vi.fn(),
+      updateAutomationRunTriage: vi.fn(),
+    })
+
+    render(
+      <AutomationsPage
+        projects={[
+          {
+            directory: "C:/repo/app",
+            id: "workspace-primary",
+            name: "Repo",
+            projectID: "proj_git",
+            projectKind: "git",
+            repositoryRoot: "C:/repo/app",
+            vcs: "git",
+            worktree: "C:/repo/app",
+            workspaceRoots: ["C:/repo/app", "C:/worktrees/app-feature"],
+          },
+          {
+            directory: "C:/worktrees/app-feature",
+            id: "workspace-linked",
+            name: "Feature",
+            projectID: "proj_git",
+            projectKind: "git",
+            repositoryRoot: "C:/repo/app",
+            vcs: "git",
+            worktree: "C:/repo/app",
+            workspaceRoots: ["C:/repo/app", "C:/worktrees/app-feature"],
+          },
+          {
+            directory: "C:/scratch/plain",
+            id: "workspace-plain",
+            name: "Plain",
+            projectID: "proj_plain",
+            projectKind: "directory",
+            worktree: "C:/scratch/plain",
+          },
+        ]}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole("button", { name: "New automation" }))
+
+    fireEvent.click(screen.getByRole("button", { name: "Worktree" }))
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Local" }))
+
+    fireEvent.click(screen.getByRole("button", { name: "Repo" }))
+    expect(screen.getByRole("menuitemradio", { name: "Repo" })).toBeInTheDocument()
+    expect(screen.getByRole("menuitemradio", { name: "Plain" })).toBeInTheDocument()
+    expect(screen.queryByRole("menuitemradio", { name: "Feature" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Local" }))
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Worktree" }))
+    fireEvent.click(screen.getByRole("button", { name: "Repo" }))
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Feature" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create automation" }))
+
+    await waitFor(() => expect(createAutomationMock).toHaveBeenCalledTimes(1))
+    expect(createAutomationMock).toHaveBeenCalledWith(expect.objectContaining({
+      execution: expect.objectContaining({
+        environment: "local",
+      }),
+      scope: {
+        directories: ["C:/worktrees/app-feature"],
+      },
     }))
   })
 

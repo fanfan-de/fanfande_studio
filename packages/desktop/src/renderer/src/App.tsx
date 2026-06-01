@@ -2171,8 +2171,14 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               <AutomationsPage
                 projects={workspaces.map((workspace) => ({
                   directory: workspace.directory,
-                  id: workspace.project.id,
+                  id: workspace.id,
                   name: workspace.name,
+                  projectID: workspace.project.id,
+                  projectKind: workspace.project.kind,
+                  repositoryRoot: workspace.project.repositoryRoot,
+                  vcs: workspace.project.vcs,
+                  worktree: workspace.project.worktree,
+                  workspaceRoots: workspace.project.workspaceRoots,
                 }))}
                 windowControls={windowControls}
                 onOpenSession={(sessionID) => handleCanvasSessionTabSelect(sessionID)}

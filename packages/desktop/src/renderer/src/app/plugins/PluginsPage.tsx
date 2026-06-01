@@ -9,7 +9,6 @@ import {
   OpenExternalIcon,
   PluginIcon,
   PlusIcon,
-  SearchIcon,
   SettingsIcon,
 } from "../icons"
 import { ShellTopMenu } from "../shared-ui"
@@ -86,6 +85,7 @@ const CATEGORY_LABELS: Record<PluginCategory | "All", string> = {
 
 const PUBLISHER_FILTER_ALL = "All"
 const FEATURED_PLUGIN_LIMIT = 3
+const PROMOTION_PLUGIN_LIMIT = 3
 
 type PluginVisualStyle = CSSProperties & {
   "--plugins-brand-color"?: string
@@ -266,6 +266,111 @@ function PluginMarketVisual({ plugin }: { plugin: PluginCatalogItem }) {
         <PluginMark plugin={plugin} />
       </span>
     </span>
+  )
+}
+
+interface PluginCategoryNavigationProps {
+  activeCategory: PluginCategory | "All"
+  categoryCounts: Map<PluginCategory | "All", number>
+  onCategoryChange: (category: PluginCategory | "All") => void
+}
+
+function PluginCategoryNavigation({
+  activeCategory,
+  categoryCounts,
+  onCategoryChange,
+}: PluginCategoryNavigationProps) {
+  return (
+    <nav className="plugins-marketplace-category-nav" aria-label="Plugin categories">
+      {CATEGORY_FILTERS.map((category) => {
+        const isActive = category === activeCategory
+        const count = categoryCounts.get(category) ?? 0
+
+        return (
+          <button
+            key={category}
+            className={isActive ? "is-active" : undefined}
+            type="button"
+            aria-label={`${CATEGORY_LABELS[category]}，${count} 个插件`}
+            aria-pressed={isActive}
+            onClick={() => onCategoryChange(category)}
+          >
+            <span>{CATEGORY_LABELS[category]}</span>
+            <span>{count}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
+interface PluginPromotionHeroProps {
+  installedCount: number
+  pluginCount: number
+  promotionPlugins: PluginCatalogItem[]
+  publisherCount: number
+  onBrowseAll: () => void
+}
+
+function PluginPromotionHero({
+  installedCount,
+  pluginCount,
+  promotionPlugins,
+  publisherCount,
+  onBrowseAll,
+}: PluginPromotionHeroProps) {
+  const primaryPlugin = promotionPlugins[0] ?? null
+  const title = primaryPlugin ? `用 ${primaryPlugin.name} 扩展 Anybox` : "为 Anybox 添加工作流能力"
+  const description = primaryPlugin
+    ? `精选 ${CATEGORY_LABELS[primaryPlugin.category]} 场景插件，按项目安装并组合 MCP、技能和连接器。`
+    : "从开发、文档、自动化到设计，把常用能力装进当前工作区。"
+
+  return (
+    <section className="plugins-promotion-hero" aria-label="Plugin promotion">
+      <div className="plugins-promotion-copy">
+        <span className="plugins-promotion-eyebrow">本周精选</span>
+        <h2>{title}</h2>
+        <p>{description}</p>
+        <div className="plugins-promotion-metrics" aria-label="Plugin promotion summary">
+          <span>
+            <strong>{pluginCount}</strong>
+            <span>插件</span>
+          </span>
+          <span>
+            <strong>{publisherCount}</strong>
+            <span>开发者</span>
+          </span>
+          <span>
+            <strong>{installedCount}</strong>
+            <span>已安装</span>
+          </span>
+        </div>
+        <button className="plugins-promotion-button" type="button" onClick={onBrowseAll}>
+          查看全部插件
+        </button>
+      </div>
+      <div className="plugins-promotion-visual" aria-hidden="true">
+        {promotionPlugins.length > 0 ? (
+          promotionPlugins.map((plugin) => {
+            const image = pluginImageURL(plugin, "hero")
+
+            return (
+              <span key={plugin.id} className="plugins-promotion-card" style={pluginBrandStyle(plugin)}>
+                <span className={image ? "plugins-promotion-card-image has-image" : "plugins-promotion-card-image"}>
+                  {image ? <img src={image} alt="" /> : <span />}
+                </span>
+                <span className="plugins-promotion-card-footer">
+                  <PluginMark plugin={plugin} />
+                  <span>{plugin.name}</span>
+                </span>
+              </span>
+            )
+          })
+        ) : (
+          <span className="plugins-promotion-empty-visual" />
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -724,6 +829,19 @@ export function PluginsPage({
     () => Array.from(new Set(pluginCatalog.map((plugin) => plugin.publisher).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
     [pluginCatalog],
   )
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<PluginCategory | "All", number>([["All", pluginCatalog.length]])
+
+    for (const category of CATEGORY_FILTERS) {
+      if (category !== "All") counts.set(category, 0)
+    }
+
+    for (const plugin of pluginCatalog) {
+      counts.set(plugin.category, (counts.get(plugin.category) ?? 0) + 1)
+    }
+
+    return counts
+  }, [pluginCatalog])
   const filteredPlugins = useMemo(() => {
     const normalizedQuery = effectiveSearchQuery.trim().toLowerCase()
     return pluginCatalog.filter((plugin) => {
@@ -793,6 +911,11 @@ export function PluginsPage({
     const priorityPlugins = installedMatches.length > 0 ? installedMatches : filteredPlugins
     return priorityPlugins.slice(0, FEATURED_PLUGIN_LIMIT)
   }, [filteredPlugins, installedByPluginID])
+  const promotionPlugins = useMemo(() => {
+    const installedMatches = pluginCatalog.filter((plugin) => installedByPluginID.has(plugin.id))
+    const priorityPlugins = installedMatches.length > 0 ? installedMatches : pluginCatalog
+    return priorityPlugins.slice(0, PROMOTION_PLUGIN_LIMIT)
+  }, [installedByPluginID, pluginCatalog])
   const shouldShowFeatured = !hasDirectoryFilters && featuredPlugins.length > 0
   const featuredPluginIDs = useMemo(() => new Set(featuredPlugins.map((plugin) => plugin.id)), [featuredPlugins])
   const directorySections = useMemo(() => {
@@ -836,6 +959,12 @@ export function PluginsPage({
       setLocalSearchQuery(value)
     }
     onSearchQueryChange?.(value)
+  }
+
+  function handleBrowseAllPlugins() {
+    setCategoryFilter("All")
+    setPublisherFilter(PUBLISHER_FILTER_ALL)
+    handleSearchQueryChange("")
   }
 
   useEffect(() => {
@@ -892,66 +1021,19 @@ export function PluginsPage({
               {pluginDetailBreadcrumb}
               {!activePlugin ? (
               <>
-                <header className="plugins-marketplace-header">
-                  <div className="plugins-marketplace-title-block">
-                    <span className="plugins-marketplace-eyebrow">Plugin Store</span>
-                    <h1>插件商店</h1>
-                    <p>让 Anybox 按你的方式工作</p>
-                  </div>
-                  <div className="plugins-marketplace-stats" aria-label="Plugin marketplace summary">
-                    <span>
-                      <strong>{pluginCatalog.length}</strong>
-                      <span>插件</span>
-                    </span>
-                    <span>
-                      <strong>{installedPlugins.length}</strong>
-                      <span>已安装</span>
-                    </span>
-                    <span>
-                      <strong>{publisherFilters.length}</strong>
-                      <span>开发者</span>
-                    </span>
-                  </div>
-                  <div className="plugins-filter-row" aria-label="Plugin filters">
-                    {!hasExternalSearch ? (
-                      <label className="plugins-search-control">
-                        <SearchIcon />
-                        <input
-                          aria-label="Search"
-                          type="search"
-                          value={effectiveSearchQuery}
-                          placeholder="搜索插件"
-                          onChange={(event) => handleSearchQueryChange(event.target.value)}
-                        />
-                      </label>
-                    ) : null}
-                    <label className="plugins-select-control">
-                      <select aria-label="Builder" value={publisherFilter} onChange={(event) => setPublisherFilter(event.target.value)}>
-                        <option value={PUBLISHER_FILTER_ALL}>全部开发者</option>
-                        {publisherFilters.map((publisher) => (
-                          <option key={publisher} value={publisher}>
-                            由 {publisher} 开发
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDownIcon />
-                    </label>
-                    <label className="plugins-select-control is-category">
-                      <select
-                        aria-label="Category"
-                        value={categoryFilter}
-                        onChange={(event) => setCategoryFilter(event.target.value as PluginCategory | "All")}
-                      >
-                        {CATEGORY_FILTERS.map((category) => (
-                          <option key={category} value={category}>
-                            {CATEGORY_LABELS[category]}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDownIcon />
-                    </label>
-                  </div>
-                </header>
+                <PluginCategoryNavigation
+                  activeCategory={categoryFilter}
+                  categoryCounts={categoryCounts}
+                  onCategoryChange={setCategoryFilter}
+                />
+
+                <PluginPromotionHero
+                  installedCount={installedPlugins.length}
+                  pluginCount={pluginCatalog.length}
+                  promotionPlugins={promotionPlugins}
+                  publisherCount={publisherFilters.length}
+                  onBrowseAll={handleBrowseAllPlugins}
+                />
 
                 <div className="plugins-directory" role="region" aria-label="Plugin marketplace layout">
                   {hasPluginMatches ? (
