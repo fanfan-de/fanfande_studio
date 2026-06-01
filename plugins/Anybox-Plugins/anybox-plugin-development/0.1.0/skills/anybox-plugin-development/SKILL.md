@@ -43,8 +43,9 @@ description: 创建、审查或验证 Anybox/Fanfande 第三方插件包。Use w
 
 注意：
 
-- `<install-root>` 是包含一个或多个插件包目录的父目录。
-- 当前运行时用 `ANYBOX_PLUGIN_INSTALL_DIR` 发现本地插件。
+- `<install-root>` 是包含一个或多个插件包目录的父目录；开发新插件时优先把它作为 `ANYBOX_PLUGIN_LOCAL_DIR`。
+- 当前运行时用 `ANYBOX_PLUGIN_LOCAL_DIR` 发现固定本地插件来源，未设置时默认是 Agent data 目录下的 `plugins/local`。这个来源不受卸载流程删除。
+- `ANYBOX_PLUGIN_INSTALL_DIR` 是受管理安装根目录，用于网络下载或安装流程复制出来的插件包，卸载时可能删除对应插件包。
 - 代码中仍兼容 `.fanfande-plugin/plugin.json`；新插件默认写 `.anybox-plugin/plugin.json`，除非用户明确要求兼容旧命名。
 - `skills`、`connectors`、`scripts`、`docs` 和 `assets` 应放在 `.anybox-plugin` 同级，不要放进 `.anybox-plugin` 里。
 - 插件 ID 使用稳定的小写名称。目录名和 manifest `name` 尽量保持一致。
@@ -189,11 +190,11 @@ description: 创建、审查或验证 Anybox/Fanfande 第三方插件包。Use w
 
 ## 验证
 
-对候选插件安装根目录运行：
+对候选插件来源根目录运行：
 
 ```powershell
 cd C:\Projects\fanfande_studio\packages\anyboxagent
-$env:ANYBOX_PLUGIN_INSTALL_DIR = "C:\path\to\plugin-install-root"
+$env:ANYBOX_PLUGIN_LOCAL_DIR = "C:\path\to\plugin-source-root"
 $env:ANYBOX_PLUGIN_REGISTRY_INDEX_URL = "off"
 bun -e "import * as Plugin from './src/plugin/plugin.ts'; console.log(JSON.stringify(await Plugin.listCatalog(), null, 2))"
 ```
@@ -209,8 +210,8 @@ bun test Test/plugin.test.ts
 
 ## 常见失败
 
-- 插件没有出现在 catalog：检查 `ANYBOX_PLUGIN_INSTALL_DIR`、目录结构、JSON 合法性、支持的顶层字段，以及必填的 `name`、`version`、`description`。
+- 插件没有出现在 catalog：检查 `ANYBOX_PLUGIN_LOCAL_DIR`、目录结构、JSON 合法性、支持的顶层字段，以及必填的 `name`、`version`、`description`。只有验证下载/安装根目录时才检查 `ANYBOX_PLUGIN_INSTALL_DIR`。
 - `PLUGIN_CONFIG_INVALID`：检查必填 `configFields` 或 OAuth client 设置。
 - 诊断没有发现工具：检查命令是否可执行、runtime 路径、`cwd`、JSON-RPC 方法处理，以及 stdout 是否混入普通日志。
 - Connector 未连接：API key connector 需要保存 key；OAuth connector 需要完成浏览器授权。
-- 卸载时源码被删：开发时不要直接把 Git 源码根目录当成受管理安装根。复制或构建到 `dev-install` 目录。
+- 卸载时源码被删：开发时使用 `ANYBOX_PLUGIN_LOCAL_DIR`。不要直接把 Git 源码根目录当成 `ANYBOX_PLUGIN_INSTALL_DIR`；如果必须验证受管理安装根，复制或构建到 `dev-install` 目录。

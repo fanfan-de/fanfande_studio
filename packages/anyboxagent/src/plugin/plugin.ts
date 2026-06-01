@@ -28,6 +28,7 @@ const DEFAULT_SKILLS_DIRECTORY = "skills"
 const API_KEY_METHOD = "api-key"
 const PLUGIN_CONNECTOR_PREFIX = "plugin-connector:"
 const PLUGIN_APP_CONNECTOR_PREFIX = "plugin-app:"
+const PLUGIN_LOCAL_DIR_ENV = "ANYBOX_PLUGIN_LOCAL_DIR"
 const PLUGIN_INSTALL_DIR_ENV = "ANYBOX_PLUGIN_INSTALL_DIR"
 const PLUGIN_REGISTRY_FILES_ENV = "ANYBOX_PLUGIN_REGISTRY_FILES"
 const PLUGIN_REGISTRY_INDEX_URL_ENV = "ANYBOX_PLUGIN_REGISTRY_INDEX_URL"
@@ -796,6 +797,11 @@ function installedPluginPackagesRoot() {
   return resolve(configured || join(Global.Path.data, "plugins", "installed"))
 }
 
+function localPluginPackagesRoot() {
+  const configured = getProcessEnvValue(PLUGIN_LOCAL_DIR_ENV)?.trim()
+  return resolve(configured || join(Global.Path.data, "plugins", "local"))
+}
+
 function packageSearchRoots() {
   const root = moduleRoot()
   const roots: Array<{ root: string; managedInstall: boolean }> = [
@@ -805,6 +811,10 @@ function packageSearchRoots() {
     },
     {
       root: resolve(root, "..", "..", "..", "..", WORKSPACE_PLUGIN_PACKAGE_PATH),
+      managedInstall: false,
+    },
+    {
+      root: localPluginPackagesRoot(),
       managedInstall: false,
     },
     {

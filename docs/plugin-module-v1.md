@@ -40,10 +40,12 @@
 
 当前实现从 `plugin.json` 读取 connector 声明。`connectors/<connector-id>/` 可用于放置本地 connector runtime 代码，但独立的 `connectors/<connector-id>/connector.json` 扫描仍是后续阶段。
 
-插件来源 v1 主要有两类：
+当前实现会按顺序扫描这些插件包来源：
 
 - 内置 curated catalog：仓库内置插件包放在 `packages/anyboxagent/plugins/builtin/<plugin-id>/<version>`，打包后复制到 Agent runtime 的 `plugins/builtin`。
-- `ANYBOX_PLUGIN_INSTALL_DIR` 指向的本地安装根目录。
+- 仓库插件目录：开发仓库内的 `plugins/Anybox-Plugins/<plugin-id>/<version>`。
+- 固定本地插件来源：`ANYBOX_PLUGIN_LOCAL_DIR` 指向的本地插件根目录；未设置时默认为 Agent data 目录下的 `plugins/local`。这个来源不视为受管理安装目录，适合 Anybox 内部创建的新插件或开发者本地插件，卸载插件时不会删除这里的插件包。
+- 受管理安装根目录：`ANYBOX_PLUGIN_INSTALL_DIR` 指向的目录；未设置时默认为 Agent data 目录下的 `plugins/installed`。这个来源用于网络下载或安装后的插件包，卸载插件时可以删除对应插件包。
 
 同一个插件来源下如果存在多个版本目录，catalog 选择 manifest `version` 最高的版本；后面的插件来源仍会覆盖前面的同名插件来源。
 

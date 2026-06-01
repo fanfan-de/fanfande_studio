@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import "./sqlite.cleanup.ts"
+import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -267,6 +268,7 @@ type SingleConnectorStatusEnvelope = JsonEnvelope<{
 }>
 
 let activeRoot: string | null = null
+let previousPluginLocalDir: string | undefined
 let previousPluginInstallDir: string | undefined
 let previousPluginRegistryIndexURL: string | undefined
 let previousPluginRegistryCacheDir: string | undefined
@@ -294,6 +296,7 @@ async function useTempDatabase() {
   activeRoot = await mkdtemp(join(tmpdir(), "anybox-plugin-api-"))
   Sqlite.setDatabaseFile(join(activeRoot, "plugin.db"))
   Sqlite.closeDatabase()
+  previousPluginLocalDir = process.env.ANYBOX_PLUGIN_LOCAL_DIR
   previousPluginInstallDir = process.env.ANYBOX_PLUGIN_INSTALL_DIR
   previousPluginRegistryIndexURL = process.env.ANYBOX_PLUGIN_REGISTRY_INDEX_URL
   previousPluginRegistryCacheDir = process.env.ANYBOX_PLUGIN_REGISTRY_CACHE_DIR
@@ -304,6 +307,7 @@ async function useTempDatabase() {
   previousLegacyGmailOAuthClientID = process.env.GOOGLE_OAUTH_CLIENT_ID
   previousLegacyGmailOAuthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
   previousFetch = globalThis.fetch
+  process.env.ANYBOX_PLUGIN_LOCAL_DIR = join(activeRoot, "local-plugins")
   process.env.ANYBOX_PLUGIN_INSTALL_DIR = join(activeRoot, "installed-plugins")
   process.env.ANYBOX_PLUGIN_REGISTRY_INDEX_URL = "off"
   process.env.ANYBOX_PLUGIN_REGISTRY_CACHE_DIR = join(activeRoot, "registry-cache")
@@ -326,6 +330,11 @@ async function useTempDatabase() {
 function pluginInstallRoot() {
   if (!activeRoot) throw new Error("Temp root has not been initialized.")
   return process.env.ANYBOX_PLUGIN_INSTALL_DIR ?? join(activeRoot, "installed-plugins")
+}
+
+function pluginLocalRoot() {
+  if (!activeRoot) throw new Error("Temp root has not been initialized.")
+  return process.env.ANYBOX_PLUGIN_LOCAL_DIR ?? join(activeRoot, "local-plugins")
 }
 
 async function writeManifestPluginPackage() {
@@ -750,6 +759,46 @@ async function writeConfigRequiredPluginPackage() {
   return packageSourceRoot
 }
 
+async function writeLocalSourcePluginPackage() {
+  if (!activeRoot) throw new Error("Temp root has not been initialized.")
+
+  const packageSourceRoot = pluginLocalRoot()
+  const versionRoot = join(packageSourceRoot, "local-source-lab", "0.1.0")
+  const manifestRoot = join(versionRoot, ".anybox-plugin")
+  const skillRoot = join(versionRoot, "skills", "local-review")
+  await mkdir(manifestRoot, { recursive: true })
+  await mkdir(skillRoot, { recursive: true })
+
+  await writeFile(join(skillRoot, "SKILL.md"), [
+    "---",
+    "name: Local Review",
+    "description: Review docs produced by the local source plugin.",
+    "---",
+    "",
+    "# Local Review",
+    "",
+    "Use this skill to review local plugin output.",
+    "",
+  ].join("\n"))
+
+  await writeFile(join(manifestRoot, "plugin.json"), JSON.stringify({
+    name: "local-source-lab",
+    version: "0.1.0",
+    description: "Fixture plugin package from the local plugin source root.",
+    author: "Anybox Tests",
+    interface: {
+      displayName: "Local Source Lab",
+      shortDescription: "Local plugin source fixture.",
+      developerName: "Anybox Tests",
+      category: "Docs",
+      logo: "LS",
+    },
+    skills: "skills",
+  }, null, 2))
+
+  return versionRoot
+}
+
 async function writeBrowserConnectorRequirementPluginPackage() {
   if (!activeRoot) throw new Error("Temp root has not been initialized.")
 
@@ -938,6 +987,11 @@ afterEach(async () => {
   await Auth.clearProvider("plugin-connector:dynamic-oauth-lab:mail")
   await Auth.clearProvider("plugin-connector:gmail:gmail")
   await Auth.clearProvider("connector:docs:default")
+  if (previousPluginLocalDir === undefined) {
+    delete process.env.ANYBOX_PLUGIN_LOCAL_DIR
+  } else {
+    process.env.ANYBOX_PLUGIN_LOCAL_DIR = previousPluginLocalDir
+  }
   if (previousPluginInstallDir === undefined) {
     delete process.env.ANYBOX_PLUGIN_INSTALL_DIR
   } else {
@@ -986,6 +1040,7 @@ afterEach(async () => {
   if (previousFetch) {
     globalThis.fetch = previousFetch
   }
+  previousPluginLocalDir = undefined
   previousPluginInstallDir = undefined
   previousPluginRegistryIndexURL = undefined
   previousPluginRegistryCacheDir = undefined
@@ -1027,6 +1082,44 @@ describe("plugin marketplace API", () => {
     expect(manifestPlugin?.source).toBe("package")
     expect(manifestPlugin?.installable).toBe(true)
     expect(manifestPlugin?.skills.map((skill) => skill.directory)).toEqual(["review"])
+  })
+
+  test("loads packages from the fixed local plugin source without deleting them on uninstall", async () => {
+    await useTempDatabase()
+    const localPackageRoot = await writeLocalSourcePluginPackage()
+    const app = createServerApp()
+
+    const catalogResponse = await app.request("/api/plugins/catalog")
+    const catalogBody = (await catalogResponse.json()) as PluginCatalogEnvelope
+    const localPlugin = catalogBody.data?.find((plugin) => plugin.id === "local-source-lab")
+
+    expect(catalogResponse.status).toBe(200)
+    expect(localPlugin?.source).toBe("package")
+    expect(localPlugin?.installable).toBe(true)
+    expect(localPlugin?.skills.map((skill) => skill.directory)).toEqual(["local-review"])
+
+    const installResponse = await app.request("/api/plugins/installed/local-source-lab", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        enabled: true,
+      }),
+    })
+    const installBody = (await installResponse.json()) as InstalledPluginEnvelope
+
+    expect(installResponse.status).toBe(200)
+    expect(installBody.data?.skillIDs).toEqual(["plugin:local-source-lab:local-review"])
+
+    const deleteResponse = await app.request("/api/plugins/installed/local-source-lab", {
+      method: "DELETE",
+    })
+    const deleteBody = (await deleteResponse.json()) as DeletePluginEnvelope
+
+    expect(deleteResponse.status).toBe(200)
+    expect(deleteBody.data?.removed).toBe(true)
+    expect(existsSync(localPackageRoot)).toBe(true)
   })
 
   test("loads remote plugin metadata from an index URL and falls back to cached metadata", async () => {
