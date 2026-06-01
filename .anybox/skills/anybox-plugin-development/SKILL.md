@@ -44,8 +44,8 @@ description: 创建、审查或验证 Anybox/Fanfande 第三方插件包。Use w
 注意：
 
 - `<install-root>` 是包含一个或多个插件包目录的父目录；开发新插件时优先把它作为 `ANYBOX_PLUGIN_LOCAL_DIR`。
-- 当前运行时用 `ANYBOX_PLUGIN_LOCAL_DIR` 发现固定本地插件来源，未设置时默认是 Agent data 目录下的 `plugins/local`。这个来源不受卸载流程删除。
-- `ANYBOX_PLUGIN_INSTALL_DIR` 是受管理安装根目录，用于网络下载或安装流程复制出来的插件包，卸载时可能删除对应插件包。
+- 当前运行时用 `ANYBOX_PLUGIN_LOCAL_DIR` 发现固定本地插件仓库，未设置时默认是 Agent data 目录下的 `plugins/local`。这个目录逻辑上等价于 GitHub 插件仓库，只提供可安装候选项，不受卸载流程删除。
+- `ANYBOX_PLUGIN_INSTALL_DIR` 是受管理安装根目录，用于网络下载或从本地仓库安装时复制出来的插件包。这里的插件逻辑上属于已安装插件，运行时使用这里的副本，卸载时可能删除对应插件包。
 - 代码中仍兼容 `.fanfande-plugin/plugin.json`；新插件默认写 `.anybox-plugin/plugin.json`，除非用户明确要求兼容旧命名。
 - `skills`、`connectors`、`scripts`、`docs` 和 `assets` 应放在 `.anybox-plugin` 同级，不要放进 `.anybox-plugin` 里。
 - 插件 ID 使用稳定的小写名称。目录名和 manifest `name` 尽量保持一致。

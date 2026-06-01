@@ -2910,9 +2910,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         delete next[pluginID]
         return next
       })
-      const nextPlugin = pluginCatalog.find((plugin) => plugin.id !== pluginID) ?? pluginCatalog[0]
-      setActivePluginSelection(nextPlugin?.id ?? null)
-      setPluginDraft(buildPluginDraft(nextPlugin))
       showMessage({
         tone: "success",
         text: "Plugin removed.",

@@ -153,9 +153,9 @@ $env:ANYBOX_PLUGIN_LOCAL_DIR = "C:\Projects\anybox-plugin-examples"
 <ANYBOX_AGENT_DATA_DIR>\data\plugins\local
 ```
 
-这个来源不会被视为受管理安装目录。用户在 UI 里卸载插件时，只会删除安装记录和运行时绑定，不会删除这里的插件包。因此它适合放 Anybox 内部创建的新插件、手写开发插件，或从生成流程直接产出的可用插件。
+这个来源的定位是本地插件仓库，逻辑上等价于 GitHub 上的插件仓库。用户在 UI 里安装插件时，Anybox 会把插件包复制到受管理安装根目录；卸载插件时只删除安装目录里的副本，不会删除这里的仓库源包。因此它适合放 Anybox 内部创建的新插件、手写开发插件，或从生成流程直接产出的可用插件。
 
-`ANYBOX_PLUGIN_INSTALL_DIR` 是受管理安装根目录，未设置时默认是 Agent data 目录下的 `plugins/installed`。它适合放网络下载或安装流程复制出来的插件包；用户卸载插件时，可能会删除该目录下对应插件包。
+`ANYBOX_PLUGIN_INSTALL_DIR` 是受管理安装根目录，未设置时默认是 Agent data 目录下的 `plugins/installed`。这个目录里的插件逻辑上属于已经安装到本机的插件；运行时使用这里的副本，用户卸载插件时，可能会删除该目录下对应插件包。
 
 如果必须使用 `ANYBOX_PLUGIN_INSTALL_DIR` 做开发验证，更安全的方式是把源码和受管理安装目录分开：
 

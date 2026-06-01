@@ -1924,9 +1924,55 @@ async function downloadPluginPackage(registrySource: PluginManifestSource) {
   return finalRoot
 }
 
+async function copyPluginPackageToInstalled(source: PluginManifestSource) {
+  const pluginID = normalizePluginID(source.manifest.name)
+  if (!source.packageRoot) {
+    throw new PluginError("PLUGIN_PACKAGE_UNAVAILABLE", `Plugin '${pluginID}' does not provide a local package.`)
+  }
+
+  const safeID = assertPluginPathSegment(pluginID)
+  const safeVersion = assertPluginPathSegment(source.manifest.version)
+  const sourceRoot = resolve(source.packageRoot)
+  const finalRoot = resolve(installedPluginPackagesRoot(), safeID, safeVersion)
+
+  if (source.managedInstall && sourceRoot === finalRoot) return finalRoot
+
+  await rm(finalRoot, { recursive: true, force: true })
+  await mkdir(dirname(finalRoot), { recursive: true })
+  await cp(sourceRoot, finalRoot, { recursive: true })
+
+  const installedManifest = safeReadPluginManifest(finalRoot)
+  if (!installedManifest) {
+    throw new PluginError("PLUGIN_PACKAGE_INVALID", "Installed plugin package is missing its manifest.")
+  }
+  if (
+    normalizeManifestID(installedManifest.name) !== pluginID ||
+    installedManifest.version !== source.manifest.version
+  ) {
+    throw new PluginError(
+      "PLUGIN_PACKAGE_INVALID",
+      `Installed plugin package does not match ${pluginID}@${source.manifest.version}.`,
+    )
+  }
+
+  return finalRoot
+}
+
 async function ensurePluginPackageAvailable(pluginID: string) {
   const existing = getPackageManifestSource(pluginID)
-  if (existing) return existing
+  if (existing) {
+    if (existing.managedInstall) return existing
+
+    await copyPluginPackageToInstalled(existing)
+    const installedSource = getPackageManifestSource(pluginID)
+    if (!installedSource?.managedInstall) {
+      throw new PluginError(
+        "PLUGIN_PACKAGE_INVALID",
+        `Plugin '${pluginID}' was installed but could not be loaded from the managed install root.`,
+      )
+    }
+    return installedSource
+  }
 
   const registrySource = await getRegistryManifestSource(pluginID)
   if (!registrySource) {

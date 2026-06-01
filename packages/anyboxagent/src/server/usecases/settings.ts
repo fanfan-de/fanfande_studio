@@ -1116,6 +1116,72 @@ function isResolvedPathInsideRoot(root: string, path: string) {
   return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath))
 }
 
+function pluginSkillRootTreePath(root: Plugin.InstalledPluginSkillRoot, rootIndex: number) {
+  return `${PLUGIN_SKILLS_TREE_ROOT_PATH}/${encodeURIComponent(root.pluginID)}/${rootIndex}`
+}
+
+function pluginSkillTreePath(root: Plugin.InstalledPluginSkillRoot, rootIndex: number, path: string) {
+  const resolvedRoot = resolve(root.root)
+  const resolvedPath = resolve(path)
+  const relativePath = relative(resolvedRoot, resolvedPath)
+  const rootPath = pluginSkillRootTreePath(root, rootIndex)
+
+  if (!relativePath) return rootPath
+
+  const encodedRelativePath = relativePath
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/")
+  return `${rootPath}/${encodedRelativePath}`
+}
+
+function isPluginSkillTreePath(path: string) {
+  const trimmedPath = path.trim()
+  return trimmedPath === PLUGIN_SKILLS_TREE_ROOT_PATH || trimmedPath.startsWith(`${PLUGIN_SKILLS_TREE_ROOT_PATH}/`)
+}
+
+function parsePluginSkillTreePath(path: string) {
+  const trimmedPath = path.trim()
+  const prefix = `${PLUGIN_SKILLS_TREE_ROOT_PATH}/`
+  if (!trimmedPath.startsWith(prefix)) return null
+
+  const rawSegments = trimmedPath.slice(prefix.length).split("/").filter(Boolean)
+  if (rawSegments.length < 2) return null
+
+  try {
+    const pluginID = decodeURIComponent(rawSegments[0]!)
+    const rootIndex = Number(rawSegments[1])
+    if (!Number.isInteger(rootIndex) || rootIndex < 0) return null
+
+    return {
+      pluginID,
+      rootIndex,
+      relativeSegments: rawSegments.slice(2).map((segment) => decodeURIComponent(segment)),
+    }
+  } catch {
+    return null
+  }
+}
+
+function resolvePluginSkillTreePath(path: string) {
+  const parsed = parsePluginSkillTreePath(path)
+  if (!parsed) return null
+
+  const roots = Plugin.listInstalledPluginSkillRoots(null, { includeDisabled: true })
+    .filter((root) => root.pluginID === parsed.pluginID)
+  const root = roots[parsed.rootIndex]
+  if (!root) return null
+
+  const resolvedPath = resolve(root.root, ...parsed.relativeSegments)
+  if (!isResolvedPathInsideRoot(root.root, resolvedPath)) return null
+
+  return {
+    root,
+    path: resolvedPath,
+  }
+}
+
 async function isSkillFile(path: string) {
   const info = await stat(path).catch(() => null)
   return Boolean(info?.isFile())
@@ -1133,6 +1199,7 @@ function toPluginTreeNodeBase(root: Plugin.InstalledPluginSkillRoot) {
 async function readPluginSkillResourceTree(
   directory: string,
   root: Plugin.InstalledPluginSkillRoot,
+  rootIndex: number,
 ): Promise<SkillManager.GlobalSkillTreeNode[]> {
   const entries = await readdir(directory, { withFileTypes: true }).catch(() => [])
   const nodes = await Promise.all(
@@ -1145,17 +1212,17 @@ async function readPluginSkillResourceTree(
           return {
             ...toPluginTreeNodeBase(root),
             name: entry.name,
-            path: entryPath,
+            path: pluginSkillTreePath(root, rootIndex, entryPath),
             kind: "directory",
             role: "resource",
-            children: await readPluginSkillResourceTree(entryPath, root),
+            children: await readPluginSkillResourceTree(entryPath, root, rootIndex),
           }
         }
 
         return {
           ...toPluginTreeNodeBase(root),
           name: entry.name,
-          path: entryPath,
+          path: pluginSkillTreePath(root, rootIndex, entryPath),
           kind: "file",
           role: "resource",
         }
@@ -1168,6 +1235,7 @@ async function readPluginSkillResourceTree(
 async function readPluginSkillContainerTree(
   directory: string,
   root: Plugin.InstalledPluginSkillRoot,
+  rootIndex: number,
 ): Promise<SkillManager.GlobalSkillTreeNode[]> {
   const entries = await readdir(directory, { withFileTypes: true }).catch(() => [])
   const nodes = await Promise.all(
@@ -1181,19 +1249,19 @@ async function readPluginSkillContainerTree(
           return {
             ...toPluginTreeNodeBase(root),
             name: entry.name,
-            path: entryPath,
+            path: pluginSkillTreePath(root, rootIndex, entryPath),
             kind: "directory",
             role,
             children: role === "skill"
-              ? await readPluginSkillResourceTree(entryPath, root)
-              : await readPluginSkillContainerTree(entryPath, root),
+              ? await readPluginSkillResourceTree(entryPath, root, rootIndex)
+              : await readPluginSkillContainerTree(entryPath, root, rootIndex),
           }
         }
 
         return {
           ...toPluginTreeNodeBase(root),
           name: entry.name,
-          path: entryPath,
+          path: pluginSkillTreePath(root, rootIndex, entryPath),
           kind: "file",
           role: "resource",
         }
@@ -1205,21 +1273,22 @@ async function readPluginSkillContainerTree(
 
 async function readPluginSkillRootTree(
   root: Plugin.InstalledPluginSkillRoot,
+  rootIndex: number,
 ): Promise<SkillManager.GlobalSkillTreeNode[]> {
   if (await isSkillFile(join(root.root, SKILL_FILENAME))) {
     return [
       {
         ...toPluginTreeNodeBase(root),
         name: basename(root.root),
-        path: root.root,
+        path: pluginSkillTreePath(root, rootIndex, root.root),
         kind: "directory",
         role: "skill",
-        children: await readPluginSkillResourceTree(root.root, root),
+        children: await readPluginSkillResourceTree(root.root, root, rootIndex),
       },
     ]
   }
 
-  return readPluginSkillContainerTree(root.root, root)
+  return readPluginSkillContainerTree(root.root, root, rootIndex)
 }
 
 async function getInstalledPluginSkillTreeNode(): Promise<SkillManager.GlobalSkillTreeNode | null> {
@@ -1227,9 +1296,13 @@ async function getInstalledPluginSkillTreeNode(): Promise<SkillManager.GlobalSki
   if (roots.length === 0) return null
 
   const pluginGroups = new Map<string, SkillManager.GlobalSkillTreeNode>()
+  const rootIndexesByPluginID = new Map<string, number>()
 
   for (const root of roots) {
-    const children = await readPluginSkillRootTree(root)
+    const rootIndex = rootIndexesByPluginID.get(root.pluginID) ?? 0
+    rootIndexesByPluginID.set(root.pluginID, rootIndex + 1)
+
+    const children = await readPluginSkillRootTree(root, rootIndex)
     if (children.length === 0) continue
 
     const existing = pluginGroups.get(root.pluginID)
@@ -1266,6 +1339,26 @@ async function getInstalledPluginSkillTreeNode(): Promise<SkillManager.GlobalSki
 }
 
 async function readInstalledPluginSkillFile(path: string): Promise<SkillManager.GlobalSkillFileDocument | null> {
+  const pluginTreePath = resolvePluginSkillTreePath(path)
+  if (pluginTreePath) {
+    const fileInfo = await stat(pluginTreePath.path).catch(() => null)
+    if (!fileInfo?.isFile()) {
+      throw new SkillManager.SkillManagerError("SKILL_FILE_NOT_FOUND", `Skill file '${path}' was not found.`)
+    }
+
+    return {
+      path: path.trim(),
+      content: await readFile(pluginTreePath.path, "utf8"),
+      readOnly: true,
+      scope: "plugin",
+      pluginID: pluginTreePath.root.pluginID,
+    }
+  }
+
+  if (isPluginSkillTreePath(path)) {
+    throw new SkillManager.SkillManagerError("INVALID_SKILL_PATH", `Plugin skill path '${path}' is invalid.`)
+  }
+
   if (!isAbsolute(path)) return null
 
   const roots = Plugin.listInstalledPluginSkillRoots(null, { includeDisabled: true })
@@ -1320,6 +1413,10 @@ export async function readSkillFile(input: z.infer<typeof SkillFileQuery>) {
 
 export async function writeSkillFile(input: z.infer<typeof SkillFileBody>) {
   try {
+    if (isPluginSkillTreePath(input.path)) {
+      throw new SkillManager.SkillManagerError("INVALID_SKILL_PATH", "Plugin skills are read-only.")
+    }
+
     return await SkillManager.writeGlobalSkillFile(input)
   } catch (error) {
     throw toSkillApiError(error)

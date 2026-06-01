@@ -1084,9 +1084,10 @@ describe("plugin marketplace API", () => {
     expect(manifestPlugin?.skills.map((skill) => skill.directory)).toEqual(["review"])
   })
 
-  test("loads packages from the fixed local plugin source without deleting them on uninstall", async () => {
+  test("installs packages from the fixed local plugin repository without deleting the source on uninstall", async () => {
     await useTempDatabase()
     const localPackageRoot = await writeLocalSourcePluginPackage()
+    const installedPackageRoot = join(pluginInstallRoot(), "local-source-lab", "0.1.0")
     const app = createServerApp()
 
     const catalogResponse = await app.request("/api/plugins/catalog")
@@ -1111,6 +1112,7 @@ describe("plugin marketplace API", () => {
 
     expect(installResponse.status).toBe(200)
     expect(installBody.data?.skillIDs).toEqual(["plugin:local-source-lab:local-review"])
+    expect(existsSync(installedPackageRoot)).toBe(true)
 
     const deleteResponse = await app.request("/api/plugins/installed/local-source-lab", {
       method: "DELETE",
@@ -1120,6 +1122,7 @@ describe("plugin marketplace API", () => {
     expect(deleteResponse.status).toBe(200)
     expect(deleteBody.data?.removed).toBe(true)
     expect(existsSync(localPackageRoot)).toBe(true)
+    expect(existsSync(installedPackageRoot)).toBe(false)
   })
 
   test("loads remote plugin metadata from an index URL and falls back to cached metadata", async () => {
@@ -1870,6 +1873,7 @@ describe("plugin marketplace API", () => {
     )
     expect(pluginSkillFile?.readOnly).toBe(true)
     expect(pluginSkillFile?.scope).toBe("plugin")
+    expect(pluginSkillFile?.path).toBe("plugin-skills://installed/manifest-lab/0/review/SKILL.md")
 
     const readSkillResponse = await app.request(
       `/api/skills/file?path=${encodeURIComponent(pluginSkillFile?.path ?? "")}`,
@@ -1882,6 +1886,7 @@ describe("plugin marketplace API", () => {
       pluginID?: string
     }>
     expect(readSkillResponse.status).toBe(200)
+    expect(readSkillBody.data?.path).toBe(pluginSkillFile?.path)
     expect(readSkillBody.data?.readOnly).toBe(true)
     expect(readSkillBody.data?.scope).toBe("plugin")
     expect(readSkillBody.data?.pluginID).toBe("manifest-lab")
