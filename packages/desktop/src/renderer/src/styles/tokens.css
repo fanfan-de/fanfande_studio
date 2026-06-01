@@ -242,6 +242,11 @@
   --semantic-sidebar-tree-row-surface-hover: var(--semantic-sidebar-tree-row-surface-hover-light);
   --semantic-sidebar-tree-row-surface-active: var(--semantic-sidebar-tree-row-surface-active-light);
   --semantic-sidebar-tree-row-leading-active: var(--semantic-sidebar-tree-row-leading-active-light);
+  --semantic-icon-button-text: var(--semantic-sidebar-tree-row-text);
+  --semantic-icon-button-text-hover: var(--semantic-sidebar-tree-row-text-hover);
+  --semantic-icon-button-text-active: var(--semantic-sidebar-tree-row-text-active);
+  --semantic-icon-button-surface-hover: var(--semantic-sidebar-tree-row-surface-hover);
+  --semantic-icon-button-surface-active: var(--semantic-sidebar-tree-row-surface-active);
   --semantic-composer-surface: var(--semantic-composer-surface-light);
   --semantic-dropdown-menu-surface: var(--semantic-dropdown-menu-surface-light);
   --semantic-question-card-surface: var(--semantic-question-card-surface-light);

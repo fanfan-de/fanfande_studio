@@ -158,12 +158,13 @@ function getSidebarToggleIcon(isSidebarCollapsed: boolean, side: SidebarSide, va
 export function SidebarToggleButton({ isSidebarCollapsed, onToggleSidebar, side, variant }: SidebarToggleButtonProps) {
   const label = getSidebarToggleLabel(isSidebarCollapsed, side)
   const Icon = getSidebarToggleIcon(isSidebarCollapsed, side, variant)
+  const shouldShowActiveState = variant !== "rail" && !isSidebarCollapsed
   const buttonClassName = [
     "sidebar-toggle-button",
     `is-${variant}`,
     `is-${side}`,
     isSidebarCollapsed ? "is-collapsed" : "is-expanded",
-    !isSidebarCollapsed ? "is-active" : "",
+    shouldShowActiveState ? "is-active" : "",
   ]
     .filter(Boolean)
     .join(" ")

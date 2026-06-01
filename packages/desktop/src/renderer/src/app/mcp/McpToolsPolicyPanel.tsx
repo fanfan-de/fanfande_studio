@@ -6,6 +6,7 @@ import type {
   McpToolDiagnostic,
   McpToolPolicyValue,
 } from "../types"
+import { SettingsSelect } from "../settings/SettingsSelect"
 import { resolveMcpToolPolicy } from "./mcp-tool-policies"
 
 const TOOL_POLICY_LABELS: Record<McpToolPolicyValue, string> = {
@@ -134,17 +135,18 @@ export function McpToolsPolicyPanel({
                   </div>
                 </div>
 
-                <label className="settings-field mcp-tool-policy-select">
-                  <select
-                    aria-label={`Policy for ${tool.name}`}
+                <div className="settings-field mcp-tool-policy-select">
+                  <SettingsSelect<McpToolPolicyValue>
+                    ariaLabel={`Policy for ${tool.name}`}
+                    options={[
+                      { value: "disabled", label: TOOL_POLICY_LABELS.disabled },
+                      { value: "ask", label: TOOL_POLICY_LABELS.ask },
+                      { value: "auto", label: TOOL_POLICY_LABELS.auto },
+                    ]}
                     value={policy}
-                    onChange={(event) => onPolicyChange(tool.name, event.target.value as McpToolPolicyValue)}
-                  >
-                    <option value="disabled">{TOOL_POLICY_LABELS.disabled}</option>
-                    <option value="ask">{TOOL_POLICY_LABELS.ask}</option>
-                    <option value="auto">{TOOL_POLICY_LABELS.auto}</option>
-                  </select>
-                </label>
+                    onChange={(value) => onPolicyChange(tool.name, value)}
+                  />
+                </div>
 
                 {isExpanded ? (
                   <div className="mcp-tool-policy-details" id={detailsID}>

@@ -16,20 +16,16 @@ import {
   type AppearanceTokenName,
 } from "../../../../shared/appearance"
 import type { DesktopAppUpdateState, DesktopStoragePaths } from "../../../../shared/desktop-ipc-contract"
-import type { AgentWorktreeRecord } from "../../../../main/types"
 import {
   ArchiveRestoreIcon,
   CloseIcon,
   CodeModeIcon,
   ConnectedStatusIcon,
-  DeleteIcon,
   DisconnectedStatusIcon,
   ChevronDownIcon,
   EyeIcon,
   EyeOffIcon,
   FileTextIcon,
-  FolderIcon,
-  ForkIcon,
   LayoutSidebarLeftIcon,
   MinimizeIcon,
   GeneralSettingsIcon,
@@ -61,7 +57,6 @@ import type {
   ProviderCatalogItem,
   ProviderDraftState,
   ProviderModel,
-  WorkspaceGroup,
 } from "../types"
 import { McpToolsPolicyPanel } from "../mcp/McpToolsPolicyPanel"
 import {
@@ -83,6 +78,7 @@ import {
   type AppUpdateStatus,
 } from "../update/UpdateDialog"
 import type { AppLocale } from "../../../../shared/locale"
+import { SettingsSelect } from "./SettingsSelect"
 
 const assistantTraceVisibilityOptions: Array<{
   key: AssistantTraceVisibilityKey
@@ -788,65 +784,23 @@ function doesMcpServerMatchSearch(
   return haystack.includes(query)
 }
 
-type SettingsSectionKey = "general" | "services" | "defaults" | "mcp" | "worktrees" | "appearance" | "developer" | "archive"
+type SettingsSectionKey = "general" | "services" | "defaults" | "mcp" | "appearance" | "developer" | "archive"
 
-const worktreeKindRank: Record<AgentWorktreeRecord["kind"], number> = {
-  primary: 0,
-  managed: 1,
-  external: 2,
-}
+function doesArchivedSessionMatchSearch(session: ArchivedSessionSummary, query: string) {
+  if (!query) return true
 
-const worktreeKindLabels: Record<AgentWorktreeRecord["kind"], string> = {
-  primary: "Primary",
-  external: "External",
-  managed: "Managed",
-}
+  const haystack = [
+    session.title,
+    session.projectName,
+    session.projectID,
+    session.directory,
+    session.id,
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .toLocaleLowerCase()
 
-function sortWorktreeRecords(records: AgentWorktreeRecord[]) {
-  return [...records].sort((left, right) => {
-    const rankDelta = worktreeKindRank[left.kind] - worktreeKindRank[right.kind]
-    if (rankDelta !== 0) return rankDelta
-
-    return left.path.localeCompare(right.path)
-  })
-}
-
-function formatWorktreeStatus(status: AgentWorktreeRecord["status"]) {
-  return status.replace(/-/g, " ")
-}
-
-function getWorktreeStatusBadgeClass(status: AgentWorktreeRecord["status"]) {
-  if (status === "active") return "settings-badge is-highlight"
-  if (status === "dirty" || status === "missing" || status === "failed") return "settings-badge is-warning"
-  if (status === "removing" || status === "removed") return "settings-badge is-danger"
-  return "settings-badge"
-}
-
-function getWorktreeBaseLabel(record: AgentWorktreeRecord) {
-  const shortBaseSha = record.baseSha ? record.baseSha.slice(0, 8) : null
-  if (record.baseRef && shortBaseSha) return `${record.baseRef} @ ${shortBaseSha}`
-  return record.baseRef ?? shortBaseSha ?? "Not recorded"
-}
-
-function getSettingsErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function isDirtyWorktreeError(record: AgentWorktreeRecord, message: string) {
-  const normalizedMessage = message.toLowerCase()
-  return record.status === "dirty" || normalizedMessage.includes("dirty") || normalizedMessage.includes("uncommitted")
-}
-
-function isLikelyLocalWorktreePath(path: string) {
-  const trimmedPath = path.trim()
-  if (!trimmedPath) return false
-  if (/^[a-zA-Z]:[\\/]/.test(trimmedPath)) return true
-  if (trimmedPath.startsWith("\\\\") || trimmedPath.startsWith("/")) return true
-  return false
-}
-
-function canUseWorktreeForSession(status: AgentWorktreeRecord["status"]) {
-  return status !== "missing" && status !== "removing" && status !== "removed"
+  return haystack.includes(query)
 }
 
 const storagePathItems: Array<{
@@ -1001,6 +955,7 @@ interface SettingsPageProps {
   appearanceOverrides: AppearanceTokenMap
   appearanceTokenValues: Record<AppearanceTokenName, string>
   assistantTraceVisibility: AssistantTraceVisibility
+  archivableSessionCount: number
   archivedSessions: ArchivedSessionSummary[]
   archivedSessionsError: string | null
   catalog: ProviderCatalogItem[]
@@ -1012,6 +967,7 @@ interface SettingsPageProps {
   fontFamily: AppearanceFontFamily
   isActivityRailVisible: boolean
   isAgentDebugTraceEnabled: boolean
+  isArchivingAllSessions: boolean
   isDebugLineColorsEnabled: boolean
   isDebugUiRegionsEnabled: boolean
   isLoading: boolean
@@ -1032,7 +988,6 @@ interface SettingsPageProps {
   restoringArchivedSessionID: string | null
   savingMcpServerID: string | null
   savingProviderID: string | null
-  selectedWorkspace: WorkspaceGroup | null
   testingProviderID: string | null
   selectionDraft: ProjectModelSelection
   onBrandThemeChange: (theme: BrandTheme) => void
@@ -1049,7 +1004,7 @@ interface SettingsPageProps {
   onAutomaticUpdatesToggle: () => void
   onCheckForUpdates: () => void
   onClose: () => void
-  onCreateSessionForDirectory: (projectID: string, directory: string) => unknown | Promise<unknown>
+  onArchiveAllSessions: () => boolean | Promise<boolean>
   onDeleteArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
   onDeleteProvider: (providerID: string) => void | Promise<void>
@@ -1094,6 +1049,7 @@ export function SettingsPage({
   appearanceOverrides,
   appearanceTokenValues,
   assistantTraceVisibility,
+  archivableSessionCount,
   archivedSessions,
   archivedSessionsError,
   catalog,
@@ -1105,6 +1061,7 @@ export function SettingsPage({
   fontFamily,
   isActivityRailVisible,
   isAgentDebugTraceEnabled,
+  isArchivingAllSessions,
   isDebugLineColorsEnabled,
   isDebugUiRegionsEnabled,
   isLoading,
@@ -1125,7 +1082,6 @@ export function SettingsPage({
   restoringArchivedSessionID,
   savingMcpServerID,
   savingProviderID,
-  selectedWorkspace,
   testingProviderID,
   selectionDraft,
   onBrandThemeChange,
@@ -1142,7 +1098,7 @@ export function SettingsPage({
   onAutomaticUpdatesToggle,
   onCheckForUpdates,
   onClose,
-  onCreateSessionForDirectory,
+  onArchiveAllSessions,
   onDeleteArchivedSession,
   onDeleteMcpServer,
   onDeleteProvider,
@@ -1171,19 +1127,11 @@ export function SettingsPage({
     const [storagePaths, setStoragePaths] = useState<DesktopStoragePaths | null>(null)
     const [storagePathStatus, setStoragePathStatus] = useState<AppUpdateStatus | null>(null)
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
+    const [archivedSessionSearchQuery, setArchivedSessionSearchQuery] = useState("")
     const [providerSearch, setProviderSearch] = useState("")
     const [mcpServerSearchQuery, setMcpServerSearchQuery] = useState("")
     const [providerApiKeyModes, setProviderApiKeyModes] = useState<Record<string, ProviderApiKeyMode>>({})
     const [visibleProviderApiKeys, setVisibleProviderApiKeys] = useState<Record<string, boolean>>({})
-    const [worktrees, setWorktrees] = useState<AgentWorktreeRecord[]>([])
-    const [isLoadingWorktrees, setIsLoadingWorktrees] = useState(false)
-    const [worktreeError, setWorktreeError] = useState<string | null>(null)
-    const [worktreeRowErrors, setWorktreeRowErrors] = useState<Record<string, string>>({})
-    const [worktreeForceDeleteIDs, setWorktreeForceDeleteIDs] = useState<Record<string, boolean>>({})
-    const [busyWorktreeActions, setBusyWorktreeActions] = useState<Record<string, string>>({})
-    const [worktreeCreateBranchName, setWorktreeCreateBranchName] = useState("")
-    const [worktreeCreateBaseRef, setWorktreeCreateBaseRef] = useState("")
-    const [isCreatingWorktree, setIsCreatingWorktree] = useState(false)
     const settingsOverlayRef = useRef<HTMLElement | null>(null)
     const settingsPageRef = useRef<HTMLDivElement | null>(null)
     const settingsMainRef = useRef<HTMLDivElement | null>(null)
@@ -1214,13 +1162,10 @@ export function SettingsPage({
       mcpServerSearchQuery,
       getMcpServerPluginSource(server, mcpServerPluginSourceMap),
     ))
-    const selectedProject = selectedWorkspace?.project ?? null
-    const selectedProjectID = selectedProject?.id ?? null
-    const sortedWorktrees = sortWorktreeRecords(worktrees)
-    const managedWorktreeCount = worktrees.filter((record) => record.kind === "managed").length
-    const attentionWorktreeCount = worktrees.filter((record) =>
-      record.status === "dirty" || record.status === "missing" || record.status === "failed"
-    ).length
+    const normalizedArchivedSessionSearchQuery = archivedSessionSearchQuery.trim().toLocaleLowerCase()
+    const filteredArchivedSessions = archivedSessions.filter((session) =>
+      doesArchivedSessionMatchSearch(session, normalizedArchivedSessionSearchQuery),
+    )
     const activeProvider = selectedProviderID ? catalog.find((item) => item.id === selectedProviderID) ?? null : null
     const activeProviderDraft = activeProvider
       ? (providerDrafts[activeProvider.id] ?? {
@@ -1317,282 +1262,26 @@ export function SettingsPage({
       onCheckForUpdates()
     }
 
-    function setBusyWorktreeAction(worktreeID: string, action: string | null) {
-      setBusyWorktreeActions((current) => {
-        if (!action) {
-          if (!(worktreeID in current)) return current
-          const next = { ...current }
-          delete next[worktreeID]
-          return next
-        }
-
-        return {
-          ...current,
-          [worktreeID]: action,
-        }
-      })
-    }
-
-    function clearWorktreeRowError(worktreeID: string) {
-      setWorktreeRowErrors((current) => {
-        if (!(worktreeID in current)) return current
-        const next = { ...current }
-        delete next[worktreeID]
-        return next
-      })
-      setWorktreeForceDeleteIDs((current) => {
-        if (!(worktreeID in current)) return current
-        const next = { ...current }
-        delete next[worktreeID]
-        return next
-      })
-    }
-
-    function updateWorktreeRecord(record: AgentWorktreeRecord) {
-      setWorktrees((current) => {
-        const next = current.some((item) => item.id === record.id)
-          ? current.map((item) => (item.id === record.id ? record : item))
-          : [...current, record]
-
-        return sortWorktreeRecords(next)
-      })
-    }
-
-    async function loadWorktreesForProject(projectID = selectedProjectID) {
-      if (!projectID) {
-        setWorktrees([])
-        setWorktreeError(null)
+    function handleArchiveAllSessionsClick() {
+      if (isArchivingAllSessions || archivableSessionCount === 0) return
+      if (
+        typeof window.confirm === "function" &&
+        !window.confirm(t("settings.archive.confirmArchiveAll", { count: archivableSessionCount }))
+      ) {
         return
       }
 
-      const listProjectWorktrees = window.desktop?.listProjectWorktrees
-      if (!listProjectWorktrees) {
-        setWorktreeError("Worktree bridge is unavailable in this desktop shell.")
-        setWorktrees([])
-        return
-      }
-
-      setIsLoadingWorktrees(true)
-      setWorktreeError(null)
-      try {
-        const records = await listProjectWorktrees({ projectID })
-        setWorktrees(sortWorktreeRecords(records))
-        setWorktreeRowErrors({})
-        setWorktreeForceDeleteIDs({})
-      } catch (error) {
-        setWorktreeError(`Unable to load worktrees. ${getSettingsErrorMessage(error)}`)
-      } finally {
-        setIsLoadingWorktrees(false)
-      }
-    }
-
-    async function handleCreateManagedWorktree() {
-      if (!selectedProjectID || isCreatingWorktree) return
-      const createProjectWorktree = window.desktop?.createProjectWorktree
-      if (!createProjectWorktree) {
-        setWorktreeError("Worktree creation is unavailable in this desktop shell.")
-        return
-      }
-
-      setIsCreatingWorktree(true)
-      setWorktreeError(null)
-      try {
-        const created = await createProjectWorktree({
-          projectID: selectedProjectID,
-          branchName: worktreeCreateBranchName.trim() || undefined,
-          baseRef: worktreeCreateBaseRef.trim() || undefined,
-          ownerType: "manual",
-          cleanupPolicy: "manual",
-        })
-        updateWorktreeRecord(created)
-        setWorktreeCreateBranchName("")
-        setWorktreeCreateBaseRef("")
-        await loadWorktreesForProject(selectedProjectID)
-      } catch (error) {
-        setWorktreeError(`Unable to create worktree. ${getSettingsErrorMessage(error)}`)
-      } finally {
-        setIsCreatingWorktree(false)
-      }
-    }
-
-    async function handleOpenWorktreeFolder(record: AgentWorktreeRecord) {
-      if (!isLikelyLocalWorktreePath(record.path)) {
-        setWorktreeRowErrors((current) => ({
-          ...current,
-          [record.id]: "Opening remote or non-local worktree paths is unavailable.",
-        }))
-        return
-      }
-
-      clearWorktreeRowError(record.id)
-      setBusyWorktreeAction(record.id, "open")
-      try {
-        if (window.desktop?.openInExternalEditor) {
-          await window.desktop.openInExternalEditor({
-            editorID: "explorer",
-            targetPath: record.path,
-          })
-          return
-        }
-
-        if (!window.desktop?.openPath) {
-          throw new Error("Open folder bridge is unavailable.")
-        }
-        await window.desktop.openPath({ targetPath: record.path })
-      } catch (error) {
-        try {
-          if (!window.desktop?.openPath) throw error
-          await window.desktop.openPath({ targetPath: record.path })
-        } catch (fallbackError) {
-          setWorktreeRowErrors((current) => ({
-            ...current,
-            [record.id]: `Unable to open folder. ${getSettingsErrorMessage(fallbackError)}`,
-          }))
-        }
-      } finally {
-        setBusyWorktreeAction(record.id, null)
-      }
-    }
-
-    async function handleCreateSessionForWorktree(record: AgentWorktreeRecord) {
-      clearWorktreeRowError(record.id)
-      setBusyWorktreeAction(record.id, "session")
-      try {
-        await onCreateSessionForDirectory(record.projectID, record.path)
-      } catch (error) {
-        setWorktreeRowErrors((current) => ({
-          ...current,
-          [record.id]: `Unable to create session. ${getSettingsErrorMessage(error)}`,
-        }))
-      } finally {
-        setBusyWorktreeAction(record.id, null)
-      }
-    }
-
-    async function handleRefreshWorktree(record: AgentWorktreeRecord) {
-      const refreshProjectWorktree = window.desktop?.refreshProjectWorktree
-      if (!refreshProjectWorktree) {
-        setWorktreeRowErrors((current) => ({
-          ...current,
-          [record.id]: "Worktree refresh is unavailable in this desktop shell.",
-        }))
-        return
-      }
-
-      clearWorktreeRowError(record.id)
-      setBusyWorktreeAction(record.id, "refresh")
-      try {
-        const refreshed = await refreshProjectWorktree({
-          projectID: record.projectID,
-          worktreeID: record.id,
-        })
-        updateWorktreeRecord(refreshed)
-      } catch (error) {
-        setWorktreeRowErrors((current) => ({
-          ...current,
-          [record.id]: `Unable to refresh worktree. ${getSettingsErrorMessage(error)}`,
-        }))
-      } finally {
-        setBusyWorktreeAction(record.id, null)
-      }
-    }
-
-    async function handleDeleteWorktree(record: AgentWorktreeRecord, force = false) {
-      const deleteProjectWorktree = window.desktop?.deleteProjectWorktree
-      if (!deleteProjectWorktree) {
-        setWorktreeRowErrors((current) => ({
-          ...current,
-          [record.id]: "Worktree deletion is unavailable in this desktop shell.",
-        }))
-        return
-      }
-
-      clearWorktreeRowError(record.id)
-      setBusyWorktreeAction(record.id, force ? "force-delete" : "delete")
-      try {
-        const deleted = await deleteProjectWorktree({
-          projectID: record.projectID,
-          worktreeID: record.id,
-          force,
-        })
-        updateWorktreeRecord(deleted)
-      } catch (error) {
-        const message = getSettingsErrorMessage(error)
-        setWorktreeRowErrors((current) => ({
-          ...current,
-          [record.id]: `Unable to delete worktree. ${message}`,
-        }))
-        if (!force && isDirtyWorktreeError(record, message)) {
-          setWorktreeForceDeleteIDs((current) => ({
-            ...current,
-            [record.id]: true,
-          }))
-        }
-      } finally {
-        setBusyWorktreeAction(record.id, null)
-      }
+      void onArchiveAllSessions()
     }
 
     useEffect(() => {
       if (!isOpen) {
         setActiveSection("general")
         setSelectedProviderID(null)
+        setArchivedSessionSearchQuery("")
         setProviderSearch("")
-        setWorktreeError(null)
-        setWorktreeRowErrors({})
-        setWorktreeForceDeleteIDs({})
       }
     }, [isOpen])
-
-    useEffect(() => {
-      setWorktrees([])
-      setWorktreeError(null)
-      setWorktreeRowErrors({})
-      setWorktreeForceDeleteIDs({})
-    }, [selectedProjectID])
-
-    useEffect(() => {
-      if (!isOpen || activeSection !== "worktrees") return
-
-      let disposed = false
-      async function loadCurrentProjectWorktrees() {
-        if (!selectedProjectID) {
-          setWorktrees([])
-          setWorktreeError(null)
-          return
-        }
-
-        const listProjectWorktrees = window.desktop?.listProjectWorktrees
-        if (!listProjectWorktrees) {
-          setWorktreeError("Worktree bridge is unavailable in this desktop shell.")
-          setWorktrees([])
-          return
-        }
-
-        setIsLoadingWorktrees(true)
-        setWorktreeError(null)
-        try {
-          const records = await listProjectWorktrees({ projectID: selectedProjectID })
-          if (disposed) return
-          setWorktrees(sortWorktreeRecords(records))
-          setWorktreeRowErrors({})
-          setWorktreeForceDeleteIDs({})
-        } catch (error) {
-          if (disposed) return
-          setWorktreeError(`Unable to load worktrees. ${getSettingsErrorMessage(error)}`)
-        } finally {
-          if (!disposed) {
-            setIsLoadingWorktrees(false)
-          }
-        }
-      }
-
-      void loadCurrentProjectWorktrees()
-
-      return () => {
-        disposed = true
-      }
-    }, [activeSection, isOpen, selectedProjectID])
 
     useEffect(() => {
       if (!isOpen || activeSection !== "archive") return
@@ -1975,7 +1664,6 @@ export function SettingsPage({
         label: t("settings.options"),
         items: [
           { key: "general" as const, label: t("settings.nav.general"), Icon: GeneralSettingsIcon },
-          { key: "worktrees" as const, label: "Worktrees", Icon: ForkIcon },
           { key: "services" as const, label: t("settings.nav.provider"), Icon: ProviderSettingsIcon },
           { key: "defaults" as const, label: t("settings.nav.models"), Icon: ModelSettingsIcon },
           { key: "appearance" as const, label: t("settings.nav.appearance"), Icon: PaletteIcon },
@@ -2039,28 +1727,20 @@ export function SettingsPage({
     const languageSection = (
       <section className="settings-panel">
         <div className="settings-select-list">
-          <label className="settings-select-row">
+          <div className="settings-select-row">
             <span className="settings-select-copy">
               <span className="settings-select-title">{t("settings.general.languageTitle")}</span>
               <span className="settings-select-description">{t("settings.general.languageCopy")}</span>
             </span>
             <span className="settings-select-control">
-              <select
-                aria-label={t("settings.general.languageTitle")}
+              <SettingsSelect<AppLocale>
+                ariaLabel={t("settings.general.languageTitle")}
+                options={languageOptions}
                 value={locale}
-                onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                  void setLocale(event.target.value as AppLocale)
-                }
-              >
-                {languageOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDownIcon aria-hidden="true" />
+                onChange={(nextLocale) => void setLocale(nextLocale)}
+              />
             </span>
-          </label>
+          </div>
         </div>
         {localeError ? (
           <p className="settings-helper-text settings-theme-config-error">
@@ -2068,239 +1748,6 @@ export function SettingsPage({
           </p>
         ) : null}
       </section>
-    )
-
-    const worktreesSection = (
-      <div className="settings-worktrees-layout">
-        <section className="settings-panel">
-          <div className="settings-section-header">
-            <div>
-              <span className="label">Project</span>
-              <h3>Worktrees</h3>
-            </div>
-            <p>
-              {selectedProject
-                ? `${selectedProject.name} uses ${selectedWorkspace?.directory ?? selectedProject.worktree} as the active workspace.`
-                : "Select a workspace to inspect and manage its Git worktrees."}
-            </p>
-          </div>
-
-          {selectedProject ? (
-            <div className="settings-section-summary">
-              <article className="settings-summary-card">
-                <span className="label">Total</span>
-                <strong>{worktrees.length}</strong>
-                <p>Tracked primary, external, and managed worktree records for this project.</p>
-              </article>
-              <article className="settings-summary-card">
-                <span className="label">Managed</span>
-                <strong>{managedWorktreeCount}</strong>
-                <p>Desktop-created worktrees that can be removed by the lifecycle API.</p>
-              </article>
-              <article className="settings-summary-card">
-                <span className="label">Attention</span>
-                <strong>{attentionWorktreeCount}</strong>
-                <p>Dirty, missing, or failed worktrees that need review before cleanup.</p>
-              </article>
-            </div>
-          ) : (
-            <article className="settings-empty-state">
-              <span className="label">No Project</span>
-              <h3>Select a workspace first</h3>
-              <p>Worktrees are scoped to a project. Pick a folder workspace from the sidebar, then open this page again.</p>
-            </article>
-          )}
-        </section>
-
-        {selectedProject ? (
-          <>
-            <section className="settings-panel">
-              <div className="settings-section-header">
-                <div>
-                  <span className="label">Managed</span>
-                  <h3>Create Worktree</h3>
-                </div>
-                <p>Create a desktop-managed worktree for this project. Leaving base ref empty uses the backend default.</p>
-              </div>
-
-              {worktreeError ? <div className="settings-banner is-error">{worktreeError}</div> : null}
-
-              <div className="settings-worktree-create-form">
-                <label className="settings-field">
-                  <span className="settings-field-label">Branch name</span>
-                  <input
-                    aria-label="Branch name"
-                    value={worktreeCreateBranchName}
-                    placeholder="feature/worktree-task"
-                    disabled={isCreatingWorktree}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => setWorktreeCreateBranchName(event.target.value)}
-                  />
-                  <small>Optional. If blank, the backend chooses a managed branch name.</small>
-                </label>
-                <label className="settings-field">
-                  <span className="settings-field-label">Base ref</span>
-                  <input
-                    aria-label="Base ref"
-                    value={worktreeCreateBaseRef}
-                    placeholder="HEAD"
-                    disabled={isCreatingWorktree}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => setWorktreeCreateBaseRef(event.target.value)}
-                  />
-                  <small>Optional Git ref, branch, tag, or SHA to base the worktree on.</small>
-                </label>
-                <div className="settings-actions-row settings-worktree-create-actions">
-                  <button
-                    className="primary-button"
-                    type="button"
-                    disabled={isCreatingWorktree}
-                    onClick={() => void handleCreateManagedWorktree()}
-                  >
-                    <PlusIcon />
-                    {isCreatingWorktree ? "Creating..." : "Create worktree"}
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <section className="settings-panel">
-              <div className="settings-section-header">
-                <div>
-                  <span className="label">Lifecycle</span>
-                  <h3>Tracked Worktrees</h3>
-                </div>
-                <button
-                  className="secondary-button"
-                  type="button"
-                  disabled={isLoadingWorktrees}
-                  onClick={() => void loadWorktreesForProject()}
-                >
-                  <ResetIcon />
-                  {isLoadingWorktrees ? "Refreshing..." : "Refresh"}
-                </button>
-              </div>
-
-              {isLoadingWorktrees ? (
-                <article className="settings-empty-state">
-                  <span className="label">Loading</span>
-                  <h3>Fetching worktrees</h3>
-                  <p>Reading Git worktree records and their last known lifecycle status.</p>
-                </article>
-              ) : sortedWorktrees.length === 0 ? (
-                <article className="settings-empty-state">
-                  <span className="label">Empty</span>
-                  <h3>No worktrees recorded yet</h3>
-                  <p>Create a managed worktree or start sessions from project directories to populate this list.</p>
-                </article>
-              ) : (
-                <div className="provider-list settings-worktree-list" role="list" aria-label="Project worktrees">
-                  {sortedWorktrees.map((record) => {
-                    const busyAction = busyWorktreeActions[record.id] ?? null
-                    const rowError = worktreeRowErrors[record.id] ?? null
-                    const canOpenFolder = isLikelyLocalWorktreePath(record.path) && canUseWorktreeForSession(record.status)
-                    const canCreateSession = canUseWorktreeForSession(record.status)
-                    const canRefresh = record.status !== "removing" && record.status !== "removed"
-                    const canDelete = record.kind === "managed" && record.managed && record.status !== "removing" && record.status !== "removed"
-
-                    return (
-                      <article
-                        key={record.id}
-                        className={record.status === "removed" ? "provider-row settings-worktree-row is-muted" : "provider-row settings-worktree-row"}
-                        role="listitem"
-                      >
-                        <div className="provider-row-main">
-                          <div className="provider-row-heading">
-                            <div className="provider-row-title">
-                              <h4>{record.branch?.trim() || "Detached worktree"}</h4>
-                              <p className="provider-row-copy settings-worktree-path" title={record.path}>
-                                <code>{record.path}</code>
-                              </p>
-                            </div>
-                            <div className="provider-row-statuses">
-                              <span className="settings-badge">{worktreeKindLabels[record.kind]}</span>
-                              <span className={getWorktreeStatusBadgeClass(record.status)}>{formatWorktreeStatus(record.status)}</span>
-                              <span className="settings-badge">{record.cleanupPolicy}</span>
-                            </div>
-                          </div>
-
-                          <div className="settings-worktree-meta-grid">
-                            <span>
-                              <strong>Base</strong>
-                              {getWorktreeBaseLabel(record)}
-                            </span>
-                            <span>
-                              <strong>Owner</strong>
-                              {record.ownerSessionID ?? record.ownerRunID ?? record.ownerType ?? "None"}
-                            </span>
-                            <span>
-                              <strong>Updated</strong>
-                              {formatTime(record.updatedAt)}
-                            </span>
-                          </div>
-
-                          {rowError ? <p className="settings-helper-text settings-worktree-row-error">{rowError}</p> : null}
-                        </div>
-
-                        <div className="provider-row-actions settings-worktree-row-actions">
-                          <button
-                            className="secondary-button"
-                            type="button"
-                            disabled={Boolean(busyAction) || !canOpenFolder}
-                            title={canOpenFolder ? "Open folder" : "Folder opening is unavailable for this worktree."}
-                            onClick={() => void handleOpenWorktreeFolder(record)}
-                          >
-                            <FolderIcon />
-                            {busyAction === "open" ? "Opening..." : "Open folder"}
-                          </button>
-                          <button
-                            className="secondary-button"
-                            type="button"
-                            disabled={Boolean(busyAction) || !canCreateSession}
-                            onClick={() => void handleCreateSessionForWorktree(record)}
-                          >
-                            <PlusIcon />
-                            {busyAction === "session" ? "Creating..." : "Create session here"}
-                          </button>
-                          <button
-                            className="secondary-button"
-                            type="button"
-                            disabled={Boolean(busyAction) || !canRefresh}
-                            onClick={() => void handleRefreshWorktree(record)}
-                          >
-                            <ResetIcon />
-                            {busyAction === "refresh" ? "Refreshing..." : "Refresh"}
-                          </button>
-                          {canDelete ? (
-                            <button
-                              className="secondary-button is-danger"
-                              type="button"
-                              disabled={Boolean(busyAction)}
-                              onClick={() => void handleDeleteWorktree(record)}
-                            >
-                              <DeleteIcon />
-                              {busyAction === "delete" ? "Deleting..." : "Delete"}
-                            </button>
-                          ) : null}
-                          {canDelete && worktreeForceDeleteIDs[record.id] ? (
-                            <button
-                              className="secondary-button is-danger"
-                              type="button"
-                              disabled={Boolean(busyAction)}
-                              onClick={() => void handleDeleteWorktree(record, true)}
-                            >
-                              <DeleteIcon />
-                              {busyAction === "force-delete" ? "Deleting..." : "Force delete"}
-                            </button>
-                          ) : null}
-                        </div>
-                      </article>
-                    )
-                  })}
-                </div>
-              )}
-            </section>
-          </>
-        ) : null}
-      </div>
     )
 
     return (
@@ -2405,71 +1852,47 @@ export function SettingsPage({
                 <div className="settings-appearance-layout">
                   <section className="settings-panel">
                     <div className="settings-select-list">
-                      <label className="settings-select-row">
+                      <div className="settings-select-row">
                         <span className="settings-select-copy">
                           <span className="settings-select-title">{t("settings.appearance.colorMode")}</span>
                         </span>
                         <span className="settings-select-control">
-                          <select
-                            aria-label={t("settings.appearance.colorMode")}
+                          <SettingsSelect<ColorMode>
+                            ariaLabel={t("settings.appearance.colorMode")}
+                            options={colorModeOptions}
                             value={colorMode}
-                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                              onColorModeChange(event.target.value as ColorMode)
-                            }
-                          >
-                            {colorModeOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDownIcon aria-hidden="true" />
+                            onChange={onColorModeChange}
+                          />
                         </span>
-                      </label>
+                      </div>
 
-                      <label className="settings-select-row">
+                      <div className="settings-select-row">
                         <span className="settings-select-copy">
                           <span className="settings-select-title">{t("settings.appearance.accentTheme")}</span>
                         </span>
                         <span className="settings-select-control">
-                          <select
-                            aria-label={t("settings.appearance.accentTheme")}
+                          <SettingsSelect<BrandTheme>
+                            ariaLabel={t("settings.appearance.accentTheme")}
+                            options={brandThemeOptions}
                             value={brandTheme}
-                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                              onBrandThemeChange(event.target.value as BrandTheme)
-                            }
-                          >
-                            {brandThemeOptions.map((theme) => (
-                              <option key={theme.value} value={theme.value}>
-                                {theme.label}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDownIcon aria-hidden="true" />
+                            onChange={onBrandThemeChange}
+                          />
                         </span>
-                      </label>
+                      </div>
 
-                      <label className="settings-select-row">
+                      <div className="settings-select-row">
                         <span className="settings-select-copy">
                           <span className="settings-select-title">{t("settings.appearance.interfaceFont")}</span>
                         </span>
                         <span className="settings-select-control">
-                          <select
-                            aria-label={t("settings.appearance.interfaceFont")}
+                          <SettingsSelect<AppearanceFontFamily>
+                            ariaLabel={t("settings.appearance.interfaceFont")}
+                            options={fontFamilyOptions}
                             value={fontFamily}
-                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                              onFontFamilyChange(event.target.value as AppearanceFontFamily)
-                            }
-                          >
-                            {fontFamilyOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                          <ChevronDownIcon aria-hidden="true" />
+                            onChange={onFontFamilyChange}
+                          />
                         </span>
-                      </label>
+                      </div>
                     </div>
                   </section>
 
@@ -2877,20 +2300,47 @@ export function SettingsPage({
                     <div className="settings-section-header">
                       <div>
                         <span className="label">Archive</span>
-                        <h3>Archived Sessions</h3>
+                        <h3>{t("settings.archive.title")}</h3>
                       </div>
-                      <p>Archived sessions stay out of normal startup loading until you restore them.</p>
+                      <p>{t("settings.archive.copy")}</p>
+                    </div>
+
+                    <div className="settings-provider-search-row settings-archive-toolbar">
+                      <div className="settings-provider-search-control settings-archive-search-control" role="search">
+                        <SearchIcon />
+                        <input
+                          aria-label={t("settings.archive.searchLabel")}
+                          type="search"
+                          value={archivedSessionSearchQuery}
+                          placeholder={t("settings.archive.searchPlaceholder")}
+                          onChange={(event: ChangeEvent<HTMLInputElement>) => setArchivedSessionSearchQuery(event.target.value)}
+                        />
+                      </div>
+                      <button
+                        className="secondary-button"
+                        disabled={isArchivingAllSessions || archivableSessionCount === 0}
+                        type="button"
+                        onClick={handleArchiveAllSessionsClick}
+                      >
+                        {isArchivingAllSessions ? t("settings.archive.archivingAll") : t("settings.archive.archiveAll")}
+                      </button>
                     </div>
 
                     {archivedSessions.length === 0 ? (
                       <article className="settings-empty-state">
                         <span className="label">Empty</span>
-                        <h3>No archived sessions</h3>
-                        <p>Archive a session from the workspace sidebar to manage it here.</p>
+                        <h3>{t("settings.archive.emptyTitle")}</h3>
+                        <p>{t("settings.archive.emptyCopy")}</p>
+                      </article>
+                    ) : filteredArchivedSessions.length === 0 ? (
+                      <article className="settings-empty-state settings-archive-empty-result">
+                        <span className="label">{t("app.search")}</span>
+                        <h3>{t("settings.archive.noResultsTitle")}</h3>
+                        <p>{t("settings.archive.noResultsCopy")}</p>
                       </article>
                     ) : (
                       <div className="settings-archive-list" role="list" aria-label="Archived sessions">
-                        {archivedSessions.map((session) => {
+                        {filteredArchivedSessions.map((session) => {
                           const isRestoring = restoringArchivedSessionID === session.id
                           const isDeleting = deletingArchivedSessionID === session.id
                           const projectLabel = session.projectName ?? session.projectID
@@ -2901,16 +2351,16 @@ export function SettingsPage({
                                 <div className="settings-archive-heading">
                                   <strong>{session.title}</strong>
                                   {session.projectMissing ? (
-                                    <span className="settings-badge settings-archive-badge is-warning">Project missing</span>
+                                    <span className="settings-badge settings-archive-badge is-warning">{t("settings.archive.projectMissing")}</span>
                                   ) : null}
                                 </div>
                                 <div className="settings-archive-meta">
                                   <span>{projectLabel}</span>
                                   <span>{session.directory}</span>
-                                  <span>Updated {formatTime(session.updated)}</span>
-                                  <span>Archived {formatTime(session.archivedAt)}</span>
-                                  <span>{session.messageCount} messages</span>
-                                  <span>{session.eventCount} events</span>
+                                  <span>{t("settings.archive.updatedAt", { time: formatTime(session.updated) })}</span>
+                                  <span>{t("settings.archive.archivedAt", { time: formatTime(session.archivedAt) })}</span>
+                                  <span>{t("settings.archive.messageCount", { count: session.messageCount })}</span>
+                                  <span>{t("settings.archive.eventCount", { count: session.eventCount })}</span>
                                 </div>
                               </div>
 
@@ -2921,7 +2371,7 @@ export function SettingsPage({
                                   type="button"
                                   onClick={() => void onRestoreArchivedSession(session.id)}
                                 >
-                                  {isRestoring ? "Restoring..." : "Restore"}
+                                  {isRestoring ? t("settings.archive.restoring") : t("app.restore")}
                                 </button>
                                 <button
                                   className="secondary-button is-danger"
@@ -2929,7 +2379,7 @@ export function SettingsPage({
                                   type="button"
                                   onClick={() => void onDeleteArchivedSession(session.id)}
                                 >
-                                  {isDeleting ? "Deleting..." : "Delete"}
+                                  {isDeleting ? t("settings.archive.deleting") : t("app.delete")}
                                 </button>
                               </div>
                             </article>
@@ -2940,8 +2390,6 @@ export function SettingsPage({
                   </section>
                 </div>
                 )
-              ) : activeSection === "worktrees" ? (
-                worktreesSection
               ) : showLoadedState ? (
                 activeSection === "services" ? (
                   <section className="settings-services-layout" aria-label="Provider layout">
@@ -3533,20 +2981,21 @@ export function SettingsPage({
                                 />
                               </label>
 
-                              <label className="settings-field">
+                              <div className="settings-field">
                                 <span className="settings-field-label">Transport</span>
-                                <select
-                                  aria-label="MCP server transport"
+                                <SettingsSelect
+                                  ariaLabel="MCP server transport"
+                                  options={[
+                                    { value: "stdio", label: "Local stdio" },
+                                    { value: "remote", label: "Remote HTTP" },
+                                    ...(mcpServerDraft.transport === "connector"
+                                      ? [{ value: "connector", label: "Connector" }]
+                                      : []),
+                                  ]}
                                   value={mcpServerDraft.transport}
-                                  onChange={(event) => onMcpServerDraftChange("transport", event.target.value)}
-                                >
-                                  <option value="stdio">Local stdio</option>
-                                  <option value="remote">Remote HTTP</option>
-                                  {mcpServerDraft.transport === "connector" ? (
-                                    <option value="connector">Connector</option>
-                                  ) : null}
-                                </select>
-                              </label>
+                                  onChange={(value) => onMcpServerDraftChange("transport", value)}
+                                />
+                              </div>
 
                               {mcpServerDraft.transport === "stdio" ? (
                                 <label className="settings-field">
@@ -3668,19 +3117,20 @@ export function SettingsPage({
                                 </div>
 
                                 <div className="settings-field-grid">
-                                  <label className="settings-field">
+                                  <div className="settings-field">
                                     <span className="settings-field-label">Allowed tools</span>
-                                    <select
-                                      aria-label="MCP allowed tools mode"
+                                    <SettingsSelect
+                                      ariaLabel="MCP allowed tools mode"
+                                      options={[
+                                        { value: "all", label: "All tools" },
+                                        { value: "names", label: "Named tools only" },
+                                        { value: "read-only", label: "Read-only tools" },
+                                        { value: "read-only-names", label: "Read-only named tools" },
+                                      ]}
                                       value={mcpServerDraft.allowedToolsMode}
-                                      onChange={(event) => onMcpServerDraftChange("allowedToolsMode", event.target.value)}
-                                    >
-                                      <option value="all">All tools</option>
-                                      <option value="names">Named tools only</option>
-                                      <option value="read-only">Read-only tools</option>
-                                      <option value="read-only-names">Read-only named tools</option>
-                                    </select>
-                                  </label>
+                                      onChange={(value) => onMcpServerDraftChange("allowedToolsMode", value)}
+                                    />
+                                  </div>
 
                                   {mcpServerDraft.allowedToolsMode === "names" || mcpServerDraft.allowedToolsMode === "read-only-names" ? (
                                     <label className="settings-field">
@@ -3772,37 +3222,35 @@ export function SettingsPage({
                           />
                         </div>
 
-                        <label className="settings-field">
+                        <div className="settings-field">
                           <span className="settings-field-label">Default image size</span>
-                          <select
-                            aria-label="Default image size"
+                          <SettingsSelect
+                            ariaLabel="Default image size"
+                            options={[
+                              { value: "", label: "Provider default" },
+                              { value: "1024x1024", label: "1024x1024" },
+                              { value: "1024x1536", label: "1024x1536" },
+                              { value: "1536x1024", label: "1536x1024" },
+                            ]}
                             value={selectionDraft.imageDefaultSize ?? ""}
-                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                              onSelectionChange("imageDefaultSize", event.target.value ? event.target.value : null)
-                            }
-                          >
-                            <option value="">Provider default</option>
-                            <option value="1024x1024">1024x1024</option>
-                            <option value="1024x1536">1024x1536</option>
-                            <option value="1536x1024">1536x1024</option>
-                          </select>
-                        </label>
+                            onChange={(value) => onSelectionChange("imageDefaultSize", value ? value : null)}
+                          />
+                        </div>
 
-                        <label className="settings-field">
+                        <div className="settings-field">
                           <span className="settings-field-label">Default image count</span>
-                          <select
-                            aria-label="Default image count"
+                          <SettingsSelect
+                            ariaLabel="Default image count"
+                            options={[
+                              { value: "", label: "1 image" },
+                              { value: "2", label: "2 images" },
+                              { value: "3", label: "3 images" },
+                              { value: "4", label: "4 images" },
+                            ]}
                             value={selectionDraft.imageDefaultCount?.toString() ?? ""}
-                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                              onSelectionChange("imageDefaultCount", event.target.value ? Number(event.target.value) : null)
-                            }
-                          >
-                            <option value="">1 image</option>
-                            <option value="2">2 images</option>
-                            <option value="3">3 images</option>
-                            <option value="4">4 images</option>
-                          </select>
-                        </label>
+                            onChange={(value) => onSelectionChange("imageDefaultCount", value ? Number(value) : null)}
+                          />
+                        </div>
                       </div>
 
                     </section>

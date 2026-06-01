@@ -214,6 +214,8 @@ const THREAD_VIRTUAL_ROW_MIN_HEIGHT_PX = 12
 const THREAD_VIRTUAL_ROW_MEASURE_EPSILON_PX = 1
 const LONG_USER_MESSAGE_CHARACTER_THRESHOLD = COMPOSER_LONG_TEXT_CHARACTER_THRESHOLD
 const LONG_USER_MESSAGE_LINE_THRESHOLD = COMPOSER_LONG_TEXT_LINE_THRESHOLD
+const SHORT_PROCESS_REASONING_CHARACTER_THRESHOLD = 160
+const SHORT_PROCESS_REASONING_LINE_THRESHOLD = 3
 const COLLAPSED_USER_MESSAGE_ESTIMATED_CHARACTERS = 640
 const threadScrollSnapshots = new Map<string, ThreadScrollSnapshot>()
 
@@ -1504,6 +1506,37 @@ function flattenAssistantTraceBlockItems(blocks: AssistantTraceBlock[]) {
   return blocks.flatMap((block) => getAssistantTraceBlockRenderedItems(block))
 }
 
+function countNonEmptyTraceLines(value?: string) {
+  return value?.split(/\r?\n/).filter((line) => line.trim()).length ?? 0
+}
+
+function isSingleShortReasoningProcessTrace(blocks: AssistantTraceBlock[], hasProcessPrefix: boolean) {
+  if (hasProcessPrefix) return false
+
+  const items = blocks.flatMap((block) => block.items)
+  if (items.length !== 1) return false
+
+  const item = items[0]
+  if (!item || item.kind !== "reasoning" || traceSectionKeyForItem(item) !== "reasoning") return false
+  if (
+    item.toolInputText?.trim() ||
+    item.toolOutputText?.trim() ||
+    item.draftPatch ||
+    item.fileChanges?.length ||
+    item.filePaths?.length ||
+    item.src ||
+    item.progressItems?.length ||
+    item.debugEntries?.length
+  ) {
+    return false
+  }
+
+  const contentParts = [item.text, item.detail].map((part) => part?.trim()).filter((part): part is string => Boolean(part))
+  const characterCount = contentParts.join("\n").length
+  const lineCount = countNonEmptyTraceLines(item.text) + countNonEmptyTraceLines(item.detail)
+  return characterCount <= SHORT_PROCESS_REASONING_CHARACTER_THRESHOLD && lineCount <= SHORT_PROCESS_REASONING_LINE_THRESHOLD
+}
+
 function buildAssistantTraceDisplayBlocks({
   items,
   processPrefixItems = [],
@@ -1520,9 +1553,17 @@ function buildAssistantTraceDisplayBlocks({
   const blocks = buildAssistantTraceBlocks(filterRenderedAssistantTraceItems(items, showFileChanges, traceVisibility))
   const finalResponseBlockIndex = shouldCollapseReasoningAndTools ? findFinalResponseBlockIndex(blocks) : -1
   const processPrefixBlocks = processPrefixItems.length > 0 ? buildAssistantTraceBlocks(processPrefixItems) : []
-  const shouldRenderProcessTrace = finalResponseBlockIndex >= 0 && (finalResponseBlockIndex > 0 || processPrefixBlocks.length > 0)
+  const processTraceCandidateBlocks =
+    finalResponseBlockIndex >= 0 && (finalResponseBlockIndex > 0 || processPrefixBlocks.length > 0)
+      ? [...processPrefixBlocks, ...blocks.slice(0, finalResponseBlockIndex)]
+      : []
+  const shouldInlineShortReasoningProcessTrace = isSingleShortReasoningProcessTrace(
+    processTraceCandidateBlocks,
+    processPrefixBlocks.length > 0,
+  )
+  const shouldRenderProcessTrace = processTraceCandidateBlocks.length > 0 && !shouldInlineShortReasoningProcessTrace
   const processBlocks = shouldRenderProcessTrace
-    ? [...processPrefixBlocks, ...blocks.slice(0, finalResponseBlockIndex)]
+    ? processTraceCandidateBlocks
     : []
   const mainBlocks = shouldRenderProcessTrace ? blocks.slice(finalResponseBlockIndex) : blocks
 

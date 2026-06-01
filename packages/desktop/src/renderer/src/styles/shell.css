@@ -140,11 +140,12 @@
 }
 
 .activity-rail {
-  --activity-rail-button-color: var(--seg-accent-icon);
-  --activity-rail-button-color-hover: var(--seg-accent-icon-hover);
-  --activity-rail-button-color-active: var(--seg-accent-icon-active);
-  --activity-rail-button-surface-hover: var(--mix-seg-accent-soft-72-seg-panel-28);
-  --activity-rail-button-surface-active: var(--mix-seg-accent-soft-68-seg-panel-32);
+  --activity-rail-button-size: 28px;
+  --activity-rail-button-color: var(--semantic-icon-button-text);
+  --activity-rail-button-color-hover: var(--semantic-icon-button-text-hover);
+  --activity-rail-button-color-active: var(--semantic-icon-button-text-active);
+  --activity-rail-button-surface-hover: var(--semantic-icon-button-surface-hover);
+  --activity-rail-button-surface-active: var(--semantic-icon-button-surface-active);
   grid-column: 1;
   grid-row: 1;
   min-height: 0;
@@ -194,6 +195,14 @@
   background: var(--seg-right-sidebar-top-menu-surface);
 }
 
+.activity-rail .sidebar-toggle-button.is-rail {
+  width: var(--activity-rail-button-size);
+  min-width: var(--activity-rail-button-size);
+  height: var(--activity-rail-button-size);
+  min-height: var(--activity-rail-button-size);
+  margin: calc((var(--section-toolbar-height) - var(--activity-rail-button-size)) / 2) 0;
+}
+
 .activity-rail-primary {
   padding: 8px 8px 0;
   gap: 8px;
@@ -202,6 +211,7 @@
 .activity-rail-view-stack {
   width: 100%;
   display: grid;
+  justify-items: center;
   gap: 6px;
 }
 
@@ -224,10 +234,10 @@
 }
 
 .activity-rail-view-button {
-  width: var(--icon-button-size);
-  min-width: var(--icon-button-size);
-  height: var(--icon-button-size);
-  min-height: var(--icon-button-size);
+  width: var(--activity-rail-button-size);
+  min-width: var(--activity-rail-button-size);
+  height: var(--activity-rail-button-size);
+  min-height: var(--activity-rail-button-size);
   padding: 0;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -265,12 +275,19 @@
 }
 
 .activity-rail-view-button.is-active,
-.activity-rail-view-button.is-active:hover,
 .activity-rail-view-button.is-active:focus-visible {
   border-color: transparent;
   background: var(--activity-rail-button-surface-active);
   box-shadow: none;
   color: var(--activity-rail-button-color-active);
+  transform: none;
+}
+
+.activity-rail-view-button.is-active:hover {
+  border-color: transparent;
+  background: var(--activity-rail-button-surface-hover);
+  box-shadow: none;
+  color: var(--activity-rail-button-color-hover);
   transform: none;
 }
 

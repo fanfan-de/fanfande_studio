@@ -1530,6 +1530,162 @@ describe("ThreadView trace collapse", () => {
     expect(getByText("list-directory")).toBeInTheDocument()
   })
 
+  it("renders a single short reasoning note before the final response without Processed", () => {
+    const { getByText, queryByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "reasoning-1",
+            kind: "reasoning",
+            timestamp: 1,
+            label: "Reasoning",
+            text: "The user is greeting me in Chinese.",
+            status: "completed",
+          },
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 2,
+            label: "Assistant",
+            text: "Hello! How can I help?",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    expect(queryByRole("button", { name: /Processed/ })).toBeNull()
+    expect(getByText("The user is greeting me in Chinese.")).toBeInTheDocument()
+    expect(getByText("Hello! How can I help?")).toBeInTheDocument()
+  })
+
+  it("keeps inlined short reasoning disclosure behavior unchanged", () => {
+    const { container, getByText, queryByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "reasoning-1",
+            kind: "reasoning",
+            timestamp: 1,
+            label: "Reasoning",
+            text: "Inspect files first\nThen compare the rendering states",
+            status: "completed",
+          },
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 2,
+            label: "Assistant",
+            text: "The project is ready.",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    expect(queryByRole("button", { name: /Processed/ })).toBeNull()
+    expect(container.textContent).toContain("Inspect files first")
+    expect(container.textContent).not.toContain("Then compare the rendering states")
+
+    const reasoningSummary = getByText("Inspect files first")
+    const reasoningToggle = reasoningSummary.closest('[role="button"]')
+    expect(reasoningSummary).toHaveClass("trace-item-collapsed-line")
+    expect(reasoningToggle).toHaveAttribute("aria-expanded", "false")
+
+    fireEvent.click(reasoningToggle!)
+
+    expect(queryByRole("region", { name: "Reasoning content" })).toBeInTheDocument()
+    expect(container.textContent).toContain("Then compare the rendering states")
+    expect(reasoningToggle).toHaveAttribute("aria-expanded", "true")
+  })
+
+  it("keeps multiple reasoning notes before the final response inside Processed", () => {
+    const { getByRole, getByText, queryByText } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "reasoning-1",
+            kind: "reasoning",
+            timestamp: 1,
+            label: "Reasoning",
+            text: "Inspect files first.",
+            status: "completed",
+          },
+          {
+            id: "reasoning-2",
+            kind: "reasoning",
+            timestamp: 2,
+            label: "Reasoning",
+            text: "Compare the rendering states.",
+            status: "completed",
+          },
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 3,
+            label: "Assistant",
+            text: "The project is ready.",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    const processedTrace = getByRole("button", { name: /Processed/ })
+    expect(processedTrace).toHaveAttribute("aria-expanded", "false")
+    expect(queryByText("Inspect files first.")).toBeNull()
+    expect(getByText("The project is ready.")).toBeInTheDocument()
+
+    fireEvent.click(processedTrace)
+
+    expect(getByText("Inspect files first.")).toBeInTheDocument()
+    expect(getByText("Compare the rendering states.")).toBeInTheDocument()
+  })
+
+  it("keeps long reasoning before the final response inside Processed", () => {
+    const longReasoning =
+      "I need to inspect the existing thread rendering behavior, compare the process trace grouping rules, update the eligibility guard, and make sure the final answer remains easy to scan without hiding meaningful work."
+    const { getByRole, getByText, queryByText } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "reasoning-1",
+            kind: "reasoning",
+            timestamp: 1,
+            label: "Reasoning",
+            text: longReasoning,
+            status: "completed",
+          },
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 2,
+            label: "Assistant",
+            text: "The project is ready.",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    const processedTrace = getByRole("button", { name: /Processed/ })
+    expect(processedTrace).toHaveAttribute("aria-expanded", "false")
+    expect(queryByText(longReasoning)).toBeNull()
+    expect(getByText("The project is ready.")).toBeInTheDocument()
+
+    fireEvent.click(processedTrace)
+
+    expect(getByText(longReasoning)).toBeInTheDocument()
+  })
+
   it("animates the process trace closed when a streaming turn completes", async () => {
     vi.useFakeTimers()
     const streamingItems: AssistantTraceItem[] = [

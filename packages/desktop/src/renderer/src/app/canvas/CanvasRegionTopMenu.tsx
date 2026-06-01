@@ -1,5 +1,6 @@
 import {
-  CloseIcon
+  CloseIcon,
+  PlusIcon,
 } from "../icons"
 import { joinClassNames, ShellTopMenu, SidebarToggleButton, SideChatBadge } from "../shared-ui"
 import type {
@@ -139,9 +140,7 @@ export function CanvasRegionTopMenu({
             })}
           </div>
           <button className="canvas-region-top-menu-add-button" aria-label="Add session tab" title="Add session tab" type="button" onClick={onAddCreateSessionTab}>
-            <span className="canvas-region-top-menu-add-glyph" aria-hidden="true">
-              +
-            </span>
+            <PlusIcon />
           </button>
         </>
       )}

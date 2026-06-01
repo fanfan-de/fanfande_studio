@@ -20,15 +20,15 @@
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--seg-text-2);
+  color: var(--semantic-icon-button-text);
   box-shadow: none;
 }
 
 .top-menu-view-button:hover,
 .top-menu-view-button:focus-visible {
-  background: var(--mix-ui-accent-strong-14-transparent-86);
+  background: var(--semantic-icon-button-surface-hover);
   box-shadow: none;
-  color: var(--ui-accent-strong);
+  color: var(--semantic-icon-button-text-hover);
   transform: none;
 }
 
@@ -38,16 +38,16 @@
 }
 
 .top-menu-view-button.is-active {
-  background: var(--mix-brand-accent-active-12-transparent-88);
-  color: var(--brand-accent-active);
+  background: var(--semantic-icon-button-surface-active);
+  color: var(--semantic-icon-button-text-active);
   box-shadow: none;
   transform: none;
 }
 
 .top-menu-view-button.is-active:hover,
 .top-menu-view-button.is-active:focus-visible {
-  background: var(--mix-brand-accent-active-16-transparent-84);
-  color: var(--brand-accent-active);
+  background: var(--semantic-icon-button-surface-active);
+  color: var(--semantic-icon-button-text-active);
 }
 
 .top-menu-view-button svg {

@@ -259,6 +259,7 @@
 .dockview-theme-anybox .dockview-workbench-header-actions .canvas-region-top-menu-add-button {
   width: 28px;
   min-width: 28px;
+  height: 28px;
   min-height: 28px;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -275,13 +276,19 @@
   white-space: nowrap;
 }
 
+.dockview-theme-anybox .dockview-workbench-header-actions .canvas-region-top-menu-add-button svg {
+  width: var(--section-toolbar-icon-size);
+  height: var(--section-toolbar-icon-size);
+  stroke-width: 2;
+}
+
 .dockview-theme-anybox .dockview-workbench-header-actions .sidebar-toggle-button.is-top-menu:hover,
 .dockview-theme-anybox .dockview-workbench-header-actions .sidebar-toggle-button.is-top-menu:focus-visible,
 .dockview-theme-anybox .dockview-workbench-header-actions .canvas-region-top-menu-add-button:hover,
 .dockview-theme-anybox .dockview-workbench-header-actions .canvas-region-top-menu-add-button:focus-visible {
-  background: transparent;
+  background: var(--top-chrome-hover-surface, var(--mix-seg-text-2-12-transparent-88));
   border-color: transparent;
-  color: var(--dockview-tab-icon-hover-color);
+  color: var(--top-chrome-icon-hover, var(--dockview-tab-icon-hover-color));
 }
 
 .dockview-theme-anybox .dockview-workbench-header-actions .window-controls {

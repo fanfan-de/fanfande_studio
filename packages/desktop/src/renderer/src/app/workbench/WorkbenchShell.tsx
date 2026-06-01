@@ -1128,6 +1128,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             components={components}
             defaultTabComponent={TabComponent}
             disableFloatingGroups
+            disableTabsOverflowList
             getTabContextMenuItems={() => []}
             hideBorders
             leftHeaderActionsComponent={LeftHeaderActions}

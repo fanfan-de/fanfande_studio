@@ -270,8 +270,9 @@
 
 .right-sidebar-tab-close svg,
 .right-sidebar-add-tab-button svg {
-  width: var(--section-toolbar-aux-icon-size);
-  height: var(--section-toolbar-aux-icon-size);
+  width: var(--section-toolbar-icon-size);
+  height: var(--section-toolbar-icon-size);
+  stroke-width: 2;
 }
 
 .right-sidebar-add-tab-button {

@@ -36,7 +36,7 @@
   height: var(--section-toolbar-control-size);
   margin: calc((var(--section-toolbar-height) - var(--section-toolbar-control-size)) / 2) 0;
   border-radius: 8px;
-  color: #5a6e81;
+  color: var(--semantic-icon-button-text);
   box-shadow: none;
 }
 
@@ -48,22 +48,22 @@
 
 .sidebar-toggle-button.is-rail:hover,
 .sidebar-toggle-button.is-rail:focus-visible {
-  background: rgba(84, 96, 109, 0.14);
-  color: #22303d;
+  background: var(--semantic-icon-button-surface-hover);
+  color: var(--semantic-icon-button-text-hover);
   box-shadow: none;
   transform: none;
 }
 
 .sidebar-toggle-button.is-rail.is-active {
-  background: transparent;
-  color: #22303d;
+  background: var(--semantic-icon-button-surface-active);
+  color: var(--semantic-icon-button-text-active);
   box-shadow: none;
   transform: none;
 }
 
 .sidebar-toggle-button.is-rail.is-active:hover,
 .sidebar-toggle-button.is-rail.is-active:focus-visible {
-  background: rgba(84, 96, 109, 0.14);
+  background: var(--semantic-icon-button-surface-active);
 }
 
 .sidebar-toggle-button.is-rail:focus-visible {
@@ -1298,19 +1298,15 @@ body.is-resizing-sidebar .sidebar-resizer::before {
 .project-row-action,
 .skill-tree-row-action {
   background: transparent;
-  color: var(--seg-text-2);
+  color: var(--semantic-icon-button-text);
 }
 
 .sidebar-action:hover,
 .sidebar-action:focus-visible,
 .sidebar-toggle-button.is-sidebar:hover,
 .sidebar-toggle-button.is-sidebar:focus-visible,
-.sidebar-toggle-button.is-sidebar.is-active,
 .sidebar-toggle-button.is-rail:hover,
 .sidebar-toggle-button.is-rail:focus-visible,
-.sidebar-toggle-button.is-rail.is-active,
-.sidebar-toggle-button.is-rail.is-active:hover,
-.sidebar-toggle-button.is-rail.is-active:focus-visible,
 .sidebar-settings:hover,
 .sidebar-settings:focus-visible,
 .row-action:hover,
@@ -1319,8 +1315,19 @@ body.is-resizing-sidebar .sidebar-resizer::before {
 .project-row-action:focus-visible,
 .skill-tree-row-action:hover,
 .skill-tree-row-action:focus-visible {
-  background: var(--mix-seg-accent-soft-68-seg-panel-32);
-  color: var(--seg-accent-strong);
+  background: var(--semantic-icon-button-surface-hover);
+  color: var(--semantic-icon-button-text-hover);
+  box-shadow: none;
+}
+
+.sidebar-toggle-button.is-sidebar.is-active,
+.sidebar-toggle-button.is-sidebar.is-active:hover,
+.sidebar-toggle-button.is-sidebar.is-active:focus-visible,
+.sidebar-toggle-button.is-rail.is-active,
+.sidebar-toggle-button.is-rail.is-active:hover,
+.sidebar-toggle-button.is-rail.is-active:focus-visible {
+  background: var(--semantic-icon-button-surface-active);
+  color: var(--semantic-icon-button-text-active);
   box-shadow: none;
 }
 

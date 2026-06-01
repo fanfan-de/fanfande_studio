@@ -8064,7 +8064,6 @@ describe("App", () => {
     expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
     expect(Array.from(settingsDialog.querySelectorAll(".settings-primary-nav-label"), (node) => node.textContent)).toEqual([
       "General",
-      "Worktrees",
       "Provider",
       "Models",
       "Appearance",
@@ -8074,6 +8073,7 @@ describe("App", () => {
     expect(screen.getByText("Options")).toBeInTheDocument()
     const providerNavButton = screen.getByRole("button", { name: "Provider" })
     expect(providerNavButton).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Worktrees" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Updates" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Models" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Tools" })).not.toBeInTheDocument()

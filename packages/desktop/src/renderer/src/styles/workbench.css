@@ -95,7 +95,7 @@
 .row-action:hover,
 .primary-button:hover,
 .secondary-button:hover {
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .sidebar-action:disabled,
@@ -1516,20 +1516,13 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .canvas-region-top-menu-add-button {
   width: 28px;
   min-width: 28px;
+  height: 28px;
   min-height: 28px;
-  padding: 0 4px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-}
-
-.canvas-region-top-menu-add-glyph {
-  display: inline-block;
-  font-size: 22px;
-  line-height: 1;
-  font-weight: 500;
-  transform: none;
 }
 
 .canvas-top-menu-quick-anchor {
@@ -2757,30 +2750,30 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .top-menu-view-button {
-  color: var(--seg-text-2);
+  color: var(--semantic-icon-button-text);
 }
 
 .top-menu-view-button:hover,
 .top-menu-view-button:focus-visible {
-  background: var(--mix-ui-accent-strong-14-transparent-86);
-  border-color: var(--mix-ui-accent-strong-18-transparent-82);
-  color: var(--ui-accent-strong);
+  background: var(--semantic-icon-button-surface-hover);
+  border-color: transparent;
+  color: var(--semantic-icon-button-text-hover);
 }
 
 .top-menu-view-button.is-active,
 .top-menu-view-button.is-active:hover,
 .top-menu-view-button.is-active:focus-visible {
-  background: var(--mix-brand-accent-active-12-transparent-88);
-  border-color: var(--mix-brand-accent-active-20-transparent-80);
-  color: var(--brand-accent-active);
+  background: var(--semantic-icon-button-surface-active);
+  border-color: transparent;
+  color: var(--semantic-icon-button-text-active);
 }
 
 .canvas-region-top-menu {
   --canvas-region-tab-border: var(--seg-border);
   --canvas-region-tab-divider: var(--seg-divider);
   --canvas-region-tab-inactive-bg: var(--mix-seg-shell-84-seg-panel-muted-16);
-  --canvas-region-tab-hover: var(--mix-seg-panel-66-seg-panel-muted-34);
-  --canvas-region-tab-focus: var(--mix-seg-accent-soft-74-seg-panel-26);
+  --canvas-region-tab-hover: var(--semantic-icon-button-surface-hover);
+  --canvas-region-tab-focus: var(--semantic-icon-button-surface-hover);
 }
 
 .canvas-region-top-menu .sidebar-toggle-button.is-top-menu:hover,
@@ -2789,9 +2782,9 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .canvas-region-top-menu-add-button:focus-visible,
 .canvas-region-top-menu .session-tab-close:hover,
 .canvas-region-top-menu .session-tab-close:focus-visible {
-  background: var(--seg-accent-soft);
-  border-color: var(--seg-accent);
-  color: var(--seg-accent-strong);
+  background: var(--semantic-icon-button-surface-hover);
+  border-color: transparent;
+  color: var(--semantic-icon-button-text-hover);
   box-shadow: none;
 }
 
