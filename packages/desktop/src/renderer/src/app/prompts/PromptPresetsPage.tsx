@@ -10,6 +10,7 @@ import {
   PlusIcon,
   SearchIcon,
 } from "../icons"
+import { SettingsSelect } from "../settings/SettingsSelect"
 import { ShellTopMenu } from "../shared-ui"
 import { ThreadMarkdown } from "../thread-markdown"
 import type {
@@ -648,6 +649,10 @@ export function PromptPresetsPage({
   const selectedPromptPresetUsageLabels = selectedPromptPreset
     ? getPromptPresetUsageLabels(selectedPromptPreset.id, promptPresetSelection)
     : []
+  const promptPresetSelectOptions = promptPresetOptions.map((preset) => ({
+    value: preset.id,
+    label: preset.label,
+  }))
 
   return (
     <section className="prompt-presets-page" aria-label="Prompt presets">
@@ -691,21 +696,16 @@ export function PromptPresetsPage({
 
                   <div className="settings-prompt-assignment-control">
                     <div className="settings-prompt-assignment-actions">
-                      <select
-                        id="settings-system-prompt-preset"
-                        aria-label="System prompt preset"
+                      <SettingsSelect
+                        ariaLabel="System prompt preset"
+                        className="settings-prompt-assignment-select"
+                        options={promptPresetSelectOptions}
                         value={promptPresetSelection?.systemPromptPresetID ?? ""}
                         disabled={!promptPresetSelection || isSavingPromptPresetSelection}
-                        onChange={(event) =>
-                          void onPromptPresetSelectionChange("systemPromptPresetID", event.target.value)
+                        onChange={(value) =>
+                          void onPromptPresetSelectionChange("systemPromptPresetID", value)
                         }
-                      >
-                        {promptPresetOptions.map((preset) => (
-                          <option key={`system-${preset.id}`} value={preset.id}>
-                            {preset.label}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </div>
                   </div>
                 </div>
@@ -718,21 +718,16 @@ export function PromptPresetsPage({
 
                   <div className="settings-prompt-assignment-control">
                     <div className="settings-prompt-assignment-actions">
-                      <select
-                        id="settings-plan-mode-prompt-preset"
-                        aria-label="Plan mode prompt preset"
+                      <SettingsSelect
+                        ariaLabel="Plan mode prompt preset"
+                        className="settings-prompt-assignment-select"
+                        options={promptPresetSelectOptions}
                         value={promptPresetSelection?.planModePromptPresetID ?? ""}
                         disabled={!promptPresetSelection || isSavingPromptPresetSelection}
-                        onChange={(event) =>
-                          void onPromptPresetSelectionChange("planModePromptPresetID", event.target.value)
+                        onChange={(value) =>
+                          void onPromptPresetSelectionChange("planModePromptPresetID", value)
                         }
-                      >
-                        {promptPresetOptions.map((preset) => (
-                          <option key={`plan-${preset.id}`} value={preset.id}>
-                            {preset.label}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </div>
                   </div>
                 </div>
@@ -745,21 +740,16 @@ export function PromptPresetsPage({
 
                   <div className="settings-prompt-assignment-control">
                     <div className="settings-prompt-assignment-actions">
-                      <select
-                        id="settings-side-chat-prompt-preset"
-                        aria-label="Side chat prompt preset"
+                      <SettingsSelect
+                        ariaLabel="Side chat prompt preset"
+                        className="settings-prompt-assignment-select"
+                        options={promptPresetSelectOptions}
                         value={promptPresetSelection?.sideChatPromptPresetID ?? ""}
                         disabled={!promptPresetSelection || isSavingPromptPresetSelection}
-                        onChange={(event) =>
-                          void onPromptPresetSelectionChange("sideChatPromptPresetID", event.target.value)
+                        onChange={(value) =>
+                          void onPromptPresetSelectionChange("sideChatPromptPresetID", value)
                         }
-                      >
-                        {promptPresetOptions.map((preset) => (
-                          <option key={`side-chat-${preset.id}`} value={preset.id}>
-                            {preset.label}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </div>
                   </div>
                 </div>

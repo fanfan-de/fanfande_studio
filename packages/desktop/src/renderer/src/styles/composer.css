@@ -1038,7 +1038,6 @@
   background: rgba(251, 252, 253, 0.98);
   box-shadow: 0 22px 48px rgba(31, 48, 66, 0.18);
   backdrop-filter: blur(18px);
-  animation: rise-in 180ms ease;
 }
 
 .composer-command-option {
@@ -1420,7 +1419,6 @@
   border-radius: var(--seg-radius-sm);
   background: var(--seg-composer-surface);
   box-shadow: 0 10px 24px rgba(46, 81, 118, 0.05);
-  animation: rise-in 560ms ease;
 }
 
 .composer-stack .composer {

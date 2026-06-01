@@ -97,11 +97,6 @@
   max-width: 100%;
 }
 
-.turn[data-turn-motion="new"],
-.turn[data-turn-motion="live"] {
-  animation: rise-in 260ms ease;
-}
-
 .turn-meta {
   justify-content: flex-end;
 }
@@ -1925,10 +1920,6 @@ body.is-image-lightbox-open {
 
 .trace-item-status.is-denied {
   color: #b14537;
-}
-
-.permission-request-turn {
-  animation: rise-in 220ms ease;
 }
 
 .permission-request-inline {

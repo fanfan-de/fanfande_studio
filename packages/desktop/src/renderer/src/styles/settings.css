@@ -3293,15 +3293,32 @@ body.is-dragging-settings-page {
   gap: 8px;
 }
 
-.settings-prompt-assignment-control select {
+.settings-prompt-assignment-select {
   width: clamp(220px, 18vw, 360px);
   min-width: 0;
+}
+
+.settings-prompt-assignment-select .settings-select-trigger {
   min-height: 36px;
-  padding: 0 12px;
-  border-color: rgba(195, 204, 214, 0.82);
-  border-radius: var(--seg-radius-xs);
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(24, 37, 50, 0.08);
+  background: var(--mix-seg-panel-muted-72-seg-panel-28);
+}
+
+.settings-prompt-assignment-select .settings-select-panel {
+  right: auto;
+  left: 0;
+  width: max-content;
+  min-width: 100%;
+  max-width: calc(100vw - 48px);
+}
+
+.settings-prompt-assignment-select .settings-select-option {
+  width: max-content;
+  min-width: 100%;
+}
+
+.settings-prompt-assignment-select .settings-select-option span {
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .settings-prompt-assignment-actions .secondary-button {
@@ -3320,7 +3337,7 @@ body.is-dragging-settings-page {
 }
 
 .settings-prompt-assignment-actions .secondary-button:disabled,
-.settings-prompt-assignment-control select:disabled {
+.settings-prompt-assignment-select .settings-select-trigger:disabled {
   box-shadow: none;
 }
 
@@ -3597,7 +3614,7 @@ body.is-dragging-settings-page {
     align-items: stretch;
   }
 
-  .settings-prompt-assignment-control select {
+  .settings-prompt-assignment-select {
     width: 100%;
     min-width: 0;
   }
@@ -5373,12 +5390,20 @@ body.is-dragging-settings-page {
 .settings-select-option:hover,
 .settings-select-option:focus-visible,
 .settings-select-option.is-active {
-  background: var(--mix-seg-panel-72-seg-panel-muted-28);
+  background: var(--semantic-sidebar-tree-row-surface-hover, var(--mix-seg-panel-muted-86-transparent-14));
+  color: var(--semantic-sidebar-tree-row-text-hover, var(--seg-text-1));
   outline: none;
 }
 
 .settings-select-option.is-selected {
-  background: var(--seg-accent-soft);
+  background: var(--mix-seg-accent-soft-84-transparent-16);
+  color: var(--seg-accent-strong);
+}
+
+.settings-select-option.is-selected:hover,
+.settings-select-option.is-selected:focus-visible,
+.settings-select-option.is-selected.is-active {
+  background: var(--mix-seg-accent-soft-72-transparent-28);
   color: var(--seg-accent-strong);
 }
 

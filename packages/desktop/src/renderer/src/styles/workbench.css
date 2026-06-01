@@ -473,7 +473,6 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 14px;
-  animation: rise-in 520ms ease;
 }
 
 .canvas.is-workbench {
@@ -2528,7 +2527,6 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   display: grid;
   justify-items: center;
   gap: 18px;
-  animation: rise-in 260ms ease;
 }
 
 .create-session-logo {

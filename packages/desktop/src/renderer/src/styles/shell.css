@@ -157,7 +157,6 @@
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  animation: rise-in 360ms ease;
 }
 
 .activity-rail-primary,

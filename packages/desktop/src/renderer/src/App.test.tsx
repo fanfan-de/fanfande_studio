@@ -8334,6 +8334,15 @@ describe("App", () => {
 
     openActivityRailConfigurationView("Open prompts")
 
+    function getPromptPresetCombobox(name: string) {
+      return screen.getByRole("combobox", { name })
+    }
+
+    async function choosePromptPreset(name: string, optionName: string) {
+      fireEvent.click(getPromptPresetCombobox(name))
+      fireEvent.click(await screen.findByRole("option", { name: optionName }))
+    }
+
     expect(document.querySelector("#app-sidebar")).toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     const promptTree = await screen.findByRole("list", { name: "Prompt presets" })
@@ -8346,9 +8355,9 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Plan Mode Prompt" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Side Chat Prompt" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "GPT Provider Prompt" })).toBeInTheDocument()
-    expect(screen.getByLabelText("System prompt preset")).toHaveValue("system-default")
-    expect(screen.getByLabelText("Plan mode prompt preset")).toHaveValue("plan-mode")
-    expect(screen.getByLabelText("Side chat prompt preset")).toHaveValue("side-chat")
+    expect(getPromptPresetCombobox("System prompt preset")).toHaveTextContent("System Prompt")
+    expect(getPromptPresetCombobox("Plan mode prompt preset")).toHaveTextContent("Plan Mode Prompt")
+    expect(getPromptPresetCombobox("Side chat prompt preset")).toHaveTextContent("Side Chat Prompt")
     expect(screen.queryByRole("button", { name: /Confirm .* prompt preset/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Plan Mode Prompt" }))
@@ -8370,11 +8379,7 @@ describe("App", () => {
       "<system-reminder>\n# Plan Mode - System Reminder",
     )
 
-    fireEvent.change(screen.getByLabelText("System prompt preset"), {
-      target: {
-        value: "provider-gpt",
-      },
-    })
+    await choosePromptPreset("System prompt preset", "GPT Provider Prompt")
 
     await waitFor(() => {
       expect(window.desktop!.updatePromptPresetSelection).toHaveBeenCalledWith({
@@ -8410,11 +8415,7 @@ describe("App", () => {
       })
     })
 
-    fireEvent.change(screen.getByLabelText("System prompt preset"), {
-      target: {
-        value: "custom-untitled-preset",
-      },
-    })
+    await choosePromptPreset("System prompt preset", "Focus preset")
 
     await waitFor(() => {
       expect(window.desktop!.updatePromptPresetSelection).toHaveBeenLastCalledWith({
@@ -12800,7 +12801,10 @@ describe("App", () => {
     expect(styles).toMatch(/\.settings-page-main\.prompt-presets-page-main\s*\{[^}]*height:\s*100%;[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*align-items:\s*stretch;/s)
     expect(styles).toMatch(/\.settings-page-main\.prompt-presets-page-main\s*>\s*\.settings-prompts-shell\s*\{[^}]*flex:\s*1 1 auto;[^}]*height:\s*auto;/s)
     expect(styles).toMatch(/\.settings-prompt-assignment-list\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/s)
-    expect(styles).toMatch(/\.settings-prompt-assignment-control select\s*\{[^}]*width:\s*clamp\(220px,\s*18vw,\s*360px\);/s)
+    expect(styles).toMatch(/\.settings-prompt-assignment-select\s*\{[^}]*width:\s*clamp\(220px,\s*18vw,\s*360px\);/s)
+    expect(styles).toMatch(/\.settings-prompt-assignment-select\s+\.settings-select-panel\s*\{[^}]*left:\s*0;[^}]*width:\s*max-content;[^}]*max-width:\s*calc\(100vw - 48px\);/s)
+    expect(styles).toMatch(/\.settings-prompt-assignment-select\s+\.settings-select-option span\s*\{[^}]*overflow:\s*visible;[^}]*text-overflow:\s*clip;/s)
+    expect(styles).not.toMatch(/\.settings-prompt-assignment-control select/)
   })
 
   it("uses Obsidian-style grouped settings rows for standard settings pages", () => {
