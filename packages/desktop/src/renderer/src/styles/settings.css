@@ -3240,22 +3240,31 @@ body.is-dragging-settings-page {
 
 .settings-prompt-assignment-list {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   flex-wrap: wrap;
-  gap: 10px 18px;
+  gap: 10px 0;
 }
 
 .settings-prompt-assignment-row {
   min-width: 0;
-  padding: 0;
+  min-height: 44px;
+  padding: 0 24px;
   display: grid;
-  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(82px, auto) minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 14px;
+}
+
+.settings-prompt-assignment-row:first-child {
+  padding-left: 0;
+}
+
+.settings-prompt-assignment-row:last-child {
+  padding-right: 0;
 }
 
 .settings-prompt-assignment-row + .settings-prompt-assignment-row {
-  border-top: 0;
+  border-left: 1px solid var(--seg-border);
 }
 
 .settings-prompt-assignment-copy {
@@ -3299,7 +3308,14 @@ body.is-dragging-settings-page {
 }
 
 .settings-prompt-assignment-select .settings-select-trigger {
-  min-height: 36px;
+  min-height: 32px;
+  padding: 0 8px;
+  background: transparent;
+}
+
+.settings-prompt-assignment-select .settings-select-trigger:hover,
+.settings-prompt-assignment-select .settings-select-trigger:focus-visible,
+.settings-prompt-assignment-select.is-open .settings-select-trigger {
   background: var(--mix-seg-panel-muted-72-seg-panel-28);
 }
 
@@ -3599,9 +3615,20 @@ body.is-dragging-settings-page {
   }
 
   .settings-prompt-assignment-row {
+    min-height: auto;
+    padding: 10px 0 0;
+    border-left: 0;
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
     gap: 8px;
+  }
+
+  .settings-prompt-assignment-row:first-child {
+    padding-top: 0;
+  }
+
+  .settings-prompt-assignment-row + .settings-prompt-assignment-row {
+    border-top: 1px solid var(--seg-border);
   }
 
   .settings-prompt-assignment-control {
@@ -9361,6 +9388,26 @@ body.is-dragging-settings-page {
 
 .settings-page-main.is-services .settings-service-detail-panel > .settings-panel:not(.provider-detail-card) {
   padding: 22px 24px;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-slots-panel {
+  padding: 0 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--seg-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main
+  .settings-service-detail-panel
+  > .settings-prompt-editor-panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  gap: 10px;
 }
 
 .settings-page-main.is-services .settings-section-header {
