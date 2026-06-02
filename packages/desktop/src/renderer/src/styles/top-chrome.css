@@ -213,18 +213,6 @@ body.is-resizing-sidebar .sidebar-resizer {
   transition: opacity 160ms ease;
 }
 
-.right-sidebar-tab.is-active::before {
-  content: "";
-  position: absolute;
-  left: 1px;
-  right: 1px;
-  bottom: -1px;
-  z-index: 3;
-  height: 2px;
-  background: var(--right-sidebar-tab-active-bg);
-  pointer-events: none;
-}
-
 .right-sidebar-tab:focus-within {
   background: transparent;
   border-color: transparent;

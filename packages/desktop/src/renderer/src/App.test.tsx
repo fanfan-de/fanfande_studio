@@ -7613,8 +7613,10 @@ describe("App", () => {
 
     const tabBar = document.querySelector(".dv-tabs-and-actions-container") as HTMLElement
     const activeTab = tabBar.querySelector(".dv-tab.dv-active-tab")
+    const tabsContainer = tabBar.querySelector(".dv-tabs-container")
 
     expect(tabBar).not.toBeNull()
+    expect(tabsContainer).not.toBeNull()
     expect(activeTab).not.toBeNull()
     expect(activeTab?.querySelector(".dockview-workbench-tab-content")).not.toBeNull()
     expect(tabBar.querySelectorAll(".session-tab-active-curve")).toHaveLength(0)
@@ -12564,7 +12566,22 @@ describe("App", () => {
       /\.dockview-theme-anybox\s+\.dv-tabs-container > \.dv-tab\.dv-inactive-tab:hover,[\s\S]*?\.dv-tabs-container > \.dv-tab\.dv-inactive-tab:focus-within\s*\{[^}]*background:\s*var\(--dockview-tab-hover-bg\);/s,
     )
     expect(styles).toMatch(
-      /\.dockview-theme-anybox\s+\.dv-tab:not\(:first-child\)::after\s*\{[^}]*content:\s*"";[^}]*position:\s*absolute;[^}]*left:\s*0;[^}]*z-index:\s*3;[^}]*width:\s*1px;[^}]*background:\s*var\(--dockview-tab-divider\);[^}]*pointer-events:\s*none;/s,
+      /\.dockview-theme-anybox\s+\.dv-tabs-container > \.dv-tab:not\(:first-child\)::before\s*\{[^}]*content:\s*"";[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*bottom:\s*0;[^}]*left:\s*0;[^}]*z-index:\s*1;[^}]*width:\s*1px;[^}]*background:\s*var\(--dockview-tab-divider\);[^}]*pointer-events:\s*none;/s,
+    )
+    expect(styles).toMatch(
+      /\.dockview-theme-anybox\s+\.dv-tabs-container > \.dv-tab:last-child::before\s*\{[^}]*right:\s*0;[^}]*left:\s*0;[^}]*width:\s*auto;[^}]*background:\s*linear-gradient\([^}]*var\(--dockview-tab-divider\)\s*calc\(100% - 1px\),[^}]*var\(--dockview-tab-divider\)\s*100%[^}]*pointer-events:\s*none;/s,
+    )
+    expect(styles).toMatch(
+      /\.dockview-theme-anybox\s+\.dv-tabs-container > \.dv-tab:not\(:first-child\):last-child::before\s*\{[^}]*background:\s*linear-gradient\([^}]*var\(--dockview-tab-divider\)\s*0,[^}]*var\(--dockview-tab-divider\)\s*1px,[^}]*var\(--dockview-tab-divider\)\s*calc\(100% - 1px\),[^}]*var\(--dockview-tab-divider\)\s*100%/s,
+    )
+    expect(styles).not.toMatch(
+      /\.dockview-theme-anybox\s+\.dv-tab\.dv-active-tab::after,\s*\.dockview-theme-anybox\s+\.dv-tab\.dv-active-tab \+ \.dv-tab::after\s*\{[^}]*display:\s*none;/s,
+    )
+    expect(styles).toMatch(
+      /\.dockview-theme-anybox\s+\.dv-tab:focus-within::after,\s*\.dockview-theme-anybox\s+\.dv-tab:focus::after\s*\{[^}]*content:\s*none;[^}]*outline:\s*0;/s,
+    )
+    expect(styles).not.toMatch(
+      /\.dockview-theme-anybox\s+\.dv-tab:not\(:first-child\)::after\s*\{[^}]*background:\s*var\(--dockview-tab-divider\);/s,
     )
     expect(styles).not.toMatch(
       /\.dockview-theme-anybox\s+\.dv-tab:not\(:first-child\)\s*\{[^}]*box-shadow:\s*inset 1px 0 0 var\(--dockview-tab-divider\);/s,

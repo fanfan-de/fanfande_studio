@@ -236,10 +236,10 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 6px;
-  border: 1px solid var(--automations-border);
-  border-radius: var(--automations-radius-panel);
-  background: var(--automations-surface);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   display: grid;
   align-content: start;
   scrollbar-gutter: stable;
@@ -292,7 +292,7 @@
 .automations-index-row:not(:last-child)::after {
   content: "";
   position: absolute;
-  right: 8px;
+  right: 0;
   bottom: 0;
   left: 40px;
   height: 1px;
@@ -417,10 +417,11 @@
 }
 
 .automations-empty-state {
-  padding: 24px;
-  border: 1px solid var(--automations-border);
-  border-radius: var(--automations-radius-panel);
-  background: var(--automations-surface);
+  padding: 18px 0;
+  border: 0;
+  border-top: 1px solid var(--automations-border-subtle);
+  border-radius: 0;
+  background: transparent;
   color: var(--automations-text);
   box-shadow: none;
   display: grid;
@@ -1353,7 +1354,7 @@
   }
 
   .automations-index-list {
-    padding: 6px;
+    padding: 0;
   }
 
   .automations-template-browser-grid {
