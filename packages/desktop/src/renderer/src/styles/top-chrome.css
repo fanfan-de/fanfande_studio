@@ -96,7 +96,6 @@ body.is-resizing-sidebar .sidebar-resizer {
   --canvas-region-tab-divider: var(--top-chrome-divider);
   --canvas-region-tab-active-bg: var(--top-chrome-active-surface);
   --canvas-region-tab-inactive-bg: transparent;
-  --canvas-region-tab-hover: var(--top-chrome-hover-surface);
   --canvas-region-tab-focus: var(--top-chrome-focus-surface);
   --canvas-region-tab-cap-radius: 8px;
   --canvas-region-tab-height: var(--top-chrome-tab-height);
@@ -108,9 +107,7 @@ body.is-resizing-sidebar .sidebar-resizer {
   --right-sidebar-tab-divider: var(--top-chrome-divider);
   --right-sidebar-tab-radius: 0px;
   --right-sidebar-tab-active-bg: var(--top-chrome-active-surface);
-  --right-sidebar-tab-hover-bg: var(--mix-seg-panel-66-seg-panel-muted-34);
   --right-sidebar-tab-icon-color: currentColor;
-  --right-sidebar-tab-icon-hover-color: currentColor;
 }
 
 .canvas-region-top-menu .session-tab,
@@ -133,10 +130,8 @@ body.is-resizing-sidebar .sidebar-resizer {
   border-radius: var(--canvas-region-tab-cap-radius) var(--canvas-region-tab-cap-radius) 0 0;
 }
 
-.canvas-region-top-menu .session-tab:hover,
-.right-sidebar-tab:hover,
 .right-sidebar-tab:focus-within {
-  background: var(--top-chrome-hover-surface);
+  background: transparent;
   border-color: transparent;
   color: var(--seg-text-1);
   box-shadow: none;
@@ -154,30 +149,25 @@ body.is-resizing-sidebar .sidebar-resizer {
 .canvas-region-top-menu .session-tab.is-active,
 .right-sidebar-tab.is-active {
   position: relative;
-  z-index: 2;
+  z-index: auto;
   height: var(--top-chrome-tab-height);
   min-height: var(--top-chrome-tab-height);
   margin-top: calc(var(--top-chrome-height) - var(--top-chrome-tab-height));
   background: var(--top-chrome-active-surface);
-  border: 1px solid var(--top-chrome-border);
-  border-bottom-color: var(--top-chrome-active-surface);
+  border: 0;
   color: var(--seg-text-1);
-  box-shadow: none;
+  box-shadow: inset 0 1px 0 var(--top-chrome-border);
   transform: none;
 }
 
-.canvas-region-top-menu .session-tab.is-active:hover,
 .canvas-region-top-menu .session-tab.is-active:focus-within,
-.right-sidebar-tab.is-active:hover,
 .right-sidebar-tab.is-active:focus-within {
   background: var(--top-chrome-active-surface);
-  border-color: var(--top-chrome-border);
-  border-bottom-color: var(--top-chrome-active-surface);
+  border-color: transparent;
   color: var(--seg-text-1);
 }
 
-.canvas-region-top-menu .session-tab.is-active::before,
-.right-sidebar-tab.is-active::after {
+.canvas-region-top-menu .session-tab.is-active::before {
   content: "";
   position: absolute;
   left: 1px;
@@ -195,14 +185,7 @@ body.is-resizing-sidebar .sidebar-resizer {
   background: var(--top-chrome-divider);
 }
 
-.canvas-region-top-menu .session-tab:hover::after,
-.canvas-region-top-menu .session-tab:focus-within::after,
-.canvas-region-top-menu .session-tab.is-active::after {
-  opacity: 0;
-}
-
 .right-sidebar-tab.is-active,
-.right-sidebar-tab:hover,
 .right-sidebar-tab:focus-within {
   box-shadow: none;
 }
@@ -233,16 +216,30 @@ body.is-resizing-sidebar .sidebar-resizer {
   transition: opacity 160ms ease;
 }
 
-.right-sidebar-tab:hover,
+.right-sidebar-tab.is-active::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: -1px;
+  z-index: 3;
+  height: 2px;
+  background: var(--right-sidebar-tab-active-bg);
+  pointer-events: none;
+}
+
 .right-sidebar-tab:focus-within {
-  background: var(--right-sidebar-tab-hover-bg);
+  background: transparent;
   border-color: transparent;
   color: var(--seg-text-1);
   box-shadow: none;
 }
 
+.right-sidebar-tab:not(.is-active):focus-within .right-sidebar-tab-trigger {
+  color: var(--seg-text-1);
+}
+
 .right-sidebar-tab.is-active,
-.right-sidebar-tab.is-active:hover,
 .right-sidebar-tab.is-active:focus-within {
   height: auto;
   min-height: var(--top-chrome-height);
@@ -252,46 +249,21 @@ body.is-resizing-sidebar .sidebar-resizer {
   border: 0;
   color: var(--seg-text-1);
   z-index: auto;
-  box-shadow:
-    inset 0 1px 0 var(--right-sidebar-tab-border),
-    inset 1px 0 0 var(--right-sidebar-tab-border),
-    inset -1px 0 0 var(--right-sidebar-tab-border);
-}
-
-.right-sidebar-tab.is-active::after {
-  opacity: 0;
+  box-shadow: inset 0 1px 0 var(--right-sidebar-tab-border);
 }
 
 .right-sidebar-tab:not(:first-child) {
   box-shadow: none;
 }
 
-.right-sidebar-tab:hover,
 .right-sidebar-tab:focus-within {
   box-shadow: none;
 }
 
-.right-sidebar-tab:hover::after,
-.right-sidebar-tab:focus-within::after {
-  opacity: 0;
-}
-
 .right-sidebar-tab.is-active,
 .right-sidebar-tab.is-active:not(:first-child),
-.right-sidebar-tab.is-active:hover,
 .right-sidebar-tab.is-active:focus-within {
-  box-shadow:
-    inset 0 1px 0 var(--right-sidebar-tab-border),
-    inset 1px 0 0 var(--right-sidebar-tab-border),
-    inset -1px 0 0 var(--right-sidebar-tab-border);
-}
-
-.right-sidebar-tab:first-child.is-active,
-.right-sidebar-tab:first-child.is-active:hover,
-.right-sidebar-tab:first-child.is-active:focus-within {
-  box-shadow:
-    inset 0 1px 0 var(--right-sidebar-tab-border),
-    inset -1px 0 0 var(--right-sidebar-tab-border);
+  box-shadow: inset 0 1px 0 var(--right-sidebar-tab-border);
 }
 
 .left-sidebar-top-menu .shell-top-menu-content,
@@ -362,11 +334,9 @@ body.is-resizing-sidebar .sidebar-resizer {
 .right-sidebar-top-menu .top-menu-view-button:focus-visible,
 .right-sidebar-top-menu .terminal-panel-toggle-button:hover,
 .right-sidebar-top-menu .terminal-panel-toggle-button:focus-visible,
-.right-sidebar-add-tab-button:hover,
 .right-sidebar-add-tab-button:focus-visible,
 .canvas-region-top-menu .sidebar-toggle-button.is-top-menu:hover,
 .canvas-region-top-menu .sidebar-toggle-button.is-top-menu:focus-visible,
-.canvas-region-top-menu .canvas-region-top-menu-add-button:hover,
 .canvas-region-top-menu .canvas-region-top-menu-add-button:focus-visible,
 .canvas-region-top-menu .plugins-top-menu-button:hover,
 .canvas-region-top-menu .plugins-top-menu-button:focus-visible,
@@ -405,7 +375,6 @@ body.is-resizing-sidebar .sidebar-resizer {
 .right-sidebar-top-menu .top-menu-view-button.is-active:focus-visible,
 .right-sidebar-top-menu .terminal-panel-toggle-button.is-active:hover,
 .right-sidebar-top-menu .terminal-panel-toggle-button.is-active:focus-visible,
-.right-sidebar-add-tab-button.is-active:hover,
 .right-sidebar-add-tab-button.is-active:focus-visible,
 .canvas-region-top-menu .sidebar-toggle-button.is-top-menu.is-active:hover,
 .canvas-region-top-menu .sidebar-toggle-button.is-top-menu.is-active:focus-visible {
@@ -424,9 +393,7 @@ body.is-resizing-sidebar .sidebar-resizer {
   box-shadow: none;
 }
 
-.canvas-region-top-menu .session-tab-close:hover,
 .canvas-region-top-menu .session-tab-close:focus-visible,
-.right-sidebar-tab-close:hover,
 .right-sidebar-tab-close:focus-visible {
   background: var(--top-chrome-hover-surface);
   color: var(--top-chrome-icon-hover);
@@ -434,10 +401,9 @@ body.is-resizing-sidebar .sidebar-resizer {
   box-shadow: none;
 }
 
-.right-sidebar-tab-close:hover,
 .right-sidebar-tab-close:focus-visible {
   background: transparent;
-  color: var(--right-sidebar-tab-icon-hover-color);
+  color: var(--right-sidebar-tab-icon-color);
 }
 
 .right-sidebar-top-menu .window-control {

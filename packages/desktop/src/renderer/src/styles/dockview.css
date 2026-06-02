@@ -284,7 +284,6 @@
 
 .dockview-theme-anybox .dockview-workbench-header-actions .sidebar-toggle-button.is-top-menu:hover,
 .dockview-theme-anybox .dockview-workbench-header-actions .sidebar-toggle-button.is-top-menu:focus-visible,
-.dockview-theme-anybox .dockview-workbench-header-actions .canvas-region-top-menu-add-button:hover,
 .dockview-theme-anybox .dockview-workbench-header-actions .canvas-region-top-menu-add-button:focus-visible {
   background: var(--top-chrome-hover-surface, var(--mix-seg-text-2-12-transparent-88));
   border-color: transparent;

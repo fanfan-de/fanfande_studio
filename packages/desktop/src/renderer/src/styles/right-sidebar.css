@@ -76,9 +76,7 @@
   --right-sidebar-tab-divider: var(--seg-divider);
   --right-sidebar-tab-radius: 0px;
   --right-sidebar-tab-active-bg: var(--seg-shell);
-  --right-sidebar-tab-hover-bg: var(--mix-seg-panel-66-seg-panel-muted-34);
   --right-sidebar-tab-icon-color: currentColor;
-  --right-sidebar-tab-icon-hover-color: currentColor;
   position: relative;
   min-height: 40px;
   margin: 0;
@@ -178,13 +176,7 @@
     box-shadow 140ms ease;
 }
 
-.right-sidebar-tab:not(:first-child) {
-  box-shadow: inset 1px 0 0 var(--right-sidebar-tab-divider);
-}
-
-.right-sidebar-tab:hover,
 .right-sidebar-tab:focus-within {
-  background: var(--right-sidebar-tab-hover-bg);
   color: var(--seg-text-1);
   box-shadow: none;
 }
@@ -193,11 +185,8 @@
   background: var(--right-sidebar-tab-active-bg);
   color: var(--seg-text-1);
   position: relative;
-  z-index: 2;
-  box-shadow:
-    inset 0 1px 0 var(--right-sidebar-tab-border),
-    inset 1px 0 0 var(--right-sidebar-tab-border),
-    inset -1px 0 0 var(--right-sidebar-tab-border);
+  z-index: auto;
+  box-shadow: inset 0 1px 0 var(--right-sidebar-tab-border);
 }
 
 .right-sidebar-tab-trigger,
@@ -269,18 +258,16 @@
   line-height: 1;
 }
 
-.right-sidebar-tab:hover .right-sidebar-tab-close,
 .right-sidebar-tab:focus-within .right-sidebar-tab-close,
 .right-sidebar-tab.is-active .right-sidebar-tab-close {
   opacity: 1;
   pointer-events: auto;
 }
 
-.right-sidebar-tab-close:hover,
 .right-sidebar-tab-close:focus-visible {
   background: transparent;
   border-color: transparent;
-  color: var(--right-sidebar-tab-icon-hover-color);
+  color: var(--right-sidebar-tab-icon-color);
   outline: none;
 }
 
@@ -316,12 +303,11 @@
   justify-content: center;
 }
 
-.right-sidebar-add-tab-button:hover,
 .right-sidebar-add-tab-button:focus-visible,
 .right-sidebar-add-tab-button.is-active {
   background: transparent;
   border-color: transparent;
-  color: var(--right-sidebar-tab-icon-hover-color);
+  color: var(--right-sidebar-tab-icon-color);
   outline: none;
 }
 
@@ -3119,7 +3105,6 @@
 
 .sidebar-toggle-button.is-top-menu:hover,
 .sidebar-toggle-button.is-top-menu:focus-visible,
-.session-tab:hover,
 .session-tab:focus-visible,
 .session-tab.is-active,
 .canvas-top-menu-button:hover,

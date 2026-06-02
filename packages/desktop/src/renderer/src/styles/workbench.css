@@ -52,7 +52,6 @@
 .sidebar-toggle-button.is-top-menu:focus-visible,
 .top-menu-view-button:hover,
 .top-menu-view-button:focus-visible,
-.session-tab:hover,
 .session-tab:focus-visible,
 .session-tab.is-active,
 .canvas-top-menu-button:hover,
@@ -63,7 +62,6 @@
 
 .sidebar-toggle-button.is-top-menu:hover,
 .sidebar-toggle-button.is-top-menu:focus-visible,
-.session-tab:hover,
 .session-tab:focus-visible,
 .canvas-top-menu-button:hover,
 .canvas-top-menu-button:focus-visible {
@@ -87,7 +85,6 @@
 .sidebar-toggle-button.is-top-menu:focus-visible,
 .top-menu-view-button:hover,
 .top-menu-view-button:focus-visible,
-.session-tab:hover,
 .session-tab:focus-visible,
 .canvas-top-menu-button:hover,
 .canvas-top-menu-button:focus-visible,
@@ -439,7 +436,6 @@
   cursor: default;
 }
 
-.session-tab-close:hover,
 .session-tab-close:focus-visible {
   background: transparent;
   color: #22303d;
@@ -1197,7 +1193,6 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   --canvas-region-tab-divider: rgba(32, 41, 54, 0.08);
   --canvas-region-tab-active-bg: var(--seg-panel);
   --canvas-region-tab-inactive-bg: var(--mix-seg-shell-82-eef2f7-18);
-  --canvas-region-tab-hover: var(--mix-seg-shell-62-ffffff-38);
   --canvas-region-tab-focus: var(--mix-seg-shell-56-ffffff-44);
   --canvas-region-tab-cap-radius: 8px;
   --canvas-region-tab-height: 32px;
@@ -1318,14 +1313,6 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   transition: opacity 160ms ease;
 }
 
-.canvas-region-top-menu .session-tab:hover {
-  transform: none;
-  background: var(--canvas-region-tab-hover);
-  border-color: transparent;
-  color: var(--seg-text-1);
-  box-shadow: none;
-}
-
 .canvas-region-top-menu .session-tab:focus-within {
   transform: none;
   background: var(--canvas-region-tab-focus);
@@ -1334,29 +1321,21 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   box-shadow: none;
 }
 
-.canvas-region-top-menu .session-tab:hover::after,
-.canvas-region-top-menu .session-tab:focus-within::after,
-.canvas-region-top-menu .session-tab.is-active::after {
-  opacity: 0;
-}
-
 .canvas-region-top-menu .session-tab.is-active {
   min-height: calc(var(--canvas-region-tab-height) + 4px);
   margin-top: 2px;
   background: var(--canvas-region-tab-active-bg);
-  border: 1px solid var(--canvas-region-tab-border);
-  border-bottom-color: var(--canvas-region-tab-active-bg);
+  border: 0;
   color: var(--seg-text-1);
-  z-index: 2;
-  box-shadow: none;
+  z-index: auto;
+  box-shadow: inset 0 1px 0 var(--canvas-region-tab-border);
 }
 
-.canvas-region-top-menu .session-tab.is-active:hover,
 .canvas-region-top-menu .session-tab.is-active:focus-within {
   background: var(--canvas-region-tab-active-bg);
-  border-color: var(--canvas-region-tab-border);
-  border-bottom-color: var(--canvas-region-tab-active-bg);
+  border-color: transparent;
   color: var(--seg-text-1);
+  box-shadow: inset 0 1px 0 var(--canvas-region-tab-border);
 }
 
 .canvas-region-top-menu .session-tab.is-active::before {
@@ -1406,14 +1385,12 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
     color 160ms ease;
 }
 
-.canvas-region-top-menu .session-tab:hover .session-tab-close,
 .canvas-region-top-menu .session-tab:focus-within .session-tab-close,
 .canvas-region-top-menu .session-tab.is-active .session-tab-close {
   opacity: 1;
   pointer-events: auto;
 }
 
-.canvas-region-top-menu .session-tab-close:hover,
 .canvas-region-top-menu .session-tab-close:focus-visible {
   background: rgba(84, 96, 109, 0.08);
   color: var(--seg-text-1);
@@ -1492,8 +1469,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   color: var(--seg-text-3);
 }
 
-.canvas-region-top-menu .sidebar-toggle-button.is-top-menu:hover,
-.canvas-region-top-menu-add-button:hover {
+.canvas-region-top-menu .sidebar-toggle-button.is-top-menu:hover {
   transform: none;
   background: rgba(84, 96, 109, 0.08);
   border-color: rgba(32, 41, 54, 0.08);
@@ -2736,7 +2712,6 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .sidebar-toggle-button.is-top-menu:focus-visible,
 .top-menu-view-button:hover,
 .top-menu-view-button:focus-visible,
-.session-tab:hover,
 .session-tab:focus-visible,
 .session-tab.is-active,
 .canvas-top-menu-button:hover,
@@ -2770,15 +2745,12 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   --canvas-region-tab-border: var(--seg-border);
   --canvas-region-tab-divider: var(--seg-divider);
   --canvas-region-tab-inactive-bg: var(--mix-seg-shell-84-seg-panel-muted-16);
-  --canvas-region-tab-hover: var(--semantic-icon-button-surface-hover);
   --canvas-region-tab-focus: var(--semantic-icon-button-surface-hover);
 }
 
 .canvas-region-top-menu .sidebar-toggle-button.is-top-menu:hover,
-.canvas-region-top-menu-add-button:hover,
 .canvas-region-top-menu .sidebar-toggle-button.is-top-menu:focus-visible,
 .canvas-region-top-menu-add-button:focus-visible,
-.canvas-region-top-menu .session-tab-close:hover,
 .canvas-region-top-menu .session-tab-close:focus-visible {
   background: var(--semantic-icon-button-surface-hover);
   border-color: transparent;
