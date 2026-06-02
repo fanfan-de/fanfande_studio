@@ -416,6 +416,56 @@ describe("ThreadView trace item renderers", () => {
     expect(container.querySelectorAll(".trace-kind-tool .trace-tool-io-pane")).toHaveLength(2)
   })
 
+  it("localizes tool input and output disclosures in Chinese mode", async () => {
+    const previousDesktop = window.desktop
+    window.desktop = undefined
+    window.localStorage.setItem("desktop.locale", "zh-CN")
+
+    const toolItem: AssistantTraceItem = {
+      ...toolStatusTraceItem("completed"),
+      toolInputText: "tool input",
+      toolOutputText: "tool output",
+    }
+    const threadColumnRef = createRef<HTMLDivElement | null>()
+    const props = createThreadProps(
+      [
+        assistantTraceTurn("assistant-tools", [toolItem], false),
+      ],
+      threadColumnRef,
+      {
+        assistantTraceVisibility: {
+          ...DEFAULT_ASSISTANT_TRACE_VISIBILITY,
+          toolInputs: true,
+          toolOutputs: true,
+        },
+      },
+    )
+    const view = render(
+      <I18nProvider>
+        <ThreadView {...props} />
+      </I18nProvider>,
+    )
+
+    try {
+      fireEvent.click(await screen.findByRole("button", { name: /Tool completed/ }))
+
+      expect(await screen.findByText("\u8f93\u5165")).toBeInTheDocument()
+      expect(screen.getByText("\u8f93\u51fa")).toBeInTheDocument()
+      expect(screen.queryByText("Input")).toBeNull()
+      expect(screen.queryByText("Output")).toBeNull()
+
+      fireEvent.click(screen.getByRole("button", { name: /Tool completed \u8f93\u5165/ }))
+      fireEvent.click(screen.getByRole("button", { name: /Tool completed \u8f93\u51fa/ }))
+
+      expect(screen.getByRole("region", { name: "Tool completed \u8f93\u5165\u5185\u5bb9" })).toBeInTheDocument()
+      expect(screen.getByRole("region", { name: "Tool completed \u8f93\u51fa\u5185\u5bb9" })).toBeInTheDocument()
+    } finally {
+      view.unmount()
+      window.localStorage.removeItem("desktop.locale")
+      window.desktop = previousDesktop
+    }
+  })
+
   it("does not mount tool debug entries while disclosure content is collapsed", () => {
     const toolItem: AssistantTraceItem = {
       ...toolStatusTraceItem("completed"),
@@ -485,9 +535,9 @@ describe("ThreadView trace item renderers", () => {
   })
 })
 
-describe("ThreadView side chat banner", () => {
-  it("does not render the anchored response preview as banner copy", () => {
-    const { getByText, queryByText } = renderThread([], {
+describe("ThreadView side chat sessions", () => {
+  it("does not render a session banner for side chat sessions", () => {
+    const { queryByText } = renderThread([], {
       activeSession: {
         ...session,
         title: "Side chat: Raw markdown response",
@@ -498,10 +548,10 @@ describe("ThreadView side chat banner", () => {
           anchorPreview: "Raw markdown response",
         },
       },
-      showSessionBanner: true,
     })
 
-    expect(getByText("Linked reply thread")).toBeInTheDocument()
+    expect(queryByText("Linked reply thread")).not.toBeInTheDocument()
+    expect(queryByText("Isolated")).not.toBeInTheDocument()
     expect(queryByText("Raw markdown response")).not.toBeInTheDocument()
   })
 })
@@ -1539,7 +1589,7 @@ describe("ThreadView trace collapse", () => {
     expect(getByText("list-directory")).toBeInTheDocument()
   })
 
-  it("keeps process trace copy on the left and the collapse button at the row end", () => {
+  it("renders the whole process trace header as the collapse button", () => {
     const { getByRole } = renderThread([
       assistantTraceTurn(
         "assistant-1",
@@ -1568,10 +1618,72 @@ describe("ThreadView trace collapse", () => {
     const processedTrace = getByRole("button", { name: /Processed/ })
     const header = processedTrace.closest(".assistant-process-trace-header")
 
-    expect(header).not.toBeNull()
+    expect(header).toBe(processedTrace)
     expect(header?.firstElementChild).toHaveClass("assistant-process-trace-copy")
-    expect(header?.lastElementChild).toBe(processedTrace)
+    expect(header?.lastElementChild).toHaveClass("assistant-process-trace-toggle")
     expect(header?.querySelector(".assistant-process-trace-title")).toHaveTextContent("Processed")
+  })
+
+  it("uses folded process item timestamps for the process trace duration", () => {
+    const processTurn = assistantTraceTurn(
+      "assistant-process",
+      [
+        {
+          id: "reasoning-1",
+          kind: "reasoning",
+          timestamp: 100_000,
+          label: "Reasoning",
+          text: "Inspect files first.",
+          status: "completed",
+        },
+        {
+          id: "tool-1",
+          kind: "tool",
+          timestamp: 165_000,
+          label: "Tool",
+          title: "read-file",
+          status: "completed",
+        },
+        {
+          id: "progress-1",
+          kind: "text",
+          timestamp: 210_000,
+          label: "Assistant",
+          text: "Almost done.",
+          status: "completed",
+        },
+      ],
+      false,
+    )
+    processTurn.runtime = {
+      phase: "completed",
+      startedAt: 100_000,
+      updatedAt: 220_000,
+    }
+    const finalTurn = assistantTraceTurn(
+      "assistant-final",
+      [
+        {
+          id: "response-1",
+          kind: "text",
+          timestamp: 228_000,
+          label: "Assistant",
+          text: "The project is ready.",
+          status: "completed",
+        },
+      ],
+      false,
+    )
+    finalTurn.runtime = {
+      phase: "completed",
+      startedAt: 220_000,
+      updatedAt: 228_000,
+    }
+
+    const { getByRole } = renderThread([userTurn("user-1", "Prompt"), processTurn, finalTurn])
+
+    const processedTrace = getByRole("button", { name: /Processed/ })
+    expect(processedTrace).toHaveTextContent("2m 8s")
   })
 
   it("localizes the process trace title in Chinese mode", async () => {

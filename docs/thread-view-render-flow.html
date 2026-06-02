@@ -790,8 +790,8 @@
             </div>
             <div class="step-card">
               <b>2</b>
-              <strong>可选插入 session banner</strong>
-              <p>只在 <code>showSessionBanner</code> 和 <code>readOnlySideChat</code> 同时成立时插入。</p>
+              <strong>初始化空 rows</strong>
+              <p>创建 <code>ThreadDisplayRow[]</code>，后续只往里面追加真实 thread 行。</p>
             </div>
             <div class="step-card">
               <b>3</b>
@@ -1071,8 +1071,190 @@ return {
           </div>
         </section>
 
+        <section class="deep-dive" aria-labelledby="trace-renderers-title">
+          <h2 id="trace-renderers-title">深入 4：不同 trace item 的具体渲染</h2>
+          <p class="intro">
+            <code>buildAssistantTraceDisplayBlocks</code> 只决定 trace item 放在哪个 section、是否进入
+            <code>Processed</code> 抽屉；真正“长成什么 UI”由 <code>TraceItemView</code> 决定。
+            它先给 item 套上统一的 class、状态和错误边界，再按 <code>item.kind</code> 从
+            <code>traceItemRenderers</code> 里选择具体 renderer。
+          </p>
+
+          <div class="flow-steps" aria-label="trace item renderer 分发步骤">
+            <div class="step-card">
+              <b>1</b>
+              <strong>section 决定外层区域</strong>
+              <p><code>traceSectionKeyForItem</code> 把 item 归到 response、reasoning、tools、file-change、workflow 等 section。</p>
+            </div>
+            <div class="step-card">
+              <b>2</b>
+              <strong>TraceItemView 归一化</strong>
+              <p>生成 <code>trace-kind-*</code>、<code>is-streaming</code>、<code>is-running</code> 等 class；取消态 tool 会被补成 cancelled。</p>
+            </div>
+            <div class="step-card">
+              <b>3</b>
+              <strong>错误边界隔离</strong>
+              <p><code>TraceItemRenderBoundary</code> 包住单条 item，某条 trace 渲染失败时不会拖垮整个 thread。</p>
+            </div>
+            <div class="step-card">
+              <b>4</b>
+              <strong>按 kind 选 renderer</strong>
+              <p><code>traceItemRenderers[item.kind]</code> 把 item 分发到 text、tool、patch、image、question 等专用组件。</p>
+            </div>
+            <div class="step-card">
+              <b>5</b>
+              <strong>公共子组件收尾</strong>
+              <p>多数 renderer 复用 <code>TraceItemHeader</code>、<code>TraceItemTextBody</code>、<code>TraceItemDebugEntries</code>。</p>
+            </div>
+          </div>
+
+          <table class="data-table" aria-label="AssistantTraceItem renderer 类型对照">
+            <thead>
+              <tr>
+                <th>item.kind</th>
+                <th>默认 section</th>
+                <th>renderer</th>
+                <th>屏幕上长什么样</th>
+                <th>重点规则</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>text</code></td>
+                <td><code>response</code></td>
+                <td><code>TextTraceItemView</code></td>
+                <td>最终回复正文。response 语境下用 Markdown/HTML 正文渲染；如果识别到 proposed plan，则渲染计划确认卡。</td>
+                <td><code>isResponseItem</code> 很关键：response 文本走 <code>ResponseText</code>，普通过程文本只走富文本展示。</td>
+              </tr>
+              <tr>
+                <td><code>reasoning</code></td>
+                <td><code>reasoning</code></td>
+                <td><code>ReasoningTraceItemView</code></td>
+                <td>一行 reasoning 摘要，点击后展开完整内容；完成后通常自动折叠，降低对最终回复的干扰。</td>
+                <td>第一条非空行会被抽成摘要，其余正文和 detail 放进 disclosure body。</td>
+              </tr>
+              <tr>
+                <td><code>tool</code></td>
+                <td><code>tools</code></td>
+                <td><code>ToolTraceItemView</code></td>
+                <td>紧凑工具日志行，显示工具名、运行状态、等待审批/失败/取消等状态；可展开 Input / Output。</td>
+                <td><code>toolInputs</code> 默认隐藏，<code>toolOutputs</code> 默认显示；如果带 <code>draftPatch</code>，会内联文件变更摘要。</td>
+              </tr>
+              <tr>
+                <td><code>patch</code></td>
+                <td><code>file-change</code></td>
+                <td><code>PatchTraceItemView</code></td>
+                <td>文件变更摘要，可展开文件列表和 unified diff preview；没有结构化变更时退回通用 trace。</td>
+                <td>file-change block 还会被 <code>summarizeFileChangeItems</code> 压缩，通常只保留图片和最近的 patch。</td>
+              </tr>
+              <tr>
+                <td><code>image</code></td>
+                <td><code>file-change</code></td>
+                <td><code>ImageTraceItemView</code></td>
+                <td>图片缩略图、mime/尺寸元信息；点击缩略图打开 lightbox，支持缩放和适配模式。</td>
+                <td>必须有 <code>src</code> 才显示图片预览；否则退回 <code>GenericTraceItemView</code>。</td>
+              </tr>
+              <tr>
+                <td><code>question</code></td>
+                <td><code>response</code></td>
+                <td><code>QuestionTraceItemView</code></td>
+                <td>ask-user 交互卡：单选按钮、多选 checkbox、freeform 输入，以及已回答状态。</td>
+                <td>如果缺少 <code>questionPrompt</code>，会退回通用 trace；权限请求未处理时通常会禁用回答。</td>
+              </tr>
+              <tr>
+                <td><code>subtask</code> / <code>step</code> / <code>retry</code> / <code>snapshot</code> / <code>task-state</code> / <code>compaction</code></td>
+                <td><code>workflow</code></td>
+                <td><code>WorkflowLogTraceItemView</code></td>
+                <td>工作流日志行，左侧状态点，中间摘要，右侧状态文字；有 detail 或 progress 时可展开。</td>
+                <td><code>workflow</code> 默认不可见，但 <code>compaction</code> 会绕过普通 visibility 过滤。</td>
+              </tr>
+              <tr>
+                <td><code>source</code> / <code>file</code> / <code>system</code> / <code>error</code></td>
+                <td><code>sources</code> / <code>file-change</code> / <code>debug</code> / <code>workflow</code></td>
+                <td><code>GenericTraceItemView</code> 或薄包装</td>
+                <td>统一的 header、text/detail、文件 chip、debug entries。它们没有复杂交互，主要承载补充信息。</td>
+                <td><code>error</code> 不受普通 visibility 开关隐藏；<code>system</code> 通常归入 debug，默认不打扰普通阅读。</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="example-grid">
+            <article class="example-card is-logic">
+              <header>
+                <h3>TraceItemView 的分发模型</h3>
+                <p>先算 response 语境，再按 kind 选 renderer；每条 item 都有错误边界。</p>
+              </header>
+              <pre><code>const isResponseItem =
+  traceSectionKeyForItem(renderedItem) === "response";
+
+const Renderer =
+  traceItemRenderers[renderedItem.kind];
+
+return (
+  &lt;TraceItemRenderBoundary itemID={renderedItem.id}&gt;
+    &lt;Renderer
+      item={renderedItem}
+      isResponseItem={isResponseItem}
+      traceVisibility={traceVisibility}
+    /&gt;
+  &lt;/TraceItemRenderBoundary&gt;
+);</code></pre>
+            </article>
+
+            <article class="example-card is-logic">
+              <header>
+                <h3>同一个 item 在不同位置渲染</h3>
+                <p><code>process-item</code> 是 row 包装，不会改变 item.kind 的 renderer。</p>
+              </header>
+              <pre><code>// Processed 抽屉展开后：
+row = {
+  kind: "process-item",
+  section: "tools",
+  item: {
+    id: "tool-1",
+    kind: "tool",
+    title: "shell_command"
+  }
+};
+
+// 仍然走 ToolTraceItemView
+&lt;TraceItemView item={row.item} /&gt;</code></pre>
+            </article>
+
+            <article class="example-card is-logic">
+              <header>
+                <h3>section 可以覆盖默认归类</h3>
+                <p>如果 item 显式带 <code>section</code>，会优先使用它，而不是按 kind 推断。</p>
+              </header>
+              <pre><code>{
+  id: "approval-question-1",
+  kind: "question",
+  section: "approvals",
+  questionPrompt: {
+    question: "Allow this command?",
+    options: [...]
+  }
+}
+
+// renderer 还是 QuestionTraceItemView
+// 但外层 section 是 approvals</code></pre>
+            </article>
+          </div>
+
+          <div class="shape-notes">
+            <strong>读 renderer 时最容易混淆的点</strong>
+            <ul>
+              <li><code>row.kind</code> 负责“这一行放在哪里”；<code>item.kind</code> 负责“这一条 trace 怎么画”。两者不是一层概念。</li>
+              <li><code>section</code> 负责外层视觉区域和 aria label；<code>renderer</code> 负责内容结构和交互控件。</li>
+              <li>response 文本是最轻的视觉层级；reasoning、tool、workflow 会被弱化或折叠，避免抢最终回复的阅读焦点。</li>
+              <li>复杂 renderer 都有 fallback：缺少关键负载时会退回 <code>GenericTraceItemView</code>，保证 trace 不至于完全丢失。</li>
+              <li><code>debugEntries</code> 只有 <code>traceVisibility.debugMetadata</code> 打开时才进入 renderer，普通模式不会显示 developer 元数据。</li>
+            </ul>
+          </div>
+        </section>
+
         <section class="deep-dive" aria-labelledby="streaming-title">
-          <h2 id="streaming-title">深入 4：流式输出时 activeTurns 一直变化怎么办</h2>
+          <h2 id="streaming-title">深入 5：流式输出时 activeTurns 一直变化怎么办</h2>
           <p class="intro">
             ThreadView 不直接维护“正在输出的字符串”。它把 <code>activeTurns</code> 当成外部传入的实时快照：
             每来一段流式事件，上层状态更新 <code>activeTurns</code>，ThreadView 重新计算
@@ -1226,7 +1408,7 @@ displayRows = [
         </section>
 
         <section class="deep-dive" aria-labelledby="display-rows-title">
-          <h2 id="display-rows-title">深入 5：以 displayRows 为中心看前后数据处理</h2>
+          <h2 id="display-rows-title">深入 6：以 displayRows 为中心看前后数据处理</h2>
           <p class="intro">
             <code>displayRows</code> 是 ThreadView 最重要的中间层。它把“业务数据形状”
             转成“屏幕行形状”：前面接 <code>activeTurns</code>、权限请求、trace 可见性、折叠状态；
@@ -1295,8 +1477,6 @@ displayRows = [
     assistantTraceVisibility,
     isResolvingPermissionRequest,
     pendingPermissionRequests,
-    readOnlySideChat,
-    showSessionBanner,
     uiState: effectiveThreadViewUiState
   }),
   [
@@ -1305,8 +1485,6 @@ displayRows = [
     assistantTraceVisibility,
     isResolvingPermissionRequest,
     pendingPermissionRequests,
-    readOnlySideChat,
-    showSessionBanner,
     effectiveThreadViewUiState
   ]
 );</code></pre>
@@ -1345,7 +1523,6 @@ function renderThreadRows() {
               <li><code>displayRows</code> 不是消息数组，而是“屏幕施工队列”：每个 row 都告诉 UI 这里要放一块什么。</li>
               <li><code>user-turn</code> 和 <code>assistant</code> 是消息主体；<code>process-header</code> 和 <code>process-item</code> 是从 assistant 主体里拆出来的过程区。</li>
               <li><code>permission-request</code> 不在 <code>activeTurns</code> 里，但为了让它看起来像 thread 的一部分，也会被包装成 row。</li>
-              <li><code>session-banner</code> 是一个特殊兼容分支：它不表示“主 ThreadView 内嵌了 side chat 窗口”，只表示“当前 ThreadView 自己正在渲染一个 side-chat session”。如果产品只把 side chat 放到右侧栏，这一行基本不会出现。</li>
             </ul>
           </div>
 
@@ -1360,13 +1537,6 @@ function renderThreadRows() {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td><code>session-banner</code></td>
-                <td>把它当成“standalone side-chat session 的提示条”，不是主 thread 里的 side chat 面板。它只说明当前 session 本身是 <code>kind: "side-chat"</code>。</td>
-                <td>只在 <code>showSessionBanner</code> 和 <code>readOnlySideChat</code> 同时成立时插到最前面。当前右侧栏 / inline 的 <code>InlineSideChatThread</code> 会传 <code>showSessionBanner={false}</code>，所以不会出现。</td>
-                <td><code>rowID</code> 固定为 <code>session-banner</code>；<code>estimatedHeight: 82</code> 只是给虚拟滚动的初始高度。如果不再支持 side-chat session 作为普通 pane 打开，它可以视为历史/兼容 row。</td>
-                <td>直接渲染 <code>thread-session-banner</code> article，不经过 turn / trace item。</td>
-              </tr>
               <tr>
                 <td><code>user-turn</code></td>
                 <td>主时间线里的用户输入气泡。它代表“用户正式发给 session 的一轮输入”，不是所有用户输入都会在顶层出现。</td>

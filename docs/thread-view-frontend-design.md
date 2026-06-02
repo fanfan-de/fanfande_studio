@@ -246,8 +246,6 @@ ThreadView
 
 ```text
 renderDisplayRow(row)
-├─ row.kind = session-banner  # side chat 会话提示条
-│  └─ article.thread-session-banner
 ├─ row.kind = user-turn  # 用户消息
 │  └─ UserTurnArticle
 │     ├─ UserTurnBubble

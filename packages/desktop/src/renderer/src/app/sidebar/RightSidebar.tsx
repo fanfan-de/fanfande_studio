@@ -554,8 +554,10 @@ export function RightSidebar({
                       title={tab.title}
                       onClick={() => handleActivateTab(tab.id)}
                     >
-                      {getTabIcon(tab.kind)}
-                      <span>{tab.title}</span>
+                      <span className="right-sidebar-tab-kind-icon" aria-hidden="true">
+                        {getTabIcon(tab.kind)}
+                      </span>
+                      <span className="right-sidebar-tab-title">{tab.title}</span>
                     </button>
                     <button
                       type="button"

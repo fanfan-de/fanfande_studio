@@ -103,8 +103,7 @@
 
 @media (max-width: 900px) {
   .assistant-response-actions,
-  .inline-side-chat-header,
-  .thread-session-banner {
+  .inline-side-chat-header {
     flex-direction: column;
     align-items: stretch;
   }
@@ -112,10 +111,6 @@
   .inline-side-chat-thread {
     margin-left: 0;
     padding: 12px;
-  }
-
-  .thread-session-banner-pill {
-    align-self: flex-start;
   }
 }
 

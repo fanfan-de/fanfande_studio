@@ -12771,6 +12771,10 @@ describe("App", () => {
     expect(styles).toMatch(/\.assistant-response-side-chat\s*\{[^}]*gap:\s*8px;[^}]*margin-top:\s*0;/s)
     expect(styles).not.toMatch(/\.assistant-response-side-chat:not\(\.is-persistent\) \.assistant-response-actions/)
     expect(styles).not.toMatch(/\.assistant-shell:hover \.assistant-response-side-chat \.assistant-response-actions/)
+    expect(styles).toMatch(
+      /\.trace-item-collapsed-line\s*\{[^}]*--trace-collapsed-fade-width:\s*clamp\(104px,\s*28%,\s*160px\);[^}]*text-overflow:\s*clip;[^}]*white-space:\s*nowrap;[^}]*-webkit-mask-image:\s*linear-gradient\(to right,\s*#000 0,\s*#000 calc\(100% - var\(--trace-collapsed-fade-width\)\),\s*transparent 100%\);[^}]*mask-image:\s*linear-gradient\(to right,\s*#000 0,\s*#000 calc\(100% - var\(--trace-collapsed-fade-width\)\),\s*transparent 100%\);/s,
+    )
+    expect(styles).not.toMatch(/\.trace-item-collapsed-line::after/)
     expect(styles).toMatch(/\.trace-item-toggle\s*\{[^}]*background:\s*transparent;[^}]*text-align:\s*left;[^}]*cursor:\s*pointer;/s)
     expect(styles).toMatch(/\.trace-item-toggle-summary\s*\{[^}]*gap:\s*4px 6px;/s)
   })

@@ -208,6 +208,7 @@
 }
 
 .assistant-process-trace-header {
+  appearance: none;
   position: relative;
   width: 100%;
   min-width: 0;
@@ -223,15 +224,16 @@
   color: var(--seg-text-2);
   font: inherit;
   text-align: left;
+  cursor: pointer;
   transition:
     background-color 160ms ease,
     color 160ms ease;
 }
 
-.assistant-process-trace-header:hover,
-.assistant-process-trace-header:focus-within {
-  background: var(--mix-seg-panel-muted-86-transparent-14);
+.assistant-process-trace-header:focus-visible {
   color: var(--seg-text-1);
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
 }
 
 .assistant-process-trace-header::after {
@@ -268,21 +270,6 @@
   background: transparent;
   color: currentColor;
   font: inherit;
-  cursor: pointer;
-  transition:
-    background-color 160ms ease,
-    color 160ms ease;
-}
-
-.assistant-process-trace-toggle:hover,
-.assistant-process-trace-toggle:focus-visible {
-  background: var(--mix-seg-panel-muted-86-transparent-14);
-  color: var(--seg-text-1);
-}
-
-.assistant-process-trace-toggle:focus-visible {
-  outline: var(--focus-outline-width) solid var(--focus-outline-color);
-  outline-offset: var(--focus-outline-offset);
 }
 
 .assistant-process-trace-chevron {
@@ -592,40 +579,12 @@
 }
 
 .trace-item-collapsed-line {
-  --trace-collapsed-dots-width: 78px;
-  --trace-collapsed-fade-width: 32px;
-  position: relative;
+  --trace-collapsed-fade-width: clamp(104px, 28%, 160px);
   overflow: hidden;
-  padding-right: calc(var(--trace-collapsed-dots-width) + var(--trace-collapsed-fade-width));
   text-overflow: clip;
   white-space: nowrap;
-}
-
-.trace-item-collapsed-line::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: var(--trace-collapsed-dots-width);
-  bottom: 0;
-  width: var(--trace-collapsed-fade-width);
-  background: linear-gradient(90deg, transparent, var(--surface-trace));
-  pointer-events: none;
-}
-
-.trace-item-collapsed-line::after {
-  content: "............";
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: var(--trace-collapsed-dots-width);
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  color: currentColor;
-  letter-spacing: 0.08em;
-  background: var(--surface-trace);
-  pointer-events: none;
+  -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - var(--trace-collapsed-fade-width)), transparent 100%);
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - var(--trace-collapsed-fade-width)), transparent 100%);
 }
 
 .trace-item-toggle {
@@ -2895,57 +2854,6 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
 .inline-side-chat-thread .user-bubble {
   background: var(--mix-seg-panel-76-seg-panel-muted-24);
   border-color: var(--mix-seg-border-88-white-12);
-}
-
-.thread-session-banner {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-  max-width: 100%;
-  margin-bottom: 12px;
-  padding: 0 0 10px;
-  border: 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-  background: transparent;
-  border-radius: 0;
-}
-
-.thread-session-banner-copy {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.thread-session-banner-copy strong {
-  color: var(--seg-text-1, #0f172a);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.thread-session-banner-copy p {
-  margin: 0;
-  color: var(--seg-text-3, #64748b);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.thread-session-banner-pill {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.08);
-  border: 0;
-  color: var(--seg-text-2, #334155);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 /* Thread trace refinements: flatter cards and stronger content hierarchy. */

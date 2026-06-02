@@ -74,11 +74,11 @@
   --right-sidebar-tab-bar-bg: var(--seg-pane-tab-bar-surface);
   --right-sidebar-tab-border: var(--seg-border);
   --right-sidebar-tab-divider: var(--seg-divider);
-  --right-sidebar-tab-radius: 6px;
+  --right-sidebar-tab-radius: 0px;
   --right-sidebar-tab-active-bg: var(--seg-shell);
   --right-sidebar-tab-hover-bg: var(--mix-seg-panel-66-seg-panel-muted-34);
-  --right-sidebar-tab-icon-color: var(--semantic-accent-icon);
-  --right-sidebar-tab-icon-hover-color: var(--semantic-accent-icon-hover);
+  --right-sidebar-tab-icon-color: currentColor;
+  --right-sidebar-tab-icon-hover-color: currentColor;
   position: relative;
   min-height: 40px;
   margin: 0;
@@ -156,7 +156,7 @@
 }
 
 .right-sidebar-tab {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
   max-width: min(240px, 30vw);
   min-height: 40px;
@@ -225,13 +225,29 @@
   cursor: default;
 }
 
-.right-sidebar-tab-trigger svg {
+.right-sidebar-tab-kind-icon {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--right-sidebar-tab-icon-color);
+  opacity: 0.8;
+}
+
+.right-sidebar-tab-kind-icon svg {
   width: 14px;
   height: 14px;
   flex: 0 0 auto;
+  stroke-width: 2;
 }
 
-.right-sidebar-tab-trigger span {
+.right-sidebar-tab.is-active .right-sidebar-tab-kind-icon {
+  opacity: 0.9;
+}
+
+.right-sidebar-tab-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -270,9 +286,17 @@
 
 .right-sidebar-tab-close svg,
 .right-sidebar-add-tab-button svg {
+  stroke-width: 2;
+}
+
+.right-sidebar-tab-close svg {
+  width: var(--section-toolbar-aux-icon-size);
+  height: var(--section-toolbar-aux-icon-size);
+}
+
+.right-sidebar-add-tab-button svg {
   width: var(--section-toolbar-icon-size);
   height: var(--section-toolbar-icon-size);
-  stroke-width: 2;
 }
 
 .right-sidebar-add-tab-button {

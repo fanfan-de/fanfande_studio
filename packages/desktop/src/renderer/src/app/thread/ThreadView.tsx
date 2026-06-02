@@ -106,7 +106,6 @@ interface ThreadViewProps {
   isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
   messageTree?: SessionMessageTree | null
-  showSessionBanner?: boolean
   onBranchSelect?: (messageID: string) => void | Promise<void>
   onFileChangeSelect?: (file: string) => void
   onForkFromMessage?: (messageID: string) => void | Promise<void>
@@ -226,11 +225,6 @@ interface LatestAssistantTurnState {
 }
 
 type ThreadDisplayRow =
-  | {
-      estimatedHeight: number
-      kind: "session-banner"
-      rowID: string
-    }
   | {
       estimatedHeight: number
       kind: "user-turn"
@@ -536,8 +530,6 @@ function buildThreadDisplayRows({
   assistantTraceVisibility,
   isResolvingPermissionRequest,
   pendingPermissionRequests,
-  readOnlySideChat,
-  showSessionBanner,
   uiState,
 }: {
   activeSession: SessionSummary | null
@@ -545,21 +537,11 @@ function buildThreadDisplayRows({
   assistantTraceVisibility: AssistantTraceVisibility
   isResolvingPermissionRequest: boolean
   pendingPermissionRequests: PermissionRequest[]
-  readOnlySideChat: boolean
-  showSessionBanner?: boolean
   uiState: ThreadViewUiState
 }): ThreadDisplayRow[] {
   if (!activeSession) return []
 
   const rows: ThreadDisplayRow[] = []
-  if (showSessionBanner && readOnlySideChat) {
-    rows.push({
-      estimatedHeight: 82,
-      kind: "session-banner",
-      rowID: "session-banner",
-    })
-  }
-
   activeTurns.forEach((turn, turnIndex) => {
     if (turn.kind === "user") {
       if (hasStreamInsertionTarget(activeTurns, turn)) return
@@ -1636,17 +1618,43 @@ function findFinalResponseBlockIndex(blocks: AssistantTraceBlock[]) {
   return -1
 }
 
-function formatAssistantTraceDuration(runtime?: AssistantTurnRuntime) {
-  if (!runtime) return null
-
-  const durationMs = Math.max(0, runtime.updatedAt - runtime.startedAt)
+function formatDurationMilliseconds(durationMs: number) {
   if (!Number.isFinite(durationMs)) return null
-  if (durationMs < 1000) return "<1s"
 
-  const totalSeconds = Math.round(durationMs / 1000)
+  const normalizedDurationMs = Math.max(0, durationMs)
+  if (normalizedDurationMs < 1000) return "<1s"
+
+  const totalSeconds = Math.round(normalizedDurationMs / 1000)
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
+}
+
+function formatAssistantTraceDuration(runtime?: AssistantTurnRuntime) {
+  if (!runtime) return null
+  return formatDurationMilliseconds(runtime.updatedAt - runtime.startedAt)
+}
+
+function formatAssistantProcessTraceDuration(blocks: AssistantTraceBlock[], runtime?: AssistantTurnRuntime) {
+  const timestamps = blocks
+    .flatMap((block) => block.items)
+    .map((item) => item.timestamp)
+    .filter((timestamp) => Number.isFinite(timestamp))
+
+  if (timestamps.length === 0) return formatAssistantTraceDuration(runtime)
+
+  const itemStartedAt = Math.min(...timestamps)
+  const itemUpdatedAt = Math.max(...timestamps)
+  const runtimeStartedAt = runtime && Number.isFinite(runtime.startedAt) ? runtime.startedAt : null
+  const runtimeUpdatedAt = runtime && Number.isFinite(runtime.updatedAt) ? runtime.updatedAt : null
+  const canUseRuntimeRange =
+    runtimeStartedAt !== null &&
+    runtimeUpdatedAt !== null &&
+    runtimeUpdatedAt >= itemStartedAt
+  const startedAt = canUseRuntimeRange ? Math.min(itemStartedAt, runtimeStartedAt) : itemStartedAt
+  const updatedAt = canUseRuntimeRange ? Math.max(itemUpdatedAt, runtimeUpdatedAt) : itemUpdatedAt
+
+  return formatDurationMilliseconds(updatedAt - startedAt)
 }
 
 function pluralizeTraceUnit(count: number, singular: string, plural = `${singular}s`) {
@@ -1699,26 +1707,26 @@ function AssistantProcessTraceHeader({
   const toggleLabel = details ? `${toggleAction} ${title} ${details}` : `${toggleAction} ${title}`
 
   return (
-    <div className="assistant-process-trace-header">
+    <button
+      className="assistant-process-trace-header"
+      type="button"
+      aria-label={toggleLabel}
+      aria-expanded={isExpanded}
+      aria-controls={controlsID}
+      title={toggleLabel}
+      onClick={onToggle}
+    >
       <div className="assistant-process-trace-copy">
         <span className="assistant-process-trace-title">{title}</span>
         {duration ? <span className="assistant-process-trace-duration">{duration}</span> : null}
         <span className="assistant-process-trace-summary">{summary}</span>
       </div>
-      <button
-        className="assistant-process-trace-toggle"
-        type="button"
-        aria-label={toggleLabel}
-        aria-expanded={isExpanded}
-        aria-controls={controlsID}
-        title={toggleLabel}
-        onClick={onToggle}
-      >
+      <span className="assistant-process-trace-toggle" aria-hidden="true">
         <span className="assistant-process-trace-chevron" aria-hidden="true">
           {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
         </span>
-      </button>
-    </div>
+      </span>
+    </button>
   )
 }
 
@@ -1956,7 +1964,7 @@ function AssistantProcessTraceDisclosure({
   const [isExpanded, setIsExpanded] = useState(() => !shouldCollapseReasoningAndTools)
   const { t } = useI18n()
   const processTraceKey = blocks.map((block) => block.items.map((item) => item.id).join(",")).join("|")
-  const duration = formatAssistantTraceDuration(runtime)
+  const duration = formatAssistantProcessTraceDuration(blocks, runtime)
   const summary = summarizeProcessTraceBlocks(blocks)
   const contentID = `assistant-process-trace-${(processTraceKey || "empty").replace(/[^a-zA-Z0-9_-]/g, "-")}`
 
@@ -2895,7 +2903,6 @@ export function InlineSideChatThread({
             pendingPermissionRequests={pendingPermissionRequests}
             permissionRequestActionError={permissionRequestActionError}
             permissionRequestActionRequestID={permissionRequestActionRequestID}
-            showSessionBanner={false}
             sideChatCountsByAnchorMessageID={{}}
             scrollStateKey={`side-chat:${session.origin?.parentSessionID ?? "unknown"}:${session.id}`}
             threadColumnRef={threadColumnRef}
@@ -4565,7 +4572,14 @@ function ToolTraceItemView({
   const [isInputExpanded, setIsInputExpanded] = useState(false)
   const [isOutputExpanded, setIsOutputExpanded] = useState(false)
   const disclosureCollapseTimerRef = useRef<number | null>(null)
+  const { t } = useI18n()
   const summaryTitle = item.title || item.label
+  const inputLabel = t("thread.toolTrace.inputLabel")
+  const outputLabel = t("thread.toolTrace.outputLabel")
+  const inputAriaLabel = t("thread.toolTrace.inputAria")
+  const outputAriaLabel = t("thread.toolTrace.outputAria")
+  const inputContentLabel = t("thread.toolTrace.inputContent")
+  const outputContentLabel = t("thread.toolTrace.outputContent")
   const displayState = getToolTraceDisplayState(item)
   const draftPatchFileChanges = normalizeTraceFileChanges(item.draftPatch?.fileChanges)
   const draftPatch = item.draftPatch && typeof item.draftPatch === "object" && draftPatchFileChanges.length > 0
@@ -4738,14 +4752,14 @@ function ToolTraceItemView({
                 type="button"
                 aria-expanded={isInputExpanded}
                 aria-controls={inputDisclosureID}
-                aria-label={`${summaryTitle} input`}
+                aria-label={`${summaryTitle} ${inputAriaLabel}`}
                 onClick={() => setIsInputExpanded((current) => !current)}
               >
                 <span className="trace-item-subsection-toggle-icon" aria-hidden="true">
                   {isInputExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
                 </span>
                 <span className="trace-item-subsection-toggle-line">
-                  <span className="trace-item-subsection-label">Input</span>
+                  <span className="trace-item-subsection-label">{inputLabel}</span>
                 </span>
               </button>
               {isInputExpanded ? (
@@ -4753,7 +4767,7 @@ function ToolTraceItemView({
                   id={inputDisclosureID}
                   className="trace-item-subsection-body trace-tool-io-pane"
                   role="region"
-                  aria-label={`${summaryTitle} input content`}
+                  aria-label={`${summaryTitle} ${inputContentLabel}`}
                 >
                   {visibleToolInputText ? <ThreadRichText className="trace-item-text" text={visibleToolInputText} /> : null}
                   {inputSectionDetail ? <ThreadRichText className="trace-item-detail" text={inputSectionDetail} /> : null}
@@ -4768,14 +4782,14 @@ function ToolTraceItemView({
                 type="button"
                 aria-expanded={isOutputExpanded}
                 aria-controls={outputDisclosureID}
-                aria-label={`${summaryTitle} output`}
+                aria-label={`${summaryTitle} ${outputAriaLabel}`}
                 onClick={() => setIsOutputExpanded((current) => !current)}
               >
                 <span className="trace-item-subsection-toggle-icon" aria-hidden="true">
                   {isOutputExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
                 </span>
                 <span className="trace-item-subsection-toggle-line">
-                  <span className="trace-item-subsection-label">Output</span>
+                  <span className="trace-item-subsection-label">{outputLabel}</span>
                 </span>
               </button>
               {isOutputExpanded ? (
@@ -4783,7 +4797,7 @@ function ToolTraceItemView({
                   id={outputDisclosureID}
                   className="trace-item-subsection-body trace-tool-io-pane"
                   role="region"
-                  aria-label={`${summaryTitle} output content`}
+                  aria-label={`${summaryTitle} ${outputContentLabel}`}
                 >
                   {visibleToolOutputText ? <ThreadRichText className="trace-item-text" text={visibleToolOutputText} /> : null}
                   {outputSectionDetail ? <ThreadRichText className="trace-item-detail" text={outputSectionDetail} /> : null}
@@ -5240,7 +5254,6 @@ function getThreadViewPropsChangeReason(left: ThreadViewProps, right: ThreadView
   if (left.isAgentDebugTraceEnabled !== right.isAgentDebugTraceEnabled) return "isAgentDebugTraceEnabled"
   if (left.isResolvingPermissionRequest !== right.isResolvingPermissionRequest) return "isResolvingPermissionRequest"
   if (left.messageTree !== right.messageTree) return "messageTree"
-  if (left.showSessionBanner !== right.showSessionBanner) return "showSessionBanner"
   if (!areArraysShallowEqual(left.pendingPermissionRequests, right.pendingPermissionRequests)) return "pendingPermissionRequests"
   if (left.permissionRequestActionError !== right.permissionRequestActionError) return "permissionRequestActionError"
   if (left.permissionRequestActionRequestID !== right.permissionRequestActionRequestID) return "permissionRequestActionRequestID"
@@ -5311,7 +5324,6 @@ function VisibleThreadView({
   isAgentDebugTraceEnabled,
   isResolvingPermissionRequest,
   messageTree = null,
-  showSessionBanner = true,
   onBranchSelect,
   onFileChangeSelect,
   onForkFromMessage,
@@ -5444,8 +5456,6 @@ function VisibleThreadView({
       assistantTraceVisibility,
       isResolvingPermissionRequest,
       pendingPermissionRequests,
-      readOnlySideChat,
-      showSessionBanner,
       uiState: effectiveThreadViewUiState,
     }),
     [
@@ -5454,8 +5464,6 @@ function VisibleThreadView({
       assistantTraceVisibility,
       isResolvingPermissionRequest,
       pendingPermissionRequests,
-      readOnlySideChat,
-      showSessionBanner,
       effectiveThreadViewUiState,
     ],
   )
@@ -6355,19 +6363,6 @@ function VisibleThreadView({
   }
 
   function renderDisplayRow(row: ThreadDisplayRow) {
-    if (row.kind === "session-banner") {
-      return (
-        <article key={row.rowID} className="thread-session-banner">
-          <div className="thread-session-banner-copy">
-            <span className="label">Side chat</span>
-            <strong>Linked reply thread</strong>
-            <p>Scoped discussion linked to one assistant reply. It stays out of the main session context.</p>
-          </div>
-          <span className="thread-session-banner-pill">Isolated</span>
-        </article>
-      )
-    }
-
     if (row.kind === "user-turn") {
       const { turn, turnIndex } = row
       return (
@@ -6413,7 +6408,7 @@ function VisibleThreadView({
     }
 
     if (row.kind === "process-header") {
-      const duration = formatAssistantTraceDuration(row.turn.runtime)
+      const duration = formatAssistantProcessTraceDuration(row.blocks, row.turn.runtime)
       const summary = summarizeProcessTraceBlocks(row.blocks)
 
       return (
