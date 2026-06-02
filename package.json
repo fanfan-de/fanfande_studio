@@ -1,6 +1,6 @@
 {
   "name": "anybox",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": true,
   "description": "Anybox desktop AI agent workspace",
   "main": "index.js",

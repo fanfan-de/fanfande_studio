@@ -468,8 +468,9 @@ function CreateSessionWorkspaceSelect({
         aria-controls={isMenuOpen ? menuID : undefined}
         aria-expanded={isMenuOpen}
         aria-haspopup="listbox"
-        aria-label={`Session project: ${selectedLabel}`}
+        aria-label="Session project"
         disabled={isDisabled}
+        role="combobox"
         title={selectedLabel}
         onClick={() => {
           if (isMenuOpen) {

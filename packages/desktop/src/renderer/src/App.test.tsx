@@ -166,6 +166,24 @@ function getCreateSessionProjectSelect() {
   return screen.getByRole("combobox", { name: "Session project" })
 }
 
+function expectCreateSessionProjectSelectLabel(label: string) {
+  expect(getCreateSessionProjectSelect()).toHaveTextContent(label)
+}
+
+function selectCreateSessionProject(label: string) {
+  fireEvent.click(getCreateSessionProjectSelect())
+  fireEvent.click(screen.getByRole("option", { name: label }))
+}
+
+function getSettingsCombobox(name: string) {
+  return screen.getByRole("combobox", { name })
+}
+
+async function chooseSettingsSelectOption(name: string, optionName: string) {
+  fireEvent.click(getSettingsCombobox(name))
+  fireEvent.click(await screen.findByRole("option", { name: optionName }))
+}
+
 async function getWorkbenchDockviewApi() {
   await waitFor(() => {
     expect(window.__anyboxWorkbenchDockviewApi).toBeTruthy()
@@ -7142,7 +7160,7 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "client" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.queryByRole("button", { name: "Switch to create session tab 2" })).toBeNull()
-    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Orion\\client")
+    expectCreateSessionProjectSelectLabel("Orion / client")
   })
 
   it("keeps a newly opened folder when startup folder loading resolves afterwards", async () => {
@@ -7653,7 +7671,7 @@ describe("App", () => {
     expect(createPane).not.toBeUndefined()
     expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.queryByRole("button", { name: "Switch to create session tab 2" })).toBeNull()
-    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
+    expectCreateSessionProjectSelectLabel("Project 1 / src")
   })
 
   it("reuses the existing create session tab when the add tab button is clicked again", async () => {
@@ -7663,16 +7681,14 @@ describe("App", () => {
     await screen.findByRole("combobox", { name: "Session project" })
     expect(screen.queryByRole("textbox", { name: "Session title" })).not.toBeInTheDocument()
 
-    fireEvent.change(getCreateSessionProjectSelect(), {
-      target: { value: "C:\\Projects\\Project 1\\src" },
-    })
-    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
+    selectCreateSessionProject("Project 1 / src")
+    expectCreateSessionProjectSelectLabel("Project 1 / src")
 
     fireEvent.click(getAddSessionTabButton())
 
     expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.queryByRole("button", { name: "Switch to create session tab 2" })).toBeNull()
-    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
+    expectCreateSessionProjectSelectLabel("Project 1 / src")
   })
 
   it("shows the session canvas top menu while a create session tab is active", async () => {
@@ -9017,8 +9033,8 @@ describe("App", () => {
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
 
-    expect(screen.getByRole("combobox", { name: "Accent Theme" })).toBeInTheDocument()
-    expect(screen.getByRole("option", { name: "Warm Terra & Sand" })).toBeInTheDocument()
+    fireEvent.click(getSettingsCombobox("Accent Theme"))
+    expect(await screen.findByRole("option", { name: "Warm Terra & Sand" })).toBeInTheDocument()
     expect(screen.getByRole("option", { name: "Sage / Slate" })).toBeInTheDocument()
     expect(screen.getByText("Theme Config File")).toBeInTheDocument()
     expect(screen.getByLabelText("Current appearance config JSON")).toBeInTheDocument()
@@ -9069,16 +9085,12 @@ describe("App", () => {
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Accent Theme" }), {
-      target: { value: "sage" },
-    })
+    await chooseSettingsSelectOption("Accent Theme", "Sage / Slate")
 
     expect(document.documentElement).toHaveAttribute("data-brand-theme", "sage")
     expect(window.localStorage.getItem("desktop.brandTheme")).toBe("sage")
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Accent Theme" }), {
-      target: { value: "terra" },
-    })
+    await chooseSettingsSelectOption("Accent Theme", "Warm Terra & Sand")
 
     expect(document.documentElement).toHaveAttribute("data-brand-theme", "terra")
     expect(window.localStorage.getItem("desktop.brandTheme")).toBe("terra")
@@ -12490,21 +12502,22 @@ describe("App", () => {
     expect(styles).toMatch(/\.pane-drop-preview-current\s*\{[^}]*background:\s*var\(--mix-seg-panel-88-white-12\);/s)
     expect(styles).toMatch(/\.canvas-top-menu-git-trigger svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(
-      /\.top-menu-view-button:hover,\s*\.top-menu-view-button:focus-visible,[\s\S]*?\{[^}]*background:\s*var\(--mix-ui-accent-strong-14-transparent-86\);[^}]*color:\s*var\(--ui-accent-strong\);/s,
+      /\.top-menu-view-button:hover,\s*\.top-menu-view-button:focus-visible,[\s\S]*?\{[^}]*background:\s*var\(--semantic-icon-button-surface-hover\);[^}]*color:\s*var\(--semantic-icon-button-text-hover\);/s,
     )
     expect(styles).toMatch(
-      /\.top-menu-view-button\.is-active,[\s\S]*?\.top-menu-view-button\.is-active:hover,\s*\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*var\(--mix-brand-accent-active-12-transparent-88\);[^}]*color:\s*var\(--brand-accent-active\);/s,
+      /\.top-menu-view-button\.is-active,[\s\S]*?\.top-menu-view-button\.is-active:hover,\s*\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*var\(--semantic-icon-button-surface-active\);[^}]*color:\s*var\(--semantic-icon-button-text-active\);/s,
     )
     expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(
-      /\.sidebar-toggle-button\.is-rail:hover,[\s\S]*?\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon-hover\);[^}]*transform:\s*none;/s,
+      /\.sidebar-toggle-button\.is-rail:hover,[\s\S]*?\{[^}]*background:\s*var\(--semantic-icon-button-surface-hover\);[^}]*color:\s*var\(--semantic-icon-button-text-hover\);[^}]*transform:\s*none;/s,
     )
     expect(styles).toMatch(
-      /\.sidebar-toggle-button\.is-rail\.is-active,[\s\S]*?\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon-active\);[^}]*transform:\s*none;/s,
+      /\.sidebar-toggle-button\.is-rail\.is-active\s*\{[^}]*background:\s*var\(--semantic-icon-button-surface-active\);[^}]*color:\s*var\(--semantic-icon-button-text-active\);[^}]*transform:\s*none;/s,
     )
-    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\.is-collapsed\s*\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon\);[^}]*transform:\s*none;/s)
-    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\.is-collapsed:hover,[\s\S]*?\.sidebar-toggle-button\.is-rail\.is-collapsed:focus-visible\s*\{[^}]*background:\s*var\(--mix-seg-accent-soft-72-seg-panel-28\);[^}]*color:\s*var\(--semantic-accent-icon-hover\);[^}]*transform:\s*none;/s)
-    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\.is-expanded,[\s\S]*?\.sidebar-toggle-button\.is-rail\.is-expanded:focus-visible\s*\{[^}]*background:\s*var\(--mix-seg-accent-soft-68-seg-panel-32\);[^}]*color:\s*var\(--semantic-accent-icon-active\);[^}]*transform:\s*none;/s)
+    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\.is-collapsed\s*\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--semantic-icon-button-text\);[^}]*transform:\s*none;/s)
+    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\.is-collapsed:hover,[\s\S]*?\.sidebar-toggle-button\.is-rail\.is-collapsed:focus-visible\s*\{[^}]*background:\s*var\(--semantic-icon-button-surface-hover\);[^}]*color:\s*var\(--semantic-icon-button-text-hover\);[^}]*transform:\s*none;/s)
+    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\.is-expanded\s*\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--semantic-icon-button-text\);[^}]*transform:\s*none;/s)
+    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\.is-expanded:hover,[\s\S]*?\.sidebar-toggle-button\.is-rail\.is-expanded:focus-visible\s*\{[^}]*background:\s*var\(--semantic-icon-button-surface-hover\);[^}]*color:\s*var\(--semantic-icon-button-text-hover\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(/\.session-tab\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-trigger\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-close\s*\{[^}]*cursor:\s*default;/s)
@@ -12514,7 +12527,7 @@ describe("App", () => {
       /\.canvas-region-top-menu\s+\.session-tab-close:hover,[\s\S]*?\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon-hover\);[^}]*transform:\s*none;/s,
     )
     expect(styles).toMatch(
-      /\.dockview-theme-anybox\s+\.dockview-workbench-header-actions\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.dockview-theme-anybox\s+\.dockview-workbench-header-actions\s+\.canvas-region-top-menu-add-button:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--dockview-tab-icon-hover-color\);/s,
+      /\.canvas-region-top-menu\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.canvas-region-top-menu-add-button:focus-visible,[\s\S]*?\.canvas-region-top-menu\s+\.session-tab-close:focus-visible\s*\{[^}]*background:\s*var\(--semantic-icon-button-surface-hover\);[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--semantic-icon-button-text-hover\);/s,
     )
     expect(styles).toMatch(/\.right-sidebar-top-menu-tabs\s*\{[^}]*align-items:\s*stretch;[^}]*gap:\s*0;/s)
     expect(styles).toMatch(
@@ -12539,7 +12552,7 @@ describe("App", () => {
       /\.left-sidebar-top-menu\s+\.sidebar-toggle-button\.is-top-menu\.is-active,\s*\.right-sidebar-top-menu\s+\.sidebar-toggle-button\.is-top-menu\.is-active\s*\{[^}]*color:\s*var\(--semantic-accent-icon-active\);/s,
     )
     expect(styles).toMatch(/--canvas-region-tab-inactive-bg:\s*var\(--mix-seg-shell-84-seg-panel-muted-16\);/s)
-    expect(styles).toMatch(/--canvas-region-tab-hover:\s*var\(--mix-seg-panel-66-seg-panel-muted-34\);/s)
+    expect(styles).toMatch(/--canvas-region-tab-hover:\s*var\(--semantic-icon-button-surface-hover\);/s)
     expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dv-tab\s*\{[^}]*margin:\s*0 0 -1px;[^}]*background:\s*transparent;[^}]*overflow:\s*hidden;/s)
     expect(styles).toMatch(
       /\.dockview-theme-anybox\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-active-tab,[\s\S]*?\.dv-tab\.dv-active-tab\s*\{[^}]*background:\s*var\(--dockview-tab-active-bg\);[^}]*box-shadow:[^}]*inset 0 1px 0 var\(--dockview-tab-border\)/s,
@@ -12563,7 +12576,9 @@ describe("App", () => {
     expect(styles).toMatch(/\.canvas-region-top-menu-tabs-shell\s*\{[^}]*display:\s*flex;[^}]*gap:\s*6px;[^}]*max-width:\s*none;[^}]*justify-self:\s*stretch;/s)
     expect(styles).toMatch(/\.canvas-region-top-menu-tabs\s*\{[^}]*flex:\s*0 1 auto;[^}]*align-items:\s*center;[^}]*overflow-x:\s*auto;[^}]*padding-top:\s*0;/s)
     expect(styles).toMatch(/\.canvas-region-top-menu-add-button\s*\{[^}]*width:\s*28px;[^}]*min-width:\s*28px;[^}]*min-height:\s*28px;/s)
-    expect(styles).toMatch(/\.canvas-region-top-menu-add-glyph\s*\{[^}]*font-size:\s*22px;[^}]*line-height:\s*1;/s)
+    expect(styles).toMatch(
+      /\.right-sidebar-add-tab-button svg,\s*\.canvas-region-top-menu-add-button svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s,
+    )
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\s*\{[^}]*min-height:\s*var\(--canvas-region-tab-height\);[^}]*margin-top:\s*6px;[^}]*padding:\s*0 8px 0 10px;/s)
     expect(styles).toMatch(
       /\.canvas-region-top-menu\s+\.session-tab\.is-active\s*\{[^}]*min-height:\s*calc\(var\(--canvas-region-tab-height\) \+ 4px\);[^}]*background:\s*var\(--canvas-region-tab-active-bg\);[^}]*border:\s*1px solid var\(--canvas-region-tab-border\);[^}]*border-bottom-color:\s*var\(--canvas-region-tab-active-bg\);[^}]*z-index:\s*2;[^}]*box-shadow:\s*none;/s,

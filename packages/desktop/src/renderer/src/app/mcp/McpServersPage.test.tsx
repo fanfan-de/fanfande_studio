@@ -102,6 +102,19 @@ function createProps(
   }
 }
 
+function getToolPolicyCombobox(toolName: string) {
+  return screen.getByRole("combobox", { name: `Policy for ${toolName}` })
+}
+
+function expectToolPolicyLabel(toolName: string, label: string) {
+  expect(getToolPolicyCombobox(toolName)).toHaveTextContent(label)
+}
+
+function selectToolPolicy(toolName: string, label: string) {
+  fireEvent.click(getToolPolicyCombobox(toolName))
+  fireEvent.click(screen.getByRole("option", { name: label }))
+}
+
 describe("McpServersPage tool policies", () => {
   it("renders discovered tools and changes a per-tool policy", () => {
     const onMcpToolPolicyChange = vi.fn()
@@ -116,14 +129,9 @@ describe("McpServersPage tool policies", () => {
     expect(within(policyPanel).queryByText("Resolve a package name to a Context7 library id.")).not.toBeInTheDocument()
     expect(within(policyPanel).queryByText("Input schema")).not.toBeInTheDocument()
 
-    const docsPolicy = screen.getByLabelText("Policy for get-library-docs") as HTMLSelectElement
-    expect(docsPolicy.value).toBe("auto")
+    expectToolPolicyLabel("get-library-docs", "Auto allow")
 
-    fireEvent.change(docsPolicy, {
-      target: {
-        value: "disabled",
-      },
-    })
+    selectToolPolicy("get-library-docs", "Disabled")
 
     expect(onMcpToolPolicyChange).toHaveBeenCalledWith("get-library-docs", "disabled")
 
@@ -295,7 +303,7 @@ describe("McpServersPage tool policies", () => {
 
     expect(screen.getByText("Tool Permissions")).toBeInTheDocument()
     expect(screen.getAllByText("batch_design")).toHaveLength(2)
-    expect((screen.getByLabelText("Policy for batch_design") as HTMLSelectElement).value).toBe("auto")
+    expectToolPolicyLabel("batch_design", "Auto allow")
   })
 
   it("edits stdio arguments and environment variables as rows", () => {
@@ -448,8 +456,8 @@ describe("McpServersPage tool policies", () => {
       />,
     )
 
-    expect((screen.getByLabelText("Policy for resolve-library-id") as HTMLSelectElement).value).toBe("auto")
-    expect((screen.getByLabelText("Policy for write-docs") as HTMLSelectElement).value).toBe("disabled")
+    expectToolPolicyLabel("resolve-library-id", "Auto allow")
+    expectToolPolicyLabel("write-docs", "Disabled")
   })
 
   it("previews and submits imported MCP JSON", async () => {
