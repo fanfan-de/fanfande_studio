@@ -127,6 +127,7 @@ body.is-resizing-sidebar .sidebar-resizer {
 }
 
 .canvas-region-top-menu .session-tab {
+  border: 0;
   border-radius: var(--canvas-region-tab-cap-radius) var(--canvas-region-tab-cap-radius) 0 0;
 }
 
@@ -138,6 +139,7 @@ body.is-resizing-sidebar .sidebar-resizer {
   transform: none;
 }
 
+.canvas-region-top-menu .session-tab:hover,
 .canvas-region-top-menu .session-tab:focus-within {
   background: var(--top-chrome-focus-surface);
   border-color: transparent;
@@ -160,6 +162,7 @@ body.is-resizing-sidebar .sidebar-resizer {
   transform: none;
 }
 
+.canvas-region-top-menu .session-tab.is-active:hover,
 .canvas-region-top-menu .session-tab.is-active:focus-within,
 .right-sidebar-tab.is-active:focus-within {
   background: var(--top-chrome-active-surface);
@@ -177,12 +180,6 @@ body.is-resizing-sidebar .sidebar-resizer {
   height: 2px;
   background: var(--top-chrome-active-surface);
   pointer-events: none;
-}
-
-.canvas-region-top-menu .session-tab::after {
-  top: 8px;
-  bottom: 8px;
-  background: var(--top-chrome-divider);
 }
 
 .right-sidebar-tab.is-active,

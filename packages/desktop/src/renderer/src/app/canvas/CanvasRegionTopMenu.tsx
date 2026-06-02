@@ -1,3 +1,4 @@
+import { Fragment, useMemo } from "react"
 import {
   CloseIcon,
   PlusIcon,
@@ -65,7 +66,77 @@ export function CanvasRegionTopMenu({
   onToggleLeftSidebar,
   onToggleRightSidebar,
 }: CanvasRegionTopMenuProps) {
+  const visibleSessions = useMemo(() => sessions.filter((session) => !isSideChatSession(session)), [sessions])
   const canCloseCreateSessionTab = sessions.length > 0 || createSessionTabs.length > 1
+  const tabNodes = [
+    ...visibleSessions.map((session) => {
+      const isActive = activeCreateSessionTabID === null && session.id === activeSessionID
+
+      return {
+        key: `session:${session.id}`,
+        node: (
+          <div className={isActive ? "session-tab is-active" : "session-tab"}>
+            <button
+              className="session-tab-trigger"
+              aria-label={`Switch to session ${session.title}`}
+              aria-pressed={isActive}
+              title={`Switch to session ${session.title}`}
+              type="button"
+              onClick={() => onSessionSelect(session.id)}
+            >
+              <span className="session-tab-copy">
+                <span className="session-tab-title">{session.title}</span>
+                {isSideChatSession(session) ? <SideChatBadge compact /> : null}
+              </span>
+            </button>
+            <button
+              className="session-tab-close"
+              aria-label={`Close session tab ${session.title}`}
+              title={`Close session tab ${session.title}`}
+              type="button"
+              onClick={() => onSessionClose(session.id)}
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        ),
+      }
+    }),
+    ...createSessionTabs.map((tab, index) => {
+      const isActive = activeCreateSessionTabID === tab.id
+      const switchLabel = getCreateSessionTabSwitchLabel(tab, index)
+      const closeLabel = getCreateSessionTabCloseLabel(tab, index)
+
+      return {
+        key: `create-session:${tab.id}`,
+        node: (
+          <div className={isActive ? "session-tab is-active is-create-tab" : "session-tab is-create-tab"}>
+            <button
+              className="session-tab-trigger"
+              aria-label={switchLabel}
+              aria-pressed={isActive}
+              title={switchLabel}
+              type="button"
+              onClick={() => onSelectCreateSessionTab(tab.id)}
+            >
+              <span className="session-tab-title">{getCreateSessionTabTitle(tab, index, workspaces)}</span>
+            </button>
+            {canCloseCreateSessionTab ? (
+              <button
+                className="session-tab-close"
+                aria-label={closeLabel}
+                title={closeLabel}
+                type="button"
+                onClick={() => onCloseCreateSessionTab(tab.id)}
+              >
+                <CloseIcon />
+              </button>
+            ) : null}
+          </div>
+        ),
+      }
+    }),
+  ]
 
   return (
     <ShellTopMenu
@@ -76,68 +147,12 @@ export function CanvasRegionTopMenu({
       content={(
         <>
           <div className="canvas-region-top-menu-tabs" aria-label="Session tabs">
-            {sessions.filter((session) => !isSideChatSession(session)).map((session) => {
-              const isActive = activeCreateSessionTabID === null && session.id === activeSessionID
-
-              return (
-                <div key={session.id} className={isActive ? "session-tab is-active" : "session-tab"}>
-                  <button
-                    className="session-tab-trigger"
-                    aria-label={`Switch to session ${session.title}`}
-                    aria-pressed={isActive}
-                    title={`Switch to session ${session.title}`}
-                    type="button"
-                    onClick={() => onSessionSelect(session.id)}
-                  >
-                    <span className="session-tab-copy">
-                      <span className="session-tab-title">{session.title}</span>
-                      {isSideChatSession(session) ? <SideChatBadge compact /> : null}
-                    </span>
-                  </button>
-                  <button
-                    className="session-tab-close"
-                    aria-label={`Close session tab ${session.title}`}
-                    title={`Close session tab ${session.title}`}
-                    type="button"
-                    onClick={() => onSessionClose(session.id)}
-                  >
-                    <CloseIcon />
-                  </button>
-                </div>
-              )
-            })}
-
-            {createSessionTabs.map((tab, index) => {
-              const isActive = activeCreateSessionTabID === tab.id
-              const switchLabel = getCreateSessionTabSwitchLabel(tab, index)
-              const closeLabel = getCreateSessionTabCloseLabel(tab, index)
-
-              return (
-                <div key={tab.id} className={isActive ? "session-tab is-active is-create-tab" : "session-tab is-create-tab"}>
-                  <button
-                    className="session-tab-trigger"
-                    aria-label={switchLabel}
-                    aria-pressed={isActive}
-                    title={switchLabel}
-                    type="button"
-                    onClick={() => onSelectCreateSessionTab(tab.id)}
-                  >
-                    <span className="session-tab-title">{getCreateSessionTabTitle(tab, index, workspaces)}</span>
-                  </button>
-                  {canCloseCreateSessionTab ? (
-                    <button
-                      className="session-tab-close"
-                      aria-label={closeLabel}
-                      title={closeLabel}
-                      type="button"
-                      onClick={() => onCloseCreateSessionTab(tab.id)}
-                    >
-                      <CloseIcon />
-                    </button>
-                  ) : null}
-                </div>
-              )
-            })}
+            {tabNodes.map((tab, index) => (
+              <Fragment key={tab.key}>
+                {index > 0 ? <span className="canvas-region-top-menu-tab-separator" aria-hidden="true" /> : null}
+                {tab.node}
+              </Fragment>
+            ))}
           </div>
           <button className="canvas-region-top-menu-add-button" aria-label="Add session tab" title="Add session tab" type="button" onClick={onAddCreateSessionTab}>
             <PlusIcon />
