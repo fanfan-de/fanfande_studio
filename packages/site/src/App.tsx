@@ -5,7 +5,7 @@ import { InstallerDownloadButton } from "./InstallerDownloadButton"
 import { repositoryUrl } from "./releaseDownloads"
 
 const brandLogoBlack = "/brand-logo-black.svg"
-const wechatCommunityQrImage = "/wechat-community-qr-20260525.png"
+const wechatCommunityQrImage = "/wechat-community-qr-20260602.png"
 
 function getGitHubRepoApiUrl(href: string) {
   const match = href.match(/^https:\/\/github\.com\/([^/]+)\/([^/#?]+)/)

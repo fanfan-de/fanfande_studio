@@ -12812,6 +12812,12 @@ describe("App", () => {
     expect(styles).not.toMatch(/\.settings-prompt-assignment-control select/)
   })
 
+  it("keeps built-in tools as an open section instead of a framed panel", () => {
+    expect(styles).toMatch(/\.builtin-tools-page\s+\.tools-panel\s*\{[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*border-radius:\s*0;[^}]*background:\s*transparent;/s)
+    expect(styles).toMatch(/\.builtin-tools-page\s+\.tools-detail-header\s*\{[^}]*padding-top:\s*18px;[^}]*border-top:\s*1px solid var\(--tools-obs-border\);[^}]*border-bottom:\s*1px solid var\(--tools-obs-border\);/s)
+    expect(styles).toMatch(/@media\s*\(max-width:\s*900px\)\s*\{[\s\S]*?\.builtin-tools-page\s+\.tools-panel\s*\{[^}]*padding:\s*0;/s)
+  })
+
   it("uses Obsidian-style grouped settings rows for standard settings pages", () => {
     expect(styles).toMatch(
       /\.settings-page-main:not\(\.is-services\):not\(\.prompt-presets-page-main\)\s*\{[^}]*justify-items:\s*start;[^}]*gap:\s*28px;/s,

@@ -753,15 +753,17 @@
 }
 
 .builtin-tools-page .tools-panel {
-  padding: 22px 24px;
-  border-color: var(--tools-obs-border);
-  border-radius: 12px;
-  background: var(--tools-obs-surface);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   gap: 0;
 }
 
 .builtin-tools-page .tools-detail-header {
-  padding-bottom: 18px;
+  padding-top: 18px;
+  padding-bottom: 16px;
+  border-top: 1px solid var(--tools-obs-border);
   border-bottom: 1px solid var(--tools-obs-border);
 }
 
@@ -1022,7 +1024,7 @@
   }
 
   .builtin-tools-page .tools-panel {
-    padding: 18px;
+    padding: 0;
   }
 
   .builtin-tools-page .tools-card-row {
