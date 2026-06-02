@@ -1,0 +1,1497 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ThreadView 数据到渲染流程图</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #f6f7fb;
+        --ink: #162033;
+        --muted: #667085;
+        --line: #d7deea;
+        --panel: #ffffff;
+        --data: #dff3ff;
+        --logic: #e7f6e9;
+        --layout: #fff1d6;
+        --render: #f1e8ff;
+        --output: #ffe7ee;
+        --shadow: 0 18px 45px rgba(22, 32, 51, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--ink);
+        font-family:
+          Inter,
+          "Segoe UI",
+          "Microsoft YaHei",
+          Arial,
+          sans-serif;
+      }
+
+      main {
+        width: min(1480px, calc(100vw - 48px));
+        margin: 0 auto;
+        padding: 32px 0 48px;
+      }
+
+      header {
+        margin-bottom: 22px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        letter-spacing: 0;
+      }
+
+      .subtitle {
+        margin: 0;
+        max-width: 840px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 18px 0 0;
+      }
+
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.78);
+        padding: 6px 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .legend i {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
+      }
+
+      .board {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.68);
+        box-shadow: var(--shadow);
+        padding: 18px;
+        overflow-x: auto;
+      }
+
+      .pipeline {
+        min-width: 1320px;
+        display: grid;
+        grid-template-columns: repeat(6, minmax(185px, 1fr));
+        gap: 16px;
+        align-items: stretch;
+      }
+
+      .lane {
+        position: relative;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 10px;
+      }
+
+      .lane:not(:last-child)::after {
+        content: "→";
+        position: absolute;
+        top: 48px;
+        right: -13px;
+        color: #7a8799;
+        font-size: 22px;
+        font-weight: 700;
+      }
+
+      .lane-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        border-radius: 12px;
+        padding: 10px 12px;
+        color: #182230;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .lane-title small {
+        color: rgba(24, 34, 48, 0.55);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .lane[data-tone="data"] .lane-title,
+      .legend .data {
+        background: var(--data);
+      }
+
+      .lane[data-tone="logic"] .lane-title,
+      .legend .logic {
+        background: var(--logic);
+      }
+
+      .lane[data-tone="layout"] .lane-title,
+      .legend .layout {
+        background: var(--layout);
+      }
+
+      .lane[data-tone="render"] .lane-title,
+      .legend .render {
+        background: var(--render);
+      }
+
+      .lane[data-tone="output"] .lane-title,
+      .legend .output {
+        background: var(--output);
+      }
+
+      .stack {
+        display: grid;
+        gap: 10px;
+        align-content: start;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        padding: 12px;
+        min-height: 74px;
+      }
+
+      .card strong {
+        display: block;
+        margin: 0 0 6px;
+        font-size: 13px;
+      }
+
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .card code {
+        border-radius: 5px;
+        background: #f2f4f7;
+        padding: 1px 4px;
+        color: #344054;
+        font-family: "Cascadia Code", Consolas, monospace;
+        font-size: 11px;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .mini {
+        min-height: auto;
+        padding: 9px;
+      }
+
+      .branch-board {
+        margin-top: 18px;
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 16px;
+        min-width: 920px;
+      }
+
+      .branch {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #fff;
+        padding: 15px;
+      }
+
+      .branch h2 {
+        margin: 0 0 10px;
+        font-size: 15px;
+      }
+
+      .branch-flow {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+      }
+
+      .branch-flow .card {
+        background: #fbfcff;
+      }
+
+      .reading-path ol {
+        margin: 0;
+        padding-left: 20px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+
+      .reading-path code {
+        border-radius: 5px;
+        background: #f2f4f7;
+        padding: 1px 4px;
+        color: #344054;
+        font-family: "Cascadia Code", Consolas, monospace;
+        font-size: 12px;
+      }
+
+      .deep-dive {
+        margin-top: 18px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #ffffff;
+        padding: 18px;
+        min-width: 920px;
+      }
+
+      .deep-dive h2 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        letter-spacing: 0;
+      }
+
+      .deep-dive .intro {
+        margin: 0 0 16px;
+        max-width: 900px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+
+      .example-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .example-card {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #fbfcff;
+        overflow: hidden;
+      }
+
+      .example-card header {
+        margin: 0;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--data);
+      }
+
+      .example-card h3 {
+        margin: 0;
+        font-size: 14px;
+        letter-spacing: 0;
+      }
+
+      .example-card p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .example-card pre {
+        margin: 0;
+        max-height: 520px;
+        overflow: auto;
+        background: #111827;
+        color: #e5e7eb;
+        padding: 14px;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .example-card code {
+        font-family: "Cascadia Code", Consolas, monospace;
+      }
+
+      .shape-notes {
+        margin-top: 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fffdf8;
+        padding: 12px 14px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+
+      .shape-notes strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--ink);
+      }
+
+      .shape-notes ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .flow-steps {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        margin: 14px 0 16px;
+      }
+
+      .step-card {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fbfcff;
+        padding: 12px;
+        min-height: 126px;
+      }
+
+      .step-card:not(:last-child)::after {
+        content: "→";
+        position: absolute;
+        top: 46px;
+        right: -11px;
+        color: #7a8799;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .step-card b {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        background: var(--logic);
+        color: #14532d;
+        font-size: 12px;
+      }
+
+      .step-card strong {
+        display: block;
+        margin: 8px 0 5px;
+        font-size: 13px;
+      }
+
+      .step-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .example-card.is-logic header {
+        background: var(--logic);
+      }
+
+      .data-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin: 14px 0 16px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #ffffff;
+        font-size: 12px;
+      }
+
+      .data-table th,
+      .data-table td {
+        border-bottom: 1px solid var(--line);
+        padding: 10px 12px;
+        text-align: left;
+        vertical-align: top;
+        line-height: 1.55;
+      }
+
+      .data-table th {
+        background: #f2f4f7;
+        color: #344054;
+        font-weight: 700;
+      }
+
+      .data-table tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .data-table code {
+        border-radius: 5px;
+        background: #f2f4f7;
+        padding: 1px 4px;
+        color: #344054;
+        font-family: "Cascadia Code", Consolas, monospace;
+        font-size: 11px;
+      }
+
+      @media (max-width: 960px) {
+        main {
+          width: min(100vw - 24px, 1480px);
+          padding-top: 20px;
+        }
+
+        .branch-board {
+          grid-template-columns: 1fr;
+        }
+
+        .deep-dive {
+          min-width: 0;
+        }
+
+        .example-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .flow-steps {
+          grid-template-columns: 1fr;
+        }
+
+        .step-card:not(:last-child)::after {
+          content: "↓";
+          top: auto;
+          right: 18px;
+          bottom: -18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>ThreadView 数据到渲染流程图</h1>
+        <p class="subtitle">
+          这张图把 ThreadView 看成一条流水线：上游是会话数据，中间把 turns 拆成可渲染的 rows，最后按 row 和 trace item 类型落到具体 UI 组件。
+        </p>
+        <div class="legend" aria-label="图例">
+          <span><i class="data"></i>数据</span>
+          <span><i class="logic"></i>归一化与状态</span>
+          <span><i class="layout"></i>布局容器</span>
+          <span><i class="render"></i>渲染分发</span>
+          <span><i class="output"></i>屏幕结果</span>
+        </div>
+      </header>
+
+      <section class="board" aria-label="ThreadView 主流程">
+        <div class="pipeline">
+          <section class="lane" data-tone="data">
+            <div class="lane-title">1. 数据输入 <small>props</small></div>
+            <div class="stack">
+              <div class="card">
+                <strong><code>activeTurns</code></strong>
+                <p>主会话的用户 turn 与 assistant turn。</p>
+              </div>
+              <div class="card">
+                <strong><code>activeSession</code></strong>
+                <p>当前 session、运行时状态、模型选择等上下文。</p>
+              </div>
+              <div class="card">
+                <strong><code>pendingPermissionRequests</code></strong>
+                <p>阻塞当前 session 的权限请求。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="lane" data-tone="logic">
+            <div class="lane-title">2. 行归一化 <small>rows</small></div>
+            <div class="stack">
+              <div class="card">
+                <strong><code>buildThreadDisplayRows()</code></strong>
+                <p>把 turns 拆成 UI row，不再简单一 turn 对一块 UI。</p>
+              </div>
+              <div class="split">
+                <div class="card mini">
+                  <strong>process rows</strong>
+                  <p>reasoning/tool 可被拆成 header 与 item。</p>
+                </div>
+                <div class="card mini">
+                  <strong>message rows</strong>
+                  <p>保留用户消息与最终 assistant 回合。</p>
+                </div>
+              </div>
+              <div class="card">
+                <strong><code>displayRows</code></strong>
+                <p>后续渲染只面向 row，而不是直接遍历 turns。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="lane" data-tone="logic">
+            <div class="lane-title">3. Thread 状态 <small>behavior</small></div>
+            <div class="stack">
+              <div class="card">
+                <strong>滚动状态</strong>
+                <p>锁底、恢复位置、用户向上阅读时保持 detached。</p>
+              </div>
+              <div class="card">
+                <strong>虚拟列表</strong>
+                <p>长 thread 时只渲染可见窗口附近的 rows。</p>
+              </div>
+              <div class="card">
+                <strong>轻量模式</strong>
+                <p>侧栏 resize 时降低昂贵渲染。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="lane" data-tone="layout">
+            <div class="lane-title">4. 布局外壳 <small>DOM</small></div>
+            <div class="stack">
+              <div class="card">
+                <strong><code>VisibleThreadView</code></strong>
+                <p>真正可见的 ThreadView 分支。</p>
+              </div>
+              <div class="card">
+                <strong><code>section.thread-shell</code></strong>
+                <p>thread 区域外壳，普通模式下透明。</p>
+              </div>
+              <div class="card">
+                <strong><code>div.thread-column</code></strong>
+                <p>独立滚动列，所有 rows 都进入这里。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="lane" data-tone="render">
+            <div class="lane-title">5. 行级分发 <small>row.kind</small></div>
+            <div class="stack">
+              <div class="card">
+                <strong><code>renderDisplayRow(row)</code></strong>
+                <p>根据 row.kind 选择用户消息、权限请求、process item 或 assistant turn。</p>
+              </div>
+              <div class="split">
+                <div class="card mini">
+                  <strong><code>UserTurnArticle</code></strong>
+                  <p>用户输入气泡。</p>
+                </div>
+                <div class="card mini">
+                  <strong><code>assistant-turn</code></strong>
+                  <p>assistant 回合主体。</p>
+                </div>
+              </div>
+              <div class="card">
+                <strong><code>PermissionRequestInlinePrompt</code></strong>
+                <p>权限请求作为 thread 内 row 插入。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="lane" data-tone="output">
+            <div class="lane-title">6. 屏幕结果 <small>UI</small></div>
+            <div class="stack">
+              <div class="card">
+                <strong>最终回复正文</strong>
+                <p><code>response</code> section 优先，以轻量正文形式呈现。</p>
+              </div>
+              <div class="card">
+                <strong>执行轨迹</strong>
+                <p>reasoning、tools、workflow 等被折叠或弱化显示。</p>
+              </div>
+              <div class="card">
+                <strong>消息动作</strong>
+                <p>copy、branch、side chat、fork 贴近对应 assistant 回复。</p>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="branch-board">
+          <section class="branch" aria-label="assistant 内部分块">
+            <h2>Assistant turn 内部再分一层</h2>
+            <div class="branch-flow">
+              <div class="card">
+                <strong><code>AssistantTurnSections</code></strong>
+                <p>把 items 按 section 分组。</p>
+              </div>
+              <div class="card">
+                <strong><code>AssistantTraceBlockView</code></strong>
+                <p>渲染一个 section block。</p>
+              </div>
+              <div class="card">
+                <strong><code>TraceItemView</code></strong>
+                <p>单条 trace item 的统一入口。</p>
+              </div>
+              <div class="card">
+                <strong><code>traceItemRenderers</code></strong>
+                <p>按 kind 落到 text/tool/image/patch 等 UI。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="branch reading-path" aria-label="读代码路径">
+            <h2>读代码顺序</h2>
+            <ol>
+              <li><code>WorkbenchPaneSurface</code>：确认 ThreadView 被放在哪。</li>
+              <li><code>ThreadView</code>：入口与可见/不可见分支。</li>
+              <li><code>buildThreadDisplayRows</code>：turns 如何变成 rows。</li>
+              <li><code>renderDisplayRow</code>：row 如何变成组件。</li>
+              <li><code>AssistantTurnSections</code>：assistant items 如何分 section。</li>
+              <li><code>TraceItemView</code>：trace item 如何落到具体 renderer。</li>
+            </ol>
+          </section>
+        </div>
+
+        <section class="deep-dive" aria-labelledby="data-shape-title">
+          <h2 id="data-shape-title">深入 1：数据输入是什么形状</h2>
+          <p class="intro">
+            ThreadView 拿到的不是一整块 HTML，而是一组会话对象。最核心的是
+            <code>activeTurns</code>：用户输入和 assistant 输出按时间排成数组。assistant turn
+            里面再通过 <code>items</code> 保存推理、工具调用、文件变更、最终回复等细粒度内容。
+          </p>
+
+          <div class="example-grid">
+            <article class="example-card">
+              <header>
+                <h3>例子 A：activeTurns</h3>
+                <p>ThreadView 的主输入，用户 turn 和 assistant turn 混在同一个数组里。</p>
+              </header>
+              <pre><code>const activeTurns = [
+  {
+    id: "user-1",
+    kind: "user",
+    text: "帮我解释 ThreadView 的结构",
+    displayText: "帮我解释 ThreadView 的结构",
+    references: [
+      {
+        id: "ref-thread-view",
+        kind: "file",
+        label: "ThreadView.tsx"
+      }
+    ],
+    attachments: [
+      {
+        name: "screenshot.png",
+        path: "C:/tmp/screenshot.png"
+      }
+    ],
+    timestamp: 1717382400000
+  },
+
+  {
+    id: "assistant-1",
+    kind: "assistant",
+    messageID: "msg-assistant-1",
+    timestamp: 1717382402000,
+    state: "running",
+    isStreaming: true,
+    runtime: {
+      phase: "tool_running",
+      startedAt: 1717382402000,
+      updatedAt: 1717382410000,
+      toolName: "shell_command"
+    },
+    items: [
+      // 这里会继续拆成 reasoning、tool、text 等 trace item
+    ]
+  }
+];</code></pre>
+            </article>
+
+            <article class="example-card">
+              <header>
+                <h3>例子 B：assistant.items</h3>
+                <p>assistant turn 不是只有一段文字，而是由很多 trace item 组成。</p>
+              </header>
+              <pre><code>const assistantItems = [
+  {
+    id: "reasoning-1",
+    kind: "reasoning",
+    label: "Reasoning",
+    text: "先确认 ThreadView 的入口和 row 构建逻辑。",
+    status: "completed",
+    timestamp: 1717382403000
+  },
+
+  {
+    id: "tool-1",
+    kind: "tool",
+    label: "Shell",
+    title: "rg ThreadView",
+    toolInputText: "{ \"command\": \"rg ThreadView\" }",
+    toolOutputText: "src/renderer/src/app/thread/ThreadView.tsx",
+    status: "completed",
+    timestamp: 1717382404000
+  },
+
+  {
+    id: "response-1",
+    kind: "text",
+    label: "Assistant",
+    text: "ThreadView 可以按 pane、thread shell、row、trace item 四层理解。",
+    status: "completed",
+    timestamp: 1717382412000
+  }
+];</code></pre>
+            </article>
+
+            <article class="example-card">
+              <header>
+                <h3>例子 C：权限请求</h3>
+                <p>权限请求不是 assistant 的正文，但会被插入 thread 里作为一行 UI。</p>
+              </header>
+              <pre><code>const pendingPermissionRequests = [
+  {
+    id: "perm-1",
+    sessionID: "session-1",
+    status: "pending",
+    request: {
+      kind: "shell_command",
+      command: "pnpm test",
+      workdir: "C:/Projects/fanfande_studio/packages/desktop",
+      reason: "验证 ThreadView 文档和相关代码没有破坏构建"
+    },
+    createdAt: 1717382405000
+  }
+];</code></pre>
+            </article>
+          </div>
+
+          <div class="shape-notes">
+            <strong>读这组数据时先抓三个重点</strong>
+            <ul>
+              <li><code>kind</code> 决定渲染分支：user turn、assistant turn、tool item、text item 都靠它分发。</li>
+              <li><code>assistant.items</code> 是最重要的细分层：最终回复、推理、工具调用、图片、patch 都在这里。</li>
+              <li><code>runtime</code> 和 <code>status</code> 决定“正在运行、已完成、失败、可展开”的视觉状态。</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="deep-dive" aria-labelledby="row-normalize-title">
+          <h2 id="row-normalize-title">深入 2：行归一化的逻辑</h2>
+          <p class="intro">
+            <code>buildThreadDisplayRows()</code> 的作用是把“会话数据”转换成“屏幕行”。它不直接渲染 UI，
+            而是先生成 <code>ThreadDisplayRow[]</code>，让后面的虚拟滚动、折叠展开、row 级分发都面对同一种结构。
+          </p>
+
+          <div class="flow-steps" aria-label="行归一化步骤">
+            <div class="step-card">
+              <b>1</b>
+              <strong>没有 session 就返回空</strong>
+              <p>如果 <code>activeSession</code> 不存在，ThreadView 没有可渲染上下文，直接返回 <code>[]</code>。</p>
+            </div>
+            <div class="step-card">
+              <b>2</b>
+              <strong>可选插入 session banner</strong>
+              <p>只在 <code>showSessionBanner</code> 和 <code>readOnlySideChat</code> 同时成立时插入。</p>
+            </div>
+            <div class="step-card">
+              <b>3</b>
+              <strong>逐个扫描 activeTurns</strong>
+              <p>user turn 通常变成 <code>user-turn</code>；assistant turn 会进入更复杂的拆分逻辑。</p>
+            </div>
+            <div class="step-card">
+              <b>4</b>
+              <strong>assistant 拆成过程 + 正文</strong>
+              <p>必要时先产出 <code>process-header</code> 和 <code>process-item</code>，最后产出 <code>assistant</code> row。</p>
+            </div>
+            <div class="step-card">
+              <b>5</b>
+              <strong>最后追加权限请求</strong>
+              <p>如果有待处理权限且当前不在 resolving，就追加一个 <code>permission-request</code> row。</p>
+            </div>
+          </div>
+
+          <div class="example-grid">
+            <article class="example-card is-logic">
+              <header>
+                <h3>归一化前：turns 是按对话顺序排的</h3>
+                <p>它更像“消息历史”，还不适合直接做虚拟列表和行级渲染。</p>
+              </header>
+              <pre><code>activeTurns = [
+  {
+    id: "user-1",
+    kind: "user",
+    text: "解释 ThreadView"
+  },
+
+  {
+    id: "assistant-1",
+    kind: "assistant",
+    isStreaming: false,
+    items: [
+      { id: "reasoning-1", kind: "reasoning", text: "先读代码..." },
+      { id: "tool-1", kind: "tool", title: "rg ThreadView" },
+      { id: "response-1", kind: "text", text: "ThreadView 分为..." }
+    ],
+    runtime: {
+      phase: "completed"
+    }
+  }
+];</code></pre>
+            </article>
+
+            <article class="example-card is-logic">
+              <header>
+                <h3>归一化中：assistant turn 会被拆开</h3>
+                <p>过程 trace 和最终回复分离，折叠逻辑也在这里决定。</p>
+              </header>
+              <pre><code>for (const turn of activeTurns) {
+  if (turn.kind === "user") {
+    rows.push({
+      kind: "user-turn",
+      rowID: turn.id,
+      estimatedHeight: estimateUserThreadRowHeight(turn),
+      turn
+    });
+    continue;
+  }
+
+  const processBlocks = buildAssistantTraceDisplayBlocks(turn.items);
+  const expanded = readProcessTraceExpanded(turn.id);
+
+  if (processBlocks.shouldRenderProcessTrace) {
+    rows.push({
+      kind: "process-header",
+      rowID: `process-header:${turn.id}`,
+      expanded
+    });
+
+    if (expanded) {
+      rows.push({
+        kind: "process-item",
+        rowID: "process-item:assistant-1:0:reasoning-1:0",
+        item: reasoningItem,
+        section: "reasoning"
+      });
+    }
+  }
+
+  rows.push({
+    kind: "assistant",
+    rowID: turn.id,
+    renderedItems: responseItems,
+    processPrefixItems,
+    insertedUserTurns
+  });
+}</code></pre>
+            </article>
+
+            <article class="example-card is-logic">
+              <header>
+                <h3>归一化后：displayRows 才是渲染输入</h3>
+                <p><code>renderDisplayRow(row)</code> 后面只看 row.kind，不再直接遍历 turns。</p>
+              </header>
+              <pre><code>displayRows = [
+  {
+    kind: "user-turn",
+    rowID: "user-1",
+    estimatedHeight: 86
+  },
+  {
+    kind: "process-header",
+    rowID: "process-header:assistant-1",
+    expanded: true,
+    estimatedHeight: 34
+  },
+  {
+    kind: "process-item",
+    rowID: "process-item:assistant-1:0:reasoning-1:0",
+    section: "reasoning",
+    estimatedHeight: 96
+  },
+  {
+    kind: "assistant",
+    rowID: "assistant-1",
+    renderedItems: [
+      { id: "response-1", kind: "text" }
+    ],
+    estimatedHeight: 140
+  },
+  {
+    kind: "permission-request",
+    rowID: "permission-request:perm-1",
+    estimatedHeight: 420
+  }
+];</code></pre>
+            </article>
+          </div>
+
+          <div class="shape-notes">
+            <strong>这里最容易混淆的地方</strong>
+            <ul>
+              <li><code>process-header</code> 只是折叠入口，不是最终回复；它显示 “Processed / reasoning / tools” 那一类过程摘要。</li>
+              <li><code>process-item</code> 来自 assistant trace block，只有过程区域展开或正在折叠动画中才会逐条插入。</li>
+              <li><code>assistant</code> row 仍然代表这个 assistant turn 的主体，通常承载最终回复、动作按钮、diff card、inline side chat。</li>
+              <li><code>estimatedHeight</code> 是虚拟滚动的预估高度，真实渲染后还会被测量修正。</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="deep-dive" aria-labelledby="trace-blocks-title">
+          <h2 id="trace-blocks-title">深入 3：buildAssistantTraceDisplayBlocks 的逻辑</h2>
+          <p class="intro">
+            这个方法专门处理 assistant turn 内部的 trace items。它的目标是判断哪些内容应该放进
+            <code>Processed</code> 折叠区，哪些内容应该留在 assistant 正文区。可以把它理解成：
+            先把 item 分组，再找到最终回复的位置，然后用最终回复作为分界线切开。
+          </p>
+
+          <div class="flow-steps" aria-label="trace block 分组步骤">
+            <div class="step-card">
+              <b>1</b>
+              <strong>过滤不可见 item</strong>
+              <p>先跑 <code>filterRenderedAssistantTraceItems</code>，按 <code>traceVisibility</code> 和 <code>showFileChanges</code> 去掉不该显示的项。</p>
+            </div>
+            <div class="step-card">
+              <b>2</b>
+              <strong>按 section 分 block</strong>
+              <p><code>buildAssistantTraceBlocks</code> 把连续同类 section 合并成 block，例如 reasoning、tools、response。</p>
+            </div>
+            <div class="step-card">
+              <b>3</b>
+              <strong>寻找最终 response</strong>
+              <p><code>findFinalResponseBlockIndex</code> 从后往前找最后一个包含正文 text 的 response block。</p>
+            </div>
+            <div class="step-card">
+              <b>4</b>
+              <strong>切出 process 候选</strong>
+              <p>最终 response 之前的 blocks，加上前序 assistant turn 的 <code>processPrefixItems</code>，组成过程区候选。</p>
+            </div>
+            <div class="step-card">
+              <b>5</b>
+              <strong>决定是否单独渲染</strong>
+              <p>如果只是很短的一条 reasoning，就不拆 Processed 区；否则生成 <code>processBlocks</code> 和 <code>mainBlocks</code>。</p>
+            </div>
+          </div>
+
+          <div class="example-grid">
+            <article class="example-card is-logic">
+              <header>
+                <h3>输入：trace items 还只是扁平数组</h3>
+                <p>每个 item 可能显式带 <code>section</code>，否则会按 kind 推断默认 section。</p>
+              </header>
+              <pre><code>items = [
+  {
+    id: "r1",
+    kind: "reasoning",
+    text: "我先检查 ThreadView 的实现"
+  },
+  {
+    id: "t1",
+    kind: "tool",
+    title: "rg buildThreadDisplayRows"
+  },
+  {
+    id: "p1",
+    kind: "patch",
+    fileChanges: [
+      { file: "docs/thread-view-render-flow.html" }
+    ]
+  },
+  {
+    id: "a1",
+    kind: "text",
+    text: "ThreadView 的渲染流程可以这样理解..."
+  }
+];</code></pre>
+            </article>
+
+            <article class="example-card is-logic">
+              <header>
+                <h3>中间态：先分成 AssistantTraceBlock</h3>
+                <p>同类 section 会合并；file-change 比较特殊，会被集中到一个 block。</p>
+              </header>
+              <pre><code>blocks = [
+  {
+    sectionKey: "reasoning",
+    title: "Reasoning",
+    items: [r1]
+  },
+  {
+    sectionKey: "tools",
+    title: "Tools",
+    items: [t1]
+  },
+  {
+    sectionKey: "response",
+    title: "Response",
+    items: [a1]
+  },
+  {
+    sectionKey: "file-change",
+    title: "File Changes",
+    items: [p1]
+  }
+];</code></pre>
+            </article>
+
+            <article class="example-card is-logic">
+              <header>
+                <h3>输出：切成 processBlocks 和 mainBlocks</h3>
+                <p>最终 response 之前的过程内容进 Processed；最终 response 及之后留在正文区。</p>
+              </header>
+              <pre><code>const finalResponseBlockIndex = 2;
+
+processBlocks = [
+  { sectionKey: "reasoning", items: [r1] },
+  { sectionKey: "tools", items: [t1] }
+];
+
+mainBlocks = [
+  { sectionKey: "response", items: [a1] },
+  { sectionKey: "file-change", items: [p1] }
+];
+
+return {
+  blocks,
+  processBlocks,
+  mainBlocks,
+  shouldRenderProcessTrace: true
+};</code></pre>
+            </article>
+          </div>
+
+          <div class="shape-notes">
+            <strong>关键判断规则</strong>
+            <ul>
+              <li><code>shouldCollapseReasoningAndTools</code> 为 false 时，不会寻找 process 分界，所有 block 都留在 <code>mainBlocks</code>。</li>
+              <li>只有找到“最后一个有 text 正文的 response block”，并且它前面确实有过程内容时，才可能生成 <code>processBlocks</code>。</li>
+              <li><code>processPrefixItems</code> 用来把同一轮 assistant run 里更早 assistant turn 的过程 item 合并到最终回复前面。</li>
+              <li>单条很短的 reasoning 会被内联显示，避免页面上出现一个只有一句话的 <code>Processed</code> 折叠区。</li>
+              <li><code>file-change</code> block 会汇总文件变更项，渲染时还会通过 <code>summarizeFileChangeItems</code> 做进一步压缩。</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="deep-dive" aria-labelledby="streaming-title">
+          <h2 id="streaming-title">深入 4：流式输出时 activeTurns 一直变化怎么办</h2>
+          <p class="intro">
+            ThreadView 不直接维护“正在输出的字符串”。它把 <code>activeTurns</code> 当成外部传入的实时快照：
+            每来一段流式事件，上层状态更新 <code>activeTurns</code>，ThreadView 重新计算
+            <code>displayRows</code>，React 再用稳定的 <code>turn.id</code> / <code>rowID</code> 更新同一块 UI。
+          </p>
+
+          <div class="flow-steps" aria-label="流式输出处理步骤">
+            <div class="step-card">
+              <b>1</b>
+              <strong>上层收到流式事件</strong>
+              <p>assistant turn 的 <code>items</code>、<code>runtime.phase</code>、<code>isStreaming</code> 被更新。</p>
+            </div>
+            <div class="step-card">
+              <b>2</b>
+              <strong>ThreadView 重新 render</strong>
+              <p><code>displayRows</code> 依赖 <code>activeTurns</code>，所以每次快照变化都会重新归一化。</p>
+            </div>
+            <div class="step-card">
+              <b>3</b>
+              <strong>流式中先不切 Processed</strong>
+              <p><code>canCollapseAssistantProcessTrace</code> 在 streaming 时为 false，过程和正文先留在 assistant row 里。</p>
+            </div>
+            <div class="step-card">
+              <b>4</b>
+              <strong>同一 row 持续长高</strong>
+              <p><code>rowID</code> 通常仍是 assistant turn id，React 更新内容，ResizeObserver 重新测量高度。</p>
+            </div>
+            <div class="step-card">
+              <b>5</b>
+              <strong>完成后重新分块</strong>
+              <p><code>isStreaming</code> 变 false 后，reasoning/tools 才可能被折到 <code>Processed</code> 区。</p>
+            </div>
+          </div>
+
+          <div class="example-grid">
+            <article class="example-card is-logic">
+              <header>
+                <h3>时间点 1：刚开始，没有可显示 item</h3>
+                <p>这时会显示 ephemeral hint，例如 Thinking、Running tools。</p>
+              </header>
+              <pre><code>activeTurns = [
+  { id: "user-1", kind: "user", text: "解释 ThreadView" },
+  {
+    id: "assistant-1",
+    kind: "assistant",
+    isStreaming: true,
+    runtime: {
+      phase: "reasoning",
+      startedAt: 1717382400000,
+      updatedAt: 1717382401000
+    },
+    items: []
+  }
+];
+
+displayRows = [
+  { kind: "user-turn", rowID: "user-1" },
+  {
+    kind: "assistant",
+    rowID: "assistant-1",
+    ephemeralHint: "Thinking...",
+    renderedItems: []
+  }
+];</code></pre>
+            </article>
+
+            <article class="example-card is-logic">
+              <header>
+                <h3>时间点 2：同一个 assistant turn 持续变长</h3>
+                <p>不是新增一个 assistant row，而是更新同一个 id 的 turn。</p>
+              </header>
+              <pre><code>activeTurns = [
+  { id: "user-1", kind: "user", text: "解释 ThreadView" },
+  {
+    id: "assistant-1",
+    kind: "assistant",
+    isStreaming: true,
+    runtime: {
+      phase: "responding",
+      updatedAt: 1717382406000
+    },
+    items: [
+      {
+        id: "reasoning-1",
+        kind: "reasoning",
+        text: "先看入口..."
+      },
+      {
+        id: "response-1",
+        kind: "text",
+        text: "ThreadView 的主流程是：",
+        isStreaming: true
+      }
+    ]
+  }
+];
+
+displayRows = [
+  { kind: "user-turn", rowID: "user-1" },
+  {
+    kind: "assistant",
+    rowID: "assistant-1",
+    renderedItems: [reasoning1, response1]
+  }
+];</code></pre>
+            </article>
+
+            <article class="example-card is-logic">
+              <header>
+                <h3>时间点 3：完成后重新切 Processed</h3>
+                <p>完成态允许折叠 reasoning/tools，行结构可能从 2 行变成多行。</p>
+              </header>
+              <pre><code>activeTurns = [
+  { id: "user-1", kind: "user", text: "解释 ThreadView" },
+  {
+    id: "assistant-1",
+    kind: "assistant",
+    isStreaming: false,
+    runtime: { phase: "completed" },
+    items: [reasoning1, tool1, response1]
+  }
+];
+
+displayRows = [
+  { kind: "user-turn", rowID: "user-1" },
+  {
+    kind: "process-header",
+    rowID: "process-header:assistant-1",
+    expanded: false
+  },
+  {
+    kind: "assistant",
+    rowID: "assistant-1",
+    renderedItems: [response1]
+  }
+];</code></pre>
+            </article>
+          </div>
+
+          <div class="shape-notes">
+            <strong>流式输出的几个关键点</strong>
+            <ul>
+              <li><code>activeTurns</code> 是快照，不是 append-only 日志；每次变化都会重新跑 <code>buildThreadDisplayRows()</code>。</li>
+              <li>流式中 <code>showFileChanges</code> 为 false，文件变更类内容通常等 assistant 完成后再进入渲染。</li>
+              <li>当最新 assistant 仍是同一个 id 且还在 streaming，滚动同步会使用 smooth follow，让视图跟随正在增长的响应。</li>
+              <li>如果用户向上滚动，<code>scrollModeRef</code> 会变成 detached，后续流式更新不会强制把用户拉回底部。</li>
+              <li>完成瞬间 <code>isStreaming: true → false</code> 会触发一次完成态处理：保留当前位置，并允许过程区自动折叠。</li>
+              <li>虚拟列表通过 <code>rowID</code> 缓存测量高度；ResizeObserver / MutationObserver 会在内容增长后修正布局。</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="deep-dive" aria-labelledby="display-rows-title">
+          <h2 id="display-rows-title">深入 5：以 displayRows 为中心看前后数据处理</h2>
+          <p class="intro">
+            <code>displayRows</code> 是 ThreadView 最重要的中间层。它把“业务数据形状”
+            转成“屏幕行形状”：前面接 <code>activeTurns</code>、权限请求、trace 可见性、折叠状态；
+            后面接虚拟滚动、滚动跟随、<code>renderDisplayRow(row)</code> 和具体 UI 组件。
+          </p>
+
+          <div class="flow-steps" aria-label="displayRows 前后链路">
+            <div class="step-card">
+              <b>前</b>
+              <strong>WorkbenchPaneSurface</strong>
+              <p>通过 <code>useConversationTurns</code> 取出当前 session 的 <code>activeTurns</code>，再把 session、权限、side chat 等状态传给 ThreadView。</p>
+            </div>
+            <div class="step-card">
+              <b>入</b>
+              <strong>VisibleThreadView props + UI state</strong>
+              <p>把外部 props 和内部折叠状态合在一起，得到 <code>buildThreadDisplayRows</code> 的输入。</p>
+            </div>
+            <div class="step-card">
+              <b>中</b>
+              <strong>buildThreadDisplayRows</strong>
+              <p>遍历 turns，把 user、assistant、process trace、permission request 归一化为 row。</p>
+            </div>
+            <div class="step-card">
+              <b>出</b>
+              <strong>ThreadDisplayRow[]</strong>
+              <p>每个 row 都有稳定 <code>rowID</code> 和 <code>estimatedHeight</code>，适合虚拟列表和渲染分发。</p>
+            </div>
+            <div class="step-card">
+              <b>后</b>
+              <strong>renderThreadRows</strong>
+              <p>短列表直接 map；长列表先算虚拟 range，再只渲染可见 rows。</p>
+            </div>
+          </div>
+
+          <div class="example-grid">
+            <article class="example-card is-logic">
+              <header>
+                <h3>displayRows 之前：输入不是只有 activeTurns</h3>
+                <p>它还依赖权限请求、trace 可见性、side chat、过程区折叠状态。</p>
+              </header>
+              <pre><code>const activeTurns =
+  useConversationTurns(conversationStore, pane.sessionID);
+
+&lt;ThreadView
+  activeSession={pane.activeSession}
+  activeTurns={activeTurns}
+  activeSessionDiff={pane.activeSessionDiff}
+  assistantTraceVisibility={assistantTraceVisibility}
+  pendingPermissionRequests={pane.pendingPermissionRequests}
+  isResolvingPermissionRequest={isResolvingPermissionRequest}
+  messageTree={pane.messageTree}
+  scrollStateKey={pane.tabKey}
+  threadColumnRef={threadColumnRef}
+/&gt;</code></pre>
+            </article>
+
+            <article class="example-card is-logic">
+              <header>
+                <h3>displayRows 本体：useMemo 计算中间表示</h3>
+                <p>只要这些依赖变化，就重新把会话快照归一化为 rows。</p>
+              </header>
+              <pre><code>const displayRows = useMemo(
+  () => buildThreadDisplayRows({
+    activeSession,
+    activeTurns,
+    assistantTraceVisibility,
+    isResolvingPermissionRequest,
+    pendingPermissionRequests,
+    readOnlySideChat,
+    showSessionBanner,
+    uiState: effectiveThreadViewUiState
+  }),
+  [
+    activeSession,
+    activeTurns,
+    assistantTraceVisibility,
+    isResolvingPermissionRequest,
+    pendingPermissionRequests,
+    readOnlySideChat,
+    showSessionBanner,
+    effectiveThreadViewUiState
+  ]
+);</code></pre>
+            </article>
+
+            <article class="example-card is-logic">
+              <header>
+                <h3>displayRows 之后：虚拟滚动和 row 渲染</h3>
+                <p>后续代码不再直接遍历 turns，而是消费统一 row 队列。</p>
+              </header>
+              <pre><code>const shouldVirtualizeThreadRows =
+  displayRows.length >= 80;
+
+const threadVirtualLayout =
+  buildThreadVirtualLayout(displayRows, heightCache);
+
+const threadVirtualRange = shouldVirtualizeThreadRows
+  ? findThreadVirtualRange(threadVirtualLayout, viewport)
+  : { items: threadVirtualLayout.items };
+
+function renderThreadRows() {
+  if (!shouldVirtualizeThreadRows) {
+    return displayRows.map(renderDisplayRow);
+  }
+
+  return threadVirtualRange.items.map((item) =>
+    renderDisplayRow(item.row)
+  );
+}</code></pre>
+            </article>
+          </div>
+
+          <div class="shape-notes">
+            <strong>先建立一个心智模型</strong>
+            <ul>
+              <li><code>displayRows</code> 不是消息数组，而是“屏幕施工队列”：每个 row 都告诉 UI 这里要放一块什么。</li>
+              <li><code>user-turn</code> 和 <code>assistant</code> 是消息主体；<code>process-header</code> 和 <code>process-item</code> 是从 assistant 主体里拆出来的过程区。</li>
+              <li><code>permission-request</code> 不在 <code>activeTurns</code> 里，但为了让它看起来像 thread 的一部分，也会被包装成 row。</li>
+              <li><code>session-banner</code> 是一个特殊兼容分支：它不表示“主 ThreadView 内嵌了 side chat 窗口”，只表示“当前 ThreadView 自己正在渲染一个 side-chat session”。如果产品只把 side chat 放到右侧栏，这一行基本不会出现。</li>
+            </ul>
+          </div>
+
+          <table class="data-table" aria-label="ThreadDisplayRow 类型对照">
+            <thead>
+              <tr>
+                <th>row.kind</th>
+                <th>应该怎么理解</th>
+                <th>什么时候产生 / 消失</th>
+                <th>关键字段怎么读</th>
+                <th>后续渲染入口</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>session-banner</code></td>
+                <td>把它当成“standalone side-chat session 的提示条”，不是主 thread 里的 side chat 面板。它只说明当前 session 本身是 <code>kind: "side-chat"</code>。</td>
+                <td>只在 <code>showSessionBanner</code> 和 <code>readOnlySideChat</code> 同时成立时插到最前面。当前右侧栏 / inline 的 <code>InlineSideChatThread</code> 会传 <code>showSessionBanner={false}</code>，所以不会出现。</td>
+                <td><code>rowID</code> 固定为 <code>session-banner</code>；<code>estimatedHeight: 82</code> 只是给虚拟滚动的初始高度。如果不再支持 side-chat session 作为普通 pane 打开，它可以视为历史/兼容 row。</td>
+                <td>直接渲染 <code>thread-session-banner</code> article，不经过 turn / trace item。</td>
+              </tr>
+              <tr>
+                <td><code>user-turn</code></td>
+                <td>主时间线里的用户输入气泡。它代表“用户正式发给 session 的一轮输入”，不是所有用户输入都会在顶层出现。</td>
+                <td><code>turn.kind === "user"</code> 时产生；如果这个 user turn 是 <code>streamInsertion</code>，会被跳过，之后嵌到对应 <code>assistant</code> row 内部。</td>
+                <td><code>turn</code> 是完整用户数据；<code>turnIndex</code> 用来判断 diff card 放在用户行还是后面的 assistant 行；<code>estimatedHeight</code> 会按文本长度、附件、diff 估算。</td>
+                <td><code>UserTurnArticle</code>。如果它有独立 diff summary，还会旁挂 <code>TurnDiffCard</code>。</td>
+              </tr>
+              <tr>
+                <td><code>process-header</code></td>
+                <td>assistant 过程区的“抽屉门”。它不是内容本身，而是把 reasoning、tools、workflow 等过程内容压缩成一条 Processed 摘要。</td>
+                <td>assistant turn 完成后，如果最终回复前面有足够的过程内容，并且不只是很短的一句 reasoning，就会在 assistant row 前面插入。</td>
+                <td><code>blocks</code> 是抽屉里有哪些 section；<code>expanded</code> 决定是否露出 <code>process-item</code>；<code>collapsing</code> 用于完成态自动折叠动画；<code>turnID</code> 绑定原 assistant turn。</td>
+                <td><code>AssistantProcessTraceHeader</code>。点击它会更新 <code>processTraceExpansionByTurnID</code>，从而让下一次 <code>displayRows</code> 决定是否插入 <code>process-item</code>。</td>
+              </tr>
+              <tr>
+                <td><code>process-item</code></td>
+                <td>抽屉展开后看到的真实过程内容。可以把它理解成“从 assistant turn 里提前搬出来的单条 trace item”。</td>
+                <td>只有对应 <code>process-header</code> 处于展开状态，或者正在折叠动画中，才会逐条插入；折叠完成后这些 row 会从 <code>displayRows</code> 里消失。</td>
+                <td><code>item</code> 是原始 trace item；<code>section</code> 决定外层样式和 aria label；<code>itemID</code> 用于稳定定位；<code>rowID</code> 包含 turn、block、item，避免同一 item 出现在不同位置时冲突。</td>
+                <td><code>TraceItemView</code>。它还会继续按 <code>item.kind</code> 分发到 tool、text、patch、image、reasoning 等具体 renderer。</td>
+              </tr>
+              <tr>
+                <td><code>assistant</code></td>
+                <td>assistant turn 的主体行。最终回复一定要回到这里，因为复制、fork、side chat、branch 这些动作都围绕最终 assistant message。</td>
+                <td>只要 assistant turn 有可显示 item、临时提示、或插入的 user turn，就会产生。流式早期可能只有 <code>ephemeralHint</code>；完成后过程内容可能被移到 Processed 区，只留下最终回复。</td>
+                <td><code>renderedItems</code> 是主体区真正显示的 trace items；<code>processPrefixItems</code> 是同一 assistant run 的前序过程；<code>insertedUserTurns</code> 是插队用户输入；<code>ephemeralHint</code> 是无内容时的 Thinking/Running 提示。</td>
+                <td><code>ephemeralHint</code> 存在时渲染 <code>AssistantTurnPlaceholder</code>；否则走 <code>AssistantTurnSectionsWithStreamInsertions</code>，再进入 section / trace item 渲染。</td>
+              </tr>
+              <tr>
+                <td><code>permission-request</code></td>
+                <td>一个被包装成 thread row 的阻塞交互。它不是 turn，但用户需要在消息流里直接处理它，所以被放进 <code>displayRows</code>。</td>
+                <td>遍历完 turns 后，如果 <code>pendingPermissionRequests[0]</code> 存在，并且当前没有正在 resolving，就追加到队尾；用户允许/拒绝或进入 resolving 后消失。</td>
+                <td><code>rowID</code> 用权限请求 id 生成；<code>estimatedHeight: 420</code> 给虚拟滚动一个较大的初始空间，因为权限卡片内容较高。</td>
+                <td><code>PermissionRequestInlinePrompt</code>，使用当前 pending requests 和 resolving/error 状态渲染允许/拒绝操作。</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="shape-notes">
+            <strong>读一条 row 时按这个顺序看</strong>
+            <ul>
+              <li>先看 <code>row.kind</code>：它决定这行属于“消息主体、过程抽屉、抽屉内容、权限交互、上下文提示”哪一类。</li>
+              <li>再看 <code>rowID</code>：它决定 React key、虚拟列表高度缓存、滚动恢复是不是能稳定追踪这一行。</li>
+              <li>如果是 assistant 相关 row，再看 <code>turnID</code> / <code>turn</code>：它们把拆出来的过程行重新关联回同一个 assistant turn。</li>
+              <li>最后看 <code>estimatedHeight</code>：它不决定最终视觉高度，只是虚拟滚动第一次排版的估算值。</li>
+            </ul>
+          </div>
+
+          <div class="example-grid">
+            <article class="example-card is-logic">
+              <header>
+                <h3>内部顺序：user turn 怎么进 displayRows</h3>
+                <p>普通用户消息最简单，估算高度后直接入队。</p>
+              </header>
+              <pre><code>if (turn.kind === "user") {
+  if (hasStreamInsertionTarget(activeTurns, turn)) return;
+
+  rows.push({
+    kind: "user-turn",
+    rowID: turn.id,
+    turn,
+    turnIndex,
+    estimatedHeight: estimateUserThreadRowHeight(turn)
+  });
+
+  return;
+}</code></pre>
+            </article>
+
+            <article class="example-card is-logic">
+              <header>
+                <h3>内部顺序：assistant turn 怎么进 displayRows</h3>
+                <p>先拆过程区，再放 assistant 主体，所以一个 turn 可能产生多行。</p>
+              </header>
+              <pre><code>const processPrefixItems =
+  collectAssistantRunProcessPrefixItems(activeTurns, turnIndex, visibility);
+
+const insertedUserTurns =
+  getAssistantStreamInsertionUserTurns(activeTurns, turn);
+
+const renderedItems =
+  filterRenderedAssistantTraceItems(turn.items, !turn.isStreaming, visibility);
+
+const traceDisplayBlocks =
+  buildAssistantTraceDisplayBlocks({
+    items: turn.items,
+    processPrefixItems,
+    showFileChanges: !turn.isStreaming,
+    shouldCollapseReasoningAndTools: canCollapseAssistantProcessTrace(turn),
+    traceVisibility: visibility
+  });
+
+// 先 push process-header / process-item
+// 最后 push assistant row</code></pre>
+            </article>
+
+            <article class="example-card is-logic">
+              <header>
+                <h3>为什么 displayRows 需要 rowID 和 estimatedHeight</h3>
+                <p>它们让 React identity、虚拟滚动和滚动恢复能稳定工作。</p>
+              </header>
+              <pre><code>type ThreadDisplayRow = {
+  kind: "assistant" | "user-turn" | "process-item" | ...;
+  rowID: string;
+  estimatedHeight: number;
+};
+
+// 虚拟列表先用 estimatedHeight 排版
+// DOM 渲染后 ResizeObserver 测量真实高度
+// measuredHeights[rowID] 会修正下一次 layout</code></pre>
+            </article>
+          </div>
+
+          <div class="shape-notes">
+            <strong>用 displayRows 读 ThreadView 的心智模型</strong>
+            <ul>
+              <li><code>activeTurns</code> 是业务历史；<code>displayRows</code> 是屏幕历史。两者不是一一对应。</li>
+              <li>一个 assistant turn 可能变成 <code>process-header</code>、多个 <code>process-item</code>、一个 <code>assistant</code> row。</li>
+              <li>stream insertion 的 user turn 会从普通位置跳过，然后嵌回对应 assistant row 内部。</li>
+              <li>权限请求不属于 turns，但会被追加成 row，因此用户看到它像 thread 的一部分。</li>
+              <li><code>displayRows</code> 之后的所有系统都更关心 row：虚拟滚动、滚动恢复、动画状态和最终 UI 分发。</li>
+            </ul>
+          </div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

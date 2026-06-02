@@ -216,7 +216,7 @@
   grid-template-columns: minmax(0, 1fr) 22px;
   align-items: center;
   gap: 8px;
-  padding: 5px 4px 6px 8px;
+  padding: 5px 4px 6px 0;
   border: 0;
   border-radius: var(--seg-radius-xs);
   background: transparent;
@@ -237,7 +237,7 @@
 .assistant-process-trace-header::after {
   content: "";
   position: absolute;
-  left: 8px;
+  left: 0;
   right: 4px;
   bottom: 0;
   height: 1px;
@@ -3705,6 +3705,10 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
   background: transparent;
   box-shadow: none;
   padding: 0;
+}
+
+.assistant-process-item-row .trace-log-row {
+  padding-left: 0;
 }
 
 .trace-item-toggle-summary {

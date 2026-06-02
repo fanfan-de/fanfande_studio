@@ -1,6 +1,6 @@
 # Thread View 前端设计说明
 
-更新日期：2026-06-02
+更新日期：2026-06-03
 
 ## 1. 文档定位
 
@@ -144,6 +144,79 @@ AssistantTraceItem[]
 │  └─ compaction
 └─ debug  # 默认隐藏的开发调试信息
    └─ debugEntries / developer metadata
+```
+
+### 数据到渲染流程图
+
+这张图表达从会话数据到屏幕 UI 的主路径。更适合视觉阅读的离线版本见 [`thread-view-render-flow.html`](./thread-view-render-flow.html)。
+
+```mermaid
+flowchart LR
+  subgraph data["数据输入"]
+    turns["activeTurns: Turn[]"]
+    session["activeSession / messageTree"]
+    pending["pendingPermissionRequests"]
+  end
+
+  subgraph normalize["ThreadView 归一化"]
+    displayRows["buildThreadDisplayRows()"]
+    virtual["virtual layout\n长列表时启用"]
+    scroll["scroll state\n锁底 / 恢复 / 用户意图"]
+  end
+
+  subgraph shell["Thread 外壳"]
+    visible["VisibleThreadView"]
+    column["section.thread-shell\n+ div.thread-column"]
+    rows["renderThreadRows()"]
+  end
+
+  subgraph rowRender["行级渲染"]
+    dispatch["renderDisplayRow(row)"]
+    user["UserTurnArticle"]
+    permission["PermissionRequestInlinePrompt"]
+    processHeader["Processed header"]
+    processItem["process item row"]
+    assistant["assistant-turn"]
+  end
+
+  subgraph assistantRender["Assistant 内部分块"]
+    sections["AssistantTurnSections"]
+    blocks["AssistantTraceBlockView"]
+    trace["TraceItemView"]
+    renderer["traceItemRenderers[item.kind]"]
+  end
+
+  subgraph output["屏幕结果"]
+    response["最终回复正文"]
+    traces["reasoning / tools / workflow"]
+    actions["copy / branch / side chat / fork"]
+    lightbox["ImageLightbox"]
+  end
+
+  turns --> displayRows
+  session --> displayRows
+  pending --> displayRows
+  displayRows --> virtual
+  displayRows --> visible
+  scroll --> column
+  visible --> column
+  column --> rows
+  virtual --> rows
+  rows --> dispatch
+  dispatch --> user
+  dispatch --> permission
+  dispatch --> processHeader
+  dispatch --> processItem
+  dispatch --> assistant
+  processItem --> trace
+  assistant --> sections
+  sections --> blocks
+  blocks --> trace
+  trace --> renderer
+  renderer --> response
+  renderer --> traces
+  assistant --> actions
+  renderer --> lightbox
 ```
 
 ### UI 组件树
