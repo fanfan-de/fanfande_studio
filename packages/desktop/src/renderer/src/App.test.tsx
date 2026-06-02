@@ -12555,9 +12555,13 @@ describe("App", () => {
     )
     expect(styles).toMatch(/--canvas-region-tab-inactive-bg:\s*var\(--mix-seg-shell-84-seg-panel-muted-16\);/s)
     expect(styles).toMatch(/--canvas-region-tab-focus:\s*var\(--semantic-icon-button-surface-hover\);/s)
+    expect(styles).toMatch(/--dockview-tab-focus-accent:\s*color-mix\(in srgb,\s*var\(--dockview-tab-divider\) 56%,\s*var\(--seg-text-2\) 44%\);/s)
     expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dv-tab\s*\{[^}]*position:\s*relative;[^}]*margin:\s*0 0 -1px;[^}]*background:\s*transparent;[^}]*overflow:\s*hidden;/s)
     expect(styles).toMatch(
       /\.dockview-theme-anybox\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-active-tab,[\s\S]*?\.dv-tab\.dv-active-tab\s*\{[^}]*background:\s*var\(--dockview-tab-active-bg\);[^}]*box-shadow:[^}]*inset 0 1px 0 var\(--dockview-tab-border\)/s,
+    )
+    expect(styles).toMatch(
+      /\.dockview-theme-anybox\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-active-tab::after\s*\{[^}]*content:\s*"";[^}]*top:\s*0;[^}]*height:\s*4px;[^}]*background:\s*var\(--dockview-tab-focus-accent\);/s,
     )
     expect(styles).toMatch(
       /\.dockview-theme-anybox\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-inactive-tab,[\s\S]*?\.dv-tab\.dv-inactive-tab\s*\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--seg-text-2\);/s,
@@ -12588,6 +12592,10 @@ describe("App", () => {
     )
     expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dockview-workbench-tab-content\s*\{[^}]*height:\s*100%;[^}]*padding:\s*0 8px 0 12px;/s)
     expect(styles).not.toMatch(/session-tab-active-curve/)
+    expect(styles).toMatch(/--right-sidebar-tab-focus-accent:\s*color-mix\(in srgb,\s*var\(--right-sidebar-tab-divider\) 56%,\s*var\(--seg-text-2\) 44%\);/s)
+    expect(styles).toMatch(
+      /\.right-sidebar-tab\.is-active::before\s*\{[^}]*content:\s*"";[^}]*top:\s*0;[^}]*height:\s*4px;[^}]*background:\s*var\(--right-sidebar-tab-focus-accent\);/s,
+    )
     expect(styles).toMatch(
       /\.canvas-region-top-menu\s+\.session-tab:hover,\s*\.canvas-region-top-menu\s+\.session-tab:focus-within\s*\{[^}]*background:\s*var\(--top-chrome-focus-surface\);[^}]*border-color:\s*transparent;/s,
     )
