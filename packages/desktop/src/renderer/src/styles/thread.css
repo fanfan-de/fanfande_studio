@@ -208,31 +208,81 @@
 }
 
 .assistant-process-trace-header {
+  position: relative;
   width: 100%;
   min-width: 0;
   min-height: 28px;
   display: grid;
-  grid-template-columns: 16px auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 22px;
   align-items: center;
   gap: 8px;
-  padding: 2px 8px;
+  padding: 5px 4px 6px 8px;
   border: 0;
   border-radius: var(--seg-radius-xs);
   background: transparent;
   color: var(--seg-text-2);
   font: inherit;
   text-align: left;
-  cursor: pointer;
   transition:
     background-color 160ms ease,
     color 160ms ease;
 }
 
 .assistant-process-trace-header:hover,
-.assistant-process-trace-header:focus-visible {
+.assistant-process-trace-header:focus-within {
   background: var(--mix-seg-panel-muted-86-transparent-14);
   color: var(--seg-text-1);
-  outline: none;
+}
+
+.assistant-process-trace-header::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 4px;
+  bottom: 0;
+  height: 1px;
+  background: var(--seg-divider, var(--border-subtle));
+  opacity: 0.86;
+  pointer-events: none;
+}
+
+.assistant-process-trace-copy {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.assistant-process-trace-toggle {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--seg-radius-xs);
+  background: transparent;
+  color: currentColor;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.assistant-process-trace-toggle:hover,
+.assistant-process-trace-toggle:focus-visible {
+  background: var(--mix-seg-panel-muted-86-transparent-14);
+  color: var(--seg-text-1);
+}
+
+.assistant-process-trace-toggle:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
 }
 
 .assistant-process-trace-chevron {

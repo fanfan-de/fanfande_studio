@@ -28,4 +28,9 @@ describe("i18n translations", () => {
     expect(getTranslationDictionary("zh-CN")["settings.appearance.languageTitle"]).toBe("显示语言")
     expect(getTranslationDictionary("en-US")["settings.appearance.languageTitle"]).toBe("Display Language")
   })
+
+  it("exposes process trace translations", () => {
+    expect(getTranslationDictionary("zh-CN")["thread.processTrace.title"]).toBe("\u5df2\u5904\u7406")
+    expect(getTranslationDictionary("en-US")["thread.processTrace.title"]).toBe("Processed")
+  })
 })

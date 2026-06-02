@@ -40,6 +40,7 @@ import {
 import { ThreadHtml } from "../thread-html"
 import { parseAssistantResponseFormat, stripStreamingResponseFormatMarker } from "../thread-response-format"
 import { ThreadRichText } from "../thread-rich-text"
+import { useI18n } from "../i18n/I18nProvider"
 import { logRendererPerf } from "../perf-profiler"
 import { SIDEBAR_RESIZE_END_EVENT } from "../sidebar-resize-events"
 import type {
@@ -1676,6 +1677,51 @@ function summarizeProcessTraceBlocks(blocks: AssistantTraceBlock[]) {
   return parts.length > 0 ? parts.join(" · ") : pluralizeTraceUnit(items.length, "event")
 }
 
+interface AssistantProcessTraceHeaderProps {
+  controlsID?: string
+  duration: string | null
+  isExpanded: boolean
+  onToggle: () => void
+  summary: string
+}
+
+function AssistantProcessTraceHeader({
+  controlsID,
+  duration,
+  isExpanded,
+  onToggle,
+  summary,
+}: AssistantProcessTraceHeaderProps) {
+  const { t } = useI18n()
+  const title = t("thread.processTrace.title")
+  const toggleAction = t(isExpanded ? "thread.processTrace.collapse" : "thread.processTrace.expand")
+  const details = [duration, summary].filter((part): part is string => Boolean(part)).join(" ")
+  const toggleLabel = details ? `${toggleAction} ${title} ${details}` : `${toggleAction} ${title}`
+
+  return (
+    <div className="assistant-process-trace-header">
+      <div className="assistant-process-trace-copy">
+        <span className="assistant-process-trace-title">{title}</span>
+        {duration ? <span className="assistant-process-trace-duration">{duration}</span> : null}
+        <span className="assistant-process-trace-summary">{summary}</span>
+      </div>
+      <button
+        className="assistant-process-trace-toggle"
+        type="button"
+        aria-label={toggleLabel}
+        aria-expanded={isExpanded}
+        aria-controls={controlsID}
+        title={toggleLabel}
+        onClick={onToggle}
+      >
+        <span className="assistant-process-trace-chevron" aria-hidden="true">
+          {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+        </span>
+      </button>
+    </div>
+  )
+}
+
 function getAssistantEphemeralHint(turn: AssistantTurn) {
   switch (turn.runtime.phase) {
     case "requesting":
@@ -1908,6 +1954,7 @@ function AssistantProcessTraceDisclosure({
   runtime?: AssistantTurnRuntime
 }) {
   const [isExpanded, setIsExpanded] = useState(() => !shouldCollapseReasoningAndTools)
+  const { t } = useI18n()
   const processTraceKey = blocks.map((block) => block.items.map((item) => item.id).join(",")).join("|")
   const duration = formatAssistantTraceDuration(runtime)
   const summary = summarizeProcessTraceBlocks(blocks)
@@ -1926,23 +1973,15 @@ function AssistantProcessTraceDisclosure({
     <section
       className={joinClassNames("assistant-process-trace", isExpanded ? "is-expanded" : "is-collapsed")}
       role="region"
-      aria-label="Processed trace"
+      aria-label={t("thread.processTrace.region")}
     >
-      <button
-        className="assistant-process-trace-header"
-        type="button"
-        aria-label={`Processed ${duration ? `${duration} ` : ""}${summary}`}
-        aria-expanded={isExpanded}
-        aria-controls={contentID}
-        onClick={() => setIsExpanded((current) => !current)}
-      >
-        <span className="assistant-process-trace-chevron" aria-hidden="true">
-          {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-        </span>
-        <span className="assistant-process-trace-title">Processed</span>
-        {duration ? <span className="assistant-process-trace-duration">{duration}</span> : null}
-        <span className="assistant-process-trace-summary">{summary}</span>
-      </button>
+      <AssistantProcessTraceHeader
+        controlsID={contentID}
+        duration={duration}
+        isExpanded={isExpanded}
+        summary={summary}
+        onToggle={() => setIsExpanded((current) => !current)}
+      />
 
       {isExpanded ? (
         <div id={contentID} className="assistant-process-trace-body">
@@ -6392,20 +6431,12 @@ function VisibleThreadView({
           data-turn-id={row.turnID}
           data-turn-motion={readThreadTurnMotion(row.turnID, row.turn.isStreaming)}
         >
-          <button
-            className="assistant-process-trace-header"
-            type="button"
-            aria-label={`Processed ${duration ? `${duration} ` : ""}${summary}`}
-            aria-expanded={row.expanded}
-            onClick={() => toggleProcessTraceRow(row.turnID, row.expanded, row.collapsing)}
-          >
-            <span className="assistant-process-trace-chevron" aria-hidden="true">
-              {row.expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-            </span>
-            <span className="assistant-process-trace-title">Processed</span>
-            {duration ? <span className="assistant-process-trace-duration">{duration}</span> : null}
-            <span className="assistant-process-trace-summary">{summary}</span>
-          </button>
+          <AssistantProcessTraceHeader
+            duration={duration}
+            isExpanded={row.expanded}
+            summary={summary}
+            onToggle={() => toggleProcessTraceRow(row.turnID, row.expanded, row.collapsing)}
+          />
         </article>
       )
     }

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTraceItem, type AssistantTraceItemKind, type AssistantTurn, type SessionSummary, type Turn, type UserTurn } from "../types"
 import type { SessionMessageTree } from "../session-message-tree"
 import { SIDEBAR_RESIZE_END_EVENT } from "../sidebar-resize-events"
+import { I18nProvider } from "../i18n/I18nProvider"
 import { ThreadView } from "./ThreadView"
 
 const session: SessionSummary = {
@@ -72,9 +73,12 @@ function userTurn(id: string, text: string): UserTurn {
   }
 }
 
-function renderThread(activeTurns: Turn[], overrides: Partial<ComponentProps<typeof ThreadView>> = {}) {
-  const threadColumnRef = createRef<HTMLDivElement | null>()
-  const props: ComponentProps<typeof ThreadView> = {
+function createThreadProps(
+  activeTurns: Turn[],
+  threadColumnRef = createRef<HTMLDivElement | null>(),
+  overrides: Partial<ComponentProps<typeof ThreadView>> = {},
+) {
+  return {
     activeSession: session,
     activeTurns,
     assistantTraceVisibility: DEFAULT_ASSISTANT_TRACE_VISIBILITY,
@@ -88,7 +92,12 @@ function renderThread(activeTurns: Turn[], overrides: Partial<ComponentProps<typ
     onAskUserQuestionAnswer: vi.fn(),
     onPermissionRequestResponse: vi.fn(),
     ...overrides,
-  }
+  } satisfies ComponentProps<typeof ThreadView>
+}
+
+function renderThread(activeTurns: Turn[], overrides: Partial<ComponentProps<typeof ThreadView>> = {}) {
+  const threadColumnRef = createRef<HTMLDivElement | null>()
+  const props = createThreadProps(activeTurns, threadColumnRef, overrides)
   const view = render(<ThreadView {...props} />)
 
   return {
@@ -1528,6 +1537,90 @@ describe("ThreadView trace collapse", () => {
     expect(processedTrace).toHaveAttribute("aria-expanded", "true")
     expect(getByText("I will inspect the project first.")).toBeInTheDocument()
     expect(getByText("list-directory")).toBeInTheDocument()
+  })
+
+  it("keeps process trace copy on the left and the collapse button at the row end", () => {
+    const { getByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "tool-1",
+            kind: "tool",
+            timestamp: 1,
+            label: "Tool",
+            title: "list-directory",
+            status: "completed",
+          },
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 2,
+            label: "Assistant",
+            text: "The project is ready.",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    const processedTrace = getByRole("button", { name: /Processed/ })
+    const header = processedTrace.closest(".assistant-process-trace-header")
+
+    expect(header).not.toBeNull()
+    expect(header?.firstElementChild).toHaveClass("assistant-process-trace-copy")
+    expect(header?.lastElementChild).toBe(processedTrace)
+    expect(header?.querySelector(".assistant-process-trace-title")).toHaveTextContent("Processed")
+  })
+
+  it("localizes the process trace title in Chinese mode", async () => {
+    const previousDesktop = window.desktop
+    window.desktop = undefined
+    window.localStorage.setItem("desktop.locale", "zh-CN")
+
+    const threadColumnRef = createRef<HTMLDivElement | null>()
+    const props = createThreadProps(
+      [
+        assistantTraceTurn(
+          "assistant-1",
+          [
+            {
+              id: "tool-1",
+              kind: "tool",
+              timestamp: 1,
+              label: "Tool",
+              title: "list-directory",
+              status: "completed",
+            },
+            {
+              id: "response-1",
+              kind: "text",
+              timestamp: 2,
+              label: "Assistant",
+              text: "The project is ready.",
+              status: "completed",
+            },
+          ],
+          false,
+        ),
+      ],
+      threadColumnRef,
+    )
+    const view = render(
+      <I18nProvider>
+        <ThreadView {...props} />
+      </I18nProvider>,
+    )
+
+    try {
+      expect(await screen.findByText("\u5df2\u5904\u7406")).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: /\u5df2\u5904\u7406/ })).toHaveAttribute("aria-expanded", "false")
+    } finally {
+      view.unmount()
+      window.localStorage.removeItem("desktop.locale")
+      window.desktop = previousDesktop
+    }
   })
 
   it("renders a single short reasoning note before the final response without Processed", () => {
