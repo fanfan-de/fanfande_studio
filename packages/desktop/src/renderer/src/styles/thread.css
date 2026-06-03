@@ -350,7 +350,7 @@
   border: 0;
   background: transparent;
   box-shadow: none;
-  padding: 0 0 0 22px;
+  padding: 0;
 }
 
 .assistant-process-item-row > * {
@@ -3613,10 +3613,6 @@ body.is-resizing-sidebar .user-turn-diff-file-entry {
   background: transparent;
   box-shadow: none;
   padding: 0;
-}
-
-.assistant-process-item-row .trace-log-row {
-  padding-left: 0;
 }
 
 .trace-item-toggle-summary {
