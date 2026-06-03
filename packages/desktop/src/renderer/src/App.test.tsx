@@ -12487,6 +12487,8 @@ describe("App", () => {
       /\.dockview-theme-anybox\s+\.dv-tabs-and-actions-container::after\s*\{[^}]*bottom:\s*0;[^}]*height:\s*1px;[^}]*background:\s*var\(--dockview-tab-border\);/s,
     )
     expect(styles).toMatch(/\.sidebar-resizer\s*\{[^}]*--sidebar-resizer-top-surface:\s*var\(--seg-pane-tab-bar-surface\);[^}]*background-color:\s*transparent;[^}]*background-image:\s*linear-gradient\(var\(--sidebar-resizer-top-surface\),\s*var\(--sidebar-resizer-top-surface\)\);[^}]*background-position:\s*top;[^}]*background-size:\s*100%\s*var\(--section-toolbar-height\);[^}]*background-repeat:\s*no-repeat;/s)
+    expect(styles).toMatch(/\.sidebar-resizer\s*\{[^}]*--sidebar-resizer-line-x:\s*10px;[^}]*justify-self:\s*end;[^}]*background-image:/s)
+    expect(styles).toMatch(/\.sidebar-resizer\.is-right\s*\{[^}]*--sidebar-resizer-line-x:\s*0;[^}]*justify-self:\s*start;/s)
     expect(styles).toMatch(/\.sidebar-resizer::after\s*\{[^}]*top:\s*calc\(var\(--section-toolbar-height\)\s*-\s*1px\);[^}]*height:\s*1px;[^}]*background:\s*var\(--seg-border\);/s)
     expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dv-tabs-container\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dv-tabs-and-actions-container\s+\.dv-void-container\.dv-draggable\s*\{[^}]*-webkit-app-region:\s*drag;/s)

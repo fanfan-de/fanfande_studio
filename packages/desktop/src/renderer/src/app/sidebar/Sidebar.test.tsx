@@ -159,7 +159,7 @@ describe("Sidebar", () => {
     expect(screen.getByRole("button", { name: "Unread" })).toBeInTheDocument()
   })
 
-  it("marks linked worktree folders with a worktree badge", () => {
+  it("marks linked worktree folders with a worktree icon", () => {
     const primaryWorkspace = createWorkspace("workspace-primary", "Primary")
     primaryWorkspace.directory = "C:/repo/app/client"
     primaryWorkspace.project = {

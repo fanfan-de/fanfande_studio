@@ -440,13 +440,10 @@ body.is-resizing-sidebar .sidebar-resizer::before {
   font-weight: 500;
 }
 
-.project-row-worktree-badge {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  border: 1px solid var(--mix-seg-accent-24-seg-border-76);
-  border-radius: 999px;
-  background: var(--mix-seg-accent-soft-84-transparent-16);
+.project-row-worktree-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
   color: var(--seg-accent-strong);
   display: inline-flex;
   align-self: center;
@@ -454,9 +451,9 @@ body.is-resizing-sidebar .sidebar-resizer::before {
   justify-content: center;
 }
 
-.project-row-worktree-badge svg {
-  width: 11px;
-  height: 11px;
+.project-row-worktree-icon svg {
+  width: 14px;
+  height: 14px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;

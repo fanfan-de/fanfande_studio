@@ -797,7 +797,7 @@ function FolderWorkspaceView({
                     <span className="project-row-label">{workspace.name}</span>
                     {linkedWorktreeRoot ? (
                       <span
-                        className="project-row-worktree-badge"
+                        className="project-row-worktree-icon"
                         title={`Linked worktree: ${linkedWorktreeRoot}`}
                         data-testid={`project-linked-worktree-${workspace.id}`}
                         aria-hidden="true"
