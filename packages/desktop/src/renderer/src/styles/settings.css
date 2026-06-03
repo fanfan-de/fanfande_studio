@@ -4937,20 +4937,6 @@ body.is-dragging-settings-page {
   border-radius: 0 var(--seg-radius-xs) var(--seg-radius-xs) 0;
 }
 
-.session-canvas-top-menu .canvas-top-menu-editor-menu-button::before {
-  top: 9px;
-  bottom: 9px;
-  background: var(--seg-border);
-}
-
-.session-canvas-top-menu .canvas-top-menu-editor-launch-button:hover + .canvas-top-menu-editor-menu-button::before,
-.session-canvas-top-menu .canvas-top-menu-editor-menu-button:hover::before,
-.session-canvas-top-menu .canvas-top-menu-editor-menu-button:focus-visible::before,
-.session-canvas-top-menu .canvas-top-menu-editor-menu-button.is-active::before {
-  background: var(--seg-composer-button-text);
-  opacity: 0.28;
-}
-
 .session-canvas-top-menu .canvas-top-menu-permission-trigger,
 .session-canvas-top-menu .canvas-top-menu-plugin-trigger,
 .session-canvas-top-menu .canvas-top-menu-mcp-trigger,

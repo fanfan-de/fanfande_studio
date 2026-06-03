@@ -211,9 +211,18 @@ function getProviderLogoInitial(provider: ProviderCatalogItem) {
 }
 
 function ProviderLogo({ provider, className = "" }: { provider: ProviderCatalogItem; className?: string }) {
+  const [loadedImageProviderID, setLoadedImageProviderID] = useState<string | null>(null)
+  const isImageLoaded = loadedImageProviderID === provider.id
+
+  useEffect(() => {
+    setLoadedImageProviderID(null)
+  }, [provider.id])
+
   return (
     <span className={className ? `provider-logo ${className}` : "provider-logo"} aria-hidden="true">
-      <span className="provider-logo-fallback">{getProviderLogoInitial(provider)}</span>
+      <span className="provider-logo-fallback" hidden={isImageLoaded}>
+        {getProviderLogoInitial(provider)}
+      </span>
       <img
         key={provider.id}
         className="provider-logo-image"
@@ -221,7 +230,11 @@ function ProviderLogo({ provider, className = "" }: { provider: ProviderCatalogI
         alt=""
         loading="lazy"
         decoding="async"
+        onLoad={() => {
+          setLoadedImageProviderID(provider.id)
+        }}
         onError={(event) => {
+          setLoadedImageProviderID(null)
           event.currentTarget.hidden = true
         }}
       />

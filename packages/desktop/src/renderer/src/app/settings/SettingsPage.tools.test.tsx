@@ -330,6 +330,51 @@ describe("SettingsPage built-in tools", () => {
     expect(screen.queryByRole("list", { name: "Project worktrees" })).not.toBeInTheDocument()
   })
 
+  it("hides provider logo fallback text after the remote logo image loads", () => {
+    const { container } = render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          catalog: [createProvider("deepseek", "DeepSeek")],
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Provider" }))
+
+    const logo = container.querySelector(".provider-logo")
+    const fallback = logo?.querySelector(".provider-logo-fallback")
+    const image = logo?.querySelector(".provider-logo-image")
+
+    expect(fallback).not.toHaveAttribute("hidden")
+    expect(image).not.toHaveAttribute("hidden")
+
+    fireEvent.load(image!)
+
+    expect(fallback).toHaveAttribute("hidden")
+    expect(image).not.toHaveAttribute("hidden")
+  })
+
+  it("keeps provider logo fallback text when the remote logo image fails", () => {
+    const { container } = render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          catalog: [createProvider("unknown-provider", "Unknown Provider")],
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Provider" }))
+
+    const logo = container.querySelector(".provider-logo")
+    const fallback = logo?.querySelector(".provider-logo-fallback")
+    const image = logo?.querySelector(".provider-logo-image")
+
+    fireEvent.error(image!)
+
+    expect(fallback).not.toHaveAttribute("hidden")
+    expect(image).toHaveAttribute("hidden")
+  })
+
   it("filters archived sessions by title, project, and path", () => {
     render(
       <SettingsPage
