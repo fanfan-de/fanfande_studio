@@ -9785,6 +9785,7 @@ describe("App", () => {
         providerID: "anybox",
         method: "anybox-browser",
         baseURL: "https://anybox.test/v1",
+        prompt: "select_account",
       })
       expect(payload).not.toHaveProperty("proxyMode")
       expect(payload).not.toHaveProperty("proxyURL")

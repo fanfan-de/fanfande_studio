@@ -53,6 +53,9 @@ type CodexAuthCache = z.infer<typeof CodexAuthCache>
 const ProviderAuthScope = z.literal("global")
 export type ProviderAuthScope = z.infer<typeof ProviderAuthScope>
 
+const ProviderAuthPrompt = z.enum(["login", "select_account"])
+export type ProviderAuthPrompt = z.infer<typeof ProviderAuthPrompt>
+
 export const ProviderAuthCapability = z
   .object({
     method: z.string().min(1),
@@ -180,6 +183,7 @@ type ProviderFlowContext = {
   method: string
   serverBaseURL: string
   providerBaseURL?: string
+  prompt?: ProviderAuthPrompt
 }
 
 type InternalFlow = ProviderAuthFlow & {
@@ -1153,6 +1157,7 @@ function buildAnyboxBrowserAuthorizeURL(input: {
   redirectURI: string
   codeChallenge: string
   state: string
+  prompt?: ProviderAuthPrompt
 }) {
   const url = new URL(anyboxURL(input.baseURL, "/api/agent/oauth/authorize"))
   url.searchParams.set("response_type", "code")
@@ -1162,6 +1167,9 @@ function buildAnyboxBrowserAuthorizeURL(input: {
   url.searchParams.set("state", input.state)
   url.searchParams.set("code_challenge", input.codeChallenge)
   url.searchParams.set("code_challenge_method", "S256")
+  if (input.prompt) {
+    url.searchParams.set("prompt", input.prompt)
+  }
   return url.toString()
 }
 
@@ -1879,6 +1887,7 @@ async function startAnyboxBrowserFlow(input: ProviderFlowContext) {
     redirectURI,
     codeChallenge,
     state,
+    prompt: input.prompt,
   })
 
   const flow: InternalFlow = {

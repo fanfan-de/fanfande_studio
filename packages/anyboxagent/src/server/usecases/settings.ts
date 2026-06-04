@@ -123,6 +123,7 @@ export const ConnectorAuthFlowBody = z.object({}).optional()
 export const ProviderAuthFlowBody = z.object({
   method: z.string().min(1),
   baseURL: z.string().nullable().optional(),
+  prompt: z.enum(["login", "select_account"]).optional(),
 })
 
 export const ProviderAuthApiKeyBody = z.object({
@@ -693,6 +694,7 @@ export async function startProviderAuthFlow(input: {
   method: string
   serverBaseURL: string
   baseURL?: string | null
+  prompt?: "login" | "select_account"
 }) {
   try {
     const catalog = await Provider.catalog()

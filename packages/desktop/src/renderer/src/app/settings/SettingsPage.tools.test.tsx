@@ -393,7 +393,7 @@ describe("SettingsPage built-in tools", () => {
     expect(container.querySelector('input[type="password"]')).toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Log in to Anybox" }))
-    expect(onStartProviderAuthFlow).toHaveBeenCalledWith("anybox")
+    expect(onStartProviderAuthFlow).toHaveBeenCalledWith("anybox", { prompt: "select_account" })
   })
 
   it("shows a cancellable pending Anybox account flow", () => {

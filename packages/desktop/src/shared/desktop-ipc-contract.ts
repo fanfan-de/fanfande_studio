@@ -784,6 +784,8 @@ export interface DesktopProviderConnectionTestInput {
   baseURL?: string | null
 }
 
+export type DesktopProviderAuthPrompt = "login" | "select_account"
+
 export interface DesktopModelSelectionUpdateInput {
   model?: string | null
   small_model?: string | null
@@ -1269,6 +1271,7 @@ export interface DesktopIpcContract {
       providerID: string
       method: string
       baseURL?: string | null
+      prompt?: DesktopProviderAuthPrompt
     }
     output: AgentProviderAuthFlow
   }

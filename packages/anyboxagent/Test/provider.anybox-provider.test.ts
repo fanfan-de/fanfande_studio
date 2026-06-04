@@ -95,10 +95,30 @@ test("anybox browser login starts without Anybox connectivity preflight", async 
     expect(authorizationURL.origin).toBe("https://anybox.test")
     expect(authorizationURL.pathname).toBe("/api/agent/oauth/authorize")
     expect(authorizationURL.searchParams.get("client_id")).toBe("anybox-agent")
+    expect(authorizationURL.searchParams.get("prompt")).toBeNull()
 
     await ProviderAuth.cancelProviderAuthFlow("anybox", flow.id)
   } finally {
     restoreHTTP()
+  }
+})
+
+test("anybox browser login can request account selection", async () => {
+  const flow = await ProviderAuth.startProviderAuthFlow({
+    providerID: "anybox",
+    method: "anybox-browser",
+    serverBaseURL: "http://localhost",
+    providerBaseURL: "https://anybox.test/v1",
+    prompt: "select_account",
+  })
+
+  try {
+    const authorizationURL = new URL(flow.authorizationURL ?? "")
+
+    expect(authorizationURL.pathname).toBe("/api/agent/oauth/authorize")
+    expect(authorizationURL.searchParams.get("prompt")).toBe("select_account")
+  } finally {
+    await ProviderAuth.cancelProviderAuthFlow("anybox", flow.id)
   }
 })
 

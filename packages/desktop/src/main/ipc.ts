@@ -2616,6 +2616,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
         providerID: string
         method: string
         baseURL?: string | null
+        prompt?: "login" | "select_account"
       },
     ) => {
       const providerID = input.providerID.trim()
@@ -2629,6 +2630,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
           body: JSON.stringify({
             method: input.method,
             baseURL: input.baseURL,
+            prompt: input.prompt,
           }),
         },
       )

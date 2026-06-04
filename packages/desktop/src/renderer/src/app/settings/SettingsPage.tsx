@@ -15,7 +15,7 @@ import {
   type AppearanceTokenMap,
   type AppearanceTokenName,
 } from "../../../../shared/appearance"
-import type { DesktopAppUpdateState, DesktopStoragePaths } from "../../../../shared/desktop-ipc-contract"
+import type { DesktopAppUpdateState, DesktopProviderAuthPrompt, DesktopStoragePaths } from "../../../../shared/desktop-ipc-contract"
 import {
   AccountSettingsIcon,
   ArchiveRestoreIcon,
@@ -1134,7 +1134,10 @@ interface SettingsPageProps {
       baseURL?: string | null
     },
   ) => boolean | Promise<boolean>
-  onStartProviderAuthFlow: (providerID: string) => boolean | Promise<boolean>
+  onStartProviderAuthFlow: (
+    providerID: string,
+    options?: { prompt?: DesktopProviderAuthPrompt },
+  ) => boolean | Promise<boolean>
   onStartNewMcpServer: () => void
   onCancelProviderAuthFlow: (providerID: string) => boolean | Promise<boolean>
 }
@@ -1709,7 +1712,7 @@ export function SettingsPage({
 
     function handleAnyboxAccountSignIn() {
       if (!anyboxAccountProvider || anyboxAccountBusy) return
-      void onStartProviderAuthFlow(anyboxAccountProvider.id)
+      void onStartProviderAuthFlow(anyboxAccountProvider.id, { prompt: "select_account" })
     }
 
     function handleAnyboxAccountCancel() {

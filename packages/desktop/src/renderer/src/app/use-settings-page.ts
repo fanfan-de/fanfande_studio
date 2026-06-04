@@ -32,6 +32,7 @@ import { mergeMcpToolPolicyDefaults } from "./mcp/mcp-tool-policies"
 import { parseMcpConfigJson } from "./mcp/mcp-config-import"
 import { arePluginCatalogsEqual, mergePluginCatalogWithInstalled } from "./plugin-catalog"
 import { useToast } from "./toast"
+import type { DesktopProviderAuthPrompt } from "../../../shared/desktop-ipc-contract"
 
 interface SettingsMessage {
   tone: "success" | "error"
@@ -2456,7 +2457,10 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
-  async function startProviderAuthFlow(providerID: string) {
+  async function startProviderAuthFlow(
+    providerID: string,
+    options: { prompt?: DesktopProviderAuthPrompt } = {},
+  ) {
     if (!window.desktop?.startGlobalProviderAuthFlow) return false
 
     const provider = catalog.find((item) => item.id === providerID)
@@ -2472,6 +2476,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         providerID,
         method,
         baseURL: draft?.baseURL?.trim() || provider.baseURL || null,
+        prompt: options.prompt,
       })
 
       setProviderDrafts((current) => ({

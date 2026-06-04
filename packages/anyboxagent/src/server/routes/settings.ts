@@ -60,6 +60,7 @@ export function SettingsRoutes() {
         method: payload.method,
         serverBaseURL: resolveServerBaseURL(c.req.url),
         baseURL: payload.baseURL,
+        prompt: payload.prompt,
       }),
     )
   })

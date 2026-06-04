@@ -462,6 +462,7 @@ try {
       providerID: string
       method: string
       baseURL?: string | null
+      prompt?: "login" | "select_account"
     }) =>
       invokeDesktop("desktop:start-global-provider-auth-flow", input) as Promise<AgentProviderAuthFlow>,
     getGlobalProviderAuthFlow: (input: { providerID: string; flowID: string }) =>
