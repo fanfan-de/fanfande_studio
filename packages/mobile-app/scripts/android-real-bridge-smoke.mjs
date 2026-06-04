@@ -25,7 +25,7 @@ function usage() {
     "Anybox Android Real Bridge Smoke Test",
     "",
     "Usage:",
-    "  pnpm --filter anybox-mobile-app run android:smoke:bridge -- --url \"http://192.168.1.20:4896/?code=...\"",
+    "  pnpm --filter anybox-mobile-app run android:smoke:bridge -- --url \"https://anybox.com.cn/?code=...\"",
     "  pnpm --filter anybox-mobile-app run android:smoke:bridge -- --url \"anybox-mobile://connect?url=...\"",
     "  pnpm --filter anybox-mobile-app run android:smoke:bridge",
     "",

@@ -168,6 +168,42 @@ function createProvider(id: string, name: string): ComponentProps<typeof Setting
   }
 }
 
+type SettingsProvider = ComponentProps<typeof SettingsPage>["catalog"][number]
+
+type SettingsProviderOverrides = Omit<Partial<SettingsProvider>, "authCapabilities" | "authState"> & {
+  authCapabilities?: SettingsProvider["authCapabilities"]
+  authState?: Partial<SettingsProvider["authState"]>
+}
+
+function createAnyboxProvider(overrides: SettingsProviderOverrides = {}): SettingsProvider {
+  const authCapabilities = overrides.authCapabilities ?? [
+    {
+      method: "anybox-browser",
+      label: "Anybox",
+      kind: "browser_oauth" as const,
+      recommended: true,
+      supportsDisconnect: true,
+      supportsPolling: true,
+    },
+  ]
+  const base = createProvider("anybox", "Anybox")
+
+  return {
+    ...base,
+    ...overrides,
+    apiKeyConfigured: false,
+    authCapabilities,
+    authState: {
+      ...base.authState,
+      activeMethod: "anybox-browser",
+      capabilities: authCapabilities,
+      credentials: [],
+      status: "not_connected",
+      ...overrides.authState,
+    },
+  }
+}
+
 function createModel(
   providerID: string,
   id: string,
@@ -328,6 +364,136 @@ describe("SettingsPage built-in tools", () => {
     expect(screen.queryByRole("button", { name: "Worktrees" })).not.toBeInTheDocument()
     expect(screen.queryByText("Tracked Worktrees")).not.toBeInTheDocument()
     expect(screen.queryByRole("list", { name: "Project worktrees" })).not.toBeInTheDocument()
+  })
+
+  it("shows Account after General and before Provider in settings navigation", () => {
+    render(<SettingsPage {...createSettingsPageProps({ catalog: [createAnyboxProvider()] })} />)
+
+    const nav = screen.getByLabelText("Settings sections")
+    const labels = within(nav).getAllByRole("button").map((button) => button.textContent)
+
+    expect(labels.slice(0, 3)).toEqual(["General", "Account", "Provider"])
+  })
+
+  it("uses the Anybox account page as the browser OAuth login entry", () => {
+    const onStartProviderAuthFlow = vi.fn()
+    const { container } = render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          catalog: [createAnyboxProvider()],
+          onStartProviderAuthFlow,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Account" }))
+
+    expect(screen.getByText("Not logged in")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Log in to Anybox" })).toBeInTheDocument()
+    expect(container.querySelector('input[type="password"]')).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Log in to Anybox" }))
+    expect(onStartProviderAuthFlow).toHaveBeenCalledWith("anybox")
+  })
+
+  it("shows a cancellable pending Anybox account flow", () => {
+    const onCancelProviderAuthFlow = vi.fn()
+    render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          catalog: [
+            createAnyboxProvider({
+              authState: {
+                status: "pending",
+                flow: {
+                  id: "flow-1",
+                  providerID: "anybox",
+                  method: "anybox-browser",
+                  kind: "browser_oauth",
+                  status: "waiting_user",
+                  startedAt: 1,
+                  updatedAt: 2,
+                  authorizationURL: "https://provider.example/oauth",
+                },
+              },
+            }),
+          ],
+          onCancelProviderAuthFlow,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Account" }))
+
+    expect(screen.getByText("Waiting for browser login")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(onCancelProviderAuthFlow).toHaveBeenCalledWith("anybox")
+  })
+
+  it("shows connected Anybox account details and signs out from the account page", () => {
+    const onDeleteProviderAuthSession = vi.fn()
+    render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          catalog: [
+            createAnyboxProvider({
+              authState: {
+                status: "connected",
+                account: {
+                  email: "agent@example.com",
+                  workspaceName: "Studio",
+                  planType: "Pro",
+                  balanceMicrocents: 250000000,
+                  currency: "CNY",
+                  rechargeUrl: "https://provider.example/billing",
+                },
+                credentials: [
+                  {
+                    method: "anybox-browser",
+                    kind: "oauth_session",
+                    source: "credential_store",
+                    configured: true,
+                  },
+                ],
+              },
+            }),
+          ],
+          onDeleteProviderAuthSession,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Account" }))
+
+    expect(screen.getByText("Logged in")).toBeInTheDocument()
+    expect(screen.getByText("agent@example.com")).toBeInTheDocument()
+    expect(screen.getByText("Studio")).toBeInTheDocument()
+    expect(screen.getByText("Pro")).toBeInTheDocument()
+    expect(screen.getByText(/2\.50/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }))
+    expect(onDeleteProviderAuthSession).toHaveBeenCalledWith("anybox")
+  })
+
+  it("moves Anybox provider browser login controls to the Account page", () => {
+    const onStartProviderAuthFlow = vi.fn()
+    render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          catalog: [createAnyboxProvider()],
+          onStartProviderAuthFlow,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Provider" }))
+
+    expect(screen.getByText("Anybox login is managed by the Account page. Provider keeps endpoint, model, and connection test settings here.")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Log in to Anybox" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Account" }))
+    expect(screen.getByRole("button", { name: "Log in to Anybox" })).toBeInTheDocument()
+    expect(onStartProviderAuthFlow).not.toHaveBeenCalled()
   })
 
   it("hides provider logo fallback text after the remote logo image loads", () => {

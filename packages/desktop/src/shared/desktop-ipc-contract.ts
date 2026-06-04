@@ -617,8 +617,10 @@ export interface DesktopMobileBridgeStatus {
   host: string
   port: number | null
   token: string
+  publicUrl: string | null
   localUrl: string | null
   urls: string[]
+  publicPairingUrl: string | null
   pairingLocalUrl: string | null
   pairingUrls: string[]
   pairingExpiresAt: number | null

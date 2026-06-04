@@ -8185,6 +8185,7 @@ describe("App", () => {
     expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
     expect(Array.from(settingsDialog.querySelectorAll(".settings-primary-nav-label"), (node) => node.textContent)).toEqual([
       "General",
+      "Account",
       "Provider",
       "Models",
       "Appearance",
@@ -9776,7 +9777,8 @@ describe("App", () => {
     })
     expect(await screen.findByText("连接测试成功。")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "继续登录" }))
+    fireEvent.click(screen.getByRole("button", { name: "Open Account" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Log in to Anybox" }))
     await waitFor(() => {
       const payload = startProviderAuthFlow.mock.calls[0]?.[0]
       expect(payload).toMatchObject({

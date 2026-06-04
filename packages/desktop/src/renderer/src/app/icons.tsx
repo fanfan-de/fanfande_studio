@@ -65,6 +65,7 @@ import {
   Terminal,
   Trash2,
   UploadCloud,
+  UserCircle,
   Wrench,
   X,
   type LucideIcon,
@@ -146,6 +147,7 @@ export const SunIcon = createIcon(Sun)
 export const MoonIcon = createIcon(Moon)
 export const MonitorIcon = createIcon(Monitor)
 export const SmartphoneIcon = createIcon(Smartphone)
+export const AccountSettingsIcon = createIcon(UserCircle)
 export const GeneralSettingsIcon = createIcon(SlidersHorizontal)
 export const ProviderSettingsIcon = createIcon(CloudCog)
 export const ModelSettingsIcon = createIcon(BrainCircuit)

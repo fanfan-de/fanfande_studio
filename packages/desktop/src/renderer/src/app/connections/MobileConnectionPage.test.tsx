@@ -16,8 +16,10 @@ function createMobileBridgeStatus(overrides: Partial<DesktopMobileBridgeStatus> 
     host: "0.0.0.0",
     port: 4896,
     token: "legacy-token",
+    publicUrl: "https://anybox.com.cn/?token=legacy-token",
     localUrl: "http://127.0.0.1:4896/?token=legacy-token",
     urls: ["http://192.168.1.20:4896/?token=legacy-token"],
+    publicPairingUrl: "https://anybox.com.cn/?code=pair-123",
     pairingLocalUrl: "http://127.0.0.1:4896/?code=local-pair",
     pairingUrls: ["http://192.168.1.20:4896/?code=pair-123"],
     pairingExpiresAt: Date.now() + 60_000,
@@ -54,6 +56,7 @@ describe("MobileConnectionPage", () => {
     expect(screen.getByRole("button", { name: /Refresh QR/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Copy deep link/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Copy test command/ })).toBeInTheDocument()
+    expect(screen.getByText("https://anybox.com.cn/?code=pair-123")).toBeInTheDocument()
     expect(screen.getByText("http://192.168.1.20:4896/?code=pair-123")).toBeInTheDocument()
     expect(screen.getAllByText(/anybox-mobile:\/\/connect\?url=/).length).toBeGreaterThan(0)
     expect(screen.getByText(/corepack pnpm mobile:android:smoke:bridge/)).toBeInTheDocument()
@@ -62,10 +65,25 @@ describe("MobileConnectionPage", () => {
 
     await waitFor(() => {
       expect(QRCode.toDataURL).toHaveBeenCalledWith(
-        "anybox-mobile://connect?url=http%3A%2F%2F192.168.1.20%3A4896%2F%3Fcode%3Dpair-123",
+        "anybox-mobile://connect?url=https%3A%2F%2Fanybox.com.cn%2F%3Fcode%3Dpair-123",
         expect.objectContaining({ type: "image/png" }),
       )
     })
+  })
+
+  it("does not render a phone QR from the local-only address when no LAN URL is available", async () => {
+    window.desktop!.getMobileBridgeStatus = vi.fn().mockResolvedValue(createMobileBridgeStatus({
+      publicPairingUrl: null,
+      publicUrl: null,
+      pairingUrls: [],
+      urls: [],
+    }))
+
+    render(<MobileConnectionPage />)
+
+    expect(await screen.findByText("No local pairing address is available.")).toBeInTheDocument()
+    expect(screen.getByText("Unavailable")).toBeInTheDocument()
+    expect(QRCode.toDataURL).not.toHaveBeenCalled()
   })
 
   it("reveals legacy token access only from the advanced section", async () => {
@@ -76,6 +94,7 @@ describe("MobileConnectionPage", () => {
     expect(screen.getByRole("button", { name: /Copy legacy URL/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Copy token/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Rotate token/ })).toBeInTheDocument()
+    expect(screen.getByText("https://anybox.com.cn/?token=legacy-token")).toBeInTheDocument()
     expect(screen.getByText("http://192.168.1.20:4896/?token=legacy-token")).toBeInTheDocument()
   })
 
@@ -86,7 +105,7 @@ describe("MobileConnectionPage", () => {
 
     await waitFor(() => {
       expect(window.navigator.clipboard.writeText).toHaveBeenCalledWith(
-        "anybox-mobile://connect?url=http%3A%2F%2F192.168.1.20%3A4896%2F%3Fcode%3Dpair-123",
+        "anybox-mobile://connect?url=https%3A%2F%2Fanybox.com.cn%2F%3Fcode%3Dpair-123",
       )
     })
   })
@@ -98,7 +117,7 @@ describe("MobileConnectionPage", () => {
 
     await waitFor(() => {
       expect(window.navigator.clipboard.writeText).toHaveBeenCalledWith(
-        'corepack pnpm mobile:android:smoke:bridge -- --url "anybox-mobile://connect?url=http%3A%2F%2F192.168.1.20%3A4896%2F%3Fcode%3Dpair-123"',
+        'corepack pnpm mobile:android:smoke:bridge -- --url "anybox-mobile://connect?url=https%3A%2F%2Fanybox.com.cn%2F%3Fcode%3Dpair-123"',
       )
     })
   })
@@ -106,8 +125,10 @@ describe("MobileConnectionPage", () => {
   it("refreshes only the Android pairing code from the primary pairing panel", async () => {
     const nextStatus = createMobileBridgeStatus({
       token: "legacy-token",
+      publicUrl: "https://anybox.com.cn/?token=legacy-token",
       localUrl: "http://127.0.0.1:4896/?token=legacy-token",
       urls: ["http://192.168.1.20:4896/?token=legacy-token"],
+      publicPairingUrl: "https://anybox.com.cn/?code=pair-next",
       pairingLocalUrl: "http://127.0.0.1:4896/?code=local-next",
       pairingUrls: ["http://192.168.1.20:4896/?code=pair-next"],
     })
@@ -123,11 +144,12 @@ describe("MobileConnectionPage", () => {
       expect(desktop.refreshMobilePairingCode).toHaveBeenCalled()
     })
     expect(desktop.rotateMobileBridgeToken).not.toHaveBeenCalled()
+    expect(await screen.findByText("https://anybox.com.cn/?code=pair-next")).toBeInTheDocument()
     expect(await screen.findByText("http://192.168.1.20:4896/?code=pair-next")).toBeInTheDocument()
 
     await waitFor(() => {
       expect(QRCode.toDataURL).toHaveBeenLastCalledWith(
-        "anybox-mobile://connect?url=http%3A%2F%2F192.168.1.20%3A4896%2F%3Fcode%3Dpair-next",
+        "anybox-mobile://connect?url=https%3A%2F%2Fanybox.com.cn%2F%3Fcode%3Dpair-next",
         expect.objectContaining({ type: "image/png" }),
       )
     })

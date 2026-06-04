@@ -5,7 +5,7 @@ function usage() {
     "Anybox Mobile Smoke Test",
     "",
     "Usage:",
-    "  pnpm --filter anybox-mobile-app run smoke -- --url \"http://192.168.1.20:4896/?code=...\"",
+    "  pnpm --filter anybox-mobile-app run smoke -- --url \"https://anybox.com.cn/?code=...\"",
     "  pnpm --filter anybox-mobile-app run smoke -- --url \"anybox-mobile://connect?url=...\"",
     "",
     "Options:",

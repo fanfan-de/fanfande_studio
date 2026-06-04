@@ -130,11 +130,12 @@ export default function ConnectScreen() {
 
   const detail = formatPreviewDetail(candidate, preview)
   const canPair = Boolean(candidate && !error)
+  const title = error ? "Connection failed" : preview ? "Confirm desktop connection" : "Confirm legacy connection"
 
   return (
     <Screen>
       <StateCard
-        title={preview ? "Confirm desktop connection" : "Confirm legacy connection"}
+        title={title}
         detail={error ?? detail}
         tone={error ? "danger" : "neutral"}
       />

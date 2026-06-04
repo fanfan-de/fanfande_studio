@@ -21,24 +21,37 @@ function formatPairingExpiry(expiresAt: number | null, now: number) {
   return remaining > 0 ? `Expires in ${minutes}:${String(seconds).padStart(2, "0")}` : "Expired"
 }
 
+function isLoopbackBridgeHost(host: string) {
+  const normalized = host.toLowerCase()
+  return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1"
+}
+
 function getPrimaryUrl(status: DesktopMobileBridgeStatus | null) {
-  return status?.urls[0] ?? status?.localUrl ?? ""
+  if (!status) return ""
+  if (status.publicUrl) return status.publicUrl
+  return isLoopbackBridgeHost(status.host) ? (status.localUrl ?? "") : (status.urls[0] ?? "")
 }
 
 function getPrimaryPairingUrl(status: DesktopMobileBridgeStatus | null) {
-  return status?.pairingUrls[0] ?? status?.pairingLocalUrl ?? ""
+  if (!status) return ""
+  if (status.publicPairingUrl) return status.publicPairingUrl
+  return isLoopbackBridgeHost(status.host) ? (status.pairingLocalUrl ?? "") : (status.pairingUrls[0] ?? "")
+}
+
+function uniqueUrls(urls: Array<string | null | undefined>) {
+  return urls.filter((url, index): url is string => Boolean(url) && urls.indexOf(url) === index)
 }
 
 function getPairingUrls(status: DesktopMobileBridgeStatus | null) {
   if (!status) return []
-  if (status.pairingUrls.length) return status.pairingUrls
-  return status.pairingLocalUrl ? [status.pairingLocalUrl] : []
+  const localUrls = isLoopbackBridgeHost(status.host) ? [status.pairingLocalUrl] : status.pairingUrls
+  return uniqueUrls([status.publicPairingUrl, ...localUrls])
 }
 
 function getLegacyUrls(status: DesktopMobileBridgeStatus | null) {
   if (!status) return []
-  if (status.urls.length) return status.urls
-  return status.localUrl ? [status.localUrl] : []
+  const localUrls = isLoopbackBridgeHost(status.host) ? [status.localUrl] : status.urls
+  return uniqueUrls([status.publicUrl, ...localUrls])
 }
 
 function createPairingDeepLink(url: string) {

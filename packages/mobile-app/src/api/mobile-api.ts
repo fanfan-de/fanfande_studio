@@ -505,7 +505,8 @@ async function requestMobile<T>(connection: MobileConnection, path: string, init
     ...init,
     headers: buildHeaders(connection, init?.headers),
   }).catch((error: unknown) => {
-    throw new MobileApiError(error instanceof Error ? error.message : "Network request failed.", 0)
+    const detail = error instanceof Error && error.message ? ` ${error.message}` : ""
+    throw new MobileApiError(`Unable to reach ${connection.baseUrl}. Check that the phone and desktop are on the same network, then refresh the QR code.${detail}`, 0)
   })
 
   const text = await response.text()
@@ -536,7 +537,8 @@ async function requestMobileStream(
     ...init,
     headers: buildHeaders(connection, init?.headers),
   }).catch((error: unknown) => {
-    throw new MobileApiError(error instanceof Error ? error.message : "Network request failed.", 0)
+    const detail = error instanceof Error && error.message ? ` ${error.message}` : ""
+    throw new MobileApiError(`Unable to reach ${connection.baseUrl}. Check that the phone and desktop are on the same network, then refresh the QR code.${detail}`, 0)
   })
 
   if (!response.ok) {

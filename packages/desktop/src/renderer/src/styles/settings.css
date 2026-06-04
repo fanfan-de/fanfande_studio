@@ -1113,6 +1113,7 @@ body.is-dragging-settings-page {
 .settings-service-list-panel,
 .settings-service-detail-panel,
 .settings-default-layout,
+.settings-account-layout,
 .settings-general-layout,
 .settings-appearance-layout,
 .settings-developer-layout,
@@ -5067,6 +5068,7 @@ body.is-dragging-settings-page {
 }
 
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) > .settings-default-layout,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) > .settings-account-layout,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) > .settings-general-layout,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) > .settings-appearance-layout,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) > .settings-developer-layout,
@@ -5436,6 +5438,7 @@ body.is-dragging-settings-page {
 /* Row-first settings standard */
 
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-panel,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-list,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-list,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-list,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-section-summary {
@@ -5516,6 +5519,7 @@ body.is-dragging-settings-page {
 
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-row,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-toggle-row,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-row,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-row,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-row,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-section-summary > .settings-toggle-card,
@@ -5537,6 +5541,7 @@ body.is-dragging-settings-page {
 
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-row:last-of-type,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-toggle-row:last-of-type,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-row:last-child,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-row:last-child,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-row:last-child,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-section-summary > :last-child {
@@ -5577,6 +5582,7 @@ body.is-dragging-settings-page {
 }
 
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-copy,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-copy,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-copy,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-copy,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-toggle-copy {
@@ -5587,6 +5593,7 @@ body.is-dragging-settings-page {
 
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-copy h3,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-title,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-title,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-title,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-copy strong,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-toggle-copy strong,
@@ -5601,6 +5608,7 @@ body.is-dragging-settings-page {
 
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-copy p,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-description,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-description,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-description,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-copy span,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-toggle-copy small,
@@ -5645,7 +5653,9 @@ body.is-dragging-settings-page {
 
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-check-button,
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-actions-row .secondary-button,
-.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-actions .secondary-button {
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-actions .secondary-button,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-actions .primary-button,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-actions .secondary-button {
   min-height: 34px;
   padding: 0 14px;
   border-radius: 6px;
@@ -5679,6 +5689,93 @@ body.is-dragging-settings-page {
   font-size: 12px;
 }
 
+.settings-account-list {
+  display: grid;
+  gap: 0;
+}
+
+.settings-account-status {
+  min-width: 0;
+  max-width: 220px;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: #555555;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: right;
+}
+
+.settings-account-status-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #9a9a9a;
+}
+
+.settings-account-status.is-connected .settings-account-status-dot {
+  background: #4d9662;
+}
+
+.settings-account-status.is-pending .settings-account-status-dot {
+  background: #c19783;
+}
+
+.settings-account-status.is-expired .settings-account-status-dot,
+.settings-account-status.is-error .settings-account-status-dot {
+  background: #c35f5f;
+}
+
+.settings-account-value {
+  min-width: 0;
+  justify-self: end;
+  color: #1f1f1f;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-actions {
+  width: auto;
+  min-width: min(100%, 220px);
+  max-width: min(100%, 360px);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-actions .primary-button {
+  border-color: rgba(143, 99, 233, 0.4);
+  background: #8f63e9;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(81, 56, 145, 0.18);
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-actions .primary-button:hover,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-actions .primary-button:focus-visible {
+  background: #7f55de;
+  color: #ffffff;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-actions .secondary-button {
+  border-color: #dedede;
+  background: #ffffff;
+  color: #555555;
+}
+
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-actions .secondary-button:hover,
+.settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-actions .secondary-button:focus-visible {
+  border-color: #d0d0d0;
+  background: #f8f8f8;
+  color: #1f1f1f;
+}
+
 .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-status {
   margin: 0;
   padding: 12px 0 16px;
@@ -5688,6 +5785,7 @@ body.is-dragging-settings-page {
 @media (max-width: 720px) {
   .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-row,
   .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-toggle-row,
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-row,
   .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-select-row,
   .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-storage-row,
   .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-actions-row,
@@ -5706,6 +5804,15 @@ body.is-dragging-settings-page {
   .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-about-check-button {
     width: 100%;
     justify-self: stretch;
+  }
+
+  .settings-account-status,
+  .settings-account-value,
+  .settings-page-main:not(.is-services):not(.prompt-presets-page-main) .settings-account-actions {
+    max-width: none;
+    justify-self: stretch;
+    justify-content: flex-start;
+    text-align: left;
   }
 }
 

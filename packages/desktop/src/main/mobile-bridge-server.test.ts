@@ -285,6 +285,8 @@ describe("mobile bridge server", () => {
     electronState.userDataPath = userDataPath
     process.env.ANYBOX_MOBILE_BRIDGE_HOST = "127.0.0.1"
     process.env.ANYBOX_MOBILE_BRIDGE_PORT = String(await listenOnFreePort())
+    process.env.ANYBOX_MOBILE_BRIDGE_TUNNEL = "0"
+    delete process.env.ANYBOX_MOBILE_BRIDGE_PUBLIC_URL
     agentClientState.baseUrl = "http://127.0.0.1:4096"
 
     requestAgentJSONMock.mockReset()
@@ -299,6 +301,8 @@ describe("mobile bridge server", () => {
     await stopMobileBridgeServer()
     delete process.env.ANYBOX_MOBILE_BRIDGE_HOST
     delete process.env.ANYBOX_MOBILE_BRIDGE_PORT
+    delete process.env.ANYBOX_MOBILE_BRIDGE_TUNNEL
+    delete process.env.ANYBOX_MOBILE_BRIDGE_PUBLIC_URL
     if (userDataPath) {
       await fs.rm(userDataPath, { force: true, recursive: true })
     }
@@ -568,7 +572,52 @@ describe("mobile bridge server", () => {
     expect(refreshedPairingCode).not.toBe(originalPairingCode)
   })
 
-  it("writes a local Android handoff file without exposing the legacy bridge token", async () => {
+  it("uses a reachable LAN address instead of reserved virtual-network addresses for Android handoff", async () => {
+    process.env.ANYBOX_MOBILE_BRIDGE_HOST = "0.0.0.0"
+    process.env.ANYBOX_MOBILE_BRIDGE_PUBLIC_URL = "none"
+    const networkInterfaces: ReturnType<typeof os.networkInterfaces> = {
+      "vEthernet (Default Switch)": [
+        {
+          address: "198.18.0.1",
+          cidr: "198.18.0.1/15",
+          family: "IPv4",
+          internal: false,
+          mac: "00:00:00:00:00:00",
+          netmask: "255.254.0.0",
+        },
+      ],
+      "Wi-Fi": [
+        {
+          address: "192.168.1.20",
+          cidr: "192.168.1.20/24",
+          family: "IPv4",
+          internal: false,
+          mac: "00:00:00:00:00:01",
+          netmask: "255.255.255.0",
+        },
+      ],
+    }
+    const networkSpy = vi.spyOn(os, "networkInterfaces").mockReturnValue(networkInterfaces)
+
+    try {
+      const status = await ensureMobileBridgeServerRunning()
+      const handoffPath = path.join(userDataPath, "mobile-bridge-handoff.json")
+      const handoff = JSON.parse(await fs.readFile(handoffPath, "utf8")) as {
+        android?: {
+          pairingUrl?: string
+        }
+      }
+
+      expect(status.pairingUrls).toEqual([expect.stringContaining("192.168.1.20")])
+      expect(status.publicPairingUrl).toBeNull()
+      expect(JSON.stringify(status)).not.toContain("198.18.0.1")
+      expect(handoff.android?.pairingUrl).toContain("192.168.1.20")
+    } finally {
+      networkSpy.mockRestore()
+    }
+  })
+
+  it("writes a public Android handoff file without exposing the legacy bridge token", async () => {
     const status = await ensureMobileBridgeServerRunning()
     const handoffPath = path.join(userDataPath, "mobile-bridge-handoff.json")
     const handoff = JSON.parse(await fs.readFile(handoffPath, "utf8")) as {
@@ -587,7 +636,9 @@ describe("mobile bridge server", () => {
 
     expect(handoff.schemaVersion).toBe(1)
     expect(handoff.bridge?.port).toBe(status.port)
-    expect(handoff.android?.pairingUrl).toBe(status.pairingLocalUrl)
+    expect(status.publicUrl).toBe(`https://anybox.com.cn/?token=${encodeURIComponent(status.token)}`)
+    expect(status.publicPairingUrl).toBeTruthy()
+    expect(handoff.android?.pairingUrl).toBe(status.publicPairingUrl)
     expect(handoff.android?.deepLink).toBe(`anybox-mobile://connect?url=${encodeURIComponent(handoff.android?.pairingUrl ?? "")}`)
     expect(handoff.android?.smokeCommand).toContain("corepack pnpm mobile:android:smoke:bridge")
     expect(handoff.android?.handoffCommand).toContain("corepack pnpm mobile:android:handoff-check")

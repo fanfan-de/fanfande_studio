@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
+import { spawn, type ChildProcess } from "node:child_process"
 import { app } from "electron"
 import fs from "node:fs/promises"
 import http from "node:http"
@@ -13,8 +14,12 @@ import { getWorkspaceGitDiff } from "./workspace-diff"
 
 const DEFAULT_MOBILE_BRIDGE_HOST = "0.0.0.0"
 const DEFAULT_MOBILE_BRIDGE_PORT = 4896
+const DEFAULT_MOBILE_BRIDGE_PUBLIC_URL = "https://anybox.com.cn"
 const MOBILE_BRIDGE_HOST_ENV = "ANYBOX_MOBILE_BRIDGE_HOST"
 const MOBILE_BRIDGE_PORT_ENV = "ANYBOX_MOBILE_BRIDGE_PORT"
+const MOBILE_BRIDGE_PUBLIC_URL_ENV = "ANYBOX_MOBILE_BRIDGE_PUBLIC_URL"
+const MOBILE_BRIDGE_TUNNEL_ENV = "ANYBOX_MOBILE_BRIDGE_TUNNEL"
+const MOBILE_BRIDGE_TUNNEL_TARGET_ENV = "ANYBOX_MOBILE_BRIDGE_TUNNEL_TARGET"
 const TOKEN_QUERY_PARAM = "token"
 const PAIRING_CODE_QUERY_PARAM = "code"
 const MOBILE_DEVICES_FILE_NAME = "mobile-devices.json"
@@ -39,8 +44,10 @@ export interface MobileBridgeStatus {
   host: string
   port: number | null
   token: string
+  publicUrl: string | null
   localUrl: string | null
   urls: string[]
+  publicPairingUrl: string | null
   pairingLocalUrl: string | null
   pairingUrls: string[]
   pairingExpiresAt: number | null
@@ -78,6 +85,12 @@ interface MobilePairingCode {
   expiresAt: number
 }
 
+interface LanHostCandidate {
+  address: string
+  interfaceName: string
+  priority: number
+}
+
 type MobileAuthorization =
   | {
       kind: "bridge-token"
@@ -94,6 +107,8 @@ let bridgeToken = createBridgeToken()
 let startedAt: number | null = null
 let mobileDevicesDocument: MobileDevicesDocument | null = null
 let mobilePairingCode: MobilePairingCode | null = null
+let mobileTunnelProcess: ChildProcess | undefined
+let mobileTunnelLastStartAt = 0
 
 function readBridgeHost() {
   const configured = process.env[MOBILE_BRIDGE_HOST_ENV]?.trim()
@@ -105,6 +120,32 @@ function readBridgePort() {
   if (!configured) return DEFAULT_MOBILE_BRIDGE_PORT
   const parsed = Number(configured)
   return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : DEFAULT_MOBILE_BRIDGE_PORT
+}
+
+function readBridgePublicBaseUrl() {
+  const configured = process.env[MOBILE_BRIDGE_PUBLIC_URL_ENV]
+  const raw = configured === undefined ? DEFAULT_MOBILE_BRIDGE_PUBLIC_URL : configured.trim()
+  if (!raw || /^(0|false|no|none|off)$/i.test(raw)) return null
+
+  try {
+    const parsed = new URL(raw)
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null
+    return parsed.origin
+  } catch {
+    return null
+  }
+}
+
+function isDisabledEnvValue(value: string | undefined) {
+  return value ? /^(0|false|no|none|off)$/i.test(value.trim()) : false
+}
+
+function readBridgeTunnelTarget() {
+  return process.env[MOBILE_BRIDGE_TUNNEL_TARGET_ENV]?.trim() || "anybox-server"
+}
+
+function shouldStartBridgeTunnel() {
+  return Boolean(readBridgePublicBaseUrl()) && !isDisabledEnvValue(process.env[MOBILE_BRIDGE_TUNNEL_ENV])
 }
 
 function createBridgeToken() {
@@ -973,13 +1014,72 @@ async function resolveMobileApproval(requestID: string, decision: "allow" | "den
   return result.data
 }
 
+function readIPv4Octets(address: string) {
+  const octets = address.split(".").map((part) => Number(part))
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null
+  return octets as [number, number, number, number]
+}
+
+function isReservedMobileBridgeIPv4(address: string) {
+  const octets = readIPv4Octets(address)
+  if (!octets) return true
+  const [first, second, third] = octets
+
+  return (
+    first === 0 ||
+    first === 127 ||
+    first >= 224 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 192 && second === 0 && third === 2) ||
+    (first === 192 && second === 88 && third === 99) ||
+    (first === 198 && (second === 18 || second === 19)) ||
+    (first === 198 && second === 51 && third === 100) ||
+    (first === 203 && second === 0 && third === 113)
+  )
+}
+
+function interfacePriority(interfaceName: string) {
+  if (/\b(vethernet|virtual|vmware|virtualbox|hyper-v|docker|wsl|tailscale|zerotier|wireguard|clash|vpn|loopback|bluetooth)\b/i.test(interfaceName)) {
+    return null
+  }
+  if (/wi-?fi|wlan|wireless|ethernet|以太网|无线/i.test(interfaceName)) return 0
+  return 1
+}
+
+function addressPriority(address: string) {
+  const octets = readIPv4Octets(address)
+  if (!octets) return 9
+  const [first, second] = octets
+  if (first === 192 && second === 168) return 0
+  if (first === 10) return 1
+  if (first === 172 && second >= 16 && second <= 31) return 2
+  return 8
+}
+
 function listLanHosts() {
-  const addresses: string[] = []
-  for (const entries of Object.values(os.networkInterfaces())) {
+  const candidates: LanHostCandidate[] = []
+  for (const [interfaceName, entries] of Object.entries(os.networkInterfaces())) {
+    const priority = interfacePriority(interfaceName)
+    if (priority === null) continue
+
     for (const entry of entries ?? []) {
       if (entry.family !== "IPv4" || entry.internal) continue
-      addresses.push(entry.address)
+      if (isReservedMobileBridgeIPv4(entry.address)) continue
+      candidates.push({
+        address: entry.address,
+        interfaceName,
+        priority: priority * 10 + addressPriority(entry.address),
+      })
     }
+  }
+
+  const seen = new Set<string>()
+  const addresses: string[] = []
+  for (const candidate of candidates.sort((left, right) => left.priority - right.priority || left.interfaceName.localeCompare(right.interfaceName) || left.address.localeCompare(right.address))) {
+    if (seen.has(candidate.address)) continue
+    seen.add(candidate.address)
+    addresses.push(candidate.address)
   }
   return addresses
 }
@@ -992,8 +1092,76 @@ function urlWithPairingCode(host: string, port: number, code: string) {
   return `http://${host}:${port}/?${PAIRING_CODE_QUERY_PARAM}=${encodeURIComponent(code)}`
 }
 
+function publicUrlWithToken(baseUrl: string) {
+  const url = new URL(baseUrl)
+  url.searchParams.set(TOKEN_QUERY_PARAM, bridgeToken)
+  return url.toString()
+}
+
+function publicUrlWithPairingCode(baseUrl: string, code: string) {
+  const url = new URL(baseUrl)
+  url.searchParams.set(PAIRING_CODE_QUERY_PARAM, code)
+  return url.toString()
+}
+
 function createPairingDeepLink(url: string) {
   return `anybox-mobile://connect?url=${encodeURIComponent(url)}`
+}
+
+function ensureMobileBridgeTunnelRunning(port: number | null) {
+  if (!port || mobileTunnelProcess || !shouldStartBridgeTunnel()) return
+  const now = Date.now()
+  if (now - mobileTunnelLastStartAt < 10_000) return
+  mobileTunnelLastStartAt = now
+
+  const target = readBridgeTunnelTarget()
+  const remoteForward = `127.0.0.1:${port}:127.0.0.1:${port}`
+  const child = spawn("ssh", [
+    "-N",
+    "-T",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ExitOnForwardFailure=yes",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=3",
+    "-R",
+    remoteForward,
+    target,
+  ], {
+    stdio: "ignore",
+    windowsHide: true,
+  })
+
+  mobileTunnelProcess = child
+  child.once("error", (error) => {
+    if (mobileTunnelProcess === child) mobileTunnelProcess = undefined
+    safeWarn("[desktop][mobile-bridge] failed to start SSH reverse tunnel", {
+      error: safeErrorMessage(error),
+      target,
+    })
+  })
+  child.once("exit", (code, signal) => {
+    if (mobileTunnelProcess === child) mobileTunnelProcess = undefined
+    safeWarn("[desktop][mobile-bridge] SSH reverse tunnel exited", {
+      code,
+      signal,
+      target,
+    })
+  })
+}
+
+function safeErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function stopMobileBridgeTunnel() {
+  const current = mobileTunnelProcess
+  mobileTunnelProcess = undefined
+  if (!current || current.killed) return
+  current.kill()
 }
 
 function quotePowerShellArgument(value: string) {
@@ -1006,8 +1174,11 @@ function isLoopbackBridgeHost(host: string) {
 }
 
 async function writeMobileHandoffFile(status: MobileBridgeStatus) {
-  const primaryPairingUrl = isLoopbackBridgeHost(status.host) ? status.pairingLocalUrl : (status.pairingUrls[0] ?? status.pairingLocalUrl)
-  if (!status.running || !primaryPairingUrl || !status.pairingExpiresAt) return
+  const primaryPairingUrl = status.publicPairingUrl ?? (isLoopbackBridgeHost(status.host) ? status.pairingLocalUrl : status.pairingUrls[0])
+  if (!status.running || !primaryPairingUrl || !status.pairingExpiresAt) {
+    await fs.rm(getMobileHandoffPath(), { force: true }).catch(() => undefined)
+    return
+  }
 
   const deepLink = createPairingDeepLink(primaryPairingUrl)
   const document = {
@@ -1037,9 +1208,13 @@ async function writeMobileHandoffFile(status: MobileBridgeStatus) {
 
 export async function getMobileBridgeStatus(): Promise<MobileBridgeStatus> {
   const port = bridgePort
+  ensureMobileBridgeTunnelRunning(port)
   const pairingCode = port ? getCurrentPairingCode() : null
+  const publicBaseUrl = port ? readBridgePublicBaseUrl() : null
+  const publicUrl = publicBaseUrl ? publicUrlWithToken(publicBaseUrl) : null
   const localUrl = port ? urlWithToken("127.0.0.1", port) : null
   const urls = port ? listLanHosts().map((host) => urlWithToken(host, port)) : []
+  const publicPairingUrl = publicBaseUrl && pairingCode ? publicUrlWithPairingCode(publicBaseUrl, pairingCode.code) : null
   const pairingLocalUrl = port && pairingCode ? urlWithPairingCode("127.0.0.1", port, pairingCode.code) : null
   const pairingUrls = port && pairingCode ? listLanHosts().map((host) => urlWithPairingCode(host, port, pairingCode.code)) : []
   const status = {
@@ -1047,8 +1222,10 @@ export async function getMobileBridgeStatus(): Promise<MobileBridgeStatus> {
     host: bridgeHost,
     port,
     token: bridgeToken,
+    publicUrl,
     localUrl,
     urls,
+    publicPairingUrl,
     pairingLocalUrl,
     pairingUrls,
     pairingExpiresAt: pairingCode?.expiresAt ?? null,
@@ -1127,8 +1304,10 @@ export async function ensureMobileBridgeServerRunning() {
   safeLog("[desktop][mobile-bridge] ready", {
     ...status,
     token: "[redacted]",
+    publicUrl: status.publicUrl ? "[redacted]" : null,
     localUrl: status.localUrl ? "[redacted]" : null,
     urls: status.urls.map(() => "[redacted]"),
+    publicPairingUrl: status.publicPairingUrl ? "[redacted]" : null,
     pairingLocalUrl: status.pairingLocalUrl ? "[redacted]" : null,
     pairingUrls: status.pairingUrls.map(() => "[redacted]"),
   })
@@ -1140,6 +1319,7 @@ export async function stopMobileBridgeServer() {
   server = undefined
   bridgePort = null
   startedAt = null
+  stopMobileBridgeTunnel()
   if (!current) return
 
   await new Promise<void>((resolve) => {

@@ -17,6 +17,7 @@ import {
 } from "../../../../shared/appearance"
 import type { DesktopAppUpdateState, DesktopStoragePaths } from "../../../../shared/desktop-ipc-contract"
 import {
+  AccountSettingsIcon,
   ArchiveRestoreIcon,
   CloseIcon,
   CodeModeIcon,
@@ -334,7 +335,7 @@ function isProviderConnected(provider: ProviderCatalogItem) {
 }
 
 function isAnyboxProvider(provider: ProviderCatalogItem) {
-  return provider.id === "anybox"
+  return provider.id === ANYBOX_ACCOUNT_PROVIDER_ID
 }
 
 function getProviderAuthCapability(provider: ProviderCatalogItem, method: string | null | undefined) {
@@ -361,6 +362,8 @@ function getProviderKeyPlaceholder(provider: ProviderCatalogItem, t?: SettingsTr
 }
 
 type ProviderApiKeyMode = "environment" | "manual"
+
+const ANYBOX_ACCOUNT_PROVIDER_ID = "anybox"
 
 function getProviderActiveCredential(provider: ProviderCatalogItem) {
   return (
@@ -445,6 +448,89 @@ function getAnyboxRechargeUrl(provider: ProviderCatalogItem) {
   const baseURL = provider.baseURL?.trim()
   if (!baseURL) return null
   return `${baseURL.replace(/\/+$/, "").replace(/\/v1$/, "")}/billing`
+}
+
+type AnyboxAccountStatus = "unavailable" | "not_connected" | "pending" | "connected" | "expired" | "error"
+
+interface AnyboxAccountViewModel {
+  account: ProviderCatalogItem["authState"]["account"] | null
+  description: string
+  flow: ProviderCatalogItem["authState"]["flow"] | null
+  provider: ProviderCatalogItem | null
+  status: AnyboxAccountStatus
+  title: string
+}
+
+function getAnyboxAccountViewModel(
+  provider: ProviderCatalogItem | null,
+  draft: ProviderDraftState | null,
+  t: SettingsTranslate,
+): AnyboxAccountViewModel {
+  if (!provider) {
+    return {
+      account: null,
+      description: t("settings.account.unavailableCopy"),
+      flow: null,
+      provider: null,
+      status: "unavailable",
+      title: t("settings.account.unavailableTitle"),
+    }
+  }
+
+  const flow = draft?.activeFlow ?? provider.authState.flow ?? null
+  const account = provider.authState.account ?? flow?.account ?? null
+  if (flow && !isProviderFlowTerminal(flow.status)) {
+    return {
+      account,
+      description: flow.errorMessage ?? t("settings.account.pendingCopy"),
+      flow,
+      provider,
+      status: "pending",
+      title: t("settings.account.pendingTitle"),
+    }
+  }
+
+  if (provider.authState.status === "connected") {
+    return {
+      account,
+      description: t("settings.account.connectedCopy"),
+      flow,
+      provider,
+      status: "connected",
+      title: t("settings.account.connectedTitle"),
+    }
+  }
+
+  if (provider.authState.status === "expired") {
+    return {
+      account,
+      description: provider.authState.lastError ?? provider.lastAuthError ?? t("settings.account.notConnectedCopy"),
+      flow,
+      provider,
+      status: "expired",
+      title: t("settings.account.expiredTitle"),
+    }
+  }
+
+  if (provider.authState.status === "error") {
+    return {
+      account,
+      description: provider.authState.lastError ?? provider.lastAuthError ?? flow?.errorMessage ?? t("settings.account.errorFallback"),
+      flow,
+      provider,
+      status: "error",
+      title: t("settings.account.errorTitle"),
+    }
+  }
+
+  return {
+    account,
+    description: t("settings.account.notConnectedCopy"),
+    flow,
+    provider,
+    status: "not_connected",
+    title: t("settings.account.notConnectedTitle"),
+  }
 }
 
 function matchesProviderSearch(provider: ProviderCatalogItem, rawQuery: string) {
@@ -797,7 +883,7 @@ function doesMcpServerMatchSearch(
   return haystack.includes(query)
 }
 
-type SettingsSectionKey = "general" | "services" | "defaults" | "mcp" | "appearance" | "developer" | "archive"
+type SettingsSectionKey = "general" | "account" | "services" | "defaults" | "mcp" | "appearance" | "developer" | "archive"
 
 function doesArchivedSessionMatchSearch(session: ArchivedSessionSummary, query: string) {
   if (!query) return true
@@ -1188,6 +1274,22 @@ export function SettingsPage({
           activeFlow: activeProvider.authState.flow ?? null,
         })
       : null
+    const anyboxAccountProvider = catalog.find(isAnyboxProvider) ?? null
+    const anyboxAccountDraft = anyboxAccountProvider
+      ? (providerDrafts[anyboxAccountProvider.id] ?? {
+          apiKey: "",
+          baseURL: anyboxAccountProvider.baseURL ?? "",
+          selectedAuthMethod:
+            anyboxAccountProvider.authState.activeMethod ?? anyboxAccountProvider.authCapabilities[0]?.method ?? null,
+          activeFlow: anyboxAccountProvider.authState.flow ?? null,
+        })
+      : null
+    const anyboxAccountView = getAnyboxAccountViewModel(anyboxAccountProvider, anyboxAccountDraft, t)
+    const anyboxAccountBusy = anyboxAccountProvider
+      ? savingProviderID === anyboxAccountProvider.id || deletingProviderID === anyboxAccountProvider.id
+      : false
+    const anyboxAccountBalance = anyboxAccountProvider ? formatProviderBalance(anyboxAccountView.account ?? undefined) : null
+    const anyboxAccountRechargeUrl = anyboxAccountProvider ? getAnyboxRechargeUrl(anyboxAccountProvider) : null
     const activeProviderModels = activeProvider ? modelGroups[activeProvider.id] ?? [] : []
     const activeProviderBusy = activeProvider ? savingProviderID === activeProvider.id || deletingProviderID === activeProvider.id : false
     const activeProviderSelectedMethod =
@@ -1227,7 +1329,6 @@ export function SettingsPage({
       null
     const activeProviderAccount = activeProvider?.authState.account ?? null
     const activeProviderBalance = activeProvider ? formatProviderBalance(activeProvider.authState.account) : null
-    const activeProviderRechargeUrl = activeProvider && isAnyboxProvider(activeProvider) ? getAnyboxRechargeUrl(activeProvider) : null
     const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
     const activeMcpServerPluginSource = activeMcpServer
       ? getMcpServerPluginSource(activeMcpServer, mcpServerPluginSourceMap)
@@ -1606,6 +1707,21 @@ export function SettingsPage({
       onProviderAuthMethodChange(providerID, method)
     }
 
+    function handleAnyboxAccountSignIn() {
+      if (!anyboxAccountProvider || anyboxAccountBusy) return
+      void onStartProviderAuthFlow(anyboxAccountProvider.id)
+    }
+
+    function handleAnyboxAccountCancel() {
+      if (!anyboxAccountProvider || anyboxAccountBusy || anyboxAccountView.status !== "pending") return
+      void onCancelProviderAuthFlow(anyboxAccountProvider.id)
+    }
+
+    function handleAnyboxAccountSignOut() {
+      if (!anyboxAccountProvider || anyboxAccountBusy) return
+      void onDeleteProviderAuthSession(anyboxAccountProvider.id)
+    }
+
     async function handleActiveProviderSave() {
       if (!activeProvider || !activeProviderDraft) return
 
@@ -1677,6 +1793,7 @@ export function SettingsPage({
         label: t("settings.options"),
         items: [
           { key: "general" as const, label: t("settings.nav.general"), Icon: GeneralSettingsIcon },
+          { key: "account" as const, label: t("settings.nav.account"), Icon: AccountSettingsIcon },
           { key: "services" as const, label: t("settings.nav.provider"), Icon: ProviderSettingsIcon },
           { key: "defaults" as const, label: t("settings.nav.models"), Icon: ModelSettingsIcon },
           { key: "appearance" as const, label: t("settings.nav.appearance"), Icon: PaletteIcon },
@@ -1761,6 +1878,122 @@ export function SettingsPage({
           </p>
         ) : null}
       </section>
+    )
+
+    const accountSection = (
+      <div className="settings-account-layout">
+        <section className="settings-panel settings-account-panel" aria-label={t("settings.account.title")}>
+          <div className="settings-account-list">
+            <div className="settings-account-row">
+              <span className="settings-account-copy">
+                <span className="settings-account-title">{t("settings.account.status")}</span>
+                <span className="settings-account-description">{anyboxAccountView.description}</span>
+              </span>
+              <span className={`settings-account-status is-${anyboxAccountView.status}`}>
+                <span className="settings-account-status-dot" aria-hidden="true" />
+                <span>{anyboxAccountView.title}</span>
+              </span>
+            </div>
+
+            {anyboxAccountView.status === "connected" ? (
+              <>
+                <div className="settings-account-row">
+                  <span className="settings-account-title">{t("settings.account.email")}</span>
+                  <strong className="settings-account-value">
+                    {anyboxAccountView.account?.email ?? t("settings.account.noValue")}
+                  </strong>
+                </div>
+
+                <div className="settings-account-row">
+                  <span className="settings-account-title">{t("settings.account.workspace")}</span>
+                  <strong className="settings-account-value">
+                    {anyboxAccountView.account?.workspaceName ?? t("settings.account.noValue")}
+                  </strong>
+                </div>
+
+                <div className="settings-account-row">
+                  <span className="settings-account-title">{t("settings.account.plan")}</span>
+                  <strong className="settings-account-value">
+                    {anyboxAccountView.account?.planType ?? t("settings.account.noValue")}
+                  </strong>
+                </div>
+
+                {anyboxAccountBalance ? (
+                  <div className="settings-account-row">
+                    <span className="settings-account-title">{t("settings.account.balance")}</span>
+                    <strong className="settings-account-value">{anyboxAccountBalance}</strong>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            <div className="settings-account-row settings-account-action-row">
+              <span className="settings-account-copy">
+                <span className="settings-account-title">Anybox</span>
+                <span className="settings-account-description">
+                  {anyboxAccountView.status === "connected"
+                    ? t("settings.account.connectedCopy")
+                    : anyboxAccountView.status === "pending"
+                      ? t("settings.account.pendingCopy")
+                      : anyboxAccountView.status === "unavailable"
+                        ? t("settings.account.unavailableCopy")
+                        : t("settings.account.notConnectedCopy")}
+                </span>
+              </span>
+              <span className="settings-inline-actions settings-account-actions">
+                {anyboxAccountView.status === "connected" && anyboxAccountRechargeUrl ? (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={anyboxAccountBusy}
+                    onClick={() => void openExternalUrl(anyboxAccountRechargeUrl)}
+                  >
+                    {t("settings.account.recharge")}
+                  </button>
+                ) : null}
+                {anyboxAccountView.status === "connected" ? (
+                  <>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={anyboxAccountBusy}
+                      onClick={handleAnyboxAccountSignIn}
+                    >
+                      {t("settings.account.signInAgain")}
+                    </button>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={anyboxAccountBusy}
+                      onClick={handleAnyboxAccountSignOut}
+                    >
+                      {t("settings.account.signOut")}
+                    </button>
+                  </>
+                ) : anyboxAccountView.status === "pending" ? (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={anyboxAccountBusy}
+                    onClick={handleAnyboxAccountCancel}
+                  >
+                    {t("settings.account.cancelSignIn")}
+                  </button>
+                ) : (
+                  <button
+                    className="primary-button"
+                    type="button"
+                    disabled={!anyboxAccountProvider || anyboxAccountBusy}
+                    onClick={handleAnyboxAccountSignIn}
+                  >
+                    {t("settings.account.signIn")}
+                  </button>
+                )}
+              </span>
+            </div>
+          </div>
+        </section>
+      </div>
     )
 
     return (
@@ -1861,6 +2094,8 @@ export function SettingsPage({
 
                   {languageSection}
                 </div>
+              ) : activeSection === "account" ? (
+                accountSection
               ) : activeSection === "appearance" ? (
                 <div className="settings-appearance-layout">
                   <section className="settings-panel">
@@ -2599,73 +2834,116 @@ export function SettingsPage({
 
                               {activeProviderSelectedCapability?.kind === "browser_oauth" ? (
                                 <div className="provider-detail-field">
-                                  <p className="provider-detail-helper">
-                                    {activeProviderFlow && !isProviderFlowTerminal(activeProviderFlow.status)
-                                      ? activeProviderFlow.errorMessage ?? "请在浏览器中完成登录。"
-                                      : activeProviderAccountSummary ?? activeProvider.lastAuthError ?? "使用浏览器登录来连接此 provider。"}
-                                  </p>
-                                  {isAnyboxProvider(activeProvider) && activeProvider.authState.status === "connected" ? (
-                                    <div className="provider-account-summary" aria-label="Anybox account summary">
-                                      {activeProviderAccount?.email ? (
+                                  {isAnyboxProvider(activeProvider) ? (
+                                    <>
+                                      <p className="provider-detail-helper">{t("settings.account.managedProviderCopy")}</p>
+                                      <div className="provider-account-summary" aria-label="Anybox account summary">
                                         <div className="provider-account-summary-row">
-                                          <span>账号</span>
-                                          <strong>{activeProviderAccount.email}</strong>
+                                          <span>{t("settings.account.status")}</span>
+                                          <strong>{anyboxAccountView.title}</strong>
+                                        </div>
+                                        {anyboxAccountView.account?.email ? (
+                                          <div className="provider-account-summary-row">
+                                            <span>{t("settings.account.email")}</span>
+                                            <strong>{anyboxAccountView.account.email}</strong>
+                                          </div>
+                                        ) : null}
+                                        {anyboxAccountView.account?.workspaceName || anyboxAccountView.account?.planType ? (
+                                          <div className="provider-account-summary-row">
+                                            <span>
+                                              {t("settings.account.workspace")} / {t("settings.account.plan")}
+                                            </span>
+                                            <strong>
+                                              {[anyboxAccountView.account.workspaceName, anyboxAccountView.account.planType]
+                                                .filter(Boolean)
+                                                .join(" / ")}
+                                            </strong>
+                                          </div>
+                                        ) : null}
+                                        {anyboxAccountBalance ? (
+                                          <div className="provider-account-summary-row">
+                                            <span>{t("settings.account.balance")}</span>
+                                            <strong>{anyboxAccountBalance}</strong>
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                      <div className="settings-inline-actions">
+                                        <button
+                                          className="primary-button"
+                                          type="button"
+                                          onClick={() => setActiveSection("account")}
+                                        >
+                                          {t("settings.account.openAccountPage")}
+                                        </button>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <p className="provider-detail-helper">
+                                        {activeProviderFlow && !isProviderFlowTerminal(activeProviderFlow.status)
+                                          ? activeProviderFlow.errorMessage ?? "请在浏览器中完成登录。"
+                                          : activeProviderAccountSummary ?? activeProvider.lastAuthError ?? "使用浏览器登录来连接此 provider。"}
+                                      </p>
+                                      {activeProvider.authState.status === "connected" ? (
+                                        <div className="provider-account-summary" aria-label={`${activeProvider.name} account summary`}>
+                                          {activeProviderAccount?.email ? (
+                                            <div className="provider-account-summary-row">
+                                              <span>{t("settings.account.email")}</span>
+                                              <strong>{activeProviderAccount.email}</strong>
+                                            </div>
+                                          ) : null}
+                                          {activeProviderAccount?.workspaceName || activeProviderAccount?.planType ? (
+                                            <div className="provider-account-summary-row">
+                                              <span>
+                                                {t("settings.account.workspace")} / {t("settings.account.plan")}
+                                              </span>
+                                              <strong>
+                                                {[activeProviderAccount.workspaceName, activeProviderAccount.planType]
+                                                  .filter(Boolean)
+                                                  .join(" / ")}
+                                              </strong>
+                                            </div>
+                                          ) : null}
+                                          {activeProviderBalance ? (
+                                            <div className="provider-account-summary-row">
+                                              <span>{t("settings.account.balance")}</span>
+                                              <strong>{activeProviderBalance}</strong>
+                                            </div>
+                                          ) : null}
                                         </div>
                                       ) : null}
-                                      {activeProviderAccount?.workspaceName || activeProviderAccount?.planType ? (
-                                        <div className="provider-account-summary-row">
-                                          <span>工作区 / 套餐</span>
-                                          <strong>
-                                            {[activeProviderAccount.workspaceName, activeProviderAccount.planType]
-                                              .filter(Boolean)
-                                              .join(" / ")}
-                                          </strong>
-                                        </div>
-                                      ) : null}
-                                      {activeProviderBalance ? (
-                                        <div className="provider-account-summary-row">
-                                          <span>余额</span>
-                                          <strong>{activeProviderBalance}</strong>
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  ) : null}
-                                  <div className="settings-inline-actions">
-                                    {isAnyboxProvider(activeProvider) && activeProviderRechargeUrl ? (
-                                      <button
-                                        className="secondary-button"
-                                        disabled={activeProviderBusy}
-                                        onClick={() => void openExternalUrl(activeProviderRechargeUrl)}
-                                      >
-                                        充值
-                                      </button>
-                                    ) : null}
-                                    {activeProvider.authState.status !== "not_connected" ? (
-                                      <button
-                                        className="secondary-button"
-                                        disabled={activeProviderBusy}
-                                        onClick={() => void onDeleteProviderAuthSession(activeProvider.id)}
-                                      >
-                                        断开连接
-                                      </button>
-                                    ) : null}
-                                    {activeProviderFlow && !isProviderFlowTerminal(activeProviderFlow.status) ? (
-                                      <button
-                                        className="secondary-button"
-                                        disabled={activeProviderBusy}
-                                        onClick={() => void onCancelProviderAuthFlow(activeProvider.id)}
-                                      >
-                                        取消
-                                      </button>
-                                    ) : null}
-                                    <button
-                                      className="primary-button"
-                                      disabled={activeProviderBusy}
-                                      onClick={() => void onStartProviderAuthFlow(activeProvider.id)}
-                                    >
-                                      {activeProvider.authState.status === "connected" ? "重新登录" : "继续登录"}
-                                    </button>
-                                  </div>
+                                      <div className="settings-inline-actions">
+                                        {activeProvider.authState.status !== "not_connected" ? (
+                                          <button
+                                            className="secondary-button"
+                                            type="button"
+                                            disabled={activeProviderBusy}
+                                            onClick={() => void onDeleteProviderAuthSession(activeProvider.id)}
+                                          >
+                                            断开连接
+                                          </button>
+                                        ) : null}
+                                        {activeProviderFlow && !isProviderFlowTerminal(activeProviderFlow.status) ? (
+                                          <button
+                                            className="secondary-button"
+                                            type="button"
+                                            disabled={activeProviderBusy}
+                                            onClick={() => void onCancelProviderAuthFlow(activeProvider.id)}
+                                          >
+                                            取消
+                                          </button>
+                                        ) : null}
+                                        <button
+                                          className="primary-button"
+                                          type="button"
+                                          disabled={activeProviderBusy}
+                                          onClick={() => void onStartProviderAuthFlow(activeProvider.id)}
+                                        >
+                                          {activeProvider.authState.status === "connected" ? "重新登录" : "继续登录"}
+                                        </button>
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
                               ) : null}
 

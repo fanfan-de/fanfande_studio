@@ -196,7 +196,7 @@ export default function HomeScreen() {
               <Field
                 label="Bridge URL"
                 onChangeText={setEndpoint}
-                placeholder="http://192.168.1.20:4896/?code=..."
+                placeholder="https://anybox.com.cn/?code=..."
                 value={endpoint}
               />
               <Field

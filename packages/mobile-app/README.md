@@ -112,10 +112,10 @@ corepack pnpm mobile:android:handoff-check -- --use-desktop-handoff
 
 To run the installed APK against a real desktop bridge, start the desktop app, open the Mobile Connection page, click `复制验收命令`, connect a USB-debuggable Android device, then run the copied command from the repository root.
 
-You can also pass the Android deep link or pairing URL manually:
+You can also pass the Android deep link or pairing URL manually. The default desktop QR uses the public bridge endpoint:
 
 ```powershell
-corepack pnpm mobile:android:smoke:bridge -- --url "http://192.168.1.20:4896/?code=..."
+corepack pnpm mobile:android:smoke:bridge -- --url "https://anybox.com.cn/?code=..."
 ```
 
 Or pass the full Android deep link:
@@ -130,7 +130,7 @@ When the desktop handoff JSON exists, the URL can be omitted:
 corepack pnpm mobile:android:smoke:bridge
 ```
 
-This checks `/api/mobile/status` from the computer first without consuming the pairing code, installs the debug APK by default, clears app data, opens the deep link through `adb`, waits for the connected Home UI, captures `packages/mobile-app/build/anybox-mobile-real-bridge.png`, and fails on fatal Android logs. Use `--skip-preflight` if the computer-side status check is not useful for your network setup, `--skip-install` to reuse an installed APK, `--keep-data` to preserve the current pairing, or `--replace-existing` when intentionally switching from an existing paired desktop.
+This checks `/api/mobile/status` from the computer first without consuming the pairing code, installs the debug APK by default, clears app data, opens the deep link through `adb`, waits for the connected Home UI, captures `packages/mobile-app/build/anybox-mobile-real-bridge.png`, and fails on fatal Android logs. Use `--skip-preflight` if the computer-side status check is not useful for your tunnel setup, `--skip-install` to reuse an installed APK, `--keep-data` to preserve the current pairing, or `--replace-existing` when intentionally switching from an existing paired desktop.
 
 When the pairing URL uses `127.0.0.1` or `localhost`, the real bridge smoke handles Android networking automatically: emulators use `10.0.2.2`, and physical USB devices use `adb reverse` unless `--no-adb-reverse` is passed. You can force a device-visible host with `--android-host <ip-or-host>`.
 
@@ -225,23 +225,23 @@ The manifest can also contain platform-specific values under `android` or `platf
 
 ## Bridge API Smoke Test
 
-After starting the desktop app and opening the Mobile Connection page, copy the LAN URL or the `anybox-mobile://connect?...` deep link and run:
+After starting the desktop app and opening the Mobile Connection page, copy the public URL or the `anybox-mobile://connect?...` deep link and run:
 
 ```powershell
-corepack pnpm mobile:smoke -- --url "http://192.168.1.20:4896/?code=..."
+corepack pnpm mobile:smoke -- --url "https://anybox.com.cn/?code=..."
 ```
 
 The smoke test checks public bridge status, pairs a temporary device, verifies authenticated status/workspaces/approvals, and revokes the temporary device by default. Passing `--keep-device` keeps it paired for manual testing.
 
 ## Connection
 
-Use the Scan QR code action on the mobile app home screen to scan the desktop Mobile Connection QR code. The app previews the desktop name, address, capabilities, and QR expiry before pairing; confirming the connection exchanges the one-time code for a device token stored with `expo-secure-store`.
+Use the Scan QR code action on the mobile app home screen to scan the desktop Mobile Connection QR code. The default QR code uses the public `https://anybox.com.cn` mobile bridge endpoint; Caddy forwards `/api/mobile/*` to the desktop bridge through the server-side reverse tunnel. The app previews the desktop name, address, capabilities, and QR expiry before pairing; confirming the connection exchanges the one-time code for a device token stored with `expo-secure-store`.
 
-The advanced URL login path remains available for troubleshooting. Paste the LAN URL from the desktop Mobile Connection page, including the `code` or `token` query parameter, or paste the full `anybox-mobile://connect?url=...` deep link.
+The advanced URL login path remains available for troubleshooting. Paste the public URL from the desktop Mobile Connection page, including the `code` or `token` query parameter, or paste the full `anybox-mobile://connect?url=...` deep link. Local LAN URLs remain available only as a fallback when the public tunnel is disabled or unavailable.
 
 ## Current Scope
 
-- Connect to the desktop bridge with QR pairing or the advanced LAN URL/token flow and exchange it for a per-device token.
+- Connect to the desktop bridge with QR pairing or the advanced public URL/token flow and exchange it for a per-device token.
 - Show bridge status, workspaces, recent chats, workspace chats, chat messages, and session tasks.
 - Create a chat inside an existing workspace.
 - Browse workspace files read-only, search by file name, and preview supported text/image files.
@@ -259,7 +259,7 @@ Release signing, store metadata, notifications, and cloud relay are not implemen
 
 ## Android Smoke Test
 
-The mock pairing smoke (`mobile:android:smoke:pairing`) is the repeatable CI-style check. The delivery check (`mobile:android:delivery-check`) validates the APK and local evidence without needing a device. The real bridge smoke (`mobile:android:smoke:bridge`) is the first check to run before handing the APK to someone else, because it exercises the actual desktop LAN address, Windows firewall, QR/deep-link contents, and Android network path.
+The mock pairing smoke (`mobile:android:smoke:pairing`) is the repeatable CI-style check. The delivery check (`mobile:android:delivery-check`) validates the APK and local evidence without needing a device. The real bridge smoke (`mobile:android:smoke:bridge`) is the first check to run before handing the APK to someone else, because it exercises the public mobile bridge URL, tunnel forwarding, QR/deep-link contents, and Android network path.
 
 1. Start the desktop app and open the Mobile Connection page.
 2. Start the mobile app:
@@ -268,8 +268,8 @@ The mock pairing smoke (`mobile:android:smoke:pairing`) is the repeatable CI-sty
    corepack pnpm --filter anybox-mobile-app start -- --lan --port 8082
    ```
 
-3. Open the Expo Go URL on an Android phone on the same Wi-Fi.
-4. Scan the desktop Mobile Connection QR code, confirm the desktop details, and connect. You can also use Advanced URL login to paste the LAN URL or `anybox-mobile://connect?...` deep link.
+3. Open the Expo Go URL on an Android phone.
+4. Scan the desktop Mobile Connection QR code, confirm the desktop details, and connect. You can also use Advanced URL login to paste the public URL or `anybox-mobile://connect?...` deep link.
 5. Verify Home loads workspaces, open a chat, send a short prompt, and watch the Messages and Tasks sections refresh.
 6. Open a Workspace and verify Chats, Changes, and read-only Files load.
 7. Trigger a tool approval from the desktop agent and verify the Approvals screen can allow or deny it, then switch to History after resolving it.

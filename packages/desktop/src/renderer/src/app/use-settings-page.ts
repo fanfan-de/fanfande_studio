@@ -92,6 +92,8 @@ const EMPTY_PROJECT_MODEL_SELECTION: ProjectModelSelection = {
   imageDefaultSize: null,
   imageDefaultCount: null,
 }
+const ANYBOX_ACCOUNT_PROVIDER_ID = "anybox"
+const ANYBOX_BROWSER_AUTH_METHOD = "anybox-browser"
 
 export function buildModelSelectionUpdatePayload(
   savedSelection: ProjectModelSelection,
@@ -181,9 +183,22 @@ function mergeProviderDrafts(
   )
 }
 
+function resolveProviderAuthFlowMethod(provider: ProviderCatalogItem, draft?: ProviderDraftState) {
+  if (
+    provider.id === ANYBOX_ACCOUNT_PROVIDER_ID &&
+    provider.authCapabilities.some(
+      (capability) => capability.method === ANYBOX_BROWSER_AUTH_METHOD && capability.kind === "browser_oauth",
+    )
+  ) {
+    return ANYBOX_BROWSER_AUTH_METHOD
+  }
+
+  return draft?.selectedAuthMethod ?? provider.authState.activeMethod ?? provider.authCapabilities[0]?.method
+}
+
 function getProviderAuthFailureMessage(providerID: string, flow: ProviderAuthFlow) {
   if (flow.errorMessage) return flow.errorMessage
-  if (providerID === "anybox") {
+  if (providerID === ANYBOX_ACCOUNT_PROVIDER_ID) {
     return "The desktop app could not connect to the Anybox API. Use Test connection for network diagnostics, or switch proxy rules and try again."
   }
   return "Provider authentication failed."
@@ -2446,8 +2461,9 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     const provider = catalog.find((item) => item.id === providerID)
     const draft = providerDrafts[providerID]
-    const method = draft?.selectedAuthMethod ?? provider?.authState.activeMethod ?? provider?.authCapabilities[0]?.method
-    if (!provider || !method) return false
+    if (!provider) return false
+    const method = resolveProviderAuthFlowMethod(provider, draft)
+    if (!method) return false
 
     setSavingProviderID(providerID)
 
