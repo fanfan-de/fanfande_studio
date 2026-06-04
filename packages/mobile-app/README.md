@@ -163,7 +163,8 @@ corepack pnpm --filter anybox-mobile-app build:android:production
 The app supports two update paths:
 
 - EAS Update for JavaScript, asset, and UI-only changes.
-- A release manifest URL for native Android APK/AAB updates.
+- GitHub Releases for native Android APK updates, using only tags that start with `mobile-v`.
+- A direct release manifest URL for custom native Android update hosting.
 
 EAS Update needs an Expo project ID before it can serve OTA updates. Configure it once after logging in:
 
@@ -181,7 +182,30 @@ corepack pnpm mobile:update:preview -- --message "Fix mobile workspace refresh"
 corepack pnpm mobile:update:production -- --message "Fix mobile workspace refresh"
 ```
 
-For full app updates, set `EXPO_PUBLIC_ANYBOX_MOBILE_RELEASE_URL` to a JSON manifest URL before building. The app checks this URL from the Updates screen and uses it for required-update prompts.
+For full app updates, the default setup reads GitHub Releases from `fanfan-de/fanfande_studio`, filters tags that start with `mobile-v`, and ignores desktop releases. A mobile release should use a tag like `mobile-v0.2.0` and include these assets:
+
+```text
+anybox-mobile.apk
+anybox-mobile-release.json
+```
+
+Prepare those assets after building the APK:
+
+```powershell
+corepack pnpm mobile:android:build:debug
+corepack pnpm mobile:release:github:prepare -- --notes "Fix pairing reliability"
+```
+
+The prepare command writes:
+
+```text
+packages/mobile-app/build/github-release/anybox-mobile.apk
+packages/mobile-app/build/github-release/anybox-mobile-release.json
+```
+
+It also prints a `gh release create ...` command. The app checks the GitHub Releases API directly, so do not use `releases/latest` for mobile updates.
+
+If you do not want to use GitHub Releases, set `EXPO_PUBLIC_ANYBOX_MOBILE_RELEASE_URL` to a JSON manifest URL before building. That manifest URL takes priority over GitHub Releases.
 
 Example manifest:
 

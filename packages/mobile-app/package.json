@@ -33,6 +33,7 @@
     "build:android:production": "eas build --platform android --profile production",
     "update:preview": "eas update --channel preview --environment preview",
     "update:production": "eas update --channel production --environment production",
+    "release:github:prepare": "node ./scripts/prepare-github-mobile-release.mjs",
     "doctor": "node ./scripts/mobile-doctor.mjs",
     "smoke": "node ./scripts/mobile-smoke.mjs",
     "typecheck": "tsc --noEmit"

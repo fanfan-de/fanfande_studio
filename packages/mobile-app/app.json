@@ -30,7 +30,11 @@
       "typedRoutes": true
     },
     "extra": {
-      "anyboxMobileReleaseUrl": ""
+      "anyboxMobileReleaseUrl": "",
+      "anyboxMobileGitHubRepository": "fanfan-de/fanfande_studio",
+      "anyboxMobileGitHubReleaseTagPrefix": "mobile-v",
+      "anyboxMobileGitHubApkAssetName": "anybox-mobile.apk",
+      "anyboxMobileGitHubManifestAssetName": "anybox-mobile-release.json"
     }
   }
 }

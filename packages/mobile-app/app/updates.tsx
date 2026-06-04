@@ -129,9 +129,14 @@ export default function UpdatesScreen() {
 
       <Section title="Sources">
         <ListRow
-          title="APK manifest"
-          meta={current.releaseManifestUrl ? "Configured" : "Not set"}
-          subtitle={current.releaseManifestUrl ?? "Set EXPO_PUBLIC_ANYBOX_MOBILE_RELEASE_URL for native app updates."}
+          title="App release"
+          meta={current.releaseSource === "none" ? "Not set" : "Configured"}
+          subtitle={
+            current.releaseManifestUrl ??
+            (current.releaseSource === "github"
+              ? current.releaseSourceLabel
+              : "Set GitHub release settings or EXPO_PUBLIC_ANYBOX_MOBILE_RELEASE_URL.")
+          }
         />
         <ListRow
           title="EAS Update"

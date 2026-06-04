@@ -24,6 +24,26 @@ const releaseManifestUrl = firstNonEmpty([
   process.env.EXPO_PUBLIC_ANYBOX_MOBILE_RELEASE_URL,
   baseConfig.extra?.anyboxMobileReleaseUrl,
 ])
+const githubRepository = firstNonEmpty([
+  process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_REPOSITORY,
+  process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_REPO,
+  baseConfig.extra?.anyboxMobileGitHubRepository,
+])
+const githubReleaseTagPrefix = firstNonEmpty([
+  process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_TAG_PREFIX,
+  baseConfig.extra?.anyboxMobileGitHubReleaseTagPrefix,
+  "mobile-v",
+])
+const githubApkAssetName = firstNonEmpty([
+  process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_APK_ASSET_NAME,
+  baseConfig.extra?.anyboxMobileGitHubApkAssetName,
+  "anybox-mobile.apk",
+])
+const githubManifestAssetName = firstNonEmpty([
+  process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_MANIFEST_ASSET_NAME,
+  baseConfig.extra?.anyboxMobileGitHubManifestAssetName,
+  "anybox-mobile-release.json",
+])
 
 module.exports = () => ({
   ...baseConfig,
@@ -34,6 +54,10 @@ module.exports = () => ({
   extra: {
     ...baseConfig.extra,
     anyboxMobileReleaseUrl: releaseManifestUrl,
+    anyboxMobileGitHubRepository: githubRepository,
+    anyboxMobileGitHubReleaseTagPrefix: githubReleaseTagPrefix,
+    anyboxMobileGitHubApkAssetName: githubApkAssetName,
+    anyboxMobileGitHubManifestAssetName: githubManifestAssetName,
     ...(easProjectId
       ? {
           eas: {

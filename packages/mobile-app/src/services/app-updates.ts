@@ -11,6 +11,8 @@ export interface CurrentAppInfo {
   updateId: string | null
   updatesEnabled: boolean
   releaseManifestUrl: string | null
+  releaseSource: "github" | "manifest" | "none"
+  releaseSourceLabel: string
 }
 
 export interface OtaUpdateCheck {
@@ -60,6 +62,24 @@ interface CheckAppUpdatesOptions {
 }
 
 const DEFAULT_RELEASE_TIMEOUT_MS = 12_000
+const DEFAULT_GITHUB_API_VERSION = "2022-11-28"
+
+interface GitHubReleaseSource {
+  repository: string
+  tagPrefix: string
+  apkAssetName: string
+  manifestAssetName: string | null
+  includePrereleases: boolean
+}
+
+type GitHubRelease = Record<string, unknown>
+
+interface NormalizedGitHubReleaseAsset {
+  name: string
+  browserDownloadUrl: string
+  sizeBytes?: number
+  sha256?: string
+}
 
 export function getCurrentAppInfo(): CurrentAppInfo {
   const constants = Constants as unknown as Record<string, unknown>
@@ -69,6 +89,14 @@ export function getCurrentAppInfo(): CurrentAppInfo {
   const android = readRecord(platform?.android)
   const androidVersionCode = readNumber(android?.versionCode)
   const expoVersion = readString(Constants.expoConfig?.version)
+  const releaseManifestUrl = getReleaseManifestUrl()
+  const githubReleaseSource = getGitHubReleaseSource()
+  const releaseSource = releaseManifestUrl ? "manifest" : githubReleaseSource ? "github" : "none"
+  const releaseSourceLabel = releaseManifestUrl
+    ? "Manifest URL"
+    : githubReleaseSource
+      ? `GitHub ${githubReleaseSource.repository} ${githubReleaseSource.tagPrefix}*`
+      : "Not configured"
 
   return {
     version: nativeVersion ?? expoVersion ?? "0.1.0",
@@ -78,7 +106,9 @@ export function getCurrentAppInfo(): CurrentAppInfo {
     runtimeVersion: Updates.runtimeVersion,
     updateId: Updates.updateId,
     updatesEnabled: Updates.isEnabled,
-    releaseManifestUrl: getReleaseManifestUrl(),
+    releaseManifestUrl,
+    releaseSource,
+    releaseSourceLabel,
   }
 }
 
@@ -156,7 +186,8 @@ async function checkOtaUpdate(): Promise<OtaUpdateCheck> {
 
 async function checkBinaryUpdate(current: CurrentAppInfo): Promise<BinaryUpdateCheck> {
   const manifestUrl = current.releaseManifestUrl
-  if (!manifestUrl) {
+  const githubReleaseSource = getGitHubReleaseSource()
+  if (!manifestUrl && !githubReleaseSource) {
     return {
       checked: false,
       configured: false,
@@ -168,7 +199,7 @@ async function checkBinaryUpdate(current: CurrentAppInfo): Promise<BinaryUpdateC
   }
 
   try {
-    const release = await fetchBinaryRelease(manifestUrl)
+    const release = manifestUrl ? await fetchBinaryRelease(manifestUrl) : await fetchGitHubBinaryRelease(githubReleaseSource!)
     const required = isBinaryReleaseRequired(release, current)
     const available = required || isBinaryReleaseNewer(release, current)
     return {
@@ -212,12 +243,83 @@ async function fetchBinaryRelease(manifestUrl: string): Promise<BinaryRelease> {
   }
 }
 
-function normalizeBinaryRelease(value: unknown): BinaryRelease {
+async function fetchGitHubBinaryRelease(source: GitHubReleaseSource): Promise<BinaryRelease> {
+  const releases = await fetchGitHubReleases(source.repository)
+  const mobileRelease = releases
+    .filter((release) => isGitHubReleaseCandidate(release, source))
+    .sort((left, right) => compareGitHubMobileReleases(left, right, source.tagPrefix))[0]
+
+  if (!mobileRelease) {
+    throw new Error(`No GitHub release found with tag prefix ${source.tagPrefix}.`)
+  }
+
+  const tagName = readString(mobileRelease.tag_name)
+  if (!tagName) throw new Error("GitHub release is missing tag_name.")
+
+  const assets = readGitHubReleaseAssets(mobileRelease.assets)
+  const apkAsset = findGitHubReleaseAsset(assets, source.apkAssetName, ".apk")
+  if (!apkAsset?.browserDownloadUrl) {
+    throw new Error(`GitHub release ${tagName} is missing ${source.apkAssetName}.`)
+  }
+
+  const fallback = {
+    version: versionFromGitHubTag(tagName, source.tagPrefix),
+    apkUrl: apkAsset.browserDownloadUrl,
+    notes: readReleaseNotes(mobileRelease.body),
+    publishedAt: readString(mobileRelease.published_at),
+    sizeBytes: apkAsset.sizeBytes,
+    sha256: apkAsset.sha256,
+  }
+  const manifestAsset = source.manifestAssetName
+    ? findGitHubReleaseAsset(assets, source.manifestAssetName, ".json")
+    : null
+
+  if (!manifestAsset?.browserDownloadUrl) {
+    return normalizeBinaryRelease(fallback)
+  }
+
+  const manifestValue = await fetchJson(manifestAsset.browserDownloadUrl, "GitHub release manifest")
+  return normalizeBinaryRelease(manifestValue, fallback)
+}
+
+async function fetchGitHubReleases(repository: string): Promise<GitHubRelease[]> {
+  const value = await fetchJson(`https://api.github.com/repos/${repository}/releases?per_page=30`, "GitHub releases")
+  if (!Array.isArray(value)) {
+    throw new Error("GitHub releases response must be an array.")
+  }
+  return value.map((item) => readRecord(item)).filter((item): item is GitHubRelease => item !== null)
+}
+
+async function fetchJson(url: string, label: string) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_RELEASE_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        accept: "application/vnd.github+json, application/json",
+        "x-github-api-version": DEFAULT_GITHUB_API_VERSION,
+      },
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      throw new Error(`${label} request failed with HTTP ${response.status}.`)
+    }
+
+    return response.json()
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function normalizeBinaryRelease(value: unknown, fallback: Record<string, unknown> = {}): BinaryRelease {
   const root = readRecord(value)
   if (!root) throw new Error("Release manifest must be a JSON object.")
 
   const platformRecord = readRecord(root[Platform.OS]) ?? readRecord(readRecord(root.platforms)?.[Platform.OS])
   const source = {
+    ...fallback,
     ...root,
     ...(platformRecord ?? {}),
   }
@@ -304,6 +406,34 @@ function getReleaseManifestUrl() {
   return fromEnvironment || fromConfig || null
 }
 
+function getGitHubReleaseSource(): GitHubReleaseSource | null {
+  const extra = readRecord(Constants.expoConfig?.extra)
+  const repository =
+    process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_REPOSITORY?.trim() ||
+    process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_REPO?.trim() ||
+    readString(extra?.anyboxMobileGitHubRepository)
+  if (!repository) return null
+
+  return {
+    repository,
+    tagPrefix:
+      process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_TAG_PREFIX?.trim() ||
+      readString(extra?.anyboxMobileGitHubReleaseTagPrefix) ||
+      "mobile-v",
+    apkAssetName:
+      process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_APK_ASSET_NAME?.trim() ||
+      readString(extra?.anyboxMobileGitHubApkAssetName) ||
+      "anybox-mobile.apk",
+    manifestAssetName:
+      process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_MANIFEST_ASSET_NAME?.trim() ||
+      readString(extra?.anyboxMobileGitHubManifestAssetName) ||
+      "anybox-mobile-release.json",
+    includePrereleases:
+      process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_INCLUDE_PRERELEASES === "1" ||
+      extra?.anyboxMobileGitHubIncludePrereleases === true,
+  }
+}
+
 function createSkippedOtaUpdateCheck(): OtaUpdateCheck {
   return {
     checked: false,
@@ -319,12 +449,72 @@ function createSkippedOtaUpdateCheck(): OtaUpdateCheck {
 function createSkippedBinaryUpdateCheck(): BinaryUpdateCheck {
   return {
     checked: false,
-    configured: Boolean(getReleaseManifestUrl()),
+    configured: Boolean(getReleaseManifestUrl() || getGitHubReleaseSource()),
     available: false,
     required: false,
     release: null,
     message: "Native app update check was skipped.",
   }
+}
+
+function isGitHubReleaseCandidate(release: GitHubRelease, source: GitHubReleaseSource) {
+  const tagName = readString(release.tag_name)
+  if (!tagName?.startsWith(source.tagPrefix)) return false
+  if (release.draft === true) return false
+  if (!source.includePrereleases && release.prerelease === true) return false
+  return true
+}
+
+function compareGitHubMobileReleases(left: GitHubRelease, right: GitHubRelease, tagPrefix: string) {
+  const leftTag = readString(left.tag_name) ?? ""
+  const rightTag = readString(right.tag_name) ?? ""
+  const versionComparison = compareVersions(versionFromGitHubTag(rightTag, tagPrefix), versionFromGitHubTag(leftTag, tagPrefix))
+  if (versionComparison !== 0) return versionComparison
+
+  const leftPublishedAt = Date.parse(readString(left.published_at) ?? "")
+  const rightPublishedAt = Date.parse(readString(right.published_at) ?? "")
+  return (Number.isFinite(rightPublishedAt) ? rightPublishedAt : 0) - (Number.isFinite(leftPublishedAt) ? leftPublishedAt : 0)
+}
+
+function versionFromGitHubTag(tagName: string, tagPrefix: string) {
+  return tagName.startsWith(tagPrefix) ? tagName.slice(tagPrefix.length) : tagName.replace(/^v/i, "")
+}
+
+function readGitHubReleaseAssets(value: unknown): NormalizedGitHubReleaseAsset[] {
+  if (!Array.isArray(value)) return []
+  const assets: NormalizedGitHubReleaseAsset[] = []
+
+  for (const item of value) {
+    const record = readRecord(item)
+    const name = readString(record?.name)
+    const browserDownloadUrl = readString(record?.browser_download_url)
+    if (!record || !name || !browserDownloadUrl) continue
+    assets.push({
+      name,
+      browserDownloadUrl,
+      sizeBytes: readNumber(record.size) ?? undefined,
+      sha256: readGitHubAssetDigest(record.digest),
+    })
+  }
+
+  return assets
+}
+
+function findGitHubReleaseAsset(
+  assets: NormalizedGitHubReleaseAsset[],
+  preferredName: string,
+  fallbackExtension: string,
+) {
+  return (
+    assets.find((asset) => asset.name === preferredName) ??
+    assets.find((asset) => asset.name.toLowerCase().endsWith(fallbackExtension))
+  )
+}
+
+function readGitHubAssetDigest(value: unknown) {
+  const digest = readString(value)
+  if (!digest?.toLowerCase().startsWith("sha256:")) return undefined
+  return digest.slice("sha256:".length)
 }
 
 function readReleaseNotes(value: unknown) {

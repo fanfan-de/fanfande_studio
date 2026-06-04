@@ -95,6 +95,7 @@ function main() {
   patchReactNativeGradlePluginRepositories()
   patchExpoGradlePluginRepositories()
   patchExpoModulesCoreGradlePluginRepositories()
+  patchExpoUpdatesGradlePluginRepositories()
   embedDebugBundle(expo, androidDir)
   const gradle = path.join(androidDir, isWindows ? "gradlew.bat" : "gradlew")
   if (!existsSync(gradle)) {
@@ -242,6 +243,15 @@ function patchExpoModulesCoreGradlePluginRepositories() {
     path.join(pluginRoot, "settings.gradle.kts"),
     "expo-module-gradle-plugin",
   )
+  patchKotlinBuildRepositories(path.join(pluginRoot, "build.gradle.kts"))
+}
+
+function patchExpoUpdatesGradlePluginRepositories() {
+  const expoUpdatesPackagePath = require.resolve("expo-updates/package.json", {
+    paths: [packageRoot],
+  })
+  const pluginRoot = path.join(path.dirname(expoUpdatesPackagePath), "expo-updates-gradle-plugin")
+
   patchKotlinBuildRepositories(path.join(pluginRoot, "build.gradle.kts"))
 }
 
