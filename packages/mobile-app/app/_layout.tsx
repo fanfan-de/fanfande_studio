@@ -16,6 +16,7 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="index" options={{ title: "Anybox" }} />
+        <Stack.Screen name="scan" options={{ title: "Scan QR" }} />
         <Stack.Screen name="connect" options={{ title: "Connect" }} />
         <Stack.Screen name="updates" options={{ title: "Updates" }} />
         <Stack.Screen name="approvals" options={{ title: "Approvals" }} />

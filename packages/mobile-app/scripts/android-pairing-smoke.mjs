@@ -336,6 +336,25 @@ function startMockBridge() {
       return
     }
 
+    if (requestUrl.pathname === "/api/mobile/pair/preview" && request.method === "GET") {
+      const valid = requestUrl.searchParams.get("code") === mockPairingCode
+      const now = Date.now()
+      jsonResponse(response, 200, ok({
+        service: "anybox-mobile-bridge",
+        running: true,
+        desktopName: "Smoke Desktop",
+        appVersion: "0.0.0",
+        online: true,
+        capabilities: mockCapabilities,
+        pairing: {
+          valid,
+          expiresAt: valid ? now + 300_000 : null,
+          serverTime: now,
+        },
+      }))
+      return
+    }
+
     if (requestUrl.pathname === "/api/mobile/pair" && request.method === "POST") {
       await readRequestBody(request)
       if (requestUrl.searchParams.get("code") !== mockPairingCode) {
@@ -622,26 +641,17 @@ async function waitForReplaceConnectionUi(packageName, timeoutSeconds) {
   return waitForUi(
     packageName,
     timeoutSeconds,
-    ["New pairing link received", "Keep current", "Replace"],
-    "Replace connection",
+    ["Confirm desktop connection", "Replacing current desktop", "Confirm connection"],
+    "Replace connection confirmation",
   )
 }
 
-async function waitForPairedHomeOrReplaceConnectionUi(packageName, timeoutSeconds) {
-  return waitForAnyUi(
+async function waitForConfirmConnectionUi(packageName, timeoutSeconds) {
+  return waitForUi(
     packageName,
     timeoutSeconds,
-    [
-      {
-        name: "home",
-        expectedTexts: ["Smoke Desktop 0.0.0", "Workspaces", "Smoke Workspace", "Smoke Chat"],
-      },
-      {
-        name: "replace",
-        expectedTexts: ["New pairing link received", "Keep current", "Replace"],
-      },
-    ],
-    "Paired Home or Replace connection",
+    ["Confirm desktop connection", "Smoke Desktop 0.0.0", "Confirm connection"],
+    "Connection confirmation",
   )
 }
 
@@ -775,11 +785,11 @@ async function tapAccessibilityLabelUntilUi(packageName, label, expectedTexts, t
 
 async function confirmReplaceConnection(packageName, hierarchy) {
   await sleep(1200)
-  tapAccessibilityLabel(hierarchy, "Replace")
+  tapText(hierarchy, "Confirm connection")
   await sleep(1200)
   const afterTapHierarchy = dumpWindowHierarchy()
-  if (afterTapHierarchy.includes(`package="${packageName}"`) && afterTapHierarchy.includes('text="New pairing link received"')) {
-    tapAccessibilityLabel(afterTapHierarchy, "Replace")
+  if (afterTapHierarchy.includes(`package="${packageName}"`) && afterTapHierarchy.includes('text="Confirm connection"')) {
+    tapText(afterTapHierarchy, "Confirm connection")
   }
 }
 
@@ -891,6 +901,7 @@ function findFatalLogLines(logcat) {
 
 function assertMockBridgeWasUsed(requests) {
   for (const route of [
+    "GET /api/mobile/pair/preview",
     "POST /api/mobile/pair",
     "GET /api/mobile/status",
     "GET /api/mobile/workspaces",
@@ -912,6 +923,7 @@ function assertMockBridgeWasUsed(requests) {
 
 function assertInitialBridgeWasReplaced(requests) {
   for (const route of [
+    "GET /api/mobile/pair/preview",
     "POST /api/mobile/pair",
     "POST /api/mobile/devices/me/revoke",
   ]) {
@@ -943,11 +955,9 @@ async function main() {
     run("adb", ["shell", "pm", "clear", args.packageName])
     run("adb", ["logcat", "-c"])
     run("adb", ["shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", deepLink, args.packageName])
-    const initialPairingHierarchy = await waitForPairedHomeOrReplaceConnectionUi(args.packageName, args.waitSeconds)
-    if (initialPairingHierarchy.name === "replace") {
-      await confirmReplaceConnection(args.packageName, initialPairingHierarchy.hierarchy)
-      await waitForPairedHomeUi(args.packageName, args.waitSeconds)
-    }
+    const initialPairingHierarchy = await waitForConfirmConnectionUi(args.packageName, args.waitSeconds)
+    await confirmReplaceConnection(args.packageName, initialPairingHierarchy)
+    await waitForPairedHomeUi(args.packageName, args.waitSeconds)
 
     replacementBridge = await startMockBridge()
     const replacementBridgeUrl = `http://10.0.2.2:${replacementBridge.port}/?code=${encodeURIComponent(mockPairingCode)}`

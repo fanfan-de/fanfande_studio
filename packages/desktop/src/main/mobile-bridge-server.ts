@@ -158,6 +158,19 @@ function consumePairingCode(candidate: string | undefined, now = Date.now()) {
   return matches
 }
 
+function inspectPairingCode(candidate: string | undefined, now = Date.now()) {
+  const current = mobilePairingCode
+  if (!candidate || !current) return { valid: false, expiresAt: null }
+  if (current.expiresAt <= now) return { valid: false, expiresAt: current.expiresAt }
+  const candidateHash = hashToken(candidate)
+  const currentHash = hashToken(current.code)
+  const valid = candidateHash.length === currentHash.length && timingSafeEqual(candidateHash, currentHash)
+  return {
+    valid,
+    expiresAt: valid ? current.expiresAt : null,
+  }
+}
+
 function tokenHashMatches(candidate: string, tokenHash: string) {
   const candidateHash = Buffer.from(hashTokenHex(candidate), "hex")
   const storedHash = Buffer.from(tokenHash, "hex")
@@ -1161,6 +1174,20 @@ async function handleMobileBridgeRequest(request: http.IncomingMessage, response
 
   if (url.pathname === "/api/mobile/status") {
     jsonResponse(response, 200, ok(publicStatus()))
+    return
+  }
+
+  if (url.pathname === "/api/mobile/pair/preview" && request.method === "GET") {
+    const now = Date.now()
+    const pairing = inspectPairingCode(url.searchParams.get(PAIRING_CODE_QUERY_PARAM)?.trim() || undefined, now)
+    jsonResponse(response, 200, ok({
+      ...publicStatus(),
+      pairing: {
+        valid: pairing.valid,
+        expiresAt: pairing.expiresAt,
+        serverTime: now,
+      },
+    }))
     return
   }
 

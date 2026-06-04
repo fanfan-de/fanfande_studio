@@ -235,13 +235,13 @@ The smoke test checks public bridge status, pairs a temporary device, verifies a
 
 ## Connection
 
-Paste the LAN URL from the desktop Mobile Connection page, including the `code` or `token` query parameter. You can also paste the full `anybox-mobile://connect?url=...` deep link. The app uses that desktop pairing code or URL token once to pair the device, then stores the resulting device token with `expo-secure-store`.
+Use the Scan QR code action on the mobile app home screen to scan the desktop Mobile Connection QR code. The app previews the desktop name, address, capabilities, and QR expiry before pairing; confirming the connection exchanges the one-time code for a device token stored with `expo-secure-store`.
 
-The desktop Mobile Connection page also shows a QR code. In an installed Android build, scanning that QR code opens `anybox-mobile://connect?...` and starts pairing automatically with a short-lived one-time code.
+The advanced URL login path remains available for troubleshooting. Paste the LAN URL from the desktop Mobile Connection page, including the `code` or `token` query parameter, or paste the full `anybox-mobile://connect?url=...` deep link.
 
 ## Current Scope
 
-- Connect to the desktop bridge with the existing LAN URL/token flow and exchange it for a per-device token.
+- Connect to the desktop bridge with QR pairing or the advanced LAN URL/token flow and exchange it for a per-device token.
 - Show bridge status, workspaces, recent chats, workspace chats, chat messages, and session tasks.
 - Create a chat inside an existing workspace.
 - Browse workspace files read-only, search by file name, and preview supported text/image files.
@@ -269,7 +269,7 @@ The mock pairing smoke (`mobile:android:smoke:pairing`) is the repeatable CI-sty
    ```
 
 3. Open the Expo Go URL on an Android phone on the same Wi-Fi.
-4. Paste the desktop LAN URL from the Mobile Connection page. You can also paste the `anybox-mobile://connect?...` deep link. In an installed Android build, scan the page QR code instead.
+4. Scan the desktop Mobile Connection QR code, confirm the desktop details, and connect. You can also use Advanced URL login to paste the LAN URL or `anybox-mobile://connect?...` deep link.
 5. Verify Home loads workspaces, open a chat, send a short prompt, and watch the Messages and Tasks sections refresh.
 6. Open a Workspace and verify Chats, Changes, and read-only Files load.
 7. Trigger a tool approval from the desktop agent and verify the Approvals screen can allow or deny it, then switch to History after resolving it.

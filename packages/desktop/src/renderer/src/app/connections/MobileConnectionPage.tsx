@@ -5,7 +5,7 @@ import { CopyIcon, ResetIcon, SmartphoneIcon } from "../icons"
 import { writeTextToClipboard } from "../shared-ui"
 
 function formatStartedAt(value: number | null) {
-  if (!value) return "未运行"
+  if (!value) return "Not running"
   return new Date(value).toLocaleString()
 }
 
@@ -13,12 +13,20 @@ function formatDeviceTime(value: number) {
   return new Date(value).toLocaleString()
 }
 
+function formatPairingExpiry(expiresAt: number | null, now: number) {
+  if (!expiresAt) return "Unavailable"
+  const remaining = Math.max(0, expiresAt - now)
+  const minutes = Math.floor(remaining / 60_000)
+  const seconds = Math.floor((remaining % 60_000) / 1000)
+  return remaining > 0 ? `Expires in ${minutes}:${String(seconds).padStart(2, "0")}` : "Expired"
+}
+
 function getPrimaryUrl(status: DesktopMobileBridgeStatus | null) {
   return status?.urls[0] ?? status?.localUrl ?? ""
 }
 
 function getPrimaryPairingUrl(status: DesktopMobileBridgeStatus | null) {
-  return status?.pairingUrls[0] ?? status?.pairingLocalUrl ?? getPrimaryUrl(status)
+  return status?.pairingUrls[0] ?? status?.pairingLocalUrl ?? ""
 }
 
 function getPairingUrls(status: DesktopMobileBridgeStatus | null) {
@@ -50,7 +58,7 @@ function getActiveDeviceCount(devices: DesktopMobileDeviceSummary[] | undefined)
 }
 
 function formatCapabilities(capabilities: string[]) {
-  return capabilities.length ? capabilities.join(", ") : "无权限记录"
+  return capabilities.length ? capabilities.join(", ") : "No capabilities recorded"
 }
 
 export function MobileConnectionPage() {
@@ -59,13 +67,15 @@ export function MobileConnectionPage() {
   const [copied, setCopied] = useState<string | null>(null)
   const [isRefreshingPairing, setIsRefreshingPairing] = useState(false)
   const [isRotating, setIsRotating] = useState(false)
+  const [isLegacyOpen, setIsLegacyOpen] = useState(false)
   const [revokingDeviceID, setRevokingDeviceID] = useState<string | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [now, setNow] = useState(() => Date.now())
 
   async function refreshStatus() {
     try {
       if (!window.desktop?.getMobileBridgeStatus) {
-        throw new Error("桌面桥接不可用。")
+        throw new Error("Desktop mobile bridge is unavailable.")
       }
       setError(null)
       setStatus(await window.desktop.getMobileBridgeStatus())
@@ -87,12 +97,19 @@ export function MobileConnectionPage() {
     return () => window.clearTimeout(timeout)
   }, [status?.pairingExpiresAt])
 
+  useEffect(() => {
+    if (!status?.pairingExpiresAt) return undefined
+    const interval = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(interval)
+  }, [status?.pairingExpiresAt])
+
   const primaryUrl = useMemo(() => getPrimaryUrl(status), [status])
   const primaryPairingUrl = useMemo(() => getPrimaryPairingUrl(status), [status])
   const pairingUrls = useMemo(() => getPairingUrls(status), [status])
   const legacyUrls = useMemo(() => getLegacyUrls(status), [status])
   const pairingDeepLink = useMemo(() => createPairingDeepLink(primaryPairingUrl), [primaryPairingUrl])
   const androidSmokeCommand = useMemo(() => createAndroidSmokeCommand(pairingDeepLink), [pairingDeepLink])
+  const pairingExpiryLabel = formatPairingExpiry(status?.pairingExpiresAt ?? null, now)
 
   useEffect(() => {
     let cancelled = false
@@ -130,7 +147,7 @@ export function MobileConnectionPage() {
     setIsRotating(true)
     try {
       if (!window.desktop?.rotateMobileBridgeToken) {
-        throw new Error("桌面桥接不可用。")
+        throw new Error("Desktop mobile bridge is unavailable.")
       }
       setStatus(await window.desktop.rotateMobileBridgeToken())
     } catch (nextError) {
@@ -144,7 +161,7 @@ export function MobileConnectionPage() {
     setIsRefreshingPairing(true)
     try {
       if (!window.desktop?.refreshMobilePairingCode) {
-        throw new Error("桌面桥接不可用。")
+        throw new Error("Desktop mobile bridge is unavailable.")
       }
       setError(null)
       setStatus(await window.desktop.refreshMobilePairingCode())
@@ -159,7 +176,7 @@ export function MobileConnectionPage() {
     setRevokingDeviceID(deviceID)
     try {
       if (!window.desktop?.revokeMobileDevice) {
-        throw new Error("设备管理不可用。")
+        throw new Error("Device management is unavailable.")
       }
       setError(null)
       setStatus(await window.desktop.revokeMobileDevice({ deviceID }))
@@ -174,15 +191,15 @@ export function MobileConnectionPage() {
   const activeDeviceCount = getActiveDeviceCount(devices)
 
   return (
-    <section className="mobile-connection-page" aria-label="手机连接">
+    <section className="mobile-connection-page" aria-label="Mobile connection">
       <div className="mobile-connection-shell">
         <header className="mobile-connection-hero">
           <span className="mobile-connection-icon" aria-hidden="true">
             <SmartphoneIcon />
           </span>
           <div>
-            <h1>手机连接</h1>
-            <p>在同一 Wi-Fi 下用手机打开局域网地址，即可访问项目、最近会话、聊天记录和流式回复。</p>
+            <h1>Mobile connection</h1>
+            <p>Pair Anybox Mobile with this desktop over your local network.</p>
           </div>
         </header>
 
@@ -190,27 +207,27 @@ export function MobileConnectionPage() {
 
         <section className="mobile-connection-grid">
           <article className="mobile-connection-card">
-            <span className="settings-field-label">桥接状态</span>
-            <strong>{status?.running ? "运行中" : "已停止"}</strong>
+            <span className="settings-field-label">Bridge status</span>
+            <strong>{status?.running ? "Running" : "Stopped"}</strong>
             <small>{formatStartedAt(status?.startedAt ?? null)}</small>
           </article>
           <article className="mobile-connection-card">
-            <span className="settings-field-label">监听地址</span>
+            <span className="settings-field-label">Listening address</span>
             <strong>{status?.host ?? "0.0.0.0"}</strong>
-            <small>{status?.port ? `端口 ${status.port}` : "端口不可用"}</small>
+            <small>{status?.port ? `Port ${status.port}` : "Port unavailable"}</small>
           </article>
           <article className="mobile-connection-card">
-            <span className="settings-field-label">已配对设备</span>
+            <span className="settings-field-label">Paired devices</span>
             <strong>{activeDeviceCount}</strong>
-            <small>{devices.length ? `${devices.length} 条记录` : "暂无设备"}</small>
+            <small>{devices.length ? `${devices.length} records` : "No devices"}</small>
           </article>
         </section>
 
         <section className="mobile-connection-panel">
           <div className="settings-section-header">
             <div>
-              <h3>Android 配对</h3>
-              <p>扫描二维码或复制深链打开 Anybox Mobile。配对地址使用短期一次性 code，成功后安卓端会换成独立设备 token。</p>
+              <h3>Scan to connect Anybox Mobile</h3>
+              <p>{pairingExpiryLabel}</p>
             </div>
             <div className="settings-inline-actions">
               <button
@@ -220,7 +237,7 @@ export function MobileConnectionPage() {
                 onClick={() => void refreshPairingCode()}
               >
                 <ResetIcon />
-                {isRefreshingPairing ? "刷新中" : "刷新配对码"}
+                {isRefreshingPairing ? "Refreshing" : "Refresh QR"}
               </button>
               <button
                 type="button"
@@ -229,16 +246,7 @@ export function MobileConnectionPage() {
                 onClick={() => void copyValue("deeplink", pairingDeepLink)}
               >
                 <CopyIcon />
-                {copied === "deeplink" ? "已复制" : "复制 Android 深链"}
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={!primaryPairingUrl}
-                onClick={() => void copyValue("pairing-url", primaryPairingUrl)}
-              >
-                <CopyIcon />
-                {copied === "pairing-url" ? "已复制" : "复制配对 URL"}
+                {copied === "deeplink" ? "Copied" : "Copy deep link"}
               </button>
               <button
                 type="button"
@@ -247,7 +255,7 @@ export function MobileConnectionPage() {
                 onClick={() => void copyValue("smoke-command", androidSmokeCommand)}
               >
                 <CopyIcon />
-                {copied === "smoke-command" ? "已复制" : "复制验收命令"}
+                {copied === "smoke-command" ? "Copied" : "Copy test command"}
               </button>
             </div>
           </div>
@@ -256,7 +264,7 @@ export function MobileConnectionPage() {
             {qrDataUrl ? (
               <img src={qrDataUrl} alt="Mobile connection QR code" />
             ) : (
-              <span>{primaryUrl ? "Generating" : "Unavailable"}</span>
+              <span>{primaryPairingUrl ? "Generating" : "Unavailable"}</span>
             )}
           </div>
 
@@ -271,16 +279,6 @@ export function MobileConnectionPage() {
                 <CopyIcon />
               </button>
             ) : null}
-            {androidSmokeCommand ? (
-              <button
-                type="button"
-                className="mobile-connection-url-row"
-                onClick={() => void copyValue("smoke-command-row", androidSmokeCommand)}
-              >
-                <span>{androidSmokeCommand}</span>
-                <CopyIcon />
-              </button>
-            ) : null}
             {pairingUrls.map((url) => (
               <button
                 key={url}
@@ -292,8 +290,18 @@ export function MobileConnectionPage() {
                 <CopyIcon />
               </button>
             ))}
+            {androidSmokeCommand ? (
+              <button
+                type="button"
+                className="mobile-connection-url-row"
+                onClick={() => void copyValue("smoke-command-row", androidSmokeCommand)}
+              >
+                <span>{androidSmokeCommand}</span>
+                <CopyIcon />
+              </button>
+            ) : null}
             {status && pairingUrls.length === 0 ? (
-              <div className="mobile-connection-empty">没有检测到局域网配对地址。请检查网络适配器、防火墙，或先用本机 localhost 调试。</div>
+              <div className="mobile-connection-empty">No local pairing address is available.</div>
             ) : null}
           </div>
         </section>
@@ -301,62 +309,74 @@ export function MobileConnectionPage() {
         <section className="mobile-connection-panel">
           <div className="settings-section-header">
             <div>
-              <h3>Legacy token 访问</h3>
-              <p>仅用于旧浏览器页面或手动调试。安卓正式路径应使用上方一次性配对 code。</p>
+              <h3>Advanced token access</h3>
             </div>
-            <div className="settings-inline-actions">
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={!primaryUrl}
-                onClick={() => void copyValue("legacy-url", primaryUrl)}
-              >
-                <CopyIcon />
-                {copied === "legacy-url" ? "已复制" : "复制旧 URL"}
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={!status?.token}
-                onClick={() => void copyValue("token", status?.token ?? "")}
-              >
-                <CopyIcon />
-                {copied === "token" ? "已复制" : "复制 token"}
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={isRotating}
-                onClick={() => void rotateToken()}
-              >
-                <ResetIcon />
-                {isRotating ? "刷新中" : "刷新"}
-              </button>
-            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              aria-expanded={isLegacyOpen}
+              onClick={() => setIsLegacyOpen((current) => !current)}
+            >
+              {isLegacyOpen ? "Hide advanced" : "Show advanced"}
+            </button>
           </div>
-          <div className="mobile-connection-url-list">
-            {legacyUrls.map((url) => (
-              <button
-                key={url}
-                type="button"
-                className="mobile-connection-url-row"
-                onClick={() => void copyValue(`legacy-${url}`, url)}
-              >
-                <span>{url}</span>
-                <CopyIcon />
-              </button>
-            ))}
-          </div>
-          <code className="mobile-connection-token">{status?.token ?? ""}</code>
+
+          {isLegacyOpen ? (
+            <>
+              <div className="settings-inline-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={!primaryUrl}
+                  onClick={() => void copyValue("legacy-url", primaryUrl)}
+                >
+                  <CopyIcon />
+                  {copied === "legacy-url" ? "Copied" : "Copy legacy URL"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={!status?.token}
+                  onClick={() => void copyValue("token", status?.token ?? "")}
+                >
+                  <CopyIcon />
+                  {copied === "token" ? "Copied" : "Copy token"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={isRotating}
+                  onClick={() => void rotateToken()}
+                >
+                  <ResetIcon />
+                  {isRotating ? "Refreshing" : "Rotate token"}
+                </button>
+              </div>
+              <div className="mobile-connection-url-list">
+                {legacyUrls.map((url) => (
+                  <button
+                    key={url}
+                    type="button"
+                    className="mobile-connection-url-row"
+                    onClick={() => void copyValue(`legacy-${url}`, url)}
+                  >
+                    <span>{url}</span>
+                    <CopyIcon />
+                  </button>
+                ))}
+              </div>
+              <code className="mobile-connection-token">{status?.token ?? ""}</code>
+            </>
+          ) : null}
         </section>
 
         <section className="mobile-connection-panel">
           <div className="settings-section-header">
             <div>
-              <h3>已配对设备</h3>
+              <h3>Paired devices</h3>
             </div>
             <button type="button" className="secondary-button" onClick={() => void refreshStatus()}>
-              刷新
+              Refresh
             </button>
           </div>
 
@@ -370,20 +390,20 @@ export function MobileConnectionPage() {
                       <strong>{device.name}</strong>
                       <span>{formatCapabilities(device.capabilities)}</span>
                     </div>
-                    <span>{revoked ? "已撤销" : `最近在线 ${formatDeviceTime(device.lastSeenAt)}`}</span>
+                    <span>{revoked ? "Revoked" : `Last seen ${formatDeviceTime(device.lastSeenAt)}`}</span>
                     <button
                       type="button"
                       className="secondary-button"
                       disabled={revoked || revokingDeviceID === device.id}
                       onClick={() => void revokeDevice(device.id)}
                     >
-                      {revokingDeviceID === device.id ? "撤销中" : "撤销"}
+                      {revokingDeviceID === device.id ? "Revoking" : "Revoke"}
                     </button>
                   </div>
                 )
               })
             ) : (
-              <div className="mobile-connection-empty">安卓端完成首次连接后会显示在这里。</div>
+              <div className="mobile-connection-empty">Paired Android devices will appear here.</div>
             )}
           </div>
         </section>

@@ -40,10 +40,10 @@ importers:
         version: 1.29.0(zod@4.3.6)
       '@opentui/core':
         specifier: ^0.1.90
-        version: 0.1.97(stage-js@1.0.2)(typescript@6.0.2)(web-tree-sitter@0.25.10)
+        version: 0.1.97(stage-js@1.0.2)(typescript@6.0.2)(web-tree-sitter@0.25.10(@types/emscripten@1.41.5))
       '@opentui/solid':
         specifier: ^0.1.90
-        version: 0.1.97(solid-js@1.9.11)(stage-js@1.0.2)(typescript@6.0.2)(web-tree-sitter@0.25.10)
+        version: 0.1.97(solid-js@1.9.11)(stage-js@1.0.2)(typescript@6.0.2)(web-tree-sitter@0.25.10(@types/emscripten@1.41.5))
       '@types/ssh2':
         specifier: ^1.15.5
         version: 1.15.5
@@ -297,6 +297,9 @@ importers:
       expo:
         specifier: 56.0.8
         version: 56.0.8(@babel/core@7.28.6)(@expo/dom-webview@56.0.5)(@expo/metro-runtime@56.0.13)(expo-router@56.2.8)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.9.1(@babel/core@7.28.6)(@react-native/metro-config@0.85.3(@babel/core@7.28.6))(react-native@0.85.3(@babel/core@7.28.6)(@react-native/metro-config@0.85.3(@babel/core@7.28.6))(@types/react@19.2.16)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.28.6)(@react-native/metro-config@0.85.3(@babel/core@7.28.6))(@types/react@19.2.16)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
+      expo-camera:
+        specifier: ~56.0.7
+        version: 56.0.7(@types/emscripten@1.41.5)(expo@56.0.8)(react-native@0.85.3(@babel/core@7.28.6)(@react-native/metro-config@0.85.3(@babel/core@7.28.6))(@types/react@19.2.16)(react@19.2.3))(react@19.2.3)
       expo-constants:
         specifier: 56.0.16
         version: 56.0.16(expo@56.0.8)(react-native@0.85.3(@babel/core@7.28.6)(@react-native/metro-config@0.85.3(@babel/core@7.28.6))(@types/react@19.2.16)(react@19.2.3))
@@ -2697,6 +2700,9 @@ packages:
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
 
+  '@types/emscripten@1.41.5':
+    resolution: {integrity: sha512-cMQm7pxu6BxtHyqJ7mQZ2kXWV5SLmugybFdHCBbJ5eHzOo6VhBckEgAT3//rP5FwPHNPeEiq4SmQ5ucBwsOo4Q==}
+
   '@types/estree-jsx@1.0.5':
     resolution: {integrity: sha512-52CcUVNFyfb1A2ALocQw/Dd1BQFNmSdkuC3BkZ6iqhdMfQz7JWOFRuJFloOzjk+6WijU56m9oKXFAXc7o3Towg==}
 
@@ -3128,6 +3134,9 @@ packages:
   balanced-match@4.0.4:
     resolution: {integrity: sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==}
     engines: {node: 18 || 20 || >=22}
+
+  barcode-detector@3.2.0:
+    resolution: {integrity: sha512-MrT5TT058ptG5YB157pHLfXKVpp0BKEfQBOb8QvzTbatzmLDu85JJ0Gd/sCYwbwdwStJvxsYflrSN6D6E4Ndyw==}
 
   bare-events@2.9.1:
     resolution: {integrity: sha512-Z0oHEHAFDZkffN8Qc39zNZjQlMDkPJRyyyZieU1VH7u8c5S+qHZ2S8ixdKIAxEjfHO7FJxXmJWgteOghVanIsg==}
@@ -3948,6 +3957,17 @@ packages:
       expo: '*'
       react: '*'
       react-native: '*'
+
+  expo-camera@56.0.7:
+    resolution: {integrity: sha512-c8z+UheidFintQyP9XLEDP43aK4PS/o9+TFLW0zEOjdqkYCBgoWq6Mw/Ps62kjBeftFY7xrp5ZLITbenNvbTaw==}
+    peerDependencies:
+      expo: '*'
+      react: '*'
+      react-native: '*'
+      react-native-web: '*'
+    peerDependenciesMeta:
+      react-native-web:
+        optional: true
 
   expo-constants@56.0.16:
     resolution: {integrity: sha512-6tsiN+gmTUPp/atyA+uY9Tg8VOdXdmb4s/3TVGolfn6A/oCAraw1pcPZX5XllyD+xUguxB6eBSFAT8494hZVMA==}
@@ -6529,6 +6549,10 @@ packages:
   tabbable@6.4.0:
     resolution: {integrity: sha512-05PUHKSNE8ou2dwIxTngl4EzcnsCDZGJ/iCLtDflR/SHB/ny14rXc+qU5P4mG9JkusiV7EivzY9Mhm55AzAvCg==}
 
+  tagged-tag@1.0.0:
+    resolution: {integrity: sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng==}
+    engines: {node: '>=20'}
+
   tar-stream@3.1.7:
     resolution: {integrity: sha512-qJj60CXt7IU1Ffyc3NJMjh6EkuCFej46zUqJ4J7pqYlThyd9bO0XBTmcOIhSzZJVWfsLks0+nle/j538YAW9RQ==}
 
@@ -6707,6 +6731,10 @@ packages:
   type-fest@0.7.1:
     resolution: {integrity: sha512-Ne2YiiGN8bmrmJJEuTWTLJR32nh/JdL1+PSicowtNb0WFpn59GK8/lfD61bVtzguz7b3PBt74nxpv/Pw5po5Rg==}
     engines: {node: '>=8'}
+
+  type-fest@5.7.0:
+    resolution: {integrity: sha512-1URUxUqfHFM1c+zfSPsa3gnkO7Aq21qyH75SIduNYz4SzY964rn1X2vCMQaHSHhktiw+0kPa2iyb6PUpXqB6Vg==}
+    engines: {node: '>=20'}
 
   type-is@2.0.1:
     resolution: {integrity: sha512-OZs6gsjF4vMp32qrCbiVSkrFmXtG/AZhY3t0iAMrMBiAZyV9oALtXO8hsrHbMXF9x6L3grlFuwW2oAz7cav+Gw==}
@@ -7273,6 +7301,11 @@ packages:
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
+
+  zxing-wasm@3.1.0:
+    resolution: {integrity: sha512-5+3V1wPRx4gvbeLH2jB7n2cKrYJ1q4i3QgjnBUtrDPeqxJSi6BdzKJg4y6aF6bgW8zfntnYJyrkqFMevDhL2NA==}
+    peerDependencies:
+      '@types/emscripten': '>=1.39.6'
 
 snapshots:
 
@@ -9605,13 +9638,13 @@ snapshots:
   '@opentui/core-win32-x64@0.1.97':
     optional: true
 
-  '@opentui/core@0.1.97(stage-js@1.0.2)(typescript@6.0.2)(web-tree-sitter@0.25.10)':
+  '@opentui/core@0.1.97(stage-js@1.0.2)(typescript@6.0.2)(web-tree-sitter@0.25.10(@types/emscripten@1.41.5))':
     dependencies:
       bun-ffi-structs: 0.1.2(typescript@6.0.2)
       diff: 8.0.2
       jimp: 1.6.0
       marked: 17.0.1
-      web-tree-sitter: 0.25.10
+      web-tree-sitter: 0.25.10(@types/emscripten@1.41.5)
       yoga-layout: 3.2.1
     optionalDependencies:
       '@dimforge/rapier2d-simd-compat': 0.17.3
@@ -9628,11 +9661,11 @@ snapshots:
       - stage-js
       - typescript
 
-  '@opentui/solid@0.1.97(solid-js@1.9.11)(stage-js@1.0.2)(typescript@6.0.2)(web-tree-sitter@0.25.10)':
+  '@opentui/solid@0.1.97(solid-js@1.9.11)(stage-js@1.0.2)(typescript@6.0.2)(web-tree-sitter@0.25.10(@types/emscripten@1.41.5))':
     dependencies:
       '@babel/core': 7.28.0
       '@babel/preset-typescript': 7.27.1(@babel/core@7.28.0)
-      '@opentui/core': 0.1.97(stage-js@1.0.2)(typescript@6.0.2)(web-tree-sitter@0.25.10)
+      '@opentui/core': 0.1.97(stage-js@1.0.2)(typescript@6.0.2)(web-tree-sitter@0.25.10(@types/emscripten@1.41.5))
       babel-plugin-module-resolver: 5.0.2
       babel-preset-solid: 1.9.10(@babel/core@7.28.0)(solid-js@1.9.11)
       entities: 7.0.1
@@ -9979,9 +10012,7 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.76.2': {}
 
@@ -10243,6 +10274,8 @@ snapshots:
       '@types/ms': 2.1.0
 
   '@types/deep-eql@4.0.2': {}
+
+  '@types/emscripten@1.41.5': {}
 
   '@types/estree-jsx@1.0.5':
     dependencies:
@@ -10830,6 +10863,12 @@ snapshots:
   balanced-match@1.0.2: {}
 
   balanced-match@4.0.4: {}
+
+  barcode-detector@3.2.0(@types/emscripten@1.41.5):
+    dependencies:
+      zxing-wasm: 3.1.0(@types/emscripten@1.41.5)
+    transitivePeerDependencies:
+      - '@types/emscripten'
 
   bare-events@2.9.1: {}
 
@@ -11836,6 +11875,15 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
       - typescript
+
+  expo-camera@56.0.7(@types/emscripten@1.41.5)(expo@56.0.8)(react-native@0.85.3(@babel/core@7.28.6)(@react-native/metro-config@0.85.3(@babel/core@7.28.6))(@types/react@19.2.16)(react@19.2.3))(react@19.2.3):
+    dependencies:
+      barcode-detector: 3.2.0(@types/emscripten@1.41.5)
+      expo: 56.0.8(@babel/core@7.28.6)(@expo/dom-webview@56.0.5)(@expo/metro-runtime@56.0.13)(expo-router@56.2.8)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.9.1(@babel/core@7.28.6)(@react-native/metro-config@0.85.3(@babel/core@7.28.6))(react-native@0.85.3(@babel/core@7.28.6)(@react-native/metro-config@0.85.3(@babel/core@7.28.6))(@types/react@19.2.16)(react@19.2.3))(react@19.2.3))(react-native@0.85.3(@babel/core@7.28.6)(@react-native/metro-config@0.85.3(@babel/core@7.28.6))(@types/react@19.2.16)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
+      react: 19.2.3
+      react-native: 0.85.3(@babel/core@7.28.6)(@react-native/metro-config@0.85.3(@babel/core@7.28.6))(@types/react@19.2.16)(react@19.2.3)
+    transitivePeerDependencies:
+      - '@types/emscripten'
 
   expo-constants@56.0.16(expo@56.0.8)(react-native@0.85.3(@babel/core@7.28.6)(@react-native/metro-config@0.85.3(@babel/core@7.28.6))(@types/react@19.2.16)(react@19.2.3)):
     dependencies:
@@ -14950,6 +14998,8 @@ snapshots:
 
   tabbable@6.4.0: {}
 
+  tagged-tag@1.0.0: {}
+
   tar-stream@3.1.7:
     dependencies:
       b4a: 1.8.1
@@ -15131,6 +15181,10 @@ snapshots:
   type-fest@0.21.3: {}
 
   type-fest@0.7.1: {}
+
+  type-fest@5.7.0:
+    dependencies:
+      tagged-tag: 1.0.0
 
   type-is@2.0.1:
     dependencies:
@@ -15428,7 +15482,9 @@ snapshots:
     dependencies:
       defaults: 1.0.4
 
-  web-tree-sitter@0.25.10: {}
+  web-tree-sitter@0.25.10(@types/emscripten@1.41.5):
+    optionalDependencies:
+      '@types/emscripten': 1.41.5
 
   webidl-conversions@3.0.1: {}
 
@@ -15629,3 +15685,8 @@ snapshots:
       react: 19.2.5
 
   zwitch@2.0.4: {}
+
+  zxing-wasm@3.1.0(@types/emscripten@1.41.5):
+    dependencies:
+      '@types/emscripten': 1.41.5
+      type-fest: 5.7.0

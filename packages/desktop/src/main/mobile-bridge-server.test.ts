@@ -361,6 +361,51 @@ describe("mobile bridge server", () => {
     ])
   })
 
+  it("previews a pairing code without consuming it and marks it invalid after pairing", async () => {
+    const status = await ensureMobileBridgeServerRunning()
+    const baseUrl = `http://127.0.0.1:${status.port}`
+    const pairingCode = new URL(status.pairingLocalUrl ?? "").searchParams.get("code")
+    expect(pairingCode).toBeTruthy()
+
+    const preview = await readMobileJSON(baseUrl, `/api/mobile/pair/preview?code=${encodeURIComponent(pairingCode ?? "")}`)
+    expect(preview.response.status).toBe(200)
+    const previewData = successData<{
+      appVersion: string
+      capabilities: string[]
+      desktopName: string
+      online: boolean
+      pairing: { expiresAt: number | null; serverTime: number; valid: boolean }
+      running: boolean
+      service: string
+    }>(preview.body)
+    expect(previewData).toMatchObject({
+      appVersion: "0.1.13",
+      desktopName: "Anybox",
+      online: true,
+      pairing: {
+        expiresAt: status.pairingExpiresAt,
+        valid: true,
+      },
+      running: true,
+      service: "anybox-mobile-bridge",
+    })
+    expect(previewData.pairing.serverTime).toEqual(expect.any(Number))
+    expect(previewData.capabilities).toContain("workspace:read")
+
+    const paired = await readMobileJSON(baseUrl, `/api/mobile/pair?code=${encodeURIComponent(pairingCode ?? "")}`, {
+      body: JSON.stringify({ name: "Android emulator" }),
+      method: "POST",
+    })
+    expect(paired.response.status).toBe(200)
+
+    const consumedPreview = await readMobileJSON(baseUrl, `/api/mobile/pair/preview?code=${encodeURIComponent(pairingCode ?? "")}`)
+    expect(consumedPreview.response.status).toBe(200)
+    expect(successData<{ pairing: { expiresAt: number | null; valid: boolean } }>(consumedPreview.body).pairing).toMatchObject({
+      expiresAt: null,
+      valid: false,
+    })
+  })
+
   it("proxies scoped mobile API routes through the real bridge server", async () => {
     const agent = await startAgentStub()
     agentClientState.baseUrl = agent.baseUrl

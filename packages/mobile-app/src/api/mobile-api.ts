@@ -252,6 +252,14 @@ export interface MobilePairResult {
   device: MobileDevice
 }
 
+export interface MobilePairPreview extends MobileStatus {
+  pairing: {
+    valid: boolean
+    expiresAt: number | null
+    serverTime: number
+  }
+}
+
 export interface NormalizedConnectionInput {
   baseUrl: string
   token: string
@@ -332,6 +340,16 @@ export async function pairDevice(connection: MobileConnection & { pairingCode?: 
     method: "POST",
     body: JSON.stringify({ name }),
   })
+}
+
+export async function previewPairing(connection: MobileConnection & { pairingCode?: string }) {
+  const params = new URLSearchParams()
+  if (connection.pairingCode) params.set("code", connection.pairingCode)
+  const query = params.toString()
+  return requestMobile<MobilePairPreview>(
+    { baseUrl: connection.baseUrl, token: "" },
+    `/api/mobile/pair/preview${query ? `?${query}` : ""}`,
+  )
 }
 
 export async function createSession(

@@ -47,20 +47,18 @@ describe("MobileConnectionPage", () => {
     }
   })
 
-  it("makes Android one-time pairing the primary connection path", async () => {
+  it("makes Android QR pairing the primary connection path", async () => {
     render(<MobileConnectionPage />)
 
-    expect(await screen.findByRole("heading", { name: "Android 配对" })).toBeInTheDocument()
-    expect(screen.getByText(/短期一次性 code/)).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "刷新配对码" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "复制 Android 深链" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "复制配对 URL" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "复制验收命令" })).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: "Scan to connect Anybox Mobile" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Refresh QR/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Copy deep link/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Copy test command/ })).toBeInTheDocument()
     expect(screen.getByText("http://192.168.1.20:4896/?code=pair-123")).toBeInTheDocument()
     expect(screen.getAllByText(/anybox-mobile:\/\/connect\?url=/).length).toBeGreaterThan(0)
     expect(screen.getByText(/corepack pnpm mobile:android:smoke:bridge/)).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "Legacy token 访问" })).toBeInTheDocument()
-    expect(screen.getByText("http://192.168.1.20:4896/?token=legacy-token")).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Advanced token access" })).toBeInTheDocument()
+    expect(screen.queryByText("http://192.168.1.20:4896/?token=legacy-token")).not.toBeInTheDocument()
 
     await waitFor(() => {
       expect(QRCode.toDataURL).toHaveBeenCalledWith(
@@ -70,10 +68,21 @@ describe("MobileConnectionPage", () => {
     })
   })
 
+  it("reveals legacy token access only from the advanced section", async () => {
+    render(<MobileConnectionPage />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Show advanced" }))
+
+    expect(screen.getByRole("button", { name: /Copy legacy URL/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Copy token/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Rotate token/ })).toBeInTheDocument()
+    expect(screen.getByText("http://192.168.1.20:4896/?token=legacy-token")).toBeInTheDocument()
+  })
+
   it("copies the Android deep link instead of the legacy token URL", async () => {
     render(<MobileConnectionPage />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "复制 Android 深链" }))
+    fireEvent.click(await screen.findByRole("button", { name: /Copy deep link/ }))
 
     await waitFor(() => {
       expect(window.navigator.clipboard.writeText).toHaveBeenCalledWith(
@@ -85,7 +94,7 @@ describe("MobileConnectionPage", () => {
   it("copies the Android bridge smoke command for handoff verification", async () => {
     render(<MobileConnectionPage />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "复制验收命令" }))
+    fireEvent.click(await screen.findByRole("button", { name: /Copy test command/ }))
 
     await waitFor(() => {
       expect(window.navigator.clipboard.writeText).toHaveBeenCalledWith(
@@ -108,7 +117,7 @@ describe("MobileConnectionPage", () => {
 
     render(<MobileConnectionPage />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "刷新配对码" }))
+    fireEvent.click(await screen.findByRole("button", { name: /Refresh QR/ }))
 
     await waitFor(() => {
       expect(desktop.refreshMobilePairingCode).toHaveBeenCalled()
@@ -143,16 +152,16 @@ describe("MobileConnectionPage", () => {
 
     render(<MobileConnectionPage />)
 
-    expect(await screen.findByRole("heading", { name: "已配对设备" })).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: "Paired devices" })).toBeInTheDocument()
     expect(screen.getByText("Pixel 8")).toBeInTheDocument()
     expect(screen.getByText("workspace:read, session:read")).toBeInTheDocument()
     expect(screen.getByText("1")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "撤销" }))
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }))
 
     await waitFor(() => {
       expect(desktop.revokeMobileDevice).toHaveBeenCalledWith({ deviceID: "device-active" })
     })
-    expect(await screen.findByText("已撤销")).toBeInTheDocument()
+    expect(await screen.findByText("Revoked")).toBeInTheDocument()
   })
 })

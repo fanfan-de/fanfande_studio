@@ -12,7 +12,6 @@ import {
   getStatus,
   getWorkspaces,
   normalizeConnectionInput,
-  pairDevice,
   readBridgeUrlFromConnectDeepLink,
   revokeCurrentDevice,
   type MobileApproval,
@@ -28,10 +27,10 @@ const handledIncomingLinks = new Set<string>()
 
 export default function HomeScreen() {
   const router = useRouter()
-  const { connection, loading, saveConnection, clearConnection } = useConnection()
+  const { connection, loading, clearConnection } = useConnection()
   const [endpoint, setEndpoint] = useState("")
   const [token, setToken] = useState("")
-  const [saving, setSaving] = useState(false)
+  const [manualOpen, setManualOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
   const [status, setStatus] = useState<MobileStatus | null>(null)
@@ -97,25 +96,21 @@ export default function HomeScreen() {
     return count === 1 ? "1 capability" : `${count} capabilities`
   }, [status?.capabilities])
 
-  const connectToBridge = useCallback(async (nextEndpoint: string, nextToken: string) => {
-    setSaving(true)
+  const openConnectionConfirmation = useCallback((nextEndpoint: string, nextToken: string) => {
     setError(null)
     try {
-      const bootstrapConnection = normalizeConnectionInput(nextEndpoint, nextToken)
-      const pairing = await pairDevice(bootstrapConnection, "Anybox Android")
-      await saveConnection(bootstrapConnection.baseUrl, pairing.token, pairing.device.id)
-      setEndpoint("")
-      setToken("")
+      normalizeConnectionInput(nextEndpoint, nextToken)
+      const params = new URLSearchParams({ url: nextEndpoint })
+      if (nextToken.trim()) params.set("token", nextToken.trim())
+      router.push(`/connect?${params.toString()}` as never)
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to save connection.")
-    } finally {
-      setSaving(false)
+      setError(saveError instanceof Error ? saveError.message : "Unable to prepare connection.")
     }
-  }, [saveConnection])
+  }, [router])
 
   const handleSave = useCallback(async () => {
-    await connectToBridge(endpoint, token)
-  }, [connectToBridge, endpoint, token])
+    openConnectionConfirmation(endpoint, token)
+  }, [endpoint, openConnectionConfirmation, token])
 
   const handleIncomingLink = useCallback(
     (url: string) => {
@@ -125,18 +120,14 @@ export default function HomeScreen() {
       if (!bridgeUrl) return
       setEndpoint(bridgeUrl)
       setToken("")
-      if (!connection) {
-        void connectToBridge(bridgeUrl, "")
-      } else {
-        try {
-          if (normalizeConnectionInput(bridgeUrl, "").baseUrl === connection.baseUrl) return
-        } catch {
-          return
-        }
-        router.push(`/connect?url=${encodeURIComponent(bridgeUrl)}` as never)
+      try {
+        if (connection && normalizeConnectionInput(bridgeUrl, "").baseUrl === connection.baseUrl) return
+      } catch {
+        return
       }
+      router.push(`/connect?url=${encodeURIComponent(bridgeUrl)}` as never)
     },
-    [connectToBridge, connection, router],
+    [connection, router],
   )
 
   useEffect(() => {
@@ -194,21 +185,31 @@ export default function HomeScreen() {
     return (
       <Screen>
         <Section title="Connect">
-          <Field
-            label="Bridge URL"
-            onChangeText={setEndpoint}
-            placeholder="http://192.168.1.20:4896/?code=..."
-            value={endpoint}
+          <Button label="Scan QR code" onPress={() => router.push("/scan" as never)} />
+          <Button
+            label={manualOpen ? "Hide advanced" : "Advanced URL login"}
+            onPress={() => setManualOpen((current) => !current)}
+            variant="secondary"
           />
-          <Field
-            label="Token"
-            onChangeText={setToken}
-            placeholder="Optional if URL includes token or code"
-            secureTextEntry
-            value={token}
-          />
+          {manualOpen ? (
+            <>
+              <Field
+                label="Bridge URL"
+                onChangeText={setEndpoint}
+                placeholder="http://192.168.1.20:4896/?code=..."
+                value={endpoint}
+              />
+              <Field
+                label="Token"
+                onChangeText={setToken}
+                placeholder="Optional if URL includes token or code"
+                secureTextEntry
+                value={token}
+              />
+              <Button disabled={!endpoint.trim()} label="Review connection" onPress={handleSave} />
+            </>
+          ) : null}
           {error ? <StateCard title="Connection failed" detail={error} tone="danger" /> : null}
-          <Button disabled={!endpoint.trim()} label="Connect" loading={saving} onPress={handleSave} />
         </Section>
 
         <Section title="Updates" caption={formatAppVersionLabel(currentApp)}>
