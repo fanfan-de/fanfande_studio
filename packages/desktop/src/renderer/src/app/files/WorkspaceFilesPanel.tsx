@@ -213,6 +213,11 @@ function getReaderEmptyStateCopy(state: WorkspaceFileReviewState, scopeDirectory
   return "从工作区目录树中选择文件"
 }
 
+function getReaderEmptyStateTitle(state: WorkspaceFileReviewState) {
+  if (state.status === "reading") return "正在加载文件"
+  return state.selectedFilePath ? "无法打开文件" : "打开文件"
+}
+
 function getCurrentPathLabel(filePath: string | null) {
   const normalizedPath = normalizeTreePath(filePath)
   if (!normalizedPath) return "/"
@@ -259,6 +264,8 @@ function getFileBadgeLabel(extension: string | null) {
       return "JS"
     case "jsx":
       return "JS"
+    case "py":
+      return "PY"
     case "json":
       return "{}"
     case "md":
@@ -405,6 +412,7 @@ export function WorkspaceFilesPanel({
   const [markdownViewMode, setMarkdownViewMode] = useState<"preview" | "source">("preview")
   const [imageViewMode, setImageViewMode] = useState<"fit" | "actual">("fit")
   const [imageScale, setImageScale] = useState(1)
+  const [isTreeCollapsed, setIsTreeCollapsed] = useState(false)
   const dragSelectionRef = useRef<WorkspaceFileLineRange | null>(null)
   const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const fileLines = state.selectedFileContent?.split(/\r?\n/) ?? []
@@ -921,7 +929,7 @@ export function WorkspaceFilesPanel({
     return (
       <div className="workspace-files-open-empty">
         {state.selectedFileKind === "image" ? <FileImageIcon /> : <FileTextIcon />}
-        <strong>{state.selectedFilePath ? "无法打开文件" : "打开文件"}</strong>
+        <strong>{getReaderEmptyStateTitle(state)}</strong>
         <p>{getReaderEmptyStateCopy(state, scopeDirectory)}</p>
       </div>
     )
@@ -932,28 +940,41 @@ export function WorkspaceFilesPanel({
       <div className="workspace-files-pathbar" title={scopeDirectory ?? undefined}>
         <span className="workspace-files-pathbar-path">{getCurrentPathLabel(state.selectedFilePath)}</span>
         {scopeName ? <span className="workspace-files-pathbar-scope">{scopeName}</span> : null}
+        <button
+          type="button"
+          className="workspace-files-tree-toggle"
+          aria-controls="workspace-files-tree"
+          aria-expanded={!isTreeCollapsed}
+          aria-label={isTreeCollapsed ? "Expand file tree" : "Collapse file tree"}
+          title={isTreeCollapsed ? "Expand file tree" : "Collapse file tree"}
+          onClick={() => setIsTreeCollapsed((current) => !current)}
+        >
+          <FolderIcon />
+        </button>
       </div>
 
-      <div className="workspace-files-split">
+      <div className={isTreeCollapsed ? "workspace-files-split is-tree-collapsed" : "workspace-files-split"}>
         <section className="workspace-files-reader" aria-label="Workspace file reader">
           {renderReaderContent()}
         </section>
 
-        <aside className="workspace-files-tree" aria-label="Workspace file tree">
-          <label className="workspace-files-tree-search">
-            <SearchIcon />
-            <input
-              aria-label="Filter workspace files"
-              type="search"
-              value={state.query}
-              placeholder="筛选文件..."
-              onChange={handleSearchChange}
-            />
-          </label>
-          <div className="workspace-files-tree-scroll">
-            {renderTreeContent()}
-          </div>
-        </aside>
+        {isTreeCollapsed ? null : (
+          <aside id="workspace-files-tree" className="workspace-files-tree" aria-label="Workspace file tree">
+            <label className="workspace-files-tree-search">
+              <SearchIcon />
+              <input
+                aria-label="Filter workspace files"
+                type="search"
+                value={state.query}
+                placeholder="筛选文件..."
+                onChange={handleSearchChange}
+              />
+            </label>
+            <div className="workspace-files-tree-scroll">
+              {renderTreeContent()}
+            </div>
+          </aside>
+        )}
       </div>
     </section>
   )

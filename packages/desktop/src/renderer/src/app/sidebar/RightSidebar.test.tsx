@@ -8,6 +8,7 @@ import {
 } from "../types"
 import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE, DEFAULT_WORKSPACE_PREVIEW_STATE } from "../agent-workspace/review-preview-state"
 import type { SessionMessageTree } from "../session-message-tree"
+import { ToastProvider } from "../toast"
 import { RightSidebar } from "./RightSidebar"
 import { SessionMessageTreePanel } from "./SessionMessageTreePanel"
 
@@ -319,67 +320,71 @@ function renderRightSidebar(input: {
   onMessageTreeNodeSelect?: (sessionID: string, messageID: string) => void
 }) {
   return render(
-    <RightSidebar
-      activeSession={input.activeSession === undefined ? workspace.sessions[0] ?? null : input.activeSession}
-      activeSessionDirectory={workspace.directory}
-      activeWorkspaceFileScopeDirectory={workspace.directory}
-      activeWorkspaceFileScopeName={workspace.name}
-      assistantTraceVisibility={DEFAULT_ASSISTANT_TRACE_VISIBILITY}
-      canInsertWorkspaceFileCommentsIntoDraft={true}
-      canOpenReview={input.canOpenReview ?? true}
-      canOpenTerminal={input.canOpenTerminal ?? true}
-      composerRefreshVersion={0}
-      isAgentDebugTraceEnabled={false}
-      isResolvingPermissionRequest={false}
-      permissionRequestActionError={null}
-      permissionRequestActionRequestID={null}
-      rightSidebar={input.rightSidebar}
-      selectedDiffFileBySession={{}}
-      sessionDiffBySession={{}}
-      sessionDiffStateBySession={{}}
-      messageTreeBySession={input.messageTreeBySession ?? {}}
-      sideChatPanelState={null}
-      workspaces={input.workspaces ?? [workspace]}
-      onActivateTab={input.onActivateTab ?? vi.fn()}
-      onCloseTab={input.onCloseTab ?? vi.fn()}
-      onAskUserQuestionAnswer={vi.fn()}
-      onArtifactLinkOpen={vi.fn()}
-      onDiffFileRestore={vi.fn()}
-      onDiffFileSelect={vi.fn()}
-      onLocalFileLinkOpen={vi.fn()}
-      onOpenBrowserTab={input.onOpenBrowserTab ?? vi.fn()}
-      onOpenFilesTab={input.onOpenFilesTab ?? vi.fn()}
-      onOpenMessageTreeTab={input.onOpenMessageTreeTab ?? vi.fn()}
-      onOpenReviewTab={input.onOpenReviewTab ?? vi.fn()}
-      onOpenTerminalTab={input.onOpenTerminalTab ?? vi.fn()}
-      onMessageTreeNodeSelect={input.onMessageTreeNodeSelect ?? vi.fn()}
-      onPreviewActiveInteractionChange={vi.fn()}
-      onPreviewCommitInteraction={vi.fn()}
-      onPreviewDraftUrlChange={vi.fn()}
-      onPreviewOpen={vi.fn()}
-      onPreviewOpenExternal={vi.fn()}
-      onPreviewOpenUrl={vi.fn()}
-      onPreviewReload={vi.fn()}
-      onPermissionRequestResponse={vi.fn()}
-      onSideChatCreate={vi.fn()}
-      onSideChatDelete={vi.fn()}
-      onSideChatDraftStateChange={vi.fn()}
-      onSideChatPickAttachments={vi.fn()}
-      onSideChatRemoveAttachment={vi.fn()}
-      onSideChatSelect={vi.fn()}
-      onSideChatSend={vi.fn()}
-      onSessionModelSelectionChange={vi.fn()}
-      onWorkspaceFileCommentCancel={vi.fn()}
-      onWorkspaceFileCommentChange={vi.fn()}
-      onWorkspaceFileCommentConfirm={vi.fn()}
-      onWorkspaceFileCommentStart={vi.fn()}
-      onWorkspaceDirectoryLoad={vi.fn()}
-      onWorkspaceDirectoryToggle={vi.fn()}
-      onWorkspaceFileTreeInvalidate={vi.fn()}
-      onWorkspaceFileQueryChange={vi.fn()}
-      onWorkspaceFileSelect={vi.fn()}
-      renderTerminalTab={() => <div role="region" aria-label="Terminal tab" />}
-    />,
+    <ToastProvider>
+      <RightSidebar
+        activeSession={input.activeSession === undefined ? workspace.sessions[0] ?? null : input.activeSession}
+        activeSessionDirectory={workspace.directory}
+        activeWorkspaceFileScopeDirectory={workspace.directory}
+        activeWorkspaceFileScopeName={workspace.name}
+        assistantTraceVisibility={DEFAULT_ASSISTANT_TRACE_VISIBILITY}
+        canInsertWorkspaceFileCommentsIntoDraft={true}
+        canOpenReview={input.canOpenReview ?? true}
+        canOpenTerminal={input.canOpenTerminal ?? true}
+        composerRefreshVersion={0}
+        isAgentDebugTraceEnabled={false}
+        isResolvingPermissionRequest={false}
+        permissionRequestActionError={null}
+        permissionRequestActionRequestID={null}
+        rightSidebar={input.rightSidebar}
+        selectedDiffFileBySession={{}}
+        sessionDiffBySession={{}}
+        sessionDiffStateBySession={{}}
+        messageTreeBySession={input.messageTreeBySession ?? {}}
+        sideChatPanelState={null}
+        workspaces={input.workspaces ?? [workspace]}
+        onActivateTab={input.onActivateTab ?? vi.fn()}
+        onCloseTab={input.onCloseTab ?? vi.fn()}
+        onAskUserQuestionAnswer={vi.fn()}
+        onArtifactLinkOpen={vi.fn()}
+        onDiffFileRestore={vi.fn()}
+        onDiffFileSelect={vi.fn()}
+        onLocalFileLinkOpen={vi.fn()}
+        onOpenBrowserTab={input.onOpenBrowserTab ?? vi.fn()}
+        onOpenFilesTab={input.onOpenFilesTab ?? vi.fn()}
+        onOpenMessageTreeTab={input.onOpenMessageTreeTab ?? vi.fn()}
+        onOpenReviewTab={input.onOpenReviewTab ?? vi.fn()}
+        onOpenTerminalTab={input.onOpenTerminalTab ?? vi.fn()}
+        onMessageTreeNodeSelect={input.onMessageTreeNodeSelect ?? vi.fn()}
+        onPreviewActiveInteractionChange={vi.fn()}
+        onPreviewBack={vi.fn()}
+        onPreviewCommitInteraction={vi.fn()}
+        onPreviewDraftUrlChange={vi.fn()}
+        onPreviewForward={vi.fn()}
+        onPreviewOpen={vi.fn()}
+        onPreviewOpenExternal={vi.fn()}
+        onPreviewOpenUrl={vi.fn()}
+        onPreviewReload={vi.fn()}
+        onPermissionRequestResponse={vi.fn()}
+        onSideChatCreate={vi.fn()}
+        onSideChatDelete={vi.fn()}
+        onSideChatDraftStateChange={vi.fn()}
+        onSideChatPickAttachments={vi.fn()}
+        onSideChatRemoveAttachment={vi.fn()}
+        onSideChatSelect={vi.fn()}
+        onSideChatSend={vi.fn()}
+        onSessionModelSelectionChange={vi.fn()}
+        onWorkspaceFileCommentCancel={vi.fn()}
+        onWorkspaceFileCommentChange={vi.fn()}
+        onWorkspaceFileCommentConfirm={vi.fn()}
+        onWorkspaceFileCommentStart={vi.fn()}
+        onWorkspaceDirectoryLoad={vi.fn()}
+        onWorkspaceDirectoryToggle={vi.fn()}
+        onWorkspaceFileTreeInvalidate={vi.fn()}
+        onWorkspaceFileQueryChange={vi.fn()}
+        onWorkspaceFileSelect={vi.fn()}
+        renderTerminalTab={() => <div role="region" aria-label="Terminal tab" />}
+      />
+    </ToastProvider>,
   )
 }
 

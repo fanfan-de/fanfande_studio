@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type OpenDialogOptions, type OpenDialogReturnValue, type SaveDialogOptions, type SaveDialogReturnValue, type WebContents } from "electron"
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type OpenDialogOptions, type OpenDialogReturnValue, type SaveDialogOptions, type SaveDialogReturnValue, type WebContents } from "electron"
 import { createPlatformAdapter } from "@anybox/platform"
 import { DesktopIpcSchemas, createSshWorkspaceUri, isSshWorkspaceUri } from "@anybox/shared"
 import { createHash } from "node:crypto"
@@ -42,7 +42,7 @@ import type { ApplicationMenus } from "./menu"
 import { readLocaleConfigSnapshot, writeLocaleConfigSnapshot } from "./locale-config"
 import { detectLocalPreviewServices } from "./local-preview-services"
 import { resolveManagedAgentDataDir } from "./managed-agent"
-import { getMobileBridgeStatus, rotateMobileBridgeToken } from "./mobile-bridge-server"
+import { getMobileBridgeStatus, refreshMobilePairingCode, revokeMobileDevice, rotateMobileBridgeToken } from "./mobile-bridge-server"
 import { openMonitorWindow } from "./monitor-window"
 import { readPreviewText, resolvePreviewTarget } from "./preview-targets"
 import { PtyProxyManager } from "./pty-proxy"
@@ -458,6 +458,7 @@ interface PreviewScreenshotCaptureOptions {
   makeDirectory?: (directory: string, options: { recursive: true }) => Promise<unknown>
   now?: Date
   userDataPath?: string
+  writeClipboardImage?: (image: NativeImage) => void
   writeImageFile?: (filePath: string, data: Buffer) => Promise<unknown>
 }
 
@@ -535,8 +536,11 @@ async function capturePreviewScreenshotFromWindow(
 
   await (options.makeDirectory ?? mkdir)(screenshotDirectory, { recursive: true })
   await (options.writeImageFile ?? writeFile)(screenshotPath, image.toPNG())
+  if (input.copyToClipboard) {
+    (options.writeClipboardImage ?? clipboard.writeImage)(image)
+  }
 
-  return { path: screenshotPath }
+  return { copiedToClipboard: Boolean(input.copyToClipboard), path: screenshotPath }
 }
 
 async function saveComposerPastedImages(
@@ -581,6 +585,18 @@ async function updateToolPermissionMode(input: AgentToolPermissionModePayload) {
     body: JSON.stringify({
       mode: input.mode,
     }),
+  })
+
+  return result.data
+}
+
+async function translatePromptPreset(input: DesktopIpcInput<"desktop:translate-prompt-preset">) {
+  const result = await requestAgentJSON<AgentPromptPresetDocument>("/api/prompts/translate", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(input),
   })
 
   return result.data
@@ -1934,7 +1950,11 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   })
 
   handleDesktopIpc("desktop:get-mobile-bridge-status", () => getMobileBridgeStatus())
+  handleDesktopIpc("desktop:refresh-mobile-pairing-code", () => refreshMobilePairingCode())
   handleDesktopIpc("desktop:rotate-mobile-bridge-token", () => rotateMobileBridgeToken())
+  handleDesktopIpc("desktop:revoke-mobile-device", (_event, input: DesktopIpcInput<"desktop:revoke-mobile-device">) =>
+    revokeMobileDevice(input.deviceID),
+  )
 
   handleDesktopIpc("desktop:list-folder-workspaces", async () => listFolderWorkspaces())
   handleDesktopIpc("desktop:list-project-workspaces", async () => listProjectWorkspaces())
@@ -3420,6 +3440,11 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     },
   )
 
+  handleDesktopIpc(
+    "desktop:translate-prompt-preset",
+    async (_event, input: DesktopIpcInput<"desktop:translate-prompt-preset">) => translatePromptPreset(input),
+  )
+
   handleDesktopIpc("desktop:preview-prompt-url-install", async (_event, input: { source: string }) => {
     const result = await requestAgentJSON<AgentPromptUrlInstallPreview>("/api/prompts/url/preview", {
       method: "POST",
@@ -4422,5 +4447,6 @@ export const internal = {
   saveSessionTraceExport,
   saveSessionTraceExportDirectory,
   saveSessionTraceExportToProject,
+  translatePromptPreset,
   updateToolPermissionMode,
 }

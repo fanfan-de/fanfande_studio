@@ -1,6 +1,21 @@
 import { spawn } from "node:child_process"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 
 const AGENT_LOG_LEVELS = new Set(["DEBUG", "INFO", "WARN", "ERROR"])
+const scriptDir = path.dirname(fileURLToPath(import.meta.url))
+const packageRoot = path.resolve(scriptDir, "..")
+const repoRoot = path.resolve(packageRoot, "..", "..")
+
+function appendNodePath(...entries) {
+  const separator = process.platform === "win32" ? ";" : ":"
+  process.env.NODE_PATH = [
+    ...entries,
+    ...(process.env.NODE_PATH ? process.env.NODE_PATH.split(separator) : []),
+  ].filter(Boolean).join(separator)
+}
+
+appendNodePath(path.join(packageRoot, "node_modules"), path.join(repoRoot, "node_modules"))
 
 function writeAgentLogLevel(level) {
   process.env.ANYBOX_LOG_LEVEL = level

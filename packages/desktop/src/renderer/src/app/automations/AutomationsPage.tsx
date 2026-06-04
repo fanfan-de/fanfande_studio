@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import {
   ArchiveIcon,
   AutomationIcon,
+  BackIcon,
   CheckIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
   CloseIcon,
   DeleteIcon,
@@ -27,14 +30,23 @@ import type { TranslationKey } from "../i18n/translations"
 type AgentAutomationSchedule = AgentAutomationDefinition["schedule"]
 type AgentAutomationStatus = AgentAutomationDefinition["status"]
 type CreateMenuKey = "cadence" | "environment" | "project"
+type DetailMenuKey = "cadence" | "environment"
 type CreatePanelMode = "manual" | "templates"
 type CreateTargetMode = "local" | "worktree"
+type AutomationEnvironment = AgentAutomationDefinition["execution"]["environment"]
+type DetailCadenceKey = "hourly" | "daily" | "weekdays" | "weekly" | "custom"
+type WeekdayKey = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday"
 type AutomationDetailDraft = {
   automationID: string
   name: string
   prompt: string
 }
 type AutomationTextPatch = Pick<AgentAutomationUpdateInput, "name" | "prompt">
+type DetailCadenceMenuPosition = {
+  left: number
+  maxHeight: number
+  top: number
+}
 type AutomationDesktopApi = Required<
   Pick<
     NonNullable<Window["desktop"]>,
@@ -67,7 +79,20 @@ interface AutomationsPageProps {
   onOpenSession?: (sessionID: string) => void
 }
 
-type CadenceKey = "one-minute" | "five-minutes" | "fifteen-minutes" | "hourly" | "daily" | "weekly"
+type CadenceKey = "one-minute" | "five-minutes" | "fifteen-minutes" | "hourly" | "daily" | "weekdays" | "weekly"
+
+type ScheduleSelection =
+  | { cadence: "hourly" }
+  | { cadence: "daily"; time?: string }
+  | { cadence: "weekdays"; time?: string }
+  | { cadence: "weekly"; time?: string; weekday?: WeekdayKey }
+  | { cadence: "custom" }
+
+type DetailCadenceMenuView =
+  | { step: "frequency" }
+  | { step: "time"; cadence: "daily" | "weekdays" }
+  | { step: "weekday" }
+  | { step: "weekly-time"; weekday: WeekdayKey }
 
 const SCHEDULE_OPTIONS: Array<{
   expression: string
@@ -76,12 +101,97 @@ const SCHEDULE_OPTIONS: Array<{
   type: AgentAutomationSchedule["type"]
 }> = [
   { key: "daily", labelKey: "automations.cadence.daily", type: "rrule", expression: "FREQ=DAILY;INTERVAL=1" },
+  { key: "weekdays", labelKey: "automations.cadence.weekdays", type: "cron", expression: "0 9 * * 1-5" },
   { key: "weekly", labelKey: "automations.cadence.weekly", type: "rrule", expression: "FREQ=WEEKLY;INTERVAL=1" },
   { key: "hourly", labelKey: "automations.cadence.hourly", type: "rrule", expression: "FREQ=HOURLY;INTERVAL=1" },
   { key: "fifteen-minutes", labelKey: "automations.cadence.fifteenMinutes", type: "cron", expression: "*/15 * * * *" },
   { key: "five-minutes", labelKey: "automations.cadence.fiveMinutes", type: "cron", expression: "*/5 * * * *" },
   { key: "one-minute", labelKey: "automations.cadence.oneMinute", type: "cron", expression: "*/1 * * * *" },
 ]
+
+const DETAIL_CADENCE_OPTIONS: Array<{
+  key: DetailCadenceKey
+  labelKey: TranslationKey
+}> = [
+  { key: "hourly", labelKey: "automations.cadence.hourly" },
+  { key: "daily", labelKey: "automations.cadence.daily" },
+  { key: "weekdays", labelKey: "automations.cadence.weekdays" },
+  { key: "weekly", labelKey: "automations.cadence.weekly" },
+  { key: "custom", labelKey: "automations.cadence.custom" },
+]
+
+const WEEKDAY_OPTIONS: Array<{
+  cronValue: string
+  key: WeekdayKey
+  labelKey: TranslationKey
+  rruleValue: string
+}> = [
+  { key: "monday", labelKey: "automations.weekday.monday", cronValue: "1", rruleValue: "MO" },
+  { key: "tuesday", labelKey: "automations.weekday.tuesday", cronValue: "2", rruleValue: "TU" },
+  { key: "wednesday", labelKey: "automations.weekday.wednesday", cronValue: "3", rruleValue: "WE" },
+  { key: "thursday", labelKey: "automations.weekday.thursday", cronValue: "4", rruleValue: "TH" },
+  { key: "friday", labelKey: "automations.weekday.friday", cronValue: "5", rruleValue: "FR" },
+  { key: "saturday", labelKey: "automations.weekday.saturday", cronValue: "6", rruleValue: "SA" },
+  { key: "sunday", labelKey: "automations.weekday.sunday", cronValue: "0", rruleValue: "SU" },
+]
+
+const DEFAULT_SCHEDULE_TIME = "09:00"
+const DEFAULT_WEEKDAY: WeekdayKey = "monday"
+const DETAIL_CADENCE_MENU_WIDTH = 188
+const DETAIL_CADENCE_MENU_GAP = 6
+const DETAIL_CADENCE_MENU_MAX_HEIGHT = 320
+const DETAIL_CADENCE_MENU_MIN_HEIGHT = 180
+const DETAIL_CADENCE_MENU_VIEWPORT_PADDING = 8
+const SCHEDULE_TIME_OPTIONS = Array.from({ length: 48 }, (_item, index) => {
+  const hour = Math.floor(index / 2)
+  const minute = index % 2 === 0 ? 0 : 30
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+})
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function getDetailCadenceMenuPosition(trigger: HTMLElement): DetailCadenceMenuPosition {
+  const rect = trigger.getBoundingClientRect()
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight
+  const maxLeft = Math.max(
+    DETAIL_CADENCE_MENU_VIEWPORT_PADDING,
+    viewportWidth - DETAIL_CADENCE_MENU_WIDTH - DETAIL_CADENCE_MENU_VIEWPORT_PADDING,
+  )
+  const left = clampNumber(
+    rect.right - DETAIL_CADENCE_MENU_WIDTH,
+    DETAIL_CADENCE_MENU_VIEWPORT_PADDING,
+    maxLeft,
+  )
+  const belowTop = rect.bottom + DETAIL_CADENCE_MENU_GAP
+  const availableBelow = viewportHeight - belowTop - DETAIL_CADENCE_MENU_VIEWPORT_PADDING
+  const availableAbove = rect.top - DETAIL_CADENCE_MENU_GAP - DETAIL_CADENCE_MENU_VIEWPORT_PADDING
+  const shouldOpenAbove = availableBelow < DETAIL_CADENCE_MENU_MIN_HEIGHT && availableAbove > availableBelow
+  const availableHeight = Math.max(0, shouldOpenAbove ? availableAbove : availableBelow)
+  const viewportMaxHeight = Math.max(
+    DETAIL_CADENCE_MENU_MIN_HEIGHT,
+    viewportHeight - DETAIL_CADENCE_MENU_VIEWPORT_PADDING * 2,
+  )
+  const maxHeight = Math.min(
+    DETAIL_CADENCE_MENU_MAX_HEIGHT,
+    viewportMaxHeight,
+    Math.max(DETAIL_CADENCE_MENU_MIN_HEIGHT, availableHeight),
+  )
+  const desiredTop = shouldOpenAbove
+    ? rect.top - DETAIL_CADENCE_MENU_GAP - maxHeight
+    : belowTop
+  const maxTop = Math.max(
+    DETAIL_CADENCE_MENU_VIEWPORT_PADDING,
+    viewportHeight - maxHeight - DETAIL_CADENCE_MENU_VIEWPORT_PADDING,
+  )
+  const top = clampNumber(desiredTop, DETAIL_CADENCE_MENU_VIEWPORT_PADDING, maxTop)
+
+  return { left, maxHeight, top }
+}
+
+const AUTOMATION_ENVIRONMENT_OPTIONS = ["local", "worktree"] satisfies AutomationEnvironment[]
 
 const AUTOMATION_TEMPLATES: Array<{
   cadence: CadenceKey
@@ -140,11 +250,169 @@ function getTemplateDraft(template: (typeof AUTOMATION_TEMPLATES)[number], trans
   }
 }
 
+function parseCronNumber(value: string, min: number, max: number) {
+  if (!/^\d+$/.test(value)) return null
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) return null
+  return parsed
+}
+
+function formatScheduleTime(hour: number, minute: number) {
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+}
+
+function parseCronTime(minuteField: string, hourField: string) {
+  const minute = parseCronNumber(minuteField, 0, 59)
+  const hour = parseCronNumber(hourField, 0, 23)
+  if (minute === null || hour === null) return null
+  return formatScheduleTime(hour, minute)
+}
+
+function parseScheduleTime(value: string) {
+  const [hourValue, minuteValue] = value.split(":")
+  if (hourValue === undefined || minuteValue === undefined) return null
+  const hour = parseCronNumber(hourValue, 0, 23)
+  const minute = parseCronNumber(minuteValue, 0, 59)
+  if (hour === null || minute === null) return null
+  return { hour, minute }
+}
+
+function getWeekdayOption(weekday: WeekdayKey) {
+  return WEEKDAY_OPTIONS.find((option) => option.key === weekday) ?? WEEKDAY_OPTIONS[0]
+}
+
+function getWeekdayFromCronValue(value: string): WeekdayKey | null {
+  const normalized = value.trim().toUpperCase()
+  if (normalized === "7") return "sunday"
+  return WEEKDAY_OPTIONS.find((option) => (
+    option.cronValue === normalized || option.rruleValue === normalized
+  ))?.key ?? null
+}
+
+function getWeekdayFromRRuleValue(value: string | undefined): WeekdayKey | null {
+  if (!value) return null
+  const firstValue = value.split(",")[0]?.trim().toUpperCase()
+  if (!firstValue) return null
+  return WEEKDAY_OPTIONS.find((option) => option.rruleValue === firstValue)?.key ?? null
+}
+
+function parseRRuleExpression(expression: string) {
+  return new Map(expression.split(";").map((part) => {
+    const [key, ...valueParts] = part.split("=")
+    return [key.trim().toUpperCase(), valueParts.join("=").trim().toUpperCase()]
+  }))
+}
+
+function getScheduleSelection(schedule: AgentAutomationSchedule): ScheduleSelection {
+  if (schedule.type === "cron") {
+    const cronFields = schedule.expression.trim().split(/\s+/)
+    if (cronFields.length !== 5) return { cadence: "custom" }
+    const [minuteField, hourField, dayOfMonth, month, dayOfWeek] = cronFields
+    if (!minuteField || !hourField || !dayOfMonth || !month || !dayOfWeek) return { cadence: "custom" }
+
+    const time = parseCronTime(minuteField, hourField)
+    if (!time || dayOfMonth !== "*" || month !== "*") return { cadence: "custom" }
+    if (dayOfWeek === "*") return { cadence: "daily", time }
+    if (dayOfWeek === "1-5") return { cadence: "weekdays", time }
+
+    const weekday = getWeekdayFromCronValue(dayOfWeek)
+    return weekday ? { cadence: "weekly", weekday, time } : { cadence: "custom" }
+  }
+
+  const rrule = parseRRuleExpression(schedule.expression)
+  const freq = rrule.get("FREQ")
+  const interval = rrule.get("INTERVAL") ?? "1"
+  if (freq === "HOURLY" && interval === "1") return { cadence: "hourly" }
+
+  const time = parseCronTime(rrule.get("BYMINUTE") ?? "", rrule.get("BYHOUR") ?? "") ?? undefined
+  if (freq === "DAILY" && interval === "1") return { cadence: "daily", time }
+
+  if (freq === "WEEKLY" && interval === "1") {
+    const weekday = getWeekdayFromRRuleValue(rrule.get("BYDAY")) ?? undefined
+    return { cadence: "weekly", weekday, time }
+  }
+
+  return { cadence: "custom" }
+}
+
+function getWeekdayLabel(weekday: WeekdayKey, translate: Translate) {
+  return translate(getWeekdayOption(weekday).labelKey)
+}
+
+function formatScheduleSelectionLabel(selection: ScheduleSelection, translate: Translate) {
+  if (selection.cadence === "hourly") return translate("automations.cadence.hourly")
+  if (selection.cadence === "daily") {
+    return selection.time
+      ? translate("automations.schedule.dailyAt", { time: selection.time })
+      : translate("automations.cadence.daily")
+  }
+  if (selection.cadence === "weekdays") {
+    return selection.time
+      ? translate("automations.schedule.weekdaysAt", { time: selection.time })
+      : translate("automations.cadence.weekdays")
+  }
+  if (selection.cadence === "weekly") {
+    if (selection.weekday && selection.time) {
+      return translate("automations.schedule.weeklyAt", {
+        weekday: getWeekdayLabel(selection.weekday, translate),
+        time: selection.time,
+      })
+    }
+    if (selection.weekday) {
+      return translate("automations.schedule.weeklyOn", {
+        weekday: getWeekdayLabel(selection.weekday, translate),
+      })
+    }
+    return translate("automations.cadence.weekly")
+  }
+  return translate("automations.cadence.custom")
+}
+
 function getScheduleLabel(schedule: AgentAutomationSchedule, translate: Translate) {
+  const selection = getScheduleSelection(schedule)
+  if (selection.cadence !== "custom") return formatScheduleSelectionLabel(selection, translate)
+
   const match = SCHEDULE_OPTIONS.find((option) => option.type === schedule.type && option.expression === schedule.expression)
   if (match) return translate(match.labelKey)
-  if (schedule.type === "cron") return translate("automations.schedule.cron", { expression: schedule.expression })
-  return schedule.expression
+  return translate("automations.cadence.custom")
+}
+
+function createScheduleFromCadence(
+  cadence: Exclude<DetailCadenceKey, "custom">,
+  timezone: string,
+  options: { time?: string; weekday?: WeekdayKey } = {},
+): AgentAutomationSchedule {
+  if (cadence === "hourly") {
+    return {
+      type: "rrule",
+      expression: "FREQ=HOURLY;INTERVAL=1",
+      timezone,
+    }
+  }
+
+  const parsedTime = parseScheduleTime(options.time ?? DEFAULT_SCHEDULE_TIME) ?? { hour: 9, minute: 0 }
+  if (cadence === "daily") {
+    return {
+      type: "cron",
+      expression: `${parsedTime.minute} ${parsedTime.hour} * * *`,
+      timezone,
+    }
+  }
+
+  if (cadence === "weekdays") {
+    return {
+      type: "cron",
+      expression: `${parsedTime.minute} ${parsedTime.hour} * * 1-5`,
+      timezone,
+    }
+  }
+
+  const weekday = getWeekdayOption(options.weekday ?? DEFAULT_WEEKDAY)
+  return {
+    type: "cron",
+    expression: `${parsedTime.minute} ${parsedTime.hour} * * ${weekday.cronValue}`,
+    timezone,
+  }
 }
 
 function formatDate(
@@ -344,11 +612,16 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
   const [targetMode, setTargetMode] = useState<CreateTargetMode>("worktree")
   const [createPanelMode, setCreatePanelMode] = useState<CreatePanelMode>("manual")
   const [openCreateMenu, setOpenCreateMenu] = useState<CreateMenuKey | null>(null)
+  const [openDetailMenu, setOpenDetailMenu] = useState<DetailMenuKey | null>(null)
+  const [detailCadenceMenuPosition, setDetailCadenceMenuPosition] = useState<DetailCadenceMenuPosition | null>(null)
+  const [detailCadenceMenuView, setDetailCadenceMenuView] = useState<DetailCadenceMenuView>({ step: "frequency" })
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [savingDetailKey, setSavingDetailKey] = useState<DetailMenuKey | null>(null)
   const [runningAutomationID, setRunningAutomationID] = useState<string | null>(null)
   const [mutatingRunID, setMutatingRunID] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const detailCadenceTriggerRef = useRef<HTMLButtonElement | null>(null)
   const detailSaveTimeoutRef = useRef<number | null>(null)
   const pendingDetailSaveRef = useRef<{ automationID: string; patch: AutomationTextPatch } | null>(null)
 
@@ -474,6 +747,50 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
     }
   }, [openCreateMenu])
 
+  useEffect(() => {
+    if (!openDetailMenu) return
+
+    function closeDetailMenu(event: MouseEvent) {
+      const target = event.target
+      if (target instanceof Element && target.closest(".automation-detail-menu-anchor, .automation-detail-menu-portal")) return
+      setOpenDetailMenu(null)
+    }
+
+    function closeDetailMenuOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpenDetailMenu(null)
+      }
+    }
+
+    document.addEventListener("mousedown", closeDetailMenu)
+    document.addEventListener("keydown", closeDetailMenuOnEscape)
+    return () => {
+      document.removeEventListener("mousedown", closeDetailMenu)
+      document.removeEventListener("keydown", closeDetailMenuOnEscape)
+    }
+  }, [openDetailMenu])
+
+  useEffect(() => {
+    if (openDetailMenu !== "cadence") {
+      setDetailCadenceMenuPosition(null)
+      return
+    }
+
+    function updatePosition() {
+      const trigger = detailCadenceTriggerRef.current
+      if (!trigger) return
+      setDetailCadenceMenuPosition(getDetailCadenceMenuPosition(trigger))
+    }
+
+    updatePosition()
+    window.addEventListener("resize", updatePosition)
+    window.addEventListener("scroll", updatePosition, true)
+    return () => {
+      window.removeEventListener("resize", updatePosition)
+      window.removeEventListener("scroll", updatePosition, true)
+    }
+  }, [openDetailMenu])
+
   async function refreshAutomations(options: { silent?: boolean } = {}) {
     if (!options.silent) setIsLoading(true)
     try {
@@ -540,7 +857,7 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
     return normalized
   }
 
-  function updateAutomationInList(automationID: string, patch: AutomationTextPatch) {
+  function updateAutomationInList(automationID: string, patch: Partial<AgentAutomationDefinition>) {
     setAutomations((current) => current.map((automation) => (
       automation.id === automationID
         ? {
@@ -606,6 +923,97 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
     setDetailDraft(nextDraft)
     updateAutomationInList(selectedAutomation.id, patch)
     scheduleAutomationTextSave(selectedAutomation.id, patch)
+  }
+
+  async function updateAutomationDetailConfiguration(
+    automation: AgentAutomationDefinition,
+    patch: AgentAutomationUpdateInput,
+    optimisticPatch: Partial<AgentAutomationDefinition>,
+    detailKey: DetailMenuKey,
+  ) {
+    setOpenDetailMenu(null)
+    setSavingDetailKey(detailKey)
+    updateAutomationInList(automation.id, optimisticPatch)
+
+    try {
+      const updatedAutomation = await requireDesktopApi(t).updateAutomation({
+        automationID: automation.id,
+        automation: patch,
+      })
+      setAutomations((current) => current.map((item) => (
+        item.id === updatedAutomation.id ? updatedAutomation : item
+      )))
+      setError(null)
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : String(updateError))
+      await refreshAutomations({ silent: true })
+    } finally {
+      setSavingDetailKey((current) => current === detailKey ? null : current)
+    }
+  }
+
+  function openDetailCadenceMenu(automation: AgentAutomationDefinition) {
+    if (openDetailMenu === "cadence") {
+      setOpenDetailMenu(null)
+      return
+    }
+
+    const trigger = detailCadenceTriggerRef.current
+    if (trigger) {
+      setDetailCadenceMenuPosition(getDetailCadenceMenuPosition(trigger))
+    }
+    setDetailCadenceMenuView({ step: "frequency" })
+    setOpenDetailMenu("cadence")
+  }
+
+  function updateSelectedAutomationSchedule(automation: AgentAutomationDefinition, nextSchedule: AgentAutomationSchedule) {
+    if (
+      nextSchedule.type === automation.schedule.type &&
+      nextSchedule.expression === automation.schedule.expression &&
+      nextSchedule.timezone === automation.schedule.timezone
+    ) {
+      setOpenDetailMenu(null)
+      return
+    }
+
+    void updateAutomationDetailConfiguration(
+      automation,
+      { schedule: nextSchedule },
+      { schedule: nextSchedule },
+      "cadence",
+    )
+  }
+
+  function updateSelectedAutomationCadence(
+    automation: AgentAutomationDefinition,
+    cadence: Exclude<DetailCadenceKey, "custom">,
+    options: { time?: string; weekday?: WeekdayKey } = {},
+  ) {
+    updateSelectedAutomationSchedule(
+      automation,
+      createScheduleFromCadence(cadence, automation.schedule.timezone || "UTC", options),
+    )
+  }
+
+  function updateSelectedAutomationEnvironment(
+    automation: AgentAutomationDefinition,
+    environment: AutomationEnvironment,
+  ) {
+    if (environment === automation.execution.environment) {
+      setOpenDetailMenu(null)
+      return
+    }
+
+    const nextExecution = {
+      ...automation.execution,
+      environment,
+    }
+    void updateAutomationDetailConfiguration(
+      automation,
+      { execution: { environment } },
+      { execution: nextExecution },
+      "environment",
+    )
   }
 
   async function handleCreateAutomation(event: FormEvent<HTMLFormElement>) {
@@ -716,6 +1124,165 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
     } finally {
       setMutatingRunID(null)
     }
+  }
+
+  function renderDetailCadenceMenu(automation: AgentAutomationDefinition) {
+    if (openDetailMenu !== "cadence" || !detailCadenceMenuPosition) return null
+
+    const scheduleSelection = getScheduleSelection(automation.schedule)
+    const selectedTime = scheduleSelection.cadence === "daily" || scheduleSelection.cadence === "weekdays" || scheduleSelection.cadence === "weekly"
+      ? scheduleSelection.time
+      : undefined
+    const selectedWeekday = scheduleSelection.cadence === "weekly" ? scheduleSelection.weekday : undefined
+    const menuStyle = {
+      left: detailCadenceMenuPosition.left,
+      top: detailCadenceMenuPosition.top,
+      "--automation-detail-cadence-menu-max-height": `${detailCadenceMenuPosition.maxHeight}px`,
+    } as CSSProperties & Record<"--automation-detail-cadence-menu-max-height", string>
+    const isSubView = detailCadenceMenuView.step !== "frequency"
+    const title = detailCadenceMenuView.step === "time"
+      ? t(detailCadenceMenuView.cadence === "daily" ? "automations.cadence.daily" : "automations.cadence.weekdays")
+      : detailCadenceMenuView.step === "weekday"
+        ? t("automations.cadence.weekly")
+        : detailCadenceMenuView.step === "weekly-time"
+          ? getWeekdayLabel(detailCadenceMenuView.weekday, t)
+          : t("automations.cadence.menuLabel")
+    const backView = detailCadenceMenuView.step === "weekly-time"
+      ? { step: "weekday" } satisfies DetailCadenceMenuView
+      : { step: "frequency" } satisfies DetailCadenceMenuView
+
+    const cadenceMenu = (
+      <div
+        className="automations-create-menu automation-detail-menu automation-detail-menu-portal automation-detail-cadence-menu"
+        role="menu"
+        aria-label={t("automations.cadence.menuLabel")}
+        style={menuStyle}
+      >
+        {isSubView ? (
+          <div className="automation-cadence-menu-header">
+            <button
+              className="automation-cadence-menu-back"
+              type="button"
+              aria-label={t("automations.schedule.backToCadence")}
+              title={t("automations.schedule.backToCadence")}
+              onClick={() => setDetailCadenceMenuView(backView)}
+            >
+              <BackIcon />
+            </button>
+            <span>{title}</span>
+          </div>
+        ) : null}
+
+        <div className="automation-cadence-menu-list">
+          {detailCadenceMenuView.step === "frequency" ? DETAIL_CADENCE_OPTIONS.map((option) => {
+            const hasSubmenu = option.key === "daily" || option.key === "weekdays" || option.key === "weekly"
+            const isSelected = scheduleSelection.cadence === option.key
+            const isCustomUnavailable = option.key === "custom" && !isSelected
+
+            return (
+              <button
+                key={option.key}
+                className={joinClassNames("automations-create-menu-option automation-cadence-menu-option", isSelected && "is-selected")}
+                type="button"
+                role={hasSubmenu ? "menuitem" : "menuitemradio"}
+                aria-checked={hasSubmenu ? undefined : isSelected}
+                aria-disabled={isCustomUnavailable ? true : undefined}
+                aria-haspopup={hasSubmenu ? "menu" : undefined}
+                title={option.key === "custom" ? t("automations.schedule.customUnavailable") : undefined}
+                onClick={() => {
+                  if (option.key === "hourly") {
+                    updateSelectedAutomationCadence(automation, "hourly")
+                    return
+                  }
+                  if (option.key === "custom") {
+                    if (isCustomUnavailable) return
+                    setOpenDetailMenu(null)
+                    return
+                  }
+                  if (option.key === "weekly") {
+                    setDetailCadenceMenuView({ step: "weekday" })
+                    return
+                  }
+                  setDetailCadenceMenuView({ step: "time", cadence: option.key })
+                }}
+              >
+                <span className="automation-cadence-menu-state" aria-hidden="true">
+                  {isSelected ? <CheckIcon /> : null}
+                </span>
+                <span className="automation-cadence-menu-label">{t(option.labelKey)}</span>
+                <span className="automation-cadence-menu-submenu-icon" aria-hidden="true">
+                  {hasSubmenu ? <ChevronRightIcon /> : null}
+                </span>
+              </button>
+            )
+          }) : null}
+
+          {detailCadenceMenuView.step === "time" ? SCHEDULE_TIME_OPTIONS.map((time) => {
+            const isSelected = scheduleSelection.cadence === detailCadenceMenuView.cadence && selectedTime === time
+            return (
+              <button
+                key={`${detailCadenceMenuView.cadence}-${time}`}
+                className={joinClassNames("automations-create-menu-option automation-cadence-menu-option", isSelected && "is-selected")}
+                type="button"
+                role="menuitemradio"
+                aria-checked={isSelected}
+                onClick={() => updateSelectedAutomationCadence(automation, detailCadenceMenuView.cadence, { time })}
+              >
+                <span className="automation-cadence-menu-state" aria-hidden="true">
+                  {isSelected ? <CheckIcon /> : null}
+                </span>
+                <span className="automation-cadence-menu-label">{time}</span>
+                <span className="automation-cadence-menu-submenu-icon" aria-hidden="true" />
+              </button>
+            )
+          }) : null}
+
+          {detailCadenceMenuView.step === "weekday" ? WEEKDAY_OPTIONS.map((weekday) => {
+            const isSelected = selectedWeekday === weekday.key
+            return (
+              <button
+                key={weekday.key}
+                className={joinClassNames("automations-create-menu-option automation-cadence-menu-option", isSelected && "is-selected")}
+                type="button"
+                role="menuitem"
+                aria-haspopup="menu"
+                onClick={() => setDetailCadenceMenuView({ step: "weekly-time", weekday: weekday.key })}
+              >
+                <span className="automation-cadence-menu-state" aria-hidden="true">
+                  {isSelected ? <CheckIcon /> : null}
+                </span>
+                <span className="automation-cadence-menu-label">{t(weekday.labelKey)}</span>
+                <span className="automation-cadence-menu-submenu-icon" aria-hidden="true">
+                  <ChevronRightIcon />
+                </span>
+              </button>
+            )
+          }) : null}
+
+          {detailCadenceMenuView.step === "weekly-time" ? SCHEDULE_TIME_OPTIONS.map((time) => {
+            const isSelected = selectedWeekday === detailCadenceMenuView.weekday && selectedTime === time
+            return (
+              <button
+                key={`weekly-${detailCadenceMenuView.weekday}-${time}`}
+                className={joinClassNames("automations-create-menu-option automation-cadence-menu-option", isSelected && "is-selected")}
+                type="button"
+                role="menuitemradio"
+                aria-checked={isSelected}
+                onClick={() => updateSelectedAutomationCadence(automation, "weekly", { weekday: detailCadenceMenuView.weekday, time })}
+              >
+                <span className="automation-cadence-menu-state" aria-hidden="true">
+                  {isSelected ? <CheckIcon /> : null}
+                </span>
+                <span className="automation-cadence-menu-label">{time}</span>
+                <span className="automation-cadence-menu-submenu-icon" aria-hidden="true" />
+              </button>
+            )
+          }) : null}
+        </div>
+      </div>
+    )
+
+    return createPortal(cadenceMenu, document.body)
   }
 
   const createPanel = isCreatePanelOpen ? (
@@ -1093,7 +1660,26 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                     </div>
                     <div>
                       <dt>{t("automations.detail.cadence")}</dt>
-                      <dd>{getScheduleLabel(selectedAutomation.schedule, t)}</dd>
+                      <dd className="automation-detail-select-cell">
+                        <div className="automation-detail-menu-anchor">
+                          <button
+                            ref={detailCadenceTriggerRef}
+                            className={joinClassNames("automation-detail-select-trigger", openDetailMenu === "cadence" && "is-active")}
+                            type="button"
+                            aria-haspopup="menu"
+                            aria-expanded={openDetailMenu === "cadence"}
+                            aria-label={t("automations.cadence.menuLabel")}
+                            title={getScheduleLabel(selectedAutomation.schedule, t)}
+                            disabled={savingDetailKey === "cadence"}
+                            onClick={() => openDetailCadenceMenu(selectedAutomation)}
+                          >
+                            <span>{getScheduleLabel(selectedAutomation.schedule, t)}</span>
+                            <ChevronDownIcon />
+                          </button>
+
+                          {renderDetailCadenceMenu(selectedAutomation)}
+                        </div>
+                      </dd>
                     </div>
                     <div>
                       <dt>{t("automations.detail.timezone")}</dt>
@@ -1101,7 +1687,47 @@ export function AutomationsPage({ projects, windowControls, onOpenSession }: Aut
                     </div>
                     <div>
                       <dt>{t("automations.detail.environment")}</dt>
-                      <dd>{getEnvironmentLabel(selectedAutomation.execution.environment, t)}</dd>
+                      <dd className="automation-detail-select-cell">
+                        <div className="automation-detail-menu-anchor">
+                          <button
+                            className={joinClassNames("automation-detail-select-trigger", openDetailMenu === "environment" && "is-active")}
+                            type="button"
+                            aria-haspopup="menu"
+                            aria-expanded={openDetailMenu === "environment"}
+                            aria-label={t("automations.environment.menuLabel")}
+                            title={getEnvironmentLabel(selectedAutomation.execution.environment, t)}
+                            disabled={savingDetailKey === "environment"}
+                            onClick={() => setOpenDetailMenu((current) => current === "environment" ? null : "environment")}
+                          >
+                            <span>{getEnvironmentLabel(selectedAutomation.execution.environment, t)}</span>
+                            <ChevronDownIcon />
+                          </button>
+
+                          {openDetailMenu === "environment" ? (
+                            <div className="automations-create-menu automations-environment-menu automation-detail-menu automation-detail-environment-menu" role="menu" aria-label={t("automations.environment.menuLabel")}>
+                              {AUTOMATION_ENVIRONMENT_OPTIONS.map((environment) => {
+                                const isSelected = selectedAutomation.execution.environment === environment
+
+                                return (
+                                  <button
+                                    key={environment}
+                                    className={joinClassNames("automations-create-menu-option", isSelected && "is-selected")}
+                                    type="button"
+                                    role="menuitemradio"
+                                    aria-checked={isSelected}
+                                    onClick={() => updateSelectedAutomationEnvironment(selectedAutomation, environment)}
+                                  >
+                                    <span className="automations-create-menu-copy">
+                                      <strong>{getEnvironmentLabel(environment, t)}</strong>
+                                    </span>
+                                    {isSelected ? <CheckIcon /> : null}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      </dd>
                     </div>
                     <div>
                       <dt>{t("automations.detail.permission")}</dt>

@@ -98,21 +98,21 @@ const DEFAULT_PROMPT_PRESET_SELECTION: PromptPresetSelection = {
 const PROMPT_PRESET_DEFINITIONS: PromptPresetDefinition[] = [
   {
     id: "system-default",
-    label: "System Prompt",
+    label: "System prompt",
     description: "Base instructions applied to every session turn.",
     sourcePath: "src/session/prompt/default.md",
     bundledContent: PROMPT_DEFAULT,
   },
   {
     id: "plan-mode",
-    label: "Plan Mode Prompt",
+    label: "Plan mode prompt",
     description: "Additional instructions appended when the plan agent is active.",
     sourcePath: "src/session/prompt/plan.md",
     bundledContent: PROMPT_PLAN,
   },
   {
     id: "side-chat",
-    label: "Side Chat Prompt",
+    label: "Side chat prompt",
     description: "Additional instructions appended when a side chat session is active.",
     sourcePath: "src/session/prompt/side-chat.md",
     bundledContent: PROMPT_SIDE_CHAT,
@@ -487,6 +487,7 @@ async function readBundledPromptPresetRecords(root: string) {
     const seedHash = getPromptPresetSeedHash(preset.bundledContent)
     records.push({
       ...record,
+      label: preset.label,
       description: record.description || preset.description,
       hasOverride: getPromptPresetSeedHash(record.content) !== seedHash,
       seedHash,

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ComponentProps } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { DEFAULT_WORKSPACE_PREVIEW_STATE } from "../agent-workspace/review-preview-state"
+import { ToastProvider } from "../toast"
 import type { PreviewInteractionRecord, WorkspacePreviewState } from "../types"
 import { UnifiedPreviewPanel } from "./UnifiedPreviewPanel"
 
@@ -16,18 +17,22 @@ function createPreviewState(overrides: Partial<WorkspacePreviewState> = {}): Wor
 
 function renderUnifiedPreviewPanel(overrides: Partial<ComponentProps<typeof UnifiedPreviewPanel>> = {}) {
   return render(
-    <UnifiedPreviewPanel
-      state={createPreviewState()}
-      workspaceRoot={workspaceRoot}
-      onActiveInteractionChange={vi.fn()}
-      onCommitInteraction={vi.fn()}
-      onDraftUrlChange={vi.fn()}
-      onOpen={vi.fn()}
-      onOpenExternal={vi.fn()}
-      onOpenUrl={vi.fn()}
-      onReload={vi.fn()}
-      {...overrides}
-    />,
+    <ToastProvider>
+      <UnifiedPreviewPanel
+        state={createPreviewState()}
+        workspaceRoot={workspaceRoot}
+        onActiveInteractionChange={vi.fn()}
+        onBack={vi.fn()}
+        onCommitInteraction={vi.fn()}
+        onDraftUrlChange={vi.fn()}
+        onForward={vi.fn()}
+        onOpen={vi.fn()}
+        onOpenExternal={vi.fn()}
+        onOpenUrl={vi.fn()}
+        onReload={vi.fn()}
+        {...overrides}
+      />
+    </ToastProvider>,
   )
 }
 
@@ -154,7 +159,37 @@ describe("UnifiedPreviewPanel", () => {
     const frame = await screen.findByTitle("Preview of index.html")
     expect(frame).toHaveAttribute("sandbox", "allow-forms allow-popups allow-same-origin allow-scripts")
     expect(frame).toHaveAttribute("src", "anybox-preview://preview/token/index.html")
-    expect(screen.getByRole("button", { name: "Comment" })).toBeInTheDocument()
+    const commentButton = screen.getByRole("button", { name: "Comment" })
+    expect(commentButton).toBeInTheDocument()
+    expect(commentButton.textContent).toBe("")
+  })
+
+  it("renders browser navigation controls and delegates clicks", () => {
+    const onBack = vi.fn()
+    const onForward = vi.fn()
+    const onReload = vi.fn()
+    renderUnifiedPreviewPanel({
+      onBack,
+      onForward,
+      onReload,
+      state: createPreviewState({
+        navigationHistory: ["http://localhost:3000/", "http://localhost:5173/"],
+        navigationIndex: 0,
+      }),
+    })
+
+    const backButton = screen.getByRole("button", { name: "Back" })
+    const forwardButton = screen.getByRole("button", { name: "Forward" })
+    const reloadButton = screen.getByRole("button", { name: "Reload preview" })
+
+    expect(backButton).toBeDisabled()
+    expect(forwardButton).toBeEnabled()
+    fireEvent.click(forwardButton)
+    fireEvent.click(reloadButton)
+
+    expect(onBack).not.toHaveBeenCalled()
+    expect(onForward).toHaveBeenCalledTimes(1)
+    expect(onReload).toHaveBeenCalledTimes(1)
   })
 
   it("uses the Electron webview preload for HTML targets when available", () => {
@@ -252,6 +287,66 @@ describe("UnifiedPreviewPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Comment" }))
 
     expect(onActiveInteractionChange).toHaveBeenCalledWith("web.comment")
+  })
+
+  it("captures the current preview area from the toolbar shortcut", async () => {
+    const capturePreviewScreenshot = vi.fn().mockResolvedValue({
+      copiedToClipboard: true,
+      path: "C:\\Users\\codex\\preview-comment-screenshots\\capture.png",
+    })
+    window.desktop!.capturePreviewScreenshot = capturePreviewScreenshot
+
+    const { container } = renderUnifiedPreviewPanel({
+      state: createPreviewState({
+        activeTargetInput: "http://localhost:5173",
+        committedUrl: "http://localhost:5173/",
+        draftTarget: "http://localhost:5173/",
+        resolvedTarget: {
+          externalOpenTarget: {
+            kind: "url",
+            value: "http://localhost:5173/",
+          },
+          input: "http://localhost:5173",
+          kind: "url",
+          mime: "text/html",
+          normalizedInput: "http://localhost:5173/",
+          renderer: "url-webview",
+          safePreviewUrl: "http://localhost:5173/",
+          textReadable: false,
+          title: "localhost:5173",
+        },
+        status: "ready",
+      }),
+    })
+    const previewStack = container.querySelector(".unified-preview-stack") as HTMLElement
+    vi.spyOn(previewStack, "getBoundingClientRect").mockReturnValue({
+      bottom: 280.8,
+      height: 240.2,
+      left: 12.4,
+      right: 332.8,
+      top: 40.6,
+      width: 320.4,
+      x: 12.4,
+      y: 40.6,
+      toJSON: () => ({}),
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Capture screenshot" }))
+
+    await waitFor(() => {
+      expect(capturePreviewScreenshot).toHaveBeenCalledWith({
+        bounds: {
+          height: 240,
+          width: 320,
+          x: 12,
+          y: 41,
+        },
+        copyToClipboard: true,
+        url: "http://localhost:5173/",
+      })
+    })
+    expect(await screen.findByText("Screenshot saved and copied to clipboard.")).toBeInTheDocument()
+    expect(container.querySelector(".unified-preview-status-message")).toBeNull()
   })
 
 
@@ -361,7 +456,7 @@ describe("UnifiedPreviewPanel", () => {
     expect(screen.queryByText("3")).toBeNull()
   })
 
-  it("keeps file preview identity on one non-duplicated header line", () => {
+  it("keeps the preview toolbar focused on navigation and the target input", () => {
     const { container } = renderUnifiedPreviewPanel({
       state: createPreviewState({
         activeTargetInput: "heroes.csv",
@@ -387,12 +482,18 @@ describe("UnifiedPreviewPanel", () => {
     })
 
     const toolbar = screen.getByRole("textbox", { name: "Preview target" }).closest(".unified-preview-toolbar")
+    const address = screen.getByRole("textbox", { name: "Preview target" }).closest(".preview-toolbar-address")
     expect(toolbar).not.toBeNull()
+    expect(address).not.toBeNull()
     expect(container.querySelector(".unified-preview-title-row")).toBeNull()
+    expect(container.querySelector(".unified-preview-target-summary")).toBeNull()
+    expect(container.querySelector(".unified-preview-meta")).toBeNull()
     expect(screen.getAllByDisplayValue("heroes.csv")).toHaveLength(1)
-    expect(within(toolbar as HTMLElement).getByText("CSV")).toBeInTheDocument()
-    expect(within(toolbar as HTMLElement).getByText("file")).toBeInTheDocument()
-    expect(within(toolbar as HTMLElement).getByText("text/csv")).toBeInTheDocument()
+    expect(within(address as HTMLElement).getByRole("button", { name: "Open externally" })).toBeInTheDocument()
+    expect(within(toolbar as HTMLElement).queryByText("CSV")).toBeNull()
+    expect(within(toolbar as HTMLElement).queryByText("file")).toBeNull()
+    expect(within(toolbar as HTMLElement).queryByText("text/csv")).toBeNull()
+    expect(within(toolbar as HTMLElement).queryByRole("button", { name: "Open" })).toBeNull()
   })
 
   it("shows the system-open fallback and delegates external opening", () => {

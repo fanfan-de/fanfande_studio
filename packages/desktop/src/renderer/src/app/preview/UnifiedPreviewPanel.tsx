@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import type { DesktopLocalPreviewService } from "../../../../shared/desktop-ipc-contract"
-import { OpenExternalIcon, PreviewIcon, ResetIcon } from "../icons"
+import { BackIcon, ForwardIcon, OpenExternalIcon, PreviewIcon, ResetIcon, ScreenshotIcon } from "../icons"
+import { useToast } from "../toast"
 import type { PreviewInteractionCommitInput, PreviewInteractionPluginID, ResolvedPreviewTarget, WorkspacePreviewState } from "../types"
 import { getPreviewFailure } from "./failures"
 import { PreviewInteractionHost, PreviewInteractionToolbar } from "./interactions/PreviewInteractionHost"
@@ -15,6 +16,8 @@ interface UnifiedPreviewPanelProps {
   state: WorkspacePreviewState
   workspaceRoot?: string | null
   onDraftUrlChange: (value: string) => void
+  onBack: () => void
+  onForward: () => void
   onOpen: () => void
   onOpenExternal: () => void | Promise<void>
   onOpenUrl: (url: string) => void
@@ -44,29 +47,6 @@ type TextPreviewState =
 
 function getTargetPath(target: ResolvedPreviewTarget | null) {
   return target?.entry ?? target?.path ?? null
-}
-
-function formatRendererLabel(target: ResolvedPreviewTarget) {
-  switch (target.renderer) {
-    case "url-webview":
-      return "URL"
-    case "markdown-preview":
-      return "Markdown"
-    case "html-preview":
-      return "HTML"
-    case "svg-preview":
-      return "SVG"
-    case "json-viewer":
-      return "JSON"
-    case "table-preview":
-      return "CSV"
-    case "image-preview":
-      return "Image"
-    case "code-viewer":
-      return "Code"
-    case "system-open":
-      return "System"
-  }
 }
 
 function parseCsvLine(line: string) {
@@ -175,46 +155,8 @@ function TextPreviewContent({
   return <pre className="unified-preview-code">{content}</pre>
 }
 
-function PreviewMeta({ target }: { target: ResolvedPreviewTarget }) {
-  return (
-    <div className="unified-preview-meta" aria-label="Preview details">
-      <span>{formatRendererLabel(target)}</span>
-      <span>{target.kind}</span>
-      {target.mime ? <span>{target.mime.split(";")[0]}</span> : null}
-    </div>
-  )
-}
-
-function getPreviewTitleLabel(target: ResolvedPreviewTarget, draftValue: string) {
-  const title = target.title.trim()
-  const visibleInputs = new Set([target.input.trim(), target.normalizedInput.trim(), draftValue.trim()].filter(Boolean))
-  if (!title || visibleInputs.has(title)) return null
-  return title
-}
-
 function shouldRenderTargetInWebview(target: ResolvedPreviewTarget | null) {
   return target?.renderer === "url-webview" || target?.renderer === "html-preview"
-}
-
-function PreviewTargetSummary({
-  draftValue,
-  target,
-}: {
-  draftValue: string
-  target: ResolvedPreviewTarget
-}) {
-  const titleLabel = getPreviewTitleLabel(target, draftValue)
-
-  return (
-    <div className="unified-preview-target-summary">
-      {titleLabel ? (
-        <strong className="unified-preview-target-title" title={titleLabel}>
-          {titleLabel}
-        </strong>
-      ) : null}
-      <PreviewMeta target={target} />
-    </div>
-  )
 }
 
 function EmptyPreviewState({
@@ -267,7 +209,9 @@ function EmptyPreviewState({
 export function UnifiedPreviewPanel({
   state,
   workspaceRoot,
+  onBack,
   onDraftUrlChange,
+  onForward,
   onOpen,
   onOpenExternal,
   onOpenUrl,
@@ -275,8 +219,10 @@ export function UnifiedPreviewPanel({
   onActiveInteractionChange,
   onCommitInteraction,
 }: UnifiedPreviewPanelProps) {
+  const toast = useToast()
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const webviewRef = useRef<WebviewElement | null>(null)
+  const previewStackRef = useRef<HTMLDivElement | null>(null)
   const textRequestIDRef = useRef(0)
   const localServiceRequestIDRef = useRef(0)
   const localServiceAutoScanRef = useRef(false)
@@ -291,6 +237,7 @@ export function UnifiedPreviewPanel({
   const [forceIframeFallback, setForceIframeFallback] = useState(false)
   const [frameIsLoading, setFrameIsLoading] = useState(false)
   const [frameLoadError, setFrameLoadError] = useState<FrameLoadError | null>(null)
+  const [isCapturingScreenshot, setIsCapturingScreenshot] = useState(false)
   const [webviewReady, setWebviewReady] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [textPreview, setTextPreview] = useState<TextPreviewState>({
@@ -308,6 +255,11 @@ export function UnifiedPreviewPanel({
   const shouldUseWebview = shouldRenderTargetInWebview(target) && canUseWebview && !forceIframeFallback
   const canOpenExternal = Boolean(target?.externalOpenTarget || state.committedUrl || draftValue.trim())
   const interactionPlugins = useMemo(() => getPreviewInteractionPlugins(target), [target])
+  const navigationHistory = Array.isArray(state.navigationHistory) ? state.navigationHistory : []
+  const navigationIndex = Number.isInteger(state.navigationIndex) ? state.navigationIndex : -1
+  const canNavigateBack = navigationIndex > 0 && navigationHistory.length > 1
+  const canNavigateForward = navigationIndex >= 0 && navigationIndex < navigationHistory.length - 1
+  const canCaptureScreenshot = Boolean(window.desktop?.capturePreviewScreenshot && target)
 
   async function scanLocalPreviewServices() {
     const detectLocalPreviewServices = window.desktop?.detectLocalPreviewServices
@@ -331,6 +283,35 @@ export function UnifiedPreviewPanel({
       console.error("[preview] failed to detect local preview services:", error)
       setLocalPreviewServices([])
       setLocalServiceStatus("error")
+    }
+  }
+
+  async function handleCaptureScreenshot() {
+    const capturePreviewScreenshot = window.desktop?.capturePreviewScreenshot
+    const bounds = previewStackRef.current?.getBoundingClientRect()
+    if (!capturePreviewScreenshot || !bounds || bounds.width <= 0 || bounds.height <= 0) {
+      toast.error("Preview screenshot is unavailable.")
+      return
+    }
+
+    setIsCapturingScreenshot(true)
+    try {
+      const result = await capturePreviewScreenshot({
+        bounds: {
+          height: Math.round(bounds.height),
+          width: Math.round(bounds.width),
+          x: Math.round(bounds.left),
+          y: Math.round(bounds.top),
+        },
+        copyToClipboard: true,
+        url: target?.safePreviewUrl ?? target?.normalizedInput ?? state.committedUrl ?? draftValue,
+      })
+      toast.success(result.copiedToClipboard ? "Screenshot saved and copied to clipboard." : "Screenshot saved.")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.error(`Screenshot failed: ${message}`)
+    } finally {
+      setIsCapturingScreenshot(false)
     }
   }
 
@@ -646,13 +627,44 @@ export function UnifiedPreviewPanel({
       <div className="preview-panel-main">
         <div className="preview-panel-controls">
           <form
-            className={target ? "preview-toolbar unified-preview-toolbar has-target-meta" : "preview-toolbar unified-preview-toolbar"}
+            className="preview-toolbar unified-preview-toolbar"
             onSubmit={(event) => {
               event.preventDefault()
               onOpen()
             }}
           >
-            <label className="preview-toolbar-address">
+            <div className="preview-toolbar-navigation" aria-label="Preview navigation">
+              <button
+                type="button"
+                className="preview-toolbar-icon-button"
+                aria-label="Back"
+                title="Back"
+                disabled={!canNavigateBack}
+                onClick={() => onBack()}
+              >
+                <BackIcon />
+              </button>
+              <button
+                type="button"
+                className="preview-toolbar-icon-button"
+                aria-label="Forward"
+                title="Forward"
+                disabled={!canNavigateForward}
+                onClick={() => onForward()}
+              >
+                <ForwardIcon />
+              </button>
+              <button
+                type="button"
+                className="preview-toolbar-icon-button"
+                aria-label="Reload preview"
+                title="Reload preview"
+                onClick={() => onReload()}
+              >
+                <ResetIcon />
+              </button>
+            </div>
+            <div className="preview-toolbar-address">
               <input
                 className="preview-toolbar-input"
                 value={draftValue}
@@ -661,29 +673,26 @@ export function UnifiedPreviewPanel({
                 spellCheck={false}
                 aria-label="Preview target"
               />
-            </label>
-            {target ? <PreviewTargetSummary draftValue={draftValue} target={target} /> : null}
-            <button type="submit" className="secondary-button unified-preview-open-button">
-              Open
-            </button>
+              <button
+                type="button"
+                className="preview-toolbar-icon-button preview-toolbar-open-external"
+                aria-label="Open externally"
+                title="Open externally"
+                disabled={!canOpenExternal}
+                onClick={() => void onOpenExternal()}
+              >
+                <OpenExternalIcon />
+              </button>
+            </div>
             <button
               type="button"
               className="preview-toolbar-icon-button"
-              aria-label="Reload preview"
-              title="Reload preview"
-              onClick={() => onReload()}
+              aria-label="Capture screenshot"
+              title="Capture screenshot"
+              disabled={!canCaptureScreenshot || isCapturingScreenshot}
+              onClick={() => void handleCaptureScreenshot()}
             >
-              <ResetIcon />
-            </button>
-            <button
-              type="button"
-              className="preview-toolbar-icon-button"
-              aria-label="Open externally"
-              title="Open externally"
-              disabled={!canOpenExternal}
-              onClick={() => void onOpenExternal()}
-            >
-              <OpenExternalIcon />
+              <ScreenshotIcon />
             </button>
             <PreviewInteractionToolbar
               activeInteractionID={state.activeInteractionID}
@@ -694,7 +703,7 @@ export function UnifiedPreviewPanel({
           {statusMessage ? <p className="preview-helper-copy unified-preview-status-message">{statusMessage}</p> : null}
         </div>
 
-        <div className="preview-panel-preview-stack unified-preview-stack">
+        <div ref={previewStackRef} className="preview-panel-preview-stack unified-preview-stack">
           {renderTargetBody()}
         </div>
       </div>

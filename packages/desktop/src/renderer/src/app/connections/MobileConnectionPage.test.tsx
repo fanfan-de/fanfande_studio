@@ -1,0 +1,158 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import QRCode from "qrcode"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { DesktopMobileBridgeStatus } from "../../../../shared/desktop-ipc-contract"
+import { MobileConnectionPage } from "./MobileConnectionPage"
+
+vi.mock("qrcode", () => ({
+  default: {
+    toDataURL: vi.fn().mockResolvedValue("data:image/png;base64,PAIRING_QR"),
+  },
+}))
+
+function createMobileBridgeStatus(overrides: Partial<DesktopMobileBridgeStatus> = {}): DesktopMobileBridgeStatus {
+  return {
+    running: true,
+    host: "0.0.0.0",
+    port: 4896,
+    token: "legacy-token",
+    localUrl: "http://127.0.0.1:4896/?token=legacy-token",
+    urls: ["http://192.168.1.20:4896/?token=legacy-token"],
+    pairingLocalUrl: "http://127.0.0.1:4896/?code=local-pair",
+    pairingUrls: ["http://192.168.1.20:4896/?code=pair-123"],
+    pairingExpiresAt: Date.now() + 60_000,
+    startedAt: Date.now() - 10_000,
+    devices: [],
+    ...overrides,
+  }
+}
+
+describe("MobileConnectionPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    Object.defineProperty(window.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    })
+    window.desktop = {
+      platform: "win32",
+      versions: {},
+      getInfo: vi.fn(),
+      getMobileBridgeStatus: vi.fn().mockResolvedValue(createMobileBridgeStatus()),
+      refreshMobilePairingCode: vi.fn(),
+      rotateMobileBridgeToken: vi.fn(),
+      revokeMobileDevice: vi.fn(),
+    }
+  })
+
+  it("makes Android one-time pairing the primary connection path", async () => {
+    render(<MobileConnectionPage />)
+
+    expect(await screen.findByRole("heading", { name: "Android 配对" })).toBeInTheDocument()
+    expect(screen.getByText(/短期一次性 code/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "刷新配对码" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "复制 Android 深链" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "复制配对 URL" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "复制验收命令" })).toBeInTheDocument()
+    expect(screen.getByText("http://192.168.1.20:4896/?code=pair-123")).toBeInTheDocument()
+    expect(screen.getAllByText(/anybox-mobile:\/\/connect\?url=/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/corepack pnpm mobile:android:smoke:bridge/)).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Legacy token 访问" })).toBeInTheDocument()
+    expect(screen.getByText("http://192.168.1.20:4896/?token=legacy-token")).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(QRCode.toDataURL).toHaveBeenCalledWith(
+        "anybox-mobile://connect?url=http%3A%2F%2F192.168.1.20%3A4896%2F%3Fcode%3Dpair-123",
+        expect.objectContaining({ type: "image/png" }),
+      )
+    })
+  })
+
+  it("copies the Android deep link instead of the legacy token URL", async () => {
+    render(<MobileConnectionPage />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "复制 Android 深链" }))
+
+    await waitFor(() => {
+      expect(window.navigator.clipboard.writeText).toHaveBeenCalledWith(
+        "anybox-mobile://connect?url=http%3A%2F%2F192.168.1.20%3A4896%2F%3Fcode%3Dpair-123",
+      )
+    })
+  })
+
+  it("copies the Android bridge smoke command for handoff verification", async () => {
+    render(<MobileConnectionPage />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "复制验收命令" }))
+
+    await waitFor(() => {
+      expect(window.navigator.clipboard.writeText).toHaveBeenCalledWith(
+        'corepack pnpm mobile:android:smoke:bridge -- --url "anybox-mobile://connect?url=http%3A%2F%2F192.168.1.20%3A4896%2F%3Fcode%3Dpair-123"',
+      )
+    })
+  })
+
+  it("refreshes only the Android pairing code from the primary pairing panel", async () => {
+    const nextStatus = createMobileBridgeStatus({
+      token: "legacy-token",
+      localUrl: "http://127.0.0.1:4896/?token=legacy-token",
+      urls: ["http://192.168.1.20:4896/?token=legacy-token"],
+      pairingLocalUrl: "http://127.0.0.1:4896/?code=local-next",
+      pairingUrls: ["http://192.168.1.20:4896/?code=pair-next"],
+    })
+    const desktop = window.desktop!
+    desktop.refreshMobilePairingCode = vi.fn().mockResolvedValue(nextStatus)
+    desktop.rotateMobileBridgeToken = vi.fn()
+
+    render(<MobileConnectionPage />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "刷新配对码" }))
+
+    await waitFor(() => {
+      expect(desktop.refreshMobilePairingCode).toHaveBeenCalled()
+    })
+    expect(desktop.rotateMobileBridgeToken).not.toHaveBeenCalled()
+    expect(await screen.findByText("http://192.168.1.20:4896/?code=pair-next")).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(QRCode.toDataURL).toHaveBeenLastCalledWith(
+        "anybox-mobile://connect?url=http%3A%2F%2F192.168.1.20%3A4896%2F%3Fcode%3Dpair-next",
+        expect.objectContaining({ type: "image/png" }),
+      )
+    })
+  })
+
+  it("shows paired devices and revokes an active device", async () => {
+    const activeDevice = {
+      id: "device-active",
+      name: "Pixel 8",
+      createdAt: Date.now() - 120_000,
+      lastSeenAt: Date.now() - 30_000,
+      capabilities: ["workspace:read", "session:read"],
+    }
+    const revokedDevice = {
+      ...activeDevice,
+      revokedAt: Date.now(),
+    }
+    const nextStatus = createMobileBridgeStatus({ devices: [revokedDevice] })
+    const desktop = window.desktop!
+    desktop.getMobileBridgeStatus = vi.fn().mockResolvedValue(createMobileBridgeStatus({ devices: [activeDevice] }))
+    desktop.revokeMobileDevice = vi.fn().mockResolvedValue(nextStatus)
+
+    render(<MobileConnectionPage />)
+
+    expect(await screen.findByRole("heading", { name: "已配对设备" })).toBeInTheDocument()
+    expect(screen.getByText("Pixel 8")).toBeInTheDocument()
+    expect(screen.getByText("workspace:read, session:read")).toBeInTheDocument()
+    expect(screen.getByText("1")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }))
+
+    await waitFor(() => {
+      expect(desktop.revokeMobileDevice).toHaveBeenCalledWith({ deviceID: "device-active" })
+    })
+    expect(await screen.findByText("已撤销")).toBeInTheDocument()
+  })
+})

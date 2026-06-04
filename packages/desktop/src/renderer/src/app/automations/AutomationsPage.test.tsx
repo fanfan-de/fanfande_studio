@@ -17,6 +17,9 @@ function setDesktopMock(value: unknown) {
   })
 }
 
+const defaultWindowInnerHeight = window.innerHeight
+const defaultWindowInnerWidth = window.innerWidth
+
 function createAutomation(overrides: Partial<AgentAutomationDefinition> = {}): AgentAutomationDefinition {
   return {
     id: "aut_existing",
@@ -51,6 +54,8 @@ function createAutomation(overrides: Partial<AgentAutomationDefinition> = {}): A
 describe("AutomationsPage", () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: defaultWindowInnerHeight })
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: defaultWindowInnerWidth })
     window.localStorage.clear()
     setDesktopMock(undefined)
   })
@@ -67,6 +72,11 @@ describe("AutomationsPage", () => {
       name: input.automation.name ?? "Existing automation",
       prompt: input.automation.prompt ?? "Review the project.",
       status: input.automation.status ?? "active",
+      schedule: input.automation.schedule ?? createAutomation().schedule,
+      execution: {
+        ...createAutomation().execution,
+        ...input.automation.execution,
+      },
     }))
     setDesktopMock({
       cancelAutomationRun: vi.fn(),
@@ -123,6 +133,29 @@ describe("AutomationsPage", () => {
     await waitFor(() => expect(updateAutomationMock).toHaveBeenCalledWith({
       automationID: "aut_existing",
       automation: { prompt: "Edited prompt." },
+    }))
+
+    fireEvent.click(screen.getByRole("button", { name: "Run environment" }))
+    expect(screen.getByRole("menu", { name: "Run environment" })).toHaveClass("automation-detail-environment-menu")
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Worktree" }))
+    await waitFor(() => expect(updateAutomationMock).toHaveBeenCalledWith({
+      automationID: "aut_existing",
+      automation: { execution: { environment: "worktree" } },
+    }))
+
+    fireEvent.click(screen.getByRole("button", { name: "Cadence" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Weekly" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Monday" }))
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "09:00" }))
+    await waitFor(() => expect(updateAutomationMock).toHaveBeenCalledWith({
+      automationID: "aut_existing",
+      automation: {
+        schedule: {
+          type: "cron",
+          expression: "0 9 * * 1",
+          timezone: "UTC",
+        },
+      },
     }))
 
     fireEvent.click(screen.getByRole("button", { name: "Back to automations" }))
@@ -229,6 +262,55 @@ describe("AutomationsPage", () => {
         directories: ["C:/worktrees/app-feature"],
       },
     }))
+  })
+
+  it("portals detail cadence menu and clamps it to the viewport", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 320 })
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 520 })
+    setDesktopMock({
+      cancelAutomationRun: vi.fn(),
+      createAutomation: vi.fn(),
+      deleteAutomation: vi.fn(),
+      listAutomationRuns: vi.fn(async () => [] satisfies AgentAutomationRun[]),
+      listAutomations: vi.fn(async () => [createAutomation()]),
+      runAutomation: vi.fn(),
+      updateAutomation: vi.fn(),
+      updateAutomationRunTriage: vi.fn(),
+    })
+
+    render(
+      <AutomationsPage
+        projects={[{
+          directory: "C:/Projects/example",
+          id: "proj_1",
+          name: "Example",
+        }]}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open Existing automation" }))
+    const cadenceButton = await screen.findByRole("button", { name: "Cadence" })
+    vi.spyOn(cadenceButton, "getBoundingClientRect").mockReturnValue({
+      bottom: 108,
+      height: 28,
+      left: 280,
+      right: 350,
+      top: 80,
+      width: 70,
+      x: 280,
+      y: 80,
+      toJSON: () => ({}),
+    } as DOMRect)
+
+    fireEvent.click(cadenceButton)
+
+    const cadenceMenu = screen.getByRole("menu", { name: "Cadence" })
+    expect(cadenceMenu.parentElement).toBe(document.body)
+    expect(cadenceMenu).toHaveStyle({
+      "--automation-detail-cadence-menu-max-height": "320px",
+      left: "124px",
+      top: "114px",
+    })
   })
 
   it("renders automation chrome in the configured Chinese locale", async () => {

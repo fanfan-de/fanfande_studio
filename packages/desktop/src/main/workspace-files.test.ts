@@ -144,6 +144,21 @@ describe("workspace files", () => {
     })
   })
 
+  it("reads common source text files", async () => {
+    const workspaceRoot = await createWorkspaceFixture()
+    await writeFile(join(workspaceRoot, "src", "read_output.py"), "print('ready')\n")
+
+    const file = await readWorkspaceFile(workspaceRoot, "src/read_output.py")
+
+    expect(file).toEqual({
+      path: "src/read_output.py",
+      name: "read_output.py",
+      extension: "py",
+      kind: "text",
+      content: "print('ready')\n",
+    })
+  })
+
   it("returns local image preview metadata without reading images as text", async () => {
     const workspaceRoot = await createWorkspaceFixture()
 

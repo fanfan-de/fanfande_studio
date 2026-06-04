@@ -6,6 +6,7 @@ import {
   ArrowUp,
   ArrowUpRight,
   BrainCircuit,
+  Camera,
   Check,
   ChevronDown,
   ChevronRight,
@@ -35,6 +36,7 @@ import {
   ListTree,
   LoaderCircle,
   MessageSquare,
+  MessageCirclePlus,
   Minus,
   Monitor,
   Moon,
@@ -78,6 +80,7 @@ function createIcon(Icon: LucideIcon, defaults: LucideProps = {}) {
 export const FolderIcon = createIcon(Folder)
 export const BackIcon = createIcon(ArrowLeft)
 export const ForwardIcon = createIcon(ArrowRight)
+export const ScreenshotIcon = createIcon(Camera)
 export const FolderOpenIcon = createIcon(FolderOpen)
 export const PaperclipIcon = createIcon(Paperclip)
 export const PauseIcon = createIcon(Pause)
@@ -110,6 +113,7 @@ export const LayoutSidebarRightIcon = createIcon(PanelRight)
 export const LeftSidebarIcon = createIcon(PanelLeft)
 export const RightSidebarIcon = createIcon(PanelRight)
 export const SideChatIcon = createIcon(MessageSquare)
+export const CommentAddIcon = createIcon(MessageCirclePlus)
 export const SessionTreeIcon = createIcon(ListTree)
 export const InfoIcon = createIcon(Info)
 export const CodeModeIcon = createIcon(Code2)

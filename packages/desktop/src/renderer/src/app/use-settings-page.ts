@@ -20,6 +20,7 @@ import type {
   PromptPresetDocument,
   PromptPresetSelection,
   PromptPresetSummary,
+  PromptTranslationLanguageID,
   PromptUrlInstallPreview,
   ProviderAuthCapability,
   ProviderAuthFlow,
@@ -592,6 +593,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [resettingPromptPresetID, setResettingPromptPresetID] = useState<string | null>(null)
   const [isPreviewingPromptUrlInstall, setIsPreviewingPromptUrlInstall] = useState(false)
   const [isInstallingPromptUrlPrompts, setIsInstallingPromptUrlPrompts] = useState(false)
+  const [isTranslatingPromptPreset, setIsTranslatingPromptPreset] = useState(false)
   const [restoringArchivedSessionID, setRestoringArchivedSessionID] = useState<string | null>(null)
   const [deletingArchivedSessionID, setDeletingArchivedSessionID] = useState<string | null>(null)
   const requestIDRef = useRef(0)
@@ -653,6 +655,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!isPromptPresetEditorOpen) return
 
     void loadPromptPresets()
+    void loadPromptTranslationModels()
   }, [isPromptPresetEditorOpen])
 
   async function notifyMcpUpdated() {
@@ -913,6 +916,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       if (requestIDRef.current === requestID) {
         setIsLoading(false)
       }
+    }
+  }
+
+  async function loadPromptTranslationModels() {
+    const loadModels = window.desktop?.getGlobalModels
+    if (!loadModels) return
+
+    try {
+      const modelPayload = await loadModels()
+      setModels(modelPayload.items)
+    } catch (error) {
+      console.error("[desktop] load prompt translation models failed:", error)
     }
   }
 
@@ -2120,6 +2135,63 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
+  async function translatePromptPreset(input: {
+    languageID: PromptTranslationLanguageID
+    model: string
+  }) {
+    const translatePromptPresetApi = window.desktop?.translatePromptPreset
+    if (!selectedPromptPreset || !translatePromptPresetApi) {
+      showMessage({
+        tone: "error",
+        text: "Prompt translation is unavailable in this desktop shell.",
+      })
+      return false
+    }
+
+    if (!promptDraftContent.trim()) {
+      showMessage({
+        tone: "error",
+        text: "Prompt content is empty.",
+      })
+      return false
+    }
+
+    if (!input.model.trim()) {
+      showMessage({
+        tone: "error",
+        text: "Select a model for prompt translation.",
+      })
+      return false
+    }
+
+    setIsTranslatingPromptPreset(true)
+
+    try {
+      const document = await translatePromptPresetApi({
+        sourcePresetID: selectedPromptPreset.id,
+        sourceLabel: promptDraftLabel || selectedPromptPreset.label,
+        content: promptDraftContent,
+        languageID: input.languageID,
+        model: input.model,
+      })
+      syncPromptPresetSummary(document)
+      setPromptRoot(document.root ?? promptRoot)
+      showMessage({
+        tone: "success",
+        text: `Translated prompt saved as "${document.label}".`,
+      })
+      return true
+    } catch (error) {
+      showMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setIsTranslatingPromptPreset(false)
+    }
+  }
+
   async function savePromptPreset() {
     if (!selectedPromptPresetID || !selectedPromptPreset || !window.desktop?.updatePromptPreset) return false
 
@@ -3283,6 +3355,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     isRefreshingProviderCatalog,
     isInstallingPromptUrlPrompts,
     isPreviewingPromptUrlInstall,
+    isTranslatingPromptPreset,
     isSavingPromptPresetSelection,
     isSavingBuiltinTools,
     isSavingSelection,
@@ -3337,6 +3410,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     savingProviderID,
     testProviderConnection,
     testingProviderID,
+    translatePromptPreset,
     selectedPromptPreset,
     selectedPromptUrlInstallIDs,
     setProviderAuthMethod,

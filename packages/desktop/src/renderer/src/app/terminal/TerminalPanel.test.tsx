@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { TerminalPanel } from "./TerminalPanel"
 import type { TerminalSessionRecord } from "./types"
@@ -153,6 +153,55 @@ describe("TerminalPanel", () => {
 
     expect(screen.queryByRole("button", { name: /Create terminal/i })).toBeNull()
     expect(screen.getByRole("combobox", { name: "Terminal shell profile" })).toBeDisabled()
+  })
+
+  it("renders the shell picker as a styled listbox and selects a profile", () => {
+    const onShellProfileChange = vi.fn()
+
+    render(
+      <TerminalPanel
+        activeSession={null}
+        brandTheme="terra"
+        colorMode="light"
+        isOpen={true}
+        panelHeight={280}
+        sessions={[]}
+        onCloseTerminal={vi.fn()}
+        onCreateTerminal={vi.fn()}
+        onCreateTerminalForShellProfile={vi.fn()}
+        onTerminalInitialDimensions={vi.fn()}
+        onTerminalInitialDimensionsError={vi.fn()}
+        onPanelHeightChange={vi.fn()}
+        onShellProfileChange={onShellProfileChange}
+        onSelectTerminal={vi.fn()}
+        selectedShellProfileID="default"
+        shellProfiles={[
+          {
+            id: "default",
+            label: "Default",
+            shell: null,
+          },
+          {
+            id: "bash",
+            label: "Bash",
+            shell: "bash",
+          },
+        ]}
+        onTerminalInput={vi.fn()}
+        onTerminalResize={vi.fn()}
+        onTerminalSnapshotChange={vi.fn()}
+        onTogglePanel={vi.fn()}
+        subscribeToTerminalStream={() => () => {}}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Terminal shell profile" }))
+
+    const listbox = screen.getByRole("listbox", { name: "Terminal shell profile" })
+    fireEvent.click(within(listbox).getByRole("option", { name: "Bash" }))
+
+    expect(onShellProfileChange).toHaveBeenCalledTimes(1)
+    expect(onShellProfileChange).toHaveBeenCalledWith("bash")
   })
 
   it("keeps resize preview local until pointerup commits the height", async () => {

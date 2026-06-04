@@ -373,6 +373,15 @@ export function SettingsRoutes() {
     return ok(c, await SettingsUseCase.createPromptPreset(payload))
   })
 
+  app.post("/prompts/translate", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.PromptPresetTranslationBody,
+      "Body must contain a valid prompt translation request.",
+    )
+    return ok(c, await SettingsUseCase.translatePromptPreset(payload))
+  })
+
   app.post("/prompts/url/preview", async (c) => {
     const payload = await parseJsonBody(
       c,

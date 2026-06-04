@@ -225,8 +225,12 @@ try {
       }>,
     getMobileBridgeStatus: () =>
       invokeDesktop("desktop:get-mobile-bridge-status") as Promise<DesktopIpcOutput<"desktop:get-mobile-bridge-status">>,
+    refreshMobilePairingCode: () =>
+      invokeDesktop("desktop:refresh-mobile-pairing-code") as Promise<DesktopIpcOutput<"desktop:refresh-mobile-pairing-code">>,
     rotateMobileBridgeToken: () =>
       invokeDesktop("desktop:rotate-mobile-bridge-token") as Promise<DesktopIpcOutput<"desktop:rotate-mobile-bridge-token">>,
+    revokeMobileDevice: (input: DesktopIpcInput<"desktop:revoke-mobile-device">) =>
+      invokeDesktop("desktop:revoke-mobile-device", input) as Promise<DesktopIpcOutput<"desktop:revoke-mobile-device">>,
     createPtySession: (input: { sessionID: string; title?: string; shell?: string; rows?: number; cols?: number }) =>
       invokeDesktop("desktop:create-pty-session", input) as Promise<PtySessionInfo>,
     getPtySession: (input: { id: string }) =>
@@ -246,8 +250,8 @@ try {
       invokeDesktop("desktop:pick-composer-attachments", input) as Promise<string[]>,
     saveComposerPastedImages: (input: DesktopIpcInput<"desktop:save-composer-pasted-images">) =>
       invokeDesktop("desktop:save-composer-pasted-images", input) as Promise<string[]>,
-    capturePreviewScreenshot: (input: { bounds: { x: number; y: number; width: number; height: number }; url?: string }) =>
-      invokeDesktop("desktop:capture-preview-screenshot", input) as Promise<{ path: string }>,
+    capturePreviewScreenshot: (input: DesktopIpcInput<"desktop:capture-preview-screenshot">) =>
+      invokeDesktop("desktop:capture-preview-screenshot", input) as Promise<DesktopIpcOutput<"desktop:capture-preview-screenshot">>,
     detectLocalPreviewServices: () =>
       invokeDesktop("desktop:detect-local-preview-services") as Promise<DesktopLocalPreviewService[]>,
     resolvePreviewTarget: (input: DesktopIpcInput<"desktop:resolve-preview-target">) =>
@@ -633,6 +637,8 @@ try {
       invokeDesktop("desktop:read-prompt-preset", input) as Promise<PromptPresetDocument>,
     createPromptPreset: (input: { label?: string; content?: string; description?: string }) =>
       invokeDesktop("desktop:create-prompt-preset", input) as Promise<PromptPresetDocument>,
+    translatePromptPreset: (input: DesktopIpcInput<"desktop:translate-prompt-preset">) =>
+      invokeDesktop("desktop:translate-prompt-preset", input) as Promise<DesktopIpcOutput<"desktop:translate-prompt-preset">>,
     previewPromptUrlInstall: (input: { source: string }) =>
       invokeDesktop("desktop:preview-prompt-url-install", input) as Promise<PromptUrlInstallPreview>,
     installPromptsFromUrl: (input: { previewID: string; promptIDs: string[] }) =>

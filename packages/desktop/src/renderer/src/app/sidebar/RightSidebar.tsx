@@ -98,8 +98,10 @@ interface RightSidebarProps {
   onOpenTerminalTab: () => void
   onMessageTreeNodeSelect: (sessionID: string, messageID: string) => void | Promise<void>
   onPreviewActiveInteractionChange: (pluginID: PreviewInteractionPluginID | null) => void
+  onPreviewBack: () => void
   onPreviewCommitInteraction: (input: PreviewInteractionCommitInput) => void
   onPreviewDraftUrlChange: (value: string) => void
+  onPreviewForward: () => void
   onPreviewOpen: () => void
   onPreviewOpenExternal: () => void | Promise<void>
   onPreviewOpenUrl: (url: string) => void
@@ -259,8 +261,10 @@ export function RightSidebar({
   onOpenTerminalTab,
   onMessageTreeNodeSelect,
   onPreviewActiveInteractionChange,
+  onPreviewBack,
   onPreviewCommitInteraction,
   onPreviewDraftUrlChange,
+  onPreviewForward,
   onPreviewOpen,
   onPreviewOpenExternal,
   onPreviewOpenUrl,
@@ -424,7 +428,9 @@ export function RightSidebar({
         return (
           <UnifiedPreviewPanel
             state={activeTab.state}
+            onBack={onPreviewBack}
             onDraftUrlChange={onPreviewDraftUrlChange}
+            onForward={onPreviewForward}
             onActiveInteractionChange={onPreviewActiveInteractionChange}
             onCommitInteraction={onPreviewCommitInteraction}
             onOpen={onPreviewOpen}

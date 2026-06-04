@@ -91,6 +91,7 @@
 }
 
 .terminal-shell-picker {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -103,23 +104,129 @@
 }
 
 .terminal-shell-picker-select {
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--seg-border);
-  border-radius: 8px;
-  background: var(--seg-panel);
-  color: var(--seg-text-1);
-  font-size: 12px;
+  position: relative;
+  min-width: 126px;
 }
 
-.terminal-shell-picker-select:focus-visible {
+.terminal-shell-picker-trigger {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--seg-radius-xs);
+  background: transparent;
+  color: var(--seg-text-1);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  text-align: left;
+  display: inline-flex;
+  align-items: center;
+  box-shadow: none;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.terminal-shell-picker-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-shell-picker-trigger:hover,
+.terminal-shell-picker-trigger:focus-visible,
+.terminal-shell-picker-select.is-open .terminal-shell-picker-trigger {
+  background: var(--mix-seg-accent-soft-72-seg-panel-28);
+  color: var(--seg-accent-strong);
+  box-shadow: none;
+}
+
+.terminal-shell-picker-trigger:focus-visible {
   outline: var(--focus-outline-width) solid var(--focus-outline-color);
   outline-offset: var(--focus-outline-offset);
 }
 
-.terminal-shell-picker-select:disabled {
+.terminal-shell-picker-trigger:disabled {
   cursor: not-allowed;
   opacity: 0.58;
+}
+
+.terminal-shell-picker-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 9;
+  width: max(168px, 100%);
+  max-width: min(240px, calc(100vw - 32px));
+  max-height: min(240px, calc(100dvh - 160px));
+  overflow: auto;
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--semantic-dropdown-menu-radius, var(--seg-radius-md));
+  background: var(--seg-dropdown-menu-surface);
+  color: var(--seg-text-1);
+  box-shadow: 0 14px 34px rgba(46, 81, 118, 0.12);
+  outline: none;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-app-region: no-drag;
+}
+
+.terminal-shell-picker-panel::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.terminal-shell-picker-option {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: max(4px, calc(var(--semantic-dropdown-menu-radius, var(--seg-radius-md)) - 2px));
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  text-align: left;
+  display: inline-flex;
+  align-items: center;
+  box-shadow: none;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.terminal-shell-picker-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-shell-picker-option:hover,
+.terminal-shell-picker-option:focus-visible,
+.terminal-shell-picker-option.is-active {
+  background: var(--semantic-sidebar-tree-row-surface-hover, rgba(17, 24, 39, 0.06));
+  color: var(--semantic-sidebar-tree-row-text-hover, var(--seg-text-1));
+  outline: none;
+  box-shadow: none;
+}
+
+.terminal-shell-picker-option.is-selected {
+  background: var(--mix-seg-accent-soft-72-seg-panel-28);
+  color: var(--seg-accent-strong);
 }
 
 .terminal-panel-toggle-button {

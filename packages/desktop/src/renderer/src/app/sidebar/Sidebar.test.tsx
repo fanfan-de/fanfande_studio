@@ -142,6 +142,17 @@ describe("Sidebar", () => {
     expect(screen.queryByRole("button", { name: "Code" })).not.toBeInTheDocument()
   })
 
+  it("places the local folder action before the SSH folder action", () => {
+    renderSidebar({ onOpenRemoteFolderConfig: vi.fn() })
+
+    const leftSidebarTopMenu = screen.getByLabelText("Left sidebar top menu")
+    const actionLabels = within(leftSidebarTopMenu)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"))
+
+    expect(actionLabels).toEqual(["Open folder", "Open remote folder"])
+  })
+
   it("requests workspace actions from the top menu", () => {
     const onSidebarAction = vi.fn()
     renderSidebar({ onSidebarAction })

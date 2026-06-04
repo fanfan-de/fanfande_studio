@@ -256,6 +256,16 @@ export type ProviderCatalogItem = z.infer<typeof ProviderCatalogItem>
 
 const sdkState = Instance.state(() => new Map<string, SDKProvider>())
 const languageState = Instance.state(() => new Map<string, LanguageModel>())
+const globalSdkState = new Map<string, SDKProvider>()
+const globalLanguageState = new Map<string, LanguageModel>()
+
+function getSDKState(configID: string) {
+  return configID === Config.GLOBAL_CONFIG_ID ? globalSdkState : sdkState()
+}
+
+function getLanguageState(configID: string) {
+  return configID === Config.GLOBAL_CONFIG_ID ? globalLanguageState : languageState()
+}
 
 type ProviderFunctionOverrides = {
   getSelection?: (configID?: string) => Promise<{
@@ -267,6 +277,7 @@ type ProviderFunctionOverrides = {
   }>
   getDefaultModelRef?: (configID?: string) => Promise<ModelReference>
   getModel?: (providerID: string, modelID: string, configID?: string) => Promise<Model>
+  listModels?: (configID?: string) => Promise<PublicModel[]>
   getLanguage?: (model: Model, configID?: string) => Promise<LanguageModel>
 }
 
@@ -316,6 +327,8 @@ export function setProviderRuntimeDependenciesForTesting(
   overrides: Partial<ProviderRuntimeDependencies>,
 ) {
   const previous = providerRuntimeDependencies
+  globalSdkState.clear()
+  globalLanguageState.clear()
   providerRuntimeDependencies = {
     ...previous,
     ...overrides,
@@ -323,6 +336,8 @@ export function setProviderRuntimeDependenciesForTesting(
 
   return () => {
     providerRuntimeDependencies = previous
+    globalSdkState.clear()
+    globalLanguageState.clear()
   }
 }
 
@@ -1650,6 +1665,10 @@ export async function listPublicProviders(configID = resolveConfigID()) {
 }
 
 export async function listModels(configID = resolveConfigID()) {
+  if (providerFunctionOverrides.listModels) {
+    return providerFunctionOverrides.listModels(configID)
+  }
+
   const providers = await list(configID)
   return sortModels(
     Object.values(providers).flatMap((provider) => Object.values(provider.models).map((model) => toPublicModel(provider, model))),
@@ -1780,7 +1799,7 @@ export async function getLanguage(model: Model, configID = resolveConfigID()): P
   const provider = await requireRuntimeProvider(model.providerID, configID)
 
   const key = runtimeKey(provider, model)
-  const cache = languageState()
+  const cache = getLanguageState(configID)
   const cached = cache.get(key)
   if (cached) return cached
 
@@ -1886,7 +1905,7 @@ async function getSDK(model: Model, configID = resolveConfigID()) {
   }
 
   const key = runtimeKey(provider, model)
-  const cache = sdkState()
+  const cache = getSDKState(configID)
   const cached = cache.get(key)
   if (cached) return cached
 

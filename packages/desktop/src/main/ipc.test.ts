@@ -175,6 +175,43 @@ describe("ipc tool permission mode helpers", () => {
   })
 })
 
+describe("ipc prompt helpers", () => {
+  it("translates prompt presets through the agent API", async () => {
+    requestAgentJSONMock.mockResolvedValueOnce({
+      data: {
+        id: "custom-system-prompt",
+        label: "System prompt - 简体中文",
+        description: "Translated prompt.",
+        source: "custom",
+        hasOverride: false,
+        editable: true,
+        content: "translated prompt",
+      },
+    })
+
+    const input = {
+      sourcePresetID: "system-default",
+      sourceLabel: "System prompt",
+      content: "source prompt",
+      languageID: "zh-Hans" as const,
+      model: "openai/gpt-5",
+    }
+
+    await expect(internal.translatePromptPreset(input)).resolves.toMatchObject({
+      id: "custom-system-prompt",
+      label: "System prompt - 简体中文",
+      content: "translated prompt",
+    })
+    expect(requestAgentJSONMock).toHaveBeenCalledWith("/api/prompts/translate", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
+    })
+  })
+})
+
 describe("ipc side chat cleanup helpers", () => {
   function createSideChatLink(input: {
     sessionID: string
@@ -609,6 +646,38 @@ describe("ipc preview screenshot helpers", () => {
       recursive: true,
     })
     expect(writeImageFile).toHaveBeenCalledWith(result.path, pngBuffer)
+    expect(result.copiedToClipboard).toBe(false)
+  })
+
+  it("copies preview screenshots to the clipboard when requested", async () => {
+    const image = {
+      toPNG: () => Buffer.from("preview-marker"),
+    }
+    const capturePage = vi.fn().mockResolvedValue(image)
+    const writeClipboardImage = vi.fn()
+
+    const result = await internal.capturePreviewScreenshotFromWindow(
+      { capturePage },
+      {
+        bounds: {
+          height: 240,
+          width: 320,
+          x: 12,
+          y: 40,
+        },
+        copyToClipboard: true,
+        url: "http://localhost:5174/",
+      },
+      {
+        makeDirectory: vi.fn().mockResolvedValue(undefined),
+        userDataPath: "C:\\Users\\codex\\AppData\\Roaming\\Desktop",
+        writeClipboardImage,
+        writeImageFile: vi.fn().mockResolvedValue(undefined),
+      },
+    )
+
+    expect(writeClipboardImage).toHaveBeenCalledWith(image)
+    expect(result.copiedToClipboard).toBe(true)
   })
 })
 

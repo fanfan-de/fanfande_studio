@@ -15,7 +15,7 @@ import {
   MIN_SIDEBAR_WIDTH,
   RIGHT_SIDEBAR_MIN_LEFT_EDGE_RATIO,
 } from "./app/constants"
-import type { LoadedFolderWorkspace, SessionRuntimeDebugSnapshot } from "./app/types"
+import type { LoadedFolderWorkspace, ProviderModel, SessionRuntimeDebugSnapshot } from "./app/types"
 
 function readBundledStyles() {
   const stylesRoot = resolve(process.cwd(), "src/renderer/src")
@@ -519,7 +519,7 @@ type PromptPresetFixture = {
 const PROMPT_PRESET_FIXTURES: PromptPresetFixture[] = [
   {
     id: "system-default",
-    label: "System Prompt",
+    label: "System prompt",
     description: "Base instructions applied to every session turn.",
     source: "bundled" as const,
     hasOverride: false,
@@ -528,7 +528,7 @@ const PROMPT_PRESET_FIXTURES: PromptPresetFixture[] = [
   },
   {
     id: "plan-mode",
-    label: "Plan Mode Prompt",
+    label: "Plan mode prompt",
     description: "Additional instructions appended when the plan agent is active.",
     source: "bundled" as const,
     hasOverride: false,
@@ -537,7 +537,7 @@ const PROMPT_PRESET_FIXTURES: PromptPresetFixture[] = [
   },
   {
     id: "side-chat",
-    label: "Side Chat Prompt",
+    label: "Side chat prompt",
     description: "Additional instructions appended when a side chat session is active.",
     source: "bundled" as const,
     hasOverride: false,
@@ -606,6 +606,42 @@ function createPromptPresetDocument(
     ...preset,
     ...overrides,
     content: overrides.content ?? defaultContent,
+  }
+}
+
+function createProviderModelFixture(overrides: Partial<ProviderModel> = {}): ProviderModel {
+  return {
+    id: "gpt-5",
+    providerID: "openai",
+    providerName: "OpenAI",
+    name: "GPT-5",
+    status: "active",
+    available: true,
+    capabilities: {
+      temperature: true,
+      reasoning: false,
+      attachment: false,
+      toolcall: true,
+      input: {
+        text: true,
+        audio: false,
+        image: false,
+        video: false,
+        pdf: false,
+      },
+      output: {
+        text: true,
+        audio: false,
+        image: false,
+        video: false,
+        pdf: false,
+      },
+    },
+    limit: {
+      context: 128000,
+      output: 8192,
+    },
+    ...overrides,
   }
 }
 
@@ -1054,6 +1090,13 @@ describe("App", () => {
         createPromptPresetDocument("custom-untitled-preset", {
           label: "Untitled preset",
           source: "custom",
+        }),
+      ),
+      translatePromptPreset: vi.fn().mockResolvedValue(
+        createPromptPresetDocument("custom-translated-system-prompt", {
+          label: "System prompt - 简体中文",
+          source: "custom",
+          content: "translated prompt",
         }),
       ),
       previewPromptUrlInstall: vi.fn(),
@@ -2297,6 +2340,66 @@ describe("App", () => {
     const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
     expect(await within(inspector).findByText(/export const focusValue = 1/)).toBeInTheDocument()
     expect(within(inspector).queryByRole("textbox", { name: "Filter workspace files" })).not.toBeInTheDocument()
+  })
+
+  it("opens response markdown document links without line numbers in the files inspector", async () => {
+    const absolutePath = "C:/Projects/Atlas/frontend/README.md"
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-md-link-1",
+          sessionID: "session-frontend-review",
+          role: "user",
+          created: 100,
+        },
+        parts: [{ id: "part-user-md-link-1", type: "text", text: "Open the markdown file link" }],
+      },
+      {
+        info: {
+          id: "msg-assistant-md-link-1",
+          sessionID: "session-frontend-review",
+          role: "assistant",
+          created: 101,
+          completed: 102,
+        },
+        parts: [
+          {
+            id: "part-assistant-md-link-1",
+            type: "text",
+            text: `[README.md](${absolutePath})`,
+          },
+        ],
+      },
+    ])
+    window.desktop!.resolvePreviewTarget = vi.fn()
+    window.desktop!.readWorkspaceFile = vi.fn().mockResolvedValue({
+      path: "readme.md",
+      name: "README.md",
+      extension: "md",
+      kind: "text",
+      content: "# Li Bai\n\nTang poet.",
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
+        backendSessionID: "session-frontend-review",
+      })
+    })
+    fireEvent.click(await screen.findByRole("link", { name: "README.md" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.readWorkspaceFile).toHaveBeenCalledWith({
+        directory: FRONTEND_WORKSPACE_DIRECTORY,
+        path: "readme.md",
+      })
+    })
+    expect(window.desktop!.resolvePreviewTarget).not.toHaveBeenCalled()
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    expect(within(inspector).getByRole("searchbox", { name: "Filter workspace files" })).toBeInTheDocument()
+    expect(await within(inspector).findByRole("heading", { name: "Li Bai" })).toBeInTheDocument()
   })
 
   it("opens response local file links through the system when the path is outside the pane workspace", async () => {
@@ -8369,16 +8472,22 @@ describe("App", () => {
     expect(bundledPromptFolder.firstElementChild).toHaveClass("skill-tree-role-icon", "is-folder")
     expect(promptTree.lastElementChild).toHaveClass("prompt-presets-new-menu-shell")
     expect(within(promptTree.lastElementChild as HTMLElement).getByRole("button", { name: "New" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "System Prompt" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Plan Mode Prompt" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Side Chat Prompt" })).toBeInTheDocument()
+    expect(
+      Array.from(document.querySelectorAll(".settings-prompt-assignment-title"), (node) => node.textContent),
+    ).toEqual(["System prompt", "Plan mode prompt", "Side chat prompt"])
+    expect(screen.queryByText("Every turn")).not.toBeInTheDocument()
+    expect(screen.queryByText("Plan only")).not.toBeInTheDocument()
+    expect(screen.queryByText("Side chat only")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "System prompt" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Plan mode prompt" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Side chat prompt" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "GPT Provider Prompt" })).toBeInTheDocument()
-    expect(getPromptPresetCombobox("System prompt preset")).toHaveTextContent("System Prompt")
-    expect(getPromptPresetCombobox("Plan mode prompt preset")).toHaveTextContent("Plan Mode Prompt")
-    expect(getPromptPresetCombobox("Side chat prompt preset")).toHaveTextContent("Side Chat Prompt")
+    expect(getPromptPresetCombobox("System prompt preset")).toHaveTextContent("System prompt")
+    expect(getPromptPresetCombobox("Plan mode prompt preset")).toHaveTextContent("Plan mode prompt")
+    expect(getPromptPresetCombobox("Side chat prompt preset")).toHaveTextContent("Side chat prompt")
     expect(screen.queryByRole("button", { name: /Confirm .* prompt preset/ })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Plan Mode Prompt" }))
+    fireEvent.click(screen.getByRole("button", { name: "Plan mode prompt" }))
 
     await waitFor(() => {
       expect(window.desktop!.readPromptPreset).toHaveBeenCalledWith({
@@ -8388,12 +8497,12 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Preview" }))
 
-    const planPreview = screen.getByRole("region", { name: "Plan Mode Prompt markdown preview" })
+    const planPreview = screen.getByRole("region", { name: "Plan mode prompt markdown preview" })
     expect(planPreview).toHaveTextContent("<system-reminder>")
     expect(within(planPreview).getByRole("heading", { name: "Plan Mode - System Reminder" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }))
-    expect(screen.getByRole("textbox", { name: "Plan Mode Prompt content" })).toHaveValue(
+    expect(screen.getByRole("textbox", { name: "Plan mode prompt content" })).toHaveValue(
       "<system-reminder>\n# Plan Mode - System Reminder",
     )
 
@@ -8522,6 +8631,154 @@ describe("App", () => {
     })
 
     expect(await screen.findByText("Prompt preset reset to default.")).toBeInTheDocument()
+  })
+
+  it("translates prompt presets into a new custom prompt without changing the current selection", async () => {
+    const simplifiedChineseLabel = "\u7b80\u4f53\u4e2d\u6587"
+    const traditionalChineseLabel = "\u7e41\u9ad4\u4e2d\u6587"
+    const translatedLabel = `System prompt - ${simplifiedChineseLabel}`
+    const draftContent = "Draft source prompt with {{user_name}} and /absolute/path."
+    let promptPresetDocuments = [
+      createPromptPresetDocument("system-default"),
+      createPromptPresetDocument("plan-mode"),
+      createPromptPresetDocument("side-chat"),
+      createPromptPresetDocument("provider-gpt"),
+    ]
+
+    function listPromptPresetSummaries() {
+      return promptPresetDocuments.map(({ content, ...summary }) => summary)
+    }
+
+    function readPromptPresetDocumentForTest(presetID: string) {
+      const preset = promptPresetDocuments.find((item) => item.id === presetID)
+      if (!preset) {
+        throw new Error(`Unknown prompt preset '${presetID}'`)
+      }
+
+      return preset
+    }
+
+    function upsertPromptPresetDocument(document: ReturnType<typeof createPromptPresetDocument>) {
+      promptPresetDocuments = promptPresetDocuments.some((preset) => preset.id === document.id)
+        ? promptPresetDocuments.map((preset) => (preset.id === document.id ? document : preset))
+        : [...promptPresetDocuments, document]
+    }
+
+    const textModel = createProviderModelFixture()
+    const nonTextOutputModel = createProviderModelFixture({
+      id: "image-only",
+      name: "Image Only",
+      capabilities: {
+        ...textModel.capabilities,
+        output: {
+          ...textModel.capabilities.output,
+          text: false,
+          image: true,
+        },
+      },
+    })
+    const unavailableModel = createProviderModelFixture({
+      id: "unavailable",
+      name: "Unavailable Model",
+      available: false,
+    })
+
+    window.desktop!.getPromptPresets = vi.fn().mockImplementation(() =>
+      Promise.resolve(listPromptPresetSummaries()),
+    )
+    window.desktop!.getPromptPresetSelection = vi.fn().mockResolvedValue(PROMPT_PRESET_SELECTION_FIXTURE)
+    window.desktop!.readPromptPreset = vi.fn().mockImplementation(({ presetID }: { presetID: string }) =>
+      Promise.resolve(readPromptPresetDocumentForTest(presetID)),
+    )
+    window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
+      items: [
+        textModel,
+        nonTextOutputModel,
+        unavailableModel,
+      ],
+      selection: {},
+    })
+    window.desktop!.updatePromptPresetSelection = vi.fn().mockResolvedValue(PROMPT_PRESET_SELECTION_FIXTURE)
+    window.desktop!.translatePromptPreset = vi.fn().mockImplementation(() => {
+      const document = createPromptPresetDocument("custom-system-prompt-zh-hans", {
+        label: translatedLabel,
+        source: "custom",
+        description: "Translated prompt.",
+        content: "translated prompt",
+      })
+      upsertPromptPresetDocument(document)
+      return Promise.resolve(document)
+    })
+
+    render(<App />)
+
+    openActivityRailConfigurationView("Open prompts")
+
+    const systemTextarea = await screen.findByRole("textbox", { name: "System prompt content" })
+    fireEvent.change(systemTextarea, {
+      target: {
+        value: draftContent,
+      },
+    })
+
+    await waitFor(() => {
+      expect(window.desktop!.getGlobalModels).toHaveBeenCalled()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Translate" }))
+
+    const dialog = await screen.findByRole("dialog", { name: "Translate prompt" })
+    const languageSelect = within(dialog).getByRole("combobox", { name: "Prompt translation language" })
+    expect(languageSelect).toHaveTextContent(simplifiedChineseLabel)
+
+    fireEvent.click(languageSelect)
+    const languageListbox = screen.getByRole("listbox", { name: "Prompt translation language" })
+    expect(within(languageListbox).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "English",
+      simplifiedChineseLabel,
+      traditionalChineseLabel,
+      "Spanish",
+      "French",
+      "German",
+      "Portuguese",
+      "Italian",
+      "Japanese",
+      "Korean",
+      "Dutch",
+      "Russian",
+    ])
+    fireEvent.click(within(languageListbox).getByRole("option", { name: simplifiedChineseLabel }))
+
+    const submitButton = within(dialog).getByRole("button", { name: "Translate" })
+    const modelSelect = within(dialog).getByRole("combobox", { name: "Prompt translation model" })
+    expect(modelSelect).toHaveTextContent("Select model")
+    expect(submitButton).toBeDisabled()
+
+    fireEvent.click(modelSelect)
+    const modelListbox = screen.getByRole("listbox", { name: "Prompt translation model" })
+    const gptModelOption = within(modelListbox).getByRole("option", { name: /GPT-5/ })
+    expect(gptModelOption).toBeInTheDocument()
+    expect(within(modelListbox).queryByRole("option", { name: /Image Only/ })).not.toBeInTheDocument()
+    expect(within(modelListbox).queryByRole("option", { name: /Unavailable Model/ })).not.toBeInTheDocument()
+    fireEvent.click(gptModelOption)
+
+    fireEvent.click(submitButton)
+
+    await waitFor(() => {
+      expect(window.desktop!.translatePromptPreset).toHaveBeenCalledWith({
+        sourcePresetID: "system-default",
+        sourceLabel: "System prompt",
+        content: draftContent,
+        languageID: "zh-Hans",
+        model: "openai/gpt-5",
+      })
+    })
+
+    expect(await screen.findByText(`Translated prompt saved as "${translatedLabel}".`)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: translatedLabel })).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "System prompt content" })).toHaveValue(draftContent)
+    expect(screen.getByRole("combobox", { name: "System prompt preset" })).toHaveTextContent("System prompt")
+    expect(window.desktop!.updatePromptPresetSelection).not.toHaveBeenCalled()
   })
 
   it("refreshes the global provider catalog from settings", async () => {
@@ -12488,6 +12745,10 @@ describe("App", () => {
     )
     expect(styles).toMatch(/\.sidebar-resizer\s*\{[^}]*--sidebar-resizer-top-surface:\s*var\(--seg-pane-tab-bar-surface\);[^}]*background-color:\s*transparent;[^}]*background-image:\s*linear-gradient\(var\(--sidebar-resizer-top-surface\),\s*var\(--sidebar-resizer-top-surface\)\);[^}]*background-position:\s*top;[^}]*background-size:\s*100%\s*var\(--section-toolbar-height\);[^}]*background-repeat:\s*no-repeat;/s)
     expect(styles).toMatch(/\.sidebar-resizer\s*\{[^}]*--sidebar-resizer-line-x:\s*10px;[^}]*justify-self:\s*end;[^}]*background-image:/s)
+    const sidebarResizerBlocks = Array.from(styles.matchAll(/\.sidebar-resizer\s*\{([^}]*)\}/g), (match) => match[1])
+    const topChromeSidebarResizerBlock = sidebarResizerBlocks.find((block) => block.includes("--sidebar-resizer-line-x: 10px")) ?? ""
+    expect(topChromeSidebarResizerBlock).toContain("linear-gradient(var(--sidebar-resizer-line), var(--sidebar-resizer-line))")
+    expect(topChromeSidebarResizerBlock).not.toContain("var(--seg-shell)")
     expect(styles).toMatch(/\.sidebar-resizer\.is-right\s*\{[^}]*--sidebar-resizer-line-x:\s*0;[^}]*justify-self:\s*start;/s)
     expect(styles).toMatch(/\.sidebar-resizer::after\s*\{[^}]*top:\s*calc\(var\(--section-toolbar-height\)\s*-\s*1px\);[^}]*height:\s*1px;[^}]*background:\s*var\(--seg-border\);/s)
     expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dv-tabs-container\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
@@ -12560,8 +12821,9 @@ describe("App", () => {
     expect(styles).toMatch(/--dockview-tab-focus-accent:\s*color-mix\(in srgb,\s*var\(--dockview-tab-divider\) 56%,\s*var\(--seg-text-2\) 44%\);/s)
     expect(styles).toMatch(/\.dockview-theme-anybox\s+\.dv-tab\s*\{[^}]*position:\s*relative;[^}]*margin:\s*0 0 -1px;[^}]*background:\s*transparent;[^}]*overflow:\s*hidden;/s)
     expect(styles).toMatch(
-      /\.dockview-theme-anybox\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-active-tab,[\s\S]*?\.dv-tab\.dv-active-tab\s*\{[^}]*background:\s*var\(--dockview-tab-active-bg\);[^}]*box-shadow:[^}]*inset 0 1px 0 var\(--dockview-tab-border\)/s,
+      /\.dockview-theme-anybox\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-active-tab,[\s\S]*?\.dv-tab\.dv-active-tab\s*\{[^}]*background:\s*var\(--dockview-tab-active-bg\);[^}]*box-shadow:\s*inset 0 1px 0 var\(--dockview-tab-border\),\s*inset 0 -1px 0 var\(--dockview-tab-border\);/s,
     )
+    expect(styles).not.toMatch(/\.dockview-theme-anybox\s+\.dv-tab\.dv-active-tab,[\s\S]*?\{[^}]*box-shadow:\s*none;/s)
     expect(styles).toMatch(
       /\.dockview-theme-anybox\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-active-tab::after\s*\{[^}]*content:\s*"";[^}]*top:\s*0;[^}]*height:\s*4px;[^}]*background:\s*var\(--dockview-tab-focus-accent\);/s,
     )
@@ -12596,6 +12858,9 @@ describe("App", () => {
     expect(styles).not.toMatch(/session-tab-active-curve/)
     expect(styles).toMatch(/--right-sidebar-tab-focus-accent:\s*color-mix\(in srgb,\s*var\(--right-sidebar-tab-divider\) 56%,\s*var\(--seg-text-2\) 44%\);/s)
     expect(styles).toMatch(
+      /\.right-sidebar-tab\.is-active\s*\{[^}]*box-shadow:\s*inset 0 1px 0 var\(--right-sidebar-tab-border\),\s*inset 0 -1px 0 var\(--right-sidebar-tab-border\);/s,
+    )
+    expect(styles).toMatch(
       /\.right-sidebar-tab\.is-active::before\s*\{[^}]*content:\s*"";[^}]*top:\s*0;[^}]*height:\s*4px;[^}]*background:\s*var\(--right-sidebar-tab-focus-accent\);/s,
     )
     expect(styles).toMatch(
@@ -12616,10 +12881,13 @@ describe("App", () => {
     )
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\s*\{[^}]*min-height:\s*var\(--canvas-region-tab-height\);[^}]*margin-top:\s*6px;[^}]*padding:\s*0 8px 0 10px;/s)
     expect(styles).toMatch(
-      /\.canvas-region-top-menu\s+\.session-tab\.is-active\s*\{[^}]*min-height:\s*calc\(var\(--canvas-region-tab-height\) \+ 4px\);[^}]*background:\s*var\(--canvas-region-tab-active-bg\);[^}]*border:\s*0;[^}]*z-index:\s*auto;[^}]*box-shadow:\s*inset 0 1px 0 var\(--canvas-region-tab-border\);/s,
+      /\.canvas-region-top-menu\s+\.session-tab\.is-active\s*\{[^}]*min-height:\s*calc\(var\(--canvas-region-tab-height\) \+ 4px\);[^}]*background:\s*var\(--canvas-region-tab-active-bg\);[^}]*border:\s*0;[^}]*z-index:\s*auto;[^}]*box-shadow:\s*inset 0 1px 0 var\(--canvas-region-tab-border\),\s*inset 0 -1px 0 var\(--canvas-region-tab-border\);/s,
     )
     expect(styles).toMatch(
-      /\.canvas-region-top-menu\s+\.session-tab\.is-active::before\s*\{[^}]*bottom:\s*-1px;[^}]*height:\s*2px;[^}]*background:\s*var\(--canvas-region-tab-active-bg\);/s,
+      /\.canvas-region-top-menu\s+\.session-tab\.is-active::before\s*\{[^}]*content:\s*none;/s,
+    )
+    expect(styles).toMatch(
+      /\.canvas-region-top-menu\s+\.session-tab\.is-active,\s*\.right-sidebar-tab\.is-active\s*\{[^}]*box-shadow:\s*inset 0 1px 0 var\(--top-chrome-border\),\s*inset 0 -1px 0 var\(--top-chrome-border\);/s,
     )
     expect(styles).toMatch(
       /\.session-canvas-top-menu\s*\{[^}]*min-height:\s*var\(--section-toolbar-height\);[^}]*padding-right:\s*calc\(var\(--window-controls-canvas-clearance\) \+ 8px\);[^}]*padding-top:\s*0;[^}]*padding-bottom:\s*0;[^}]*background:\s*transparent;[^}]*border-bottom:\s*0;/s,

@@ -17,11 +17,40 @@ import type {
   PromptPresetDocument,
   PromptPresetSelection,
   PromptPresetSummary,
+  PromptTranslationLanguageID,
   PromptUrlInstallPreview,
+  ProviderModel,
 } from "../types"
 
 type PromptEditorMode = "edit" | "preview"
 type PromptPresetFolderID = PromptPresetSummary["source"]
+
+const PROMPT_TRANSLATION_LANGUAGES: Array<{
+  value: PromptTranslationLanguageID
+  label: string
+}> = [
+  { value: "en", label: "English" },
+  { value: "zh-Hans", label: "简体中文" },
+  { value: "zh-Hant", label: "繁體中文" },
+  { value: "es", label: "Spanish" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "pt", label: "Portuguese" },
+  { value: "it", label: "Italian" },
+  { value: "ja", label: "Japanese" },
+  { value: "ko", label: "Korean" },
+  { value: "nl", label: "Dutch" },
+  { value: "ru", label: "Russian" },
+]
+
+function getPromptTranslationModelValue(model: ProviderModel) {
+  return `${model.providerID}/${model.id}`
+}
+
+function getPromptTranslationModelLabel(model: ProviderModel) {
+  const providerLabel = model.providerName || model.providerID
+  return `${model.name} · ${providerLabel}`
+}
 
 interface PromptEditorMessage {
   tone: "success" | "error"
@@ -38,6 +67,8 @@ interface PromptPresetsPageProps {
   isPromptDirty: boolean
   isPromptUrlInstallDialogOpen: boolean
   isSavingPromptPresetSelection: boolean
+  isTranslatingPromptPreset: boolean
+  models: ProviderModel[]
   promptDraftContent: string
   promptDraftLabel: string
   promptLoadError: string | null
@@ -68,6 +99,10 @@ interface PromptPresetsPageProps {
   onOpenPromptFolder: () => boolean | Promise<boolean>
   onResetPromptPreset: () => boolean | Promise<boolean>
   onSavePromptPreset: () => boolean | Promise<boolean>
+  onTranslatePromptPreset: (input: {
+    languageID: PromptTranslationLanguageID
+    model: string
+  }) => boolean | Promise<boolean>
 }
 
 export interface PromptPresetsSidebarViewProps {
@@ -277,6 +312,106 @@ function PromptUrlInstallDialog({
             onClick={() => void onInstall()}
           >
             {isInstalling ? "Installing..." : `Install${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
+          </button>
+        </footer>
+      </section>
+    </div>
+  )
+}
+
+interface PromptTranslateDialogProps {
+  languageID: PromptTranslationLanguageID
+  model: string
+  models: ProviderModel[]
+  isTranslating: boolean
+  onClose: () => void
+  onLanguageChange: (value: PromptTranslationLanguageID) => void
+  onModelChange: (value: string) => void
+  onSubmit: () => boolean | Promise<boolean>
+}
+
+function PromptTranslateDialog({
+  languageID,
+  model,
+  models,
+  isTranslating,
+  onClose,
+  onLanguageChange,
+  onModelChange,
+  onSubmit,
+}: PromptTranslateDialogProps) {
+  const availableModelOptions = models
+    .filter((item) => item.available && item.capabilities.input.text && item.capabilities.output.text)
+    .map((item) => ({
+      value: getPromptTranslationModelValue(item),
+      label: getPromptTranslationModelLabel(item),
+    }))
+  const modelOptions = availableModelOptions.length > 0
+    ? [
+        { value: "", label: "Select model", disabled: true },
+        ...availableModelOptions,
+      ]
+    : [{ value: "", label: "No text models available", disabled: true }]
+  const canSubmit = Boolean(model.trim()) && !isTranslating
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!canSubmit) return
+    void onSubmit()
+  }
+
+  return (
+    <div className="global-skills-git-install-overlay">
+      <section className="global-skills-git-install-modal prompt-translate-modal" role="dialog" aria-modal="true" aria-label="Translate prompt">
+        <header className="global-skills-git-install-header">
+          <div>
+            <h3>Translate Prompt</h3>
+          </div>
+          <button
+            className="row-action global-skills-git-install-close"
+            aria-label="Close prompt translation"
+            disabled={isTranslating}
+            title="Close"
+            type="button"
+            onClick={onClose}
+          >
+            <CloseIcon />
+          </button>
+        </header>
+
+        <form className="global-skills-git-install-form prompt-translate-form" onSubmit={handleSubmit}>
+          <label className="global-skills-git-install-label">
+            Language
+          </label>
+          <SettingsSelect<PromptTranslationLanguageID>
+            ariaLabel="Prompt translation language"
+            className="prompt-translate-select"
+            disabled={isTranslating}
+            options={PROMPT_TRANSLATION_LANGUAGES}
+            value={languageID}
+            onChange={onLanguageChange}
+          />
+
+          <label className="global-skills-git-install-label">
+            Model
+          </label>
+          <SettingsSelect
+            ariaLabel="Prompt translation model"
+            className="prompt-translate-select"
+            disabled={isTranslating || availableModelOptions.length === 0}
+            options={modelOptions}
+            value={model}
+            onChange={onModelChange}
+          />
+
+        </form>
+
+        <footer className="global-skills-git-install-footer">
+          <button className="secondary-button" disabled={isTranslating} type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="primary-button" disabled={!canSubmit} type="button" onClick={() => void onSubmit()}>
+            {isTranslating ? "Translating..." : "Translate"}
           </button>
         </footer>
       </section>
@@ -600,6 +735,8 @@ export function PromptPresetsPage({
   isPromptDirty,
   isPromptUrlInstallDialogOpen,
   isSavingPromptPresetSelection,
+  isTranslatingPromptPreset,
+  models,
   promptDraftContent,
   promptDraftLabel,
   promptLoadError,
@@ -630,8 +767,13 @@ export function PromptPresetsPage({
   onOpenPromptFolder,
   onResetPromptPreset,
   onSavePromptPreset,
+  onTranslatePromptPreset,
 }: PromptPresetsPageProps) {
   const [promptEditorMode, setPromptEditorMode] = useState<PromptEditorMode>("edit")
+  const [isPromptTranslateDialogOpen, setIsPromptTranslateDialogOpen] = useState(false)
+  const [promptTranslationLanguageID, setPromptTranslationLanguageID] =
+    useState<PromptTranslationLanguageID>("zh-Hans")
+  const [promptTranslationModel, setPromptTranslationModel] = useState("")
   const promptPresetOptions = [...promptPresets].sort((left, right) => {
     if (left.source !== right.source) {
       return left.source === "bundled" ? -1 : 1
@@ -653,6 +795,34 @@ export function PromptPresetsPage({
     value: preset.id,
     label: preset.label,
   }))
+  const isPromptTranslateDisabled =
+    !selectedPromptPreset ||
+    isLoadingPromptPreset ||
+    isTranslatingPromptPreset ||
+    !promptDraftContent.trim()
+
+  function openPromptTranslateDialog() {
+    if (isPromptTranslateDisabled) return
+    setPromptTranslationLanguageID("zh-Hans")
+    setPromptTranslationModel("")
+    setIsPromptTranslateDialogOpen(true)
+  }
+
+  function closePromptTranslateDialog() {
+    if (isTranslatingPromptPreset) return
+    setIsPromptTranslateDialogOpen(false)
+  }
+
+  async function submitPromptTranslation() {
+    const translated = await onTranslatePromptPreset({
+      languageID: promptTranslationLanguageID,
+      model: promptTranslationModel,
+    })
+    if (translated) {
+      setIsPromptTranslateDialogOpen(false)
+    }
+    return translated
+  }
 
   return (
     <section className="prompt-presets-page" aria-label="Prompt presets">
@@ -690,8 +860,7 @@ export function PromptPresetsPage({
               <div className="settings-prompt-assignment-list">
                 <div className="settings-prompt-assignment-row">
                   <div className="settings-prompt-assignment-copy">
-                    <span className="settings-prompt-assignment-title">System</span>
-                    <span className="settings-prompt-assignment-note">Every turn</span>
+                    <span className="settings-prompt-assignment-title">System prompt</span>
                   </div>
 
                   <div className="settings-prompt-assignment-control">
@@ -712,8 +881,7 @@ export function PromptPresetsPage({
 
                 <div className="settings-prompt-assignment-row">
                   <div className="settings-prompt-assignment-copy">
-                    <span className="settings-prompt-assignment-title">Plan</span>
-                    <span className="settings-prompt-assignment-note">Plan only</span>
+                    <span className="settings-prompt-assignment-title">Plan mode prompt</span>
                   </div>
 
                   <div className="settings-prompt-assignment-control">
@@ -734,8 +902,7 @@ export function PromptPresetsPage({
 
                 <div className="settings-prompt-assignment-row">
                   <div className="settings-prompt-assignment-copy">
-                    <span className="settings-prompt-assignment-title">Side chat</span>
-                    <span className="settings-prompt-assignment-note">Side chat only</span>
+                    <span className="settings-prompt-assignment-title">Side chat prompt</span>
                   </div>
 
                   <div className="settings-prompt-assignment-control">
@@ -838,6 +1005,14 @@ export function PromptPresetsPage({
                         </div>
 
                         <div className="settings-inline-actions">
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            disabled={isPromptTranslateDisabled || selectedPromptPresetBusy}
+                            onClick={openPromptTranslateDialog}
+                          >
+                            {isTranslatingPromptPreset ? "Translating..." : "Translate"}
+                          </button>
                           {selectedPromptPreset.source === "custom" ? (
                             <button
                               className="secondary-button"
@@ -912,6 +1087,19 @@ export function PromptPresetsPage({
           </section>
         )}
       </div>
+
+      {isPromptTranslateDialogOpen ? (
+        <PromptTranslateDialog
+          languageID={promptTranslationLanguageID}
+          model={promptTranslationModel}
+          models={models}
+          isTranslating={isTranslatingPromptPreset}
+          onClose={closePromptTranslateDialog}
+          onLanguageChange={setPromptTranslationLanguageID}
+          onModelChange={setPromptTranslationModel}
+          onSubmit={submitPromptTranslation}
+        />
+      ) : null}
 
       {isPromptUrlInstallDialogOpen ? (
         <PromptUrlInstallDialog

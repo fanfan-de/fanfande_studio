@@ -294,6 +294,26 @@ export type GlobalSkillTree = AgentGlobalSkillTree
 export type PromptPresetDocument = AgentPromptPresetDocument
 export type PromptPresetSelection = AgentPromptPresetSelection
 export type PromptPresetSummary = AgentPromptPresetSummary
+export type PromptTranslationLanguageID =
+  | "en"
+  | "zh-Hans"
+  | "zh-Hant"
+  | "es"
+  | "fr"
+  | "de"
+  | "pt"
+  | "it"
+  | "ja"
+  | "ko"
+  | "nl"
+  | "ru"
+export interface PromptPresetTranslationInput {
+  sourcePresetID?: string
+  sourceLabel: string
+  content: string
+  languageID: PromptTranslationLanguageID
+  model: string
+}
 export type PromptUrlInstallCandidate = AgentPromptUrlInstallCandidate
 export type PromptUrlInstallPreview = AgentPromptUrlInstallPreview
 export type PromptUrlInstallResult = AgentPromptUrlInstallResult
@@ -583,6 +603,15 @@ export interface DesktopAgentHealth {
   error?: string
 }
 
+export interface DesktopMobileDeviceSummary {
+  id: string
+  name: string
+  createdAt: number
+  lastSeenAt: number
+  revokedAt?: number
+  capabilities: string[]
+}
+
 export interface DesktopMobileBridgeStatus {
   running: boolean
   host: string
@@ -590,7 +619,11 @@ export interface DesktopMobileBridgeStatus {
   token: string
   localUrl: string | null
   urls: string[]
+  pairingLocalUrl: string | null
+  pairingUrls: string[]
+  pairingExpiresAt: number | null
   startedAt: number | null
+  devices: DesktopMobileDeviceSummary[]
 }
 
 export interface DesktopComposerPastedImageAttachment {
@@ -610,10 +643,12 @@ export interface DesktopPreviewScreenshotCaptureInput {
     x: number
     y: number
   }
+  copyToClipboard?: boolean
   url?: string
 }
 
 export interface DesktopPreviewScreenshotCaptureResult {
+  copiedToClipboard?: boolean
   path: string
 }
 
@@ -955,8 +990,16 @@ export interface DesktopIpcContract {
     input: void
     output: DesktopMobileBridgeStatus
   }
+  "desktop:refresh-mobile-pairing-code": {
+    input: void
+    output: DesktopMobileBridgeStatus
+  }
   "desktop:rotate-mobile-bridge-token": {
     input: void
+    output: DesktopMobileBridgeStatus
+  }
+  "desktop:revoke-mobile-device": {
+    input: { deviceID: string }
     output: DesktopMobileBridgeStatus
   }
   "desktop:list-folder-workspaces": {
@@ -1459,6 +1502,10 @@ export interface DesktopIpcContract {
     input: { label?: string; content?: string; description?: string }
     output: AgentPromptPresetDocument
   }
+  "desktop:translate-prompt-preset": {
+    input: PromptPresetTranslationInput
+    output: AgentPromptPresetDocument
+  }
   "desktop:preview-prompt-url-install": {
     input: { source: string }
     output: AgentPromptUrlInstallPreview
@@ -1748,7 +1795,9 @@ export interface DesktopApiMethods {
   getAgentConfig(): Promise<DesktopIpcOutput<"desktop:get-agent-config">>
   getAgentHealth(): Promise<DesktopIpcOutput<"desktop:agent-health">>
   getMobileBridgeStatus(): Promise<DesktopIpcOutput<"desktop:get-mobile-bridge-status">>
+  refreshMobilePairingCode(): Promise<DesktopIpcOutput<"desktop:refresh-mobile-pairing-code">>
   rotateMobileBridgeToken(): Promise<DesktopIpcOutput<"desktop:rotate-mobile-bridge-token">>
+  revokeMobileDevice(input: DesktopIpcInput<"desktop:revoke-mobile-device">): Promise<DesktopIpcOutput<"desktop:revoke-mobile-device">>
   createPtySession(input: DesktopIpcInput<"desktop:create-pty-session">): Promise<DesktopIpcOutput<"desktop:create-pty-session">>
   getPtySession(input: DesktopIpcInput<"desktop:get-pty-session">): Promise<DesktopIpcOutput<"desktop:get-pty-session">>
   updatePtySession(input: DesktopIpcInput<"desktop:update-pty-session">): Promise<DesktopIpcOutput<"desktop:update-pty-session">>
@@ -1873,6 +1922,7 @@ export interface DesktopApiMethods {
   getPromptPresetSelection(): Promise<DesktopIpcOutput<"desktop:get-prompt-preset-selection">>
   readPromptPreset(input: DesktopIpcInput<"desktop:read-prompt-preset">): Promise<DesktopIpcOutput<"desktop:read-prompt-preset">>
   createPromptPreset(input: DesktopIpcInput<"desktop:create-prompt-preset">): Promise<DesktopIpcOutput<"desktop:create-prompt-preset">>
+  translatePromptPreset(input: DesktopIpcInput<"desktop:translate-prompt-preset">): Promise<DesktopIpcOutput<"desktop:translate-prompt-preset">>
   previewPromptUrlInstall(input: DesktopIpcInput<"desktop:preview-prompt-url-install">): Promise<DesktopIpcOutput<"desktop:preview-prompt-url-install">>
   installPromptsFromUrl(input: DesktopIpcInput<"desktop:install-prompts-from-url">): Promise<DesktopIpcOutput<"desktop:install-prompts-from-url">>
   getGlobalSkillsTree(): Promise<DesktopIpcOutput<"desktop:get-global-skills-tree">>

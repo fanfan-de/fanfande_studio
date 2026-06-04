@@ -75,6 +75,19 @@ describe("WorkspaceFilesPanel", () => {
     expect(onDirectoryLoad).toHaveBeenCalledWith("")
   })
 
+  it("shows a loading title instead of an open failure while reading a selected file", () => {
+    renderWorkspaceFilesPanel(
+      createFileReviewState({
+        selectedFilePath: "README.md",
+        status: "reading",
+      }),
+    )
+
+    expect(screen.getByText("正在加载文件")).toBeVisible()
+    expect(screen.getByText("Loading file preview.")).toBeVisible()
+    expect(screen.queryByText("无法打开文件")).not.toBeInTheDocument()
+  })
+
   it("renders a persistent file tree and toggles directories lazily", () => {
     const onDirectoryToggle = vi.fn()
     const onSelectFile = vi.fn()
@@ -108,6 +121,36 @@ describe("WorkspaceFilesPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /README\.md/ }))
     expect(onSelectFile).toHaveBeenCalledWith("README.md")
+  })
+
+  it("collapses and restores the file tree from the path bar", () => {
+    renderWorkspaceFilesPanel(
+      createFileReviewState({
+        treeEntriesByDirectoryPath: {
+          "": [
+            {
+              path: "README.md",
+              name: "README.md",
+              kind: "file",
+              extension: "md",
+              hasChildren: false,
+            },
+          ],
+        },
+      }),
+    )
+
+    expect(screen.getByRole("searchbox", { name: "Filter workspace files" })).toBeVisible()
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse file tree" }))
+
+    expect(screen.queryByRole("searchbox", { name: "Filter workspace files" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Expand file tree" })).toHaveAttribute("aria-expanded", "false")
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand file tree" }))
+
+    expect(screen.getByRole("searchbox", { name: "Filter workspace files" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Collapse file tree" })).toHaveAttribute("aria-expanded", "true")
   })
 
   it("filters the loaded tree without rendering a result dropdown", () => {
@@ -290,10 +333,22 @@ describe("WorkspaceFilesPanel", () => {
       /\.workspace-files-split\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) clamp\(320px,\s*44%,\s*520px\);/s,
     )
     expect(styles).toMatch(
+      /\.workspace-files-tree-toggle\s*\{[^}]*width:\s*24px;[^}]*margin-left:\s*auto;[^}]*border:\s*0;[^}]*background:\s*transparent;/s,
+    )
+    expect(styles).toMatch(
+      /\.workspace-files-split\.is-tree-collapsed\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s,
+    )
+    expect(styles).toMatch(
       /\.workspace-files-tree-search\s*\{[^}]*height:\s*28px;[^}]*grid-template-columns:\s*16px minmax\(0,\s*1fr\);/s,
     )
     expect(styles).toMatch(
       /\.workspace-files-tree-row\s*\{[^}]*min-height:\s*24px;[^}]*grid-template-columns:\s*14px 18px minmax\(0,\s*1fr\);/s,
+    )
+    expect(styles).toMatch(
+      /\.workspace-files-markdown-stage\s*\{[^}]*scrollbar-color:\s*var\(--mix-seg-text-3-54-transparent-46\) var\(--seg-panel\);/s,
+    )
+    expect(styles).toMatch(
+      /\.workspace-files-markdown-stage::-webkit-scrollbar-track\s*\{[^}]*background:\s*var\(--seg-panel\);/s,
     )
     expect(styles).not.toContain(".workspace-files-results-dropdown")
     expect(styles).toMatch(

@@ -135,7 +135,9 @@
   z-index: 2;
   background: var(--dockview-tab-active-bg);
   color: var(--seg-text-1);
-  box-shadow: inset 0 1px 0 var(--dockview-tab-border);
+  box-shadow:
+    inset 0 1px 0 var(--dockview-tab-border),
+    inset 0 -1px 0 var(--dockview-tab-border);
 }
 
 .dockview-theme-anybox .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab::after {
@@ -211,7 +213,6 @@
   outline: 0;
 }
 
-.dockview-theme-anybox .dv-tab.dv-active-tab,
 .dockview-theme-anybox .dv-tab:hover,
 .dockview-theme-anybox .dv-tab:focus-within {
   box-shadow: none;

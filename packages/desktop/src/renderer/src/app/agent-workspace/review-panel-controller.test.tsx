@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react"
+import { act, renderHook, waitFor } from "@testing-library/react"
 import { useRef, useState } from "react"
 import { describe, expect, it, vi } from "vitest"
 import type {
@@ -412,11 +412,86 @@ describe("review panel controller", () => {
         activeTargetInput: "localhost:3000",
         committedUrl: "http://localhost:3000/",
         draftTarget: "http://localhost:3000/",
+        navigationHistory: ["http://localhost:3000/"],
+        navigationIndex: 0,
         resolvedTarget: {
           renderer: "url-webview",
           title: "localhost:3000",
         },
         status: "ready",
+      })
+    } finally {
+      window.desktop = previousDesktop
+    }
+  })
+
+  it("navigates preview history backward and resolves the selected target", async () => {
+    const workspace = createWorkspace()
+    const previousDesktop = window.desktop
+    const resolvePreviewTarget = vi.fn(async ({ value }: { value: string }) => ({
+      externalOpenTarget: {
+        kind: "url" as const,
+        value,
+      },
+      input: value,
+      kind: "url" as const,
+      mime: "text/html",
+      normalizedInput: value,
+      renderer: "url-webview" as const,
+      safePreviewUrl: value,
+      textReadable: false,
+      title: new URL(value).host,
+    }))
+    window.desktop = {
+      ...(previousDesktop ?? {}),
+      resolvePreviewTarget,
+    } as Window["desktop"]
+
+    const previewState: WorkspacePreviewState = {
+      ...DEFAULT_WORKSPACE_PREVIEW_STATE,
+      activeTargetInput: "http://localhost:5173/",
+      committedUrl: "http://localhost:5173/",
+      draftTarget: "http://localhost:5173/",
+      draftUrl: "http://localhost:5173/",
+      navigationHistory: ["http://localhost:3000/", "http://localhost:5173/"],
+      navigationIndex: 1,
+      resolvedTarget: {
+        externalOpenTarget: {
+          kind: "url",
+          value: "http://localhost:5173/",
+        },
+        input: "http://localhost:5173/",
+        kind: "url",
+        mime: "text/html",
+        normalizedInput: "http://localhost:5173/",
+        renderer: "url-webview",
+        safePreviewUrl: "http://localhost:5173/",
+        textReadable: false,
+        title: "localhost:5173",
+      },
+      status: "ready",
+    }
+
+    const { result } = renderHook(() => useControllerHarness({
+      activeTabID: "browser-tab",
+      initialTabs: [createBrowserTab(previewState)],
+      workspace,
+    }))
+
+    try {
+      act(() => {
+        result.current.controller.handlePreviewBack()
+      })
+
+      await waitFor(() => {
+        const browserTab = result.current.rightSidebarTabs.find((tab) => tab.kind === "browser")
+        expect(browserTab?.kind === "browser" ? browserTab.state.navigationIndex : null).toBe(0)
+        expect(browserTab?.kind === "browser" ? browserTab.state.resolvedTarget?.title : null).toBe("localhost:3000")
+      })
+
+      expect(resolvePreviewTarget).toHaveBeenCalledWith({
+        value: "http://localhost:3000/",
+        workspaceRoot: workspace.directory,
       })
     } finally {
       window.desktop = previousDesktop
@@ -456,6 +531,87 @@ describe("review panel controller", () => {
       startLineNumber: 2,
       endLineNumber: 3,
     })
+  })
+
+  it("keeps the current file visible until the next workspace file finishes loading", async () => {
+    const workspace = createWorkspace()
+    const previousDesktop = window.desktop
+    let resolveReadFile: (value: {
+      path: string
+      name: string
+      extension: string
+      kind: "text"
+      content: string
+    }) => void = () => undefined
+    const readWorkspaceFile = vi.fn(() =>
+      new Promise<{
+        path: string
+        name: string
+        extension: string
+        kind: "text"
+        content: string
+      }>((resolve) => {
+        resolveReadFile = resolve
+      }),
+    )
+    window.desktop = {
+      ...(previousDesktop ?? {}),
+      readWorkspaceFile,
+    } as Window["desktop"]
+
+    const fileState: WorkspaceFileReviewState = {
+      ...DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+      scopeDirectory: workspace.directory,
+      selectedFileContent: "export const oldValue = 1",
+      selectedFileExtension: "ts",
+      selectedFileKind: "text",
+      selectedFilePath: "src/old.ts",
+      status: "ready",
+      treeExpandedDirectoryPaths: ["src"],
+    }
+
+    const { result } = renderHook(() => useControllerHarness({
+      activeTabID: "files-tab",
+      initialTabs: [createFilesTab(fileState, workspace)],
+      workspace,
+    }))
+
+    try {
+      let selectPromise: Promise<void> | null = null
+      await act(async () => {
+        selectPromise = result.current.controller.handleWorkspaceFileSelect("src/next.ts")
+      })
+
+      expect(readWorkspaceFile).toHaveBeenCalledWith({
+        directory: workspace.directory,
+        path: "src/next.ts",
+      })
+      let filesTab = result.current.rightSidebarTabs.find((tab) => tab.id === "files-tab")
+      let nextState = filesTab?.kind === "files" ? filesTab.state : null
+      expect(nextState?.selectedFilePath).toBe("src/old.ts")
+      expect(nextState?.selectedFileContent).toBe("export const oldValue = 1")
+      expect(nextState?.status).toBe("reading")
+
+      if (!selectPromise) throw new Error("Expected file selection promise")
+      await act(async () => {
+        resolveReadFile({
+          path: "src/next.ts",
+          name: "next.ts",
+          extension: "ts",
+          kind: "text",
+          content: "export const nextValue = 2",
+        })
+        await selectPromise
+      })
+
+      filesTab = result.current.rightSidebarTabs.find((tab) => tab.id === "files-tab")
+      nextState = filesTab?.kind === "files" ? filesTab.state : null
+      expect(nextState?.selectedFilePath).toBe("src/next.ts")
+      expect(nextState?.selectedFileContent).toBe("export const nextValue = 2")
+      expect(nextState?.status).toBe("ready")
+    } finally {
+      window.desktop = previousDesktop
+    }
   })
 
   it("keeps the root file tree cache when a nested workspace file changes", () => {

@@ -39,6 +39,7 @@ agent_local_data.db*
 # Local debug outputs and generated exports
 artifacts/
 packages/**/Test/.tmp/
+packages/mobile-app/.expo/
 packages/**/package-lock.json
 packages/**/exports/
 packages/**/design-exports/

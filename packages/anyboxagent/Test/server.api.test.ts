@@ -17,7 +17,9 @@ import * as LiveStreamHub from "#session/runtime/live-stream-hub.ts"
 import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
 import * as Env from "#env/env.ts"
 import * as Config from "#config/config.ts"
+import * as Provider from "#provider/provider.ts"
 import * as SystemPrompt from "#session/core/system.ts"
+import * as SettingsUseCase from "#server/usecases/settings.ts"
 import * as Log from "#util/log.ts"
 
 interface JsonEnvelope<T = Record<string, unknown>> {
@@ -431,6 +433,43 @@ type PromptPresetSelectionEnvelope = JsonEnvelope<{
   planModePromptPresetID: string
   sideChatPromptPresetID: string
 }>
+
+function createPromptTranslationTestModel(input?: {
+  inputText?: boolean
+  outputText?: boolean
+}): Provider.Model {
+  return {
+    ...Provider.testDeepSeekModel,
+    id: "prompt-translator",
+    providerID: "test-provider",
+    api: {
+      ...Provider.testDeepSeekModel.api,
+      id: "prompt-translator",
+      url: "https://example.test/v1",
+    },
+    name: "Prompt Translator",
+    capabilities: {
+      ...Provider.testDeepSeekModel.capabilities,
+      input: {
+        ...Provider.testDeepSeekModel.capabilities.input,
+        text: input?.inputText ?? true,
+      },
+      output: {
+        ...Provider.testDeepSeekModel.capabilities.output,
+        text: input?.outputText ?? true,
+      },
+    },
+  }
+}
+
+function toPromptTranslationPublicModel(model: Provider.Model, available = true): Provider.PublicModel {
+  const { headers: _headers, ...publicModel } = model
+  return {
+    ...publicModel,
+    available,
+    providerName: "Test Provider",
+  }
+}
 
 async function withTempPromptRoot<T>(fn: (root: string) => Promise<T>) {
   const previousPromptRoot = process.env.ANYBOX_PROMPTS_ROOT
@@ -3025,6 +3064,259 @@ describe("server api", () => {
       } finally {
         await Config.clearPromptOverride(Config.GLOBAL_CONFIG_ID, "plan-mode")
         await Config.removeCustomPromptPreset(Config.GLOBAL_CONFIG_ID, legacyCustomPresetID)
+      }
+    })
+  })
+
+  test("prompt preset translation should create a new custom prompt without changing assignments", async () => {
+    await withTempPromptRoot(async (promptRoot) => {
+      const app = createServerApp()
+      const testModel = createPromptTranslationTestModel()
+      let capturedGenerateInput: Record<string, unknown> | null = null
+      const restoreProvider = Provider.setProviderFunctionOverridesForTesting({
+        listModels: async () => [toPromptTranslationPublicModel(testModel)],
+        getModel: async () => testModel,
+        getLanguage: async (model) => model as never,
+      })
+      const restoreSettings = SettingsUseCase.setRuntimeDependenciesForTesting({
+        getGenerateText: async () => async (input: Record<string, unknown>) => {
+          capturedGenerateInput = input
+          return {
+            text: "你是一个精准的编码助手。",
+          } as never
+        },
+      })
+
+      try {
+        await Config.setSelectedPromptPresetIDs(Config.GLOBAL_CONFIG_ID, {
+          systemPromptPresetID: "system-default",
+          planModePromptPresetID: "plan-mode",
+          sideChatPromptPresetID: "side-chat",
+        })
+        await app.request("http://localhost/api/prompts", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            label: "System prompt - 简体中文",
+            content: "existing translated prompt",
+          }),
+        })
+
+        const translateResponse = await app.request("http://localhost/api/prompts/translate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sourcePresetID: "system-default",
+            sourceLabel: "System prompt",
+            content: "You are a precise coding assistant.",
+            languageID: "zh-Hans",
+            model: "test-provider/prompt-translator",
+          }),
+        })
+        const translateBody = (await translateResponse.json()) as PromptPresetDocumentEnvelope
+
+        expect(translateResponse.status).toBe(200)
+        expect(translateBody.success).toBe(true)
+        expect(translateBody.data).toMatchObject({
+          label: "System prompt - 简体中文 2",
+          source: "custom",
+          content: "你是一个精准的编码助手。",
+          root: promptRoot,
+        })
+        expect(translateBody.data?.filePath).toContain(join("custom", "custom-system-prompt-2.md"))
+        expect(capturedGenerateInput).toMatchObject({
+          temperature: 0,
+          model: testModel,
+        })
+        expect(String(capturedGenerateInput?.system)).toContain("Return only the translated prompt.")
+        expect(String(capturedGenerateInput?.prompt)).toContain("Target language: Simplified Chinese")
+        expect(String(capturedGenerateInput?.prompt)).toContain("You are a precise coding assistant.")
+
+        const selectionResponse = await app.request("http://localhost/api/prompts/selection")
+        const selectionBody = (await selectionResponse.json()) as PromptPresetSelectionEnvelope
+        expect(selectionBody.data).toEqual({
+          systemPromptPresetID: "system-default",
+          planModePromptPresetID: "plan-mode",
+          sideChatPromptPresetID: "side-chat",
+        })
+      } finally {
+        restoreSettings()
+        restoreProvider()
+        await Config.setSelectedPromptPresetIDs(Config.GLOBAL_CONFIG_ID, {
+          systemPromptPresetID: "system-default",
+          planModePromptPresetID: "plan-mode",
+          sideChatPromptPresetID: "side-chat",
+        })
+      }
+    })
+  })
+
+  test("prompt preset translation should resolve global provider runtime outside an instance context", async () => {
+    await withTempPromptRoot(async () => {
+      const app = createServerApp()
+      const languageModel = {
+        id: "deepseek-language-model",
+      }
+      const capturedFactoryInputs: Array<Record<string, unknown>> = []
+      let capturedGenerateInput: Record<string, unknown> | null = null
+      const restoreProvider = Provider.setProviderRuntimeDependenciesForTesting({
+        getModelsDev: async () => ({
+          deepseek: {
+            id: "deepseek",
+            name: "DeepSeek",
+            env: ["DEEPSEEK_API_KEY"],
+            api: "https://api.deepseek.test/v1",
+            npm: "@ai-sdk/openai-compatible",
+            models: {
+              "deepseek-v4-pro": {
+                id: "deepseek-v4-pro",
+                name: "DeepSeek V4 Pro",
+                family: "deepseek",
+                release_date: "2026-01-01",
+                attachment: false,
+                reasoning: true,
+                temperature: true,
+                tool_call: true,
+                limit: {
+                  context: 128000,
+                  output: 8192,
+                },
+                modalities: {
+                  input: ["text"],
+                  output: ["text"],
+                },
+                options: {},
+                headers: {},
+              },
+            },
+          },
+        }) as never,
+        getEnvAll: () => ({
+          DEEPSEEK_API_KEY: "test-deepseek-key",
+        }),
+        importPackage: async () => ({
+          module: {
+            createOpenAICompatible(options: Record<string, unknown>) {
+              capturedFactoryInputs.push(options)
+              return {
+                languageModel(modelID: string) {
+                  return {
+                    ...languageModel,
+                    modelID,
+                  }
+                },
+              }
+            },
+          },
+          version: "test-version",
+        }),
+      })
+      const restoreSettings = SettingsUseCase.setRuntimeDependenciesForTesting({
+        getGenerateText: async () => async (input: Record<string, unknown>) => {
+          capturedGenerateInput = input
+          return {
+            text: "Translated prompt.",
+          } as never
+        },
+      })
+
+      try {
+        const translateResponse = await app.request("http://localhost/api/prompts/translate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sourcePresetID: "system-default",
+            sourceLabel: "System prompt",
+            content: "You are a precise coding assistant.",
+            languageID: "fr",
+            model: "deepseek/deepseek-v4-pro",
+          }),
+        })
+        const translateBody = (await translateResponse.json()) as PromptPresetDocumentEnvelope
+
+        expect(translateResponse.status).toBe(200)
+        expect(translateBody.success).toBe(true)
+        expect(translateBody.data?.label).toBe("System prompt - French")
+        expect(capturedFactoryInputs).toEqual([
+          {
+            apiKey: "test-deepseek-key",
+            baseURL: "https://api.deepseek.test/v1",
+            headers: undefined,
+            name: "deepseek",
+          },
+        ])
+        expect(capturedGenerateInput?.model).toMatchObject({
+          id: "deepseek-language-model",
+          modelID: "deepseek-v4-pro",
+        })
+        expect(capturedGenerateInput).not.toHaveProperty("temperature")
+      } finally {
+        restoreSettings()
+        restoreProvider()
+      }
+    })
+  })
+
+  test("prompt preset translation should reject non-text models and empty model output", async () => {
+    await withTempPromptRoot(async () => {
+      const app = createServerApp()
+      const nonTextModel = createPromptTranslationTestModel({ outputText: false })
+      const restoreProvider = Provider.setProviderFunctionOverridesForTesting({
+        listModels: async () => [toPromptTranslationPublicModel(nonTextModel)],
+        getModel: async () => nonTextModel,
+        getLanguage: async (model) => model as never,
+      })
+      const restoreSettings = SettingsUseCase.setRuntimeDependenciesForTesting({
+        getGenerateText: async () => async () => ({ text: "" }) as never,
+      })
+
+      try {
+        const nonTextResponse = await app.request("http://localhost/api/prompts/translate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sourceLabel: "System prompt",
+            content: "Translate me.",
+            languageID: "fr",
+            model: "test-provider/prompt-translator",
+          }),
+        })
+        const nonTextBody = (await nonTextResponse.json()) as JsonEnvelope
+
+        expect(nonTextResponse.status).toBe(400)
+        expect(nonTextBody.success).toBe(false)
+        expect(nonTextBody.error?.code).toBe("MODEL_NOT_TEXT_CAPABLE")
+
+        restoreProvider()
+        const textModel = createPromptTranslationTestModel()
+        const restoreTextProvider = Provider.setProviderFunctionOverridesForTesting({
+          listModels: async () => [toPromptTranslationPublicModel(textModel)],
+          getModel: async () => textModel,
+          getLanguage: async (model) => model as never,
+        })
+
+        try {
+          const emptyOutputResponse = await app.request("http://localhost/api/prompts/translate", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              sourceLabel: "System prompt",
+              content: "Translate me.",
+              languageID: "fr",
+              model: "test-provider/prompt-translator",
+            }),
+          })
+          const emptyOutputBody = (await emptyOutputResponse.json()) as JsonEnvelope
+
+          expect(emptyOutputResponse.status).toBe(502)
+          expect(emptyOutputBody.success).toBe(false)
+          expect(emptyOutputBody.error?.code).toBe("PROMPT_TRANSLATION_EMPTY")
+        } finally {
+          restoreTextProvider()
+        }
+      } finally {
+        restoreSettings()
+        restoreProvider()
       }
     })
   })

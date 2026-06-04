@@ -3280,13 +3280,6 @@ body.is-dragging-settings-page {
   letter-spacing: -0.01em;
 }
 
-.settings-prompt-assignment-note {
-  font-size: 11px;
-  line-height: 1.35;
-  color: #728392;
-  white-space: nowrap;
-}
-
 .settings-prompt-assignment-control {
   min-width: 0;
   display: flex;
@@ -5992,7 +5985,7 @@ body.is-dragging-settings-page {
 
 .mobile-connection-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -6011,6 +6004,29 @@ body.is-dragging-settings-page {
   display: grid;
   gap: 14px;
   padding: 16px;
+}
+
+.mobile-connection-qr {
+  width: 168px;
+  height: 168px;
+  padding: 10px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: #ffffff;
+  display: grid;
+  place-items: center;
+}
+
+.mobile-connection-qr img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.mobile-connection-qr span {
+  color: var(--seg-text-3);
+  font-size: 12px;
 }
 
 .mobile-connection-url-list {
@@ -6064,6 +6080,53 @@ body.is-dragging-settings-page {
   color: var(--seg-text-1);
 }
 
+.mobile-connection-device-list {
+  min-width: 0;
+  display: grid;
+  border-top: 1px solid var(--seg-border);
+}
+
+.mobile-connection-device-row {
+  min-width: 0;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(150px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--seg-border);
+}
+
+.mobile-connection-device-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.mobile-connection-device-row strong,
+.mobile-connection-device-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-connection-device-row strong {
+  color: var(--seg-text-1);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.mobile-connection-device-row span {
+  color: var(--seg-text-2);
+  font-size: 12px;
+}
+
+.mobile-connection-device-row.is-revoked strong,
+.mobile-connection-device-row.is-revoked span {
+  color: var(--seg-text-3);
+}
+
 @media (max-width: 720px) {
   .mobile-connection-page {
     padding: 18px;
@@ -6072,6 +6135,14 @@ body.is-dragging-settings-page {
   .mobile-connection-grid,
   .mobile-connection-hero {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mobile-connection-device-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .mobile-connection-device-row span {
+    grid-column: 1 / -1;
   }
 }
 

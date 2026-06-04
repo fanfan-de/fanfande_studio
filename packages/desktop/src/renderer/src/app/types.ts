@@ -1311,6 +1311,20 @@ export interface PromptPresetDocument extends PromptPresetSummary {
   content: string
 }
 
+export type PromptTranslationLanguageID =
+  | "en"
+  | "zh-Hans"
+  | "zh-Hant"
+  | "es"
+  | "fr"
+  | "de"
+  | "pt"
+  | "it"
+  | "ja"
+  | "ko"
+  | "nl"
+  | "ru"
+
 export interface PromptUrlInstallCandidate {
   id: string
   label: string

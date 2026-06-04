@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
-import { SideChatIcon } from "../../icons"
+import { CommentAddIcon } from "../../icons"
 import type {
   PreviewInteractionCommitInput,
   PreviewInteractionPluginID,
@@ -163,8 +163,7 @@ export function PreviewInteractionToolbar({
             title={isActive ? `Turn off ${plugin.label.toLowerCase()}` : `Turn on ${plugin.label.toLowerCase()}`}
             onClick={() => onActiveInteractionChange(isActive ? null : plugin.id)}
           >
-            <SideChatIcon size={15} />
-            <span>{plugin.label}</span>
+            <CommentAddIcon size={15} />
           </button>
         )
       })}

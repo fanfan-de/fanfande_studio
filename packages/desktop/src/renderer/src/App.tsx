@@ -268,6 +268,10 @@ async function openSystemLocalPath(targetPath: string) {
   }
 }
 
+function isMarkdownDocumentPath(path: string) {
+  return /\.(?:md|markdown)$/i.test(path.trim())
+}
+
 const FALLBACK_WORKBENCH_STATE: WorkbenchSharedState = {
   version: 0,
   windows: [
@@ -967,8 +971,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handlePickComposerAttachments,
     handlePasteComposerImageAttachments,
     handlePreviewActiveInteractionChange,
+    handlePreviewBack,
     handlePreviewCommitInteraction,
     handlePreviewDraftUrlChange,
+    handlePreviewForward,
     handlePreviewOpen,
     handlePreviewOpenExternal,
     handlePreviewOpenTarget,
@@ -1187,6 +1193,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     isRefreshingProviderCatalog,
     isInstallingPromptUrlPrompts,
     isPreviewingPromptUrlInstall,
+    isTranslatingPromptPreset,
     isSavingPromptPresetSelection,
     isSavingBuiltinTools,
     loadError,
@@ -1238,6 +1245,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     savingPluginConnectorID,
     testProviderConnection,
     testingProviderID,
+    translatePromptPreset,
     selectedPromptPreset,
     selectedPromptUrlInstallIDs,
     setConnectorConfigDraft,
@@ -1790,15 +1798,15 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
       : null
 
     if (workspaceDirectory && workspaceRelativePath !== null) {
-      if (!target.lineRange) {
-        void handlePreviewOpenTarget(target.path, workspaceID, workspaceDirectory)
+      if (target.lineRange || isMarkdownDocumentPath(workspaceRelativePath)) {
+        void handleWorkspaceFileSelect(workspaceRelativePath, {
+          linkedLineRange: target.lineRange ?? null,
+          scopeDirectory: workspaceDirectory,
+        })
         return
       }
 
-      void handleWorkspaceFileSelect(workspaceRelativePath, {
-        linkedLineRange: target.lineRange ?? null,
-        scopeDirectory: workspaceDirectory,
-      })
+      void handlePreviewOpenTarget(target.path, workspaceID, workspaceDirectory)
       return
     }
 
@@ -2108,6 +2116,8 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 isPromptDirty={isPromptDirty}
                 isPromptUrlInstallDialogOpen={isPromptUrlInstallDialogOpen}
                 isSavingPromptPresetSelection={isSavingPromptPresetSelection}
+                isTranslatingPromptPreset={isTranslatingPromptPreset}
+                models={models}
                 promptDraftContent={promptDraftContent}
                 promptDraftLabel={promptDraftLabel}
                 promptLoadError={promptLoadError}
@@ -2137,6 +2147,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onOpenPromptFolder={openPromptFolder}
                 onResetPromptPreset={resetPromptPreset}
                 onSavePromptPreset={savePromptPreset}
+                onTranslatePromptPreset={translatePromptPreset}
               />
             </Suspense>
           ) : isGlobalSkillsView ? (
@@ -2484,8 +2495,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                   })
                 }
                 onPreviewActiveInteractionChange={handlePreviewActiveInteractionChange}
+                onPreviewBack={handlePreviewBack}
                 onPreviewCommitInteraction={handlePreviewCommitInteraction}
                 onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
+                onPreviewForward={handlePreviewForward}
                 onPreviewOpen={handlePreviewOpen}
                 onPreviewOpenExternal={handlePreviewOpenExternal}
                 onPreviewOpenUrl={handlePreviewOpenUrl}

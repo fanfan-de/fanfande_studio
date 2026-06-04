@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Anybox Mobile",
+    "slug": "anybox-mobile",
+    "scheme": "anybox-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "android": {
+      "package": "studio.fanfande.anybox.mobile",
+      "usesCleartextTraffic": true,
+      "permissions": [
+        "INTERNET"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

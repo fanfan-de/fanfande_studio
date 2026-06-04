@@ -165,6 +165,13 @@ export function useReviewPanelController({
     return "idle"
   }
 
+  function hasRenderableWorkspaceFile(state: WorkspaceFileReviewState | null | undefined) {
+    if (!state?.selectedFilePath) return false
+    if (state.selectedFileKind === "text") return state.selectedFileContent !== null
+    if (state.selectedFileKind === "image") return Boolean(state.selectedFilePreviewUrl)
+    return false
+  }
+
   function resolveRelativeWorkspaceEventPath(scopeDirectory: string, changedPath: string) {
     const normalizedScope = normalizeWorkspacePath(scopeDirectory, platform)
     const normalizedChangedPath = normalizeWorkspacePath(changedPath, platform)
@@ -278,6 +285,21 @@ export function useReviewPanelController({
     return { history, index }
   }
 
+  function getNextPreviewNavigationState(current: WorkspacePreviewState, nextTarget: string) {
+    const normalizedTarget = nextTarget.trim()
+    const { history, index } = getPreviewNavigationState(current)
+
+    if (!normalizedTarget) return { history, index }
+    if (index >= 0 && history[index] === normalizedTarget) return { history, index }
+
+    const retainedHistory = index >= 0 ? history.slice(0, index + 1) : []
+    const nextHistory = [...retainedHistory, normalizedTarget]
+    return {
+      history: nextHistory,
+      index: nextHistory.length - 1,
+    }
+  }
+
   function updatePreviewState(
     tabID: string,
     updater: (current: WorkspacePreviewState) => WorkspacePreviewState,
@@ -370,19 +392,25 @@ export function useReviewPanelController({
 
       updatePreviewState(
         tabID,
-        (current) => ({
-          ...current,
-          activeInteractionID: null,
-          activeTargetInput: trimmedValue,
-          committedUrl: resolvedTarget.kind === "url" ? resolvedTarget.safePreviewUrl ?? resolvedTarget.normalizedInput : null,
-          draftTarget: resolvedTarget.normalizedInput || trimmedValue,
-          draftUrl: resolvedTarget.normalizedInput || trimmedValue,
-          errorKind: null,
-          errorMessage: null,
-          reloadToken: current.reloadToken + 1,
-          resolvedTarget,
-          status: "ready",
-        }),
+        (current) => {
+          const normalizedTarget = resolvedTarget.normalizedInput || trimmedValue
+          const navigation = getNextPreviewNavigationState(current, normalizedTarget)
+          return {
+            ...current,
+            activeInteractionID: null,
+            activeTargetInput: trimmedValue,
+            committedUrl: resolvedTarget.kind === "url" ? resolvedTarget.safePreviewUrl ?? resolvedTarget.normalizedInput : null,
+            draftTarget: normalizedTarget,
+            draftUrl: normalizedTarget,
+            errorKind: null,
+            errorMessage: null,
+            navigationHistory: navigation.history,
+            navigationIndex: navigation.index,
+            reloadToken: current.reloadToken + 1,
+            resolvedTarget,
+            status: "ready",
+          }
+        },
       )
       updateRightSidebarTab(tabID, {
         targetKey: getBrowserTabTargetKey(workspaceID, resolvedTarget.normalizedInput || trimmedValue),
@@ -443,42 +471,60 @@ export function useReviewPanelController({
 
   function handlePreviewBack() {
     if (!activeBrowserTab) return
+    const { history, index } = getPreviewNavigationState(activeBrowserTab.state)
+    if (index <= 0) return
+    const nextTarget = history[index - 1]
+    if (!nextTarget) return
+    const workspaceID = activeBrowserTab.workspaceID ?? selectedWorkspace?.id ?? null
+    const workspaceRoot = activeBrowserTab.workspaceRoot ?? selectedWorkspace?.directory ?? activeSessionDirectory ?? null
+
     updatePreviewState(activeBrowserTab.id, (current) => {
-      const { history, index } = getPreviewNavigationState(current)
-      if (index <= 0) return current
-      const nextUrl = history[index - 1]
-      if (!nextUrl) return current
+      const navigation = getPreviewNavigationState(current)
+      if (navigation.index <= 0) return current
 
       return {
         ...current,
-        draftUrl: nextUrl,
-        committedUrl: nextUrl,
+        activeInteractionID: null,
+        activeTargetInput: nextTarget,
+        draftTarget: nextTarget,
+        draftUrl: nextTarget,
+        committedUrl: nextTarget,
         errorKind: null,
         errorMessage: null,
-        navigationHistory: history,
-        navigationIndex: index - 1,
+        navigationHistory: navigation.history,
+        navigationIndex: navigation.index - 1,
       }
     })
+    void resolvePreviewTargetInTab(activeBrowserTab.id, nextTarget, workspaceID, workspaceRoot)
   }
 
   function handlePreviewForward() {
     if (!activeBrowserTab) return
+    const { history, index } = getPreviewNavigationState(activeBrowserTab.state)
+    if (index < 0 || index >= history.length - 1) return
+    const nextTarget = history[index + 1]
+    if (!nextTarget) return
+    const workspaceID = activeBrowserTab.workspaceID ?? selectedWorkspace?.id ?? null
+    const workspaceRoot = activeBrowserTab.workspaceRoot ?? selectedWorkspace?.directory ?? activeSessionDirectory ?? null
+
     updatePreviewState(activeBrowserTab.id, (current) => {
-      const { history, index } = getPreviewNavigationState(current)
-      if (index < 0 || index >= history.length - 1) return current
-      const nextUrl = history[index + 1]
-      if (!nextUrl) return current
+      const navigation = getPreviewNavigationState(current)
+      if (navigation.index < 0 || navigation.index >= navigation.history.length - 1) return current
 
       return {
         ...current,
-        draftUrl: nextUrl,
-        committedUrl: nextUrl,
+        activeInteractionID: null,
+        activeTargetInput: nextTarget,
+        draftTarget: nextTarget,
+        draftUrl: nextTarget,
+        committedUrl: nextTarget,
         errorKind: null,
         errorMessage: null,
-        navigationHistory: history,
-        navigationIndex: index + 1,
+        navigationHistory: navigation.history,
+        navigationIndex: navigation.index + 1,
       }
     })
+    void resolvePreviewTargetInTab(activeBrowserTab.id, nextTarget, workspaceID, workspaceRoot)
   }
 
   function handlePreviewActiveInteractionChange(pluginID: PreviewInteractionPluginID | null) {
@@ -838,31 +884,53 @@ export function useReviewPanelController({
     const expandedAncestorDirectories = getWorkspaceFileAncestorDirectoryPaths(trimmedPath)
     const requestID = (workspaceFileReadRequestByTabRef.current[tabID] ?? 0) + 1
     workspaceFileReadRequestByTabRef.current[tabID] = requestID
-    setRightSidebarFileState(tabID, (current) => ({
-      ...current,
-      scopeDirectory,
-      selectedFilePath: trimmedPath,
-      selectedFileContent: null,
-      selectedFileKind: null,
-      selectedFileExtension: null,
-      selectedFileMimeType: null,
-      selectedFilePreviewUrl: null,
-      selectedFileSize: null,
-      comments: [],
-      linkedLineRange,
-      pendingComment: null,
-      errorMessage: null,
-      status: "reading",
-      treeExpandedDirectoryPaths: Array.from(
+    const currentFileTab = getTabByID(tabID)
+    const currentFileState = currentFileTab?.kind === "files" ? currentFileTab.state : activeFileTab?.state
+    const shouldKeepCurrentReaderVisible = hasRenderableWorkspaceFile(currentFileState)
+    const nextScopeName = options.scopeName ?? activeFileTab?.scopeName ?? activeWorkspaceFileScopeName
+
+    setRightSidebarFileState(tabID, (current) => {
+      const treeExpandedDirectoryPaths = Array.from(
         new Set([...current.treeExpandedDirectoryPaths, ...expandedAncestorDirectories]),
-      ),
-    }))
-    updateRightSidebarTab(tabID, {
-      scopeDirectory,
-      scopeName: options.scopeName ?? activeFileTab?.scopeName ?? activeWorkspaceFileScopeName,
-      targetKey: getFilesTabTargetKey(scopeDirectory, trimmedPath),
-      title: getPathName(trimmedPath) ?? "Files",
+      )
+
+      if (hasRenderableWorkspaceFile(current)) {
+        return {
+          ...current,
+          scopeDirectory,
+          errorMessage: null,
+          status: "reading",
+          treeExpandedDirectoryPaths,
+        }
+      }
+
+      return {
+        ...current,
+        scopeDirectory,
+        selectedFilePath: trimmedPath,
+        selectedFileContent: null,
+        selectedFileKind: null,
+        selectedFileExtension: null,
+        selectedFileMimeType: null,
+        selectedFilePreviewUrl: null,
+        selectedFileSize: null,
+        comments: [],
+        linkedLineRange,
+        pendingComment: null,
+        errorMessage: null,
+        status: "reading",
+        treeExpandedDirectoryPaths,
+      }
     })
+
+    if (!shouldKeepCurrentReaderVisible) {
+      updateRightSidebarTab(tabID, {
+        scopeDirectory,
+        scopeName: nextScopeName,
+        targetKey: getFilesTabTargetKey(scopeDirectory, trimmedPath),
+        title: getPathName(trimmedPath) ?? "Files",
+      })
+    }
 
     try {
       const nextFile = await readWorkspaceFile({
@@ -891,6 +959,8 @@ export function useReviewPanelController({
         status: nextFile.kind === "text" || nextFile.kind === "image" ? "ready" : "unsupported",
       }))
       updateRightSidebarTab(tabID, {
+        scopeDirectory,
+        scopeName: nextScopeName,
         targetKey: getFilesTabTargetKey(scopeDirectory, nextFile.path),
         title: getPathName(nextFile.path) ?? "Files",
       })
@@ -913,6 +983,12 @@ export function useReviewPanelController({
         errorMessage: message,
         status: "error",
       }))
+      updateRightSidebarTab(tabID, {
+        scopeDirectory,
+        scopeName: nextScopeName,
+        targetKey: getFilesTabTargetKey(scopeDirectory, trimmedPath),
+        title: getPathName(trimmedPath) ?? "Files",
+      })
       console.error("[desktop] readWorkspaceFile failed:", error)
     }
   }

@@ -53,16 +53,13 @@
   justify-self: end;
   background-image:
     linear-gradient(var(--sidebar-resizer-line), var(--sidebar-resizer-line)),
-    linear-gradient(var(--top-chrome-surface), var(--top-chrome-surface)),
-    linear-gradient(var(--seg-shell), var(--seg-shell));
+    linear-gradient(var(--top-chrome-surface), var(--top-chrome-surface));
   background-position:
     var(--sidebar-resizer-line-x) top,
-    top,
-    center bottom;
+    top;
   background-size:
     1px 100%,
-    100% var(--top-chrome-height),
-    3px calc(100% - var(--top-chrome-height));
+    100% var(--top-chrome-height);
   background-repeat: no-repeat;
 }
 
@@ -164,7 +161,9 @@ body.is-resizing-sidebar .sidebar-resizer {
   background: var(--top-chrome-active-surface);
   border: 0;
   color: var(--seg-text-1);
-  box-shadow: inset 0 1px 0 var(--top-chrome-border);
+  box-shadow:
+    inset 0 1px 0 var(--top-chrome-border),
+    inset 0 -1px 0 var(--top-chrome-border);
   transform: none;
 }
 
@@ -177,15 +176,7 @@ body.is-resizing-sidebar .sidebar-resizer {
 }
 
 .canvas-region-top-menu .session-tab.is-active::before {
-  content: "";
-  position: absolute;
-  left: 1px;
-  right: 1px;
-  bottom: -1px;
-  z-index: 3;
-  height: 2px;
-  background: var(--top-chrome-active-surface);
-  pointer-events: none;
+  content: none;
 }
 
 .right-sidebar-tab.is-active,
@@ -219,6 +210,10 @@ body.is-resizing-sidebar .sidebar-resizer {
   transition: opacity 160ms ease;
 }
 
+.right-sidebar-tab.is-active::after {
+  top: 4px;
+}
+
 .right-sidebar-tab:focus-within {
   background: transparent;
   border-color: transparent;
@@ -239,8 +234,11 @@ body.is-resizing-sidebar .sidebar-resizer {
   background: var(--right-sidebar-tab-active-bg);
   border: 0;
   color: var(--seg-text-1);
-  z-index: auto;
-  box-shadow: inset 0 1px 0 var(--right-sidebar-tab-border);
+  z-index: 2;
+  overflow: visible;
+  box-shadow:
+    inset 0 1px 0 var(--right-sidebar-tab-border),
+    inset 0 -1px 0 var(--right-sidebar-tab-border);
 }
 
 .right-sidebar-tab:not(:first-child) {
@@ -254,7 +252,9 @@ body.is-resizing-sidebar .sidebar-resizer {
 .right-sidebar-tab.is-active,
 .right-sidebar-tab.is-active:not(:first-child),
 .right-sidebar-tab.is-active:focus-within {
-  box-shadow: inset 0 1px 0 var(--right-sidebar-tab-border);
+  box-shadow:
+    inset 0 1px 0 var(--right-sidebar-tab-border),
+    inset 0 -1px 0 var(--right-sidebar-tab-border);
 }
 
 .left-sidebar-top-menu .shell-top-menu-content,

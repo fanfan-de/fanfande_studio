@@ -9,6 +9,7 @@ import * as Plugin from "#plugin/plugin.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
 import * as AnyboxHTTP from "#provider/anybox-http.ts"
 import * as Provider from "#provider/provider.ts"
+import * as ProviderTransform from "#provider/transform.ts"
 import { ApiError } from "#server/error.ts"
 import { clearProjectModelListCache } from "#server/usecases/model-list-cache.ts"
 import * as PromptPresets from "#session/support/prompt-presets.ts"
@@ -22,6 +23,30 @@ import * as Log from "#util/log.ts"
 const log = Log.create({ service: "settings" })
 const SKILL_FILENAME = "SKILL.md"
 const PLUGIN_SKILLS_TREE_ROOT_PATH = "plugin-skills://installed"
+
+type GenerateTextFunction = typeof import("ai")["generateText"]
+
+interface SettingsRuntimeDependencies {
+  getGenerateText: () => Promise<GenerateTextFunction>
+}
+
+const defaultRuntimeDependencies: SettingsRuntimeDependencies = {
+  getGenerateText: async () => (await import("ai")).generateText,
+}
+
+let runtimeDependencies = defaultRuntimeDependencies
+
+export function setRuntimeDependenciesForTesting(overrides: Partial<SettingsRuntimeDependencies>) {
+  const previousDependencies = runtimeDependencies
+  runtimeDependencies = {
+    ...runtimeDependencies,
+    ...overrides,
+  }
+
+  return () => {
+    runtimeDependencies = previousDependencies
+  }
+}
 
 export const SkillFileQuery = z.object({
   path: z.string().min(1),
@@ -129,6 +154,31 @@ export const PromptPresetSelectionBody = z.object({
   sideChatPromptPresetID: z.string().min(1),
 })
 
+export const PromptTranslationLanguageID = z.enum([
+  "en",
+  "zh-Hans",
+  "zh-Hant",
+  "es",
+  "fr",
+  "de",
+  "pt",
+  "it",
+  "ja",
+  "ko",
+  "nl",
+  "ru",
+])
+
+export const PromptPresetTranslationBody = z.object({
+  sourcePresetID: z.string().optional(),
+  sourceLabel: z.string().min(1),
+  content: z.string().refine((value) => value.trim().length > 0, {
+    message: "Prompt content must not be empty.",
+  }),
+  languageID: PromptTranslationLanguageID,
+  model: z.string().min(1),
+})
+
 export const PreviewPromptUrlInstallBody = z.object({
   source: z.string().min(1),
 })
@@ -214,6 +264,8 @@ function toSkillApiError(error: unknown) {
 }
 
 function toPromptPresetApiError(error: unknown) {
+  if (error instanceof ApiError) return error
+
   if (error instanceof PromptPresets.PromptPresetStoreError) {
     switch (error.code) {
       case "INVALID_PROMPT_FILE":
@@ -1043,6 +1095,41 @@ export async function createPromptPreset(input: z.infer<typeof PromptPresetCreat
   }
 }
 
+export async function translatePromptPreset(input: z.infer<typeof PromptPresetTranslationBody>) {
+  try {
+    const targetLanguage = PROMPT_TRANSLATION_LANGUAGES[input.languageID]
+    const model = await resolvePromptTranslationModel(input.model)
+    const languageModel = await Provider.getLanguage(model, Config.GLOBAL_CONFIG_ID)
+    const generateText = await runtimeDependencies.getGenerateText()
+    const result = await runPromptTranslationGeneration({
+      content: input.content,
+      generateText,
+      languageInstruction: targetLanguage.instruction,
+      languageModel,
+      model,
+    })
+    const translatedContent = result.text.trim()
+    if (!translatedContent) {
+      throw new ApiError(502, "PROMPT_TRANSLATION_EMPTY", "Model returned an empty prompt translation.")
+    }
+
+    const existingPromptPresets = await PromptPresets.listPromptPresetSummaries(Config.GLOBAL_CONFIG_ID)
+    const label = buildUniquePromptTranslationLabel({
+      sourceLabel: input.sourceLabel,
+      languageLabel: targetLanguage.label,
+      existingLabels: existingPromptPresets.map((preset) => preset.label),
+    })
+
+    return await PromptPresets.createPromptPreset({
+      label,
+      content: translatedContent,
+      description: `Translated from ${input.sourceLabel.trim() || "prompt"} to ${targetLanguage.label}.`,
+    }, Config.GLOBAL_CONFIG_ID)
+  } catch (error) {
+    throw toPromptPresetApiError(error)
+  }
+}
+
 export async function readPromptPreset(presetID: string) {
   try {
     return await PromptPresets.readPromptPresetDocument(presetID, Config.GLOBAL_CONFIG_ID)
@@ -1088,6 +1175,134 @@ export async function installPromptUrlPreview(input: z.infer<typeof InstallPromp
     return await PromptUrlInstall.installPromptsFromUrlPreview(input, Config.GLOBAL_CONFIG_ID)
   } catch (error) {
     throw toPromptUrlInstallApiError(toPromptPresetApiError(error))
+  }
+}
+
+type PromptTranslationLanguageID = z.infer<typeof PromptTranslationLanguageID>
+
+const PROMPT_TRANSLATION_LANGUAGES: Record<PromptTranslationLanguageID, {
+  label: string
+  instruction: string
+}> = {
+  en: { label: "English", instruction: "English" },
+  "zh-Hans": { label: "简体中文", instruction: "Simplified Chinese" },
+  "zh-Hant": { label: "繁體中文", instruction: "Traditional Chinese" },
+  es: { label: "Spanish", instruction: "Spanish" },
+  fr: { label: "French", instruction: "French" },
+  de: { label: "German", instruction: "German" },
+  pt: { label: "Portuguese", instruction: "Portuguese" },
+  it: { label: "Italian", instruction: "Italian" },
+  ja: { label: "Japanese", instruction: "Japanese" },
+  ko: { label: "Korean", instruction: "Korean" },
+  nl: { label: "Dutch", instruction: "Dutch" },
+  ru: { label: "Russian", instruction: "Russian" },
+}
+
+const PROMPT_TRANSLATION_SYSTEM_PROMPT = [
+  "You are translating an AI system prompt.",
+  "Translate the prompt into the target language.",
+  "Preserve Markdown structure, headings, lists, code fences, XML/HTML tags, variables, placeholders, commands, file paths, API names, model names, product names, and policy keywords.",
+  "Do not summarize, omit, add commentary, or explain.",
+  "Return only the translated prompt.",
+].join("\n")
+
+async function runPromptTranslationGeneration(input: {
+  content: string
+  generateText: GenerateTextFunction
+  languageInstruction: string
+  languageModel: Awaited<ReturnType<typeof Provider.getLanguage>>
+  model: Provider.Model
+}) {
+  try {
+    const temperature = getPromptTranslationTemperature(input.model)
+    return await input.generateText({
+      model: input.languageModel,
+      ...(temperature === undefined ? {} : { temperature }),
+      system: PROMPT_TRANSLATION_SYSTEM_PROMPT,
+      prompt: buildPromptTranslationPrompt({
+        content: input.content,
+        languageInstruction: input.languageInstruction,
+      }),
+    })
+  } catch (error) {
+    throw new ApiError(
+      502,
+      "PROMPT_TRANSLATION_FAILED",
+      `Prompt translation failed: ${getPromptTranslationErrorMessage(error)}`,
+    )
+  }
+}
+
+function getPromptTranslationTemperature(model: Provider.Model) {
+  if (!model.capabilities.temperature) return undefined
+  if (ProviderTransform.isProviderReasoningModel(model)) return undefined
+  return 0
+}
+
+function getPromptTranslationErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) return error.message
+  return String(error)
+}
+
+function buildPromptTranslationPrompt(input: {
+  content: string
+  languageInstruction: string
+}) {
+  return [
+    `Target language: ${input.languageInstruction}`,
+    "",
+    "Source prompt:",
+    "<prompt>",
+    input.content,
+    "</prompt>",
+  ].join("\n")
+}
+
+function buildUniquePromptTranslationLabel(input: {
+  sourceLabel: string
+  languageLabel: string
+  existingLabels: string[]
+}) {
+  const sourceLabel = input.sourceLabel.trim() || "Prompt"
+  const baseLabel = `${sourceLabel} - ${input.languageLabel}`
+  const existingLabels = new Set(input.existingLabels.map((label) => label.trim().toLowerCase()))
+  if (!existingLabels.has(baseLabel.toLowerCase())) return baseLabel
+
+  let suffix = 2
+  while (existingLabels.has(`${baseLabel} ${suffix}`.toLowerCase())) {
+    suffix += 1
+  }
+
+  return `${baseLabel} ${suffix}`
+}
+
+async function resolvePromptTranslationModel(value: string) {
+  const ref = parseModelReference(value)
+  const publicModel = (await Provider.listModels(Config.GLOBAL_CONFIG_ID)).find(
+    (model) => model.providerID === ref.providerID && model.id === ref.modelID,
+  )
+
+  if (!publicModel || !publicModel.available) {
+    throw new ApiError(400, "MODEL_NOT_AVAILABLE", `Model '${value}' is not available`)
+  }
+
+  if (!publicModel.capabilities.input.text || !publicModel.capabilities.output.text) {
+    throw new ApiError(400, "MODEL_NOT_TEXT_CAPABLE", `Model '${value}' does not support text input and output`)
+  }
+
+  try {
+    const model = await Provider.getModel(ref.providerID, ref.modelID, Config.GLOBAL_CONFIG_ID)
+    if (!model.capabilities.input.text || !model.capabilities.output.text) {
+      throw new ApiError(400, "MODEL_NOT_TEXT_CAPABLE", `Model '${value}' does not support text input and output`)
+    }
+    return model
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    if (Provider.ModelNotFoundError.isInstance(error)) {
+      throw new ApiError(400, "MODEL_NOT_FOUND", `Model '${value}' is not available`)
+    }
+
+    throw error
   }
 }
 

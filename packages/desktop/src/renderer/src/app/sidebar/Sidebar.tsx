@@ -137,17 +137,6 @@ function LeftSidebarTopMenu({
       content={(
         activeView === "workspace" ? (
           <div className="panel-toolbar-actions left-sidebar-top-menu-buttons" aria-label="Workspace view actions">
-            {onOpenRemoteFolderConfig ? (
-              <button
-                className="sidebar-action"
-                aria-label="Open remote folder"
-                title="Open remote folder"
-                type="button"
-                onClick={() => onOpenRemoteFolderConfig()}
-              >
-                <ProviderSettingsIcon />
-              </button>
-            ) : null}
             {sidebarActions.map((action) => (
               <button
                 key={action.key}
@@ -161,6 +150,17 @@ function LeftSidebarTopMenu({
                 <FolderIcon />
               </button>
             ))}
+            {onOpenRemoteFolderConfig ? (
+              <button
+                className="sidebar-action"
+                aria-label="Open remote folder"
+                title="Open remote folder"
+                type="button"
+                onClick={() => onOpenRemoteFolderConfig()}
+              >
+                <ProviderSettingsIcon />
+              </button>
+            ) : null}
           </div>
         ) : null
       )}

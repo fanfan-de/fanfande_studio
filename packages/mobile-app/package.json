@@ -1,0 +1,58 @@
+{
+  "name": "anybox-mobile-app",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "expo": {
+    "autolinking": {
+      "android": {
+        "legacy_shallowReactNativeLinking": true,
+        "exclude": [
+          "@react-native-masked-view/masked-view",
+          "react-native-drawer-layout",
+          "react-native-gesture-handler",
+          "react-native-reanimated",
+          "react-native-worklets"
+        ]
+      }
+    }
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "android:dev": "expo run:android",
+    "android:setup": "node ./scripts/android-toolchain-windows.mjs",
+    "android:build:debug": "node ./scripts/build-android-debug.mjs",
+    "android:install:debug": "node ./scripts/install-android-debug.mjs",
+    "android:smoke:debug": "node ./scripts/android-launch-smoke.mjs",
+    "android:smoke:bridge": "node ./scripts/android-real-bridge-smoke.mjs",
+    "android:smoke:pairing": "node ./scripts/android-pairing-smoke.mjs",
+    "android:delivery-check": "node ./scripts/android-delivery-check.mjs",
+    "android:handoff-check": "node ./scripts/android-handoff-check.mjs",
+    "build:android:apk": "eas build --platform android --profile preview",
+    "build:android:production": "eas build --platform android --profile production",
+    "doctor": "node ./scripts/mobile-doctor.mjs",
+    "smoke": "node ./scripts/mobile-smoke.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "56.0.13",
+    "expo": "56.0.8",
+    "expo-constants": "56.0.16",
+    "expo-router": "56.2.8",
+    "expo-secure-store": "56.0.4",
+    "expo-status-bar": "56.0.4",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-safe-area-context": "5.7.0",
+    "react-native-screens": "4.25.2",
+    "react-native-sse": "1.2.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.16",
+    "babel-preset-expo": "56.0.14",
+    "eas-cli": "^20.0.0",
+    "typescript": "6.0.3"
+  }
+}
