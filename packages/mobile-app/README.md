@@ -233,6 +233,18 @@ corepack pnpm mobile:smoke -- --url "https://anybox.com.cn/?code=..."
 
 The smoke test checks public bridge status, pairs a temporary device, verifies authenticated status/workspaces/approvals, and revokes the temporary device by default. Passing `--keep-device` keeps it paired for manual testing.
 
+## Account
+
+The app can sign in to the Anybox Provider account with email and password. The default provider URL is `https://anybox.com.cn`; override it at build time with:
+
+```powershell
+$env:EXPO_PUBLIC_ANYBOX_PROVIDER_URL="https://anybox.com.cn"
+```
+
+Email registration calls `POST /api/agent/password/register`, which creates the Provider workspace/account and sends the verification email. Email login calls `POST /api/agent/password/login` and stores the returned `ayb_access_...` / `ayb_refresh_...` agent tokens in `expo-secure-store`. The app refreshes the access token with `POST /api/agent/oauth/refresh` and revokes it with `POST /api/agent/oauth/revoke` on sign out.
+
+The Provider account is separate from desktop pairing: sign in with email for the cloud account, then scan or paste a pairing link to connect a desktop.
+
 ## Connection
 
 Use the Scan QR code action on the mobile app home screen to scan the desktop Mobile Connection QR code. The default QR code uses the public `https://anybox.com.cn` mobile bridge endpoint; Caddy forwards `/api/mobile/*` to the desktop bridge through the server-side reverse tunnel. The app previews the desktop name, address, capabilities, and QR expiry before pairing; confirming the connection exchanges the one-time code for a device token stored with `expo-secure-store`.
@@ -242,6 +254,7 @@ The advanced URL login path remains available for troubleshooting. Paste the pub
 ## Current Scope
 
 - Connect to the desktop bridge with QR pairing or the advanced public URL/token flow and exchange it for a per-device token.
+- Register or sign in to the Anybox Provider account with email/password and store Provider agent tokens securely on Android.
 - Show bridge status, workspaces, recent chats, workspace chats, chat messages, and session tasks.
 - Create a chat inside an existing workspace.
 - Browse workspace files read-only, search by file name, and preview supported text/image files.
@@ -255,7 +268,7 @@ The advanced URL login path remains available for troubleshooting. Paste the pub
 - View read-only workspace git change summaries from the Workspace screen.
 - Check for OTA updates and native Android release updates from the Updates screen.
 
-Release signing, store metadata, notifications, and cloud relay are not implemented yet.
+Release signing, store metadata, notifications, and account-linked desktop discovery are not implemented yet.
 
 ## Android Smoke Test
 

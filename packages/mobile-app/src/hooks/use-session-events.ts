@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import EventSource, { type EventSourceListener } from "react-native-sse"
-import type { MobileConnection } from "@/api/mobile-api"
+import { isRelayConnection, type MobileConnection } from "@/api/mobile-api"
 
 type SessionEventStatus = "idle" | "connecting" | "connected" | "error"
 
@@ -21,7 +21,7 @@ export function useSessionEvents({ connection, enabled, onRuntimeEvent, sessionI
   }, [onRuntimeEvent])
 
   useEffect(() => {
-    if (!connection || !enabled || !sessionID) {
+    if (!connection || !enabled || !sessionID || isRelayConnection(connection)) {
       setStatus("idle")
       return undefined
     }

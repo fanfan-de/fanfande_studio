@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import EventSource, { type EventSourceListener } from "react-native-sse"
-import { mobileEventsURL, type MobileConnection, type MobileEventName } from "@/api/mobile-api"
+import { isRelayConnection, mobileEventsURL, type MobileConnection, type MobileEventName } from "@/api/mobile-api"
 
 type MobileEventsStatus = "idle" | "connecting" | "connected" | "error"
 
@@ -29,7 +29,7 @@ export function useMobileEvents({ connection, enabled, onEvent }: UseMobileEvent
   }, [onEvent])
 
   useEffect(() => {
-    if (!connection || !enabled) {
+    if (!connection || !enabled || isRelayConnection(connection)) {
       setStatus("idle")
       return undefined
     }

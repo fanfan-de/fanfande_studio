@@ -25,6 +25,16 @@ function createMobileBridgeStatus(overrides: Partial<DesktopMobileBridgeStatus> 
     pairingExpiresAt: Date.now() + 60_000,
     startedAt: Date.now() - 10_000,
     devices: [],
+    cloudRelay: {
+      enabled: false,
+      state: "disabled",
+      baseUrl: null,
+      desktopID: null,
+      pairingCode: null,
+      pairingExpiresAt: null,
+      pairingDeepLink: null,
+      connectedAt: null,
+    },
     ...overrides,
   }
 }

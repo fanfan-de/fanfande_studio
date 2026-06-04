@@ -6,10 +6,10 @@ import { Button } from "@/components/button"
 import { Screen } from "@/components/screen"
 import { Section } from "@/components/section"
 import { StateCard } from "@/components/state-card"
-import { normalizeConnectionInput, readBridgeUrlFromConnectDeepLink } from "@/api/mobile-api"
+import { normalizeConnectionInput, readConnectionUrlFromDeepLink } from "@/api/mobile-api"
 
 function readPairingBridgeUrl(value: string) {
-  const bridgeUrl = readBridgeUrlFromConnectDeepLink(value) ?? value.trim()
+  const bridgeUrl = readConnectionUrlFromDeepLink(value) ?? value.trim()
   if (!bridgeUrl) return null
 
   try {

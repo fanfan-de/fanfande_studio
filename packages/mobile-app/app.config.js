@@ -44,6 +44,12 @@ const githubManifestAssetName = firstNonEmpty([
   baseConfig.extra?.anyboxMobileGitHubManifestAssetName,
   "anybox-mobile-release.json",
 ])
+const anyboxRelayUrl = firstNonEmpty([
+  process.env.EXPO_PUBLIC_ANYBOX_RELAY_URL,
+  process.env.EXPO_PUBLIC_ANYBOX_PROVIDER_URL,
+  baseConfig.extra?.anyboxRelayUrl,
+  "https://anybox.com.cn",
+])
 
 module.exports = () => ({
   ...baseConfig,
@@ -58,6 +64,7 @@ module.exports = () => ({
     anyboxMobileGitHubReleaseTagPrefix: githubReleaseTagPrefix,
     anyboxMobileGitHubApkAssetName: githubApkAssetName,
     anyboxMobileGitHubManifestAssetName: githubManifestAssetName,
+    anyboxRelayUrl,
     ...(easProjectId
       ? {
           eas: {

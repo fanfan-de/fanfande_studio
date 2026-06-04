@@ -11,8 +11,9 @@ import {
   getApprovals,
   getStatus,
   getWorkspaces,
+  isRelayConnection,
   normalizeConnectionInput,
-  readBridgeUrlFromConnectDeepLink,
+  readConnectionUrlFromDeepLink,
   revokeCurrentDevice,
   type MobileApproval,
   type MobileStatus,
@@ -20,6 +21,7 @@ import {
 } from "@/api/mobile-api"
 import { useMobileEvents } from "@/hooks/use-mobile-events"
 import { formatAppVersionLabel, getCurrentAppInfo } from "@/services/app-updates"
+import { useAccount } from "@/state/account"
 import { useConnection } from "@/state/connection"
 import { encodeRouteParam, formatRelativeTime, trimMiddle } from "@/utils/format"
 
@@ -27,6 +29,7 @@ const handledIncomingLinks = new Set<string>()
 
 export default function HomeScreen() {
   const router = useRouter()
+  const { account, loading: accountLoading } = useAccount()
   const { connection, loading, clearConnection } = useConnection()
   const [endpoint, setEndpoint] = useState("")
   const [token, setToken] = useState("")
@@ -69,7 +72,7 @@ export default function HomeScreen() {
 
   const eventStatus = useMobileEvents({
     connection,
-    enabled: Boolean(connection),
+    enabled: Boolean(connection && !isRelayConnection(connection)),
     onEvent: () => void load({ silent: true }),
   })
 
@@ -95,6 +98,11 @@ export default function HomeScreen() {
     if (!count) return "Capabilities unknown"
     return count === 1 ? "1 capability" : `${count} capabilities`
   }, [status?.capabilities])
+  const accountDetail = useMemo(() => {
+    if (accountLoading) return "Loading account"
+    if (!account) return "Not signed in"
+    return account.workspace?.name ? `${account.user.email} - ${account.workspace.name}` : account.user.email
+  }, [account, accountLoading])
 
   const openConnectionConfirmation = useCallback((nextEndpoint: string, nextToken: string) => {
     setError(null)
@@ -116,7 +124,7 @@ export default function HomeScreen() {
     (url: string) => {
       if (handledIncomingLinks.has(url)) return
       handledIncomingLinks.add(url)
-      const bridgeUrl = readBridgeUrlFromConnectDeepLink(url)
+      const bridgeUrl = readConnectionUrlFromDeepLink(url)
       if (!bridgeUrl) return
       setEndpoint(bridgeUrl)
       setToken("")
@@ -184,6 +192,11 @@ export default function HomeScreen() {
   if (!connection) {
     return (
       <Screen>
+        <Section title="Account" caption={account ? "Signed in" : "Optional"}>
+          <StateCard title={account ? "Anybox Provider" : "Email account"} detail={accountDetail} tone={account ? "success" : "neutral"} />
+          <Button label={account ? "Manage account" : "Email login / register"} onPress={() => router.push("/account" as never)} variant="secondary" />
+        </Section>
+
         <Section title="Connect">
           <Button label="Scan QR code" onPress={() => router.push("/scan" as never)} />
           <Button
@@ -221,6 +234,11 @@ export default function HomeScreen() {
 
   return (
     <Screen>
+      <Section title="Account" caption={account ? "Signed in" : "Optional"}>
+        <StateCard title={account ? "Anybox Provider" : "Email account"} detail={accountDetail} tone={account ? "success" : "neutral"} />
+        <Button label={account ? "Manage account" : "Email login / register"} onPress={() => router.push("/account" as never)} variant="secondary" />
+      </Section>
+
       <Section title="Desktop" caption={status?.online ? (eventStatus === "connected" ? "Live" : "Online") : "Unknown"}>
         <StateCard
           title={status?.online ? desktopLabel : "Bridge not confirmed"}

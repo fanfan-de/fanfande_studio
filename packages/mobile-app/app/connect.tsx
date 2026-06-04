@@ -12,6 +12,7 @@ import {
   type MobilePairPreview,
   type NormalizedConnectionInput,
 } from "@/api/mobile-api"
+import { useAccount } from "@/state/account"
 import { useConnection } from "@/state/connection"
 
 function firstParam(value: string | string[] | undefined) {
@@ -28,7 +29,7 @@ function formatPairingExpiry(preview: MobilePairPreview | null) {
 
 function formatPreviewDetail(candidate: NormalizedConnectionInput | null, preview: MobilePairPreview | null) {
   if (!candidate) return undefined
-  if (!preview) return `Legacy token access\n${candidate.baseUrl}`
+  if (!preview) return `${candidate.transport === "relay" ? "Cloud relay access" : "Legacy token access"}\n${candidate.baseUrl}`
 
   const desktop = preview.desktopName?.trim() || "Anybox desktop"
   const version = preview.appVersion ? ` ${preview.appVersion}` : ""
@@ -36,7 +37,7 @@ function formatPreviewDetail(candidate: NormalizedConnectionInput | null, previe
   const expires = formatPairingExpiry(preview)
   return [
     `${desktop}${version}`,
-    candidate.baseUrl,
+    candidate.transport === "relay" ? `Cloud relay: ${candidate.baseUrl}` : candidate.baseUrl,
     capabilityCount === 1 ? "1 capability" : `${capabilityCount} capabilities`,
     expires ? `QR expires in ${expires}` : null,
   ]
@@ -47,6 +48,7 @@ function formatPreviewDetail(candidate: NormalizedConnectionInput | null, previe
 export default function ConnectScreen() {
   const router = useRouter()
   const params = useLocalSearchParams<{ token?: string; url?: string }>()
+  const { account } = useAccount()
   const { connection, loading, saveConnection } = useConnection()
   const [candidate, setCandidate] = useState<NormalizedConnectionInput | null>(null)
   const [preview, setPreview] = useState<MobilePairPreview | null>(null)
@@ -107,8 +109,11 @@ export default function ConnectScreen() {
     setError(null)
     try {
       const previousConnection = connection
-      const result = await pairDevice(candidate, "Anybox Android")
-      await saveConnection(candidate.baseUrl, result.token, result.device.id)
+      const result = await pairDevice(candidate, "Anybox Android", { accountToken: account?.token })
+      await saveConnection(candidate.transport === "relay" ? bridgeUrl : candidate.baseUrl, result.token, result.device.id, {
+        transport: candidate.transport,
+        desktopID: result.desktopID,
+      })
       if (previousConnection?.deviceID) {
         await revokeCurrentDevice(previousConnection).catch(() => undefined)
       }

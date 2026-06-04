@@ -1,5 +1,5 @@
 import React from "react"
-import { Text, TextInput, View } from "react-native"
+import { Text, TextInput, View, type KeyboardTypeOptions } from "react-native"
 
 interface FieldProps {
   label: string
@@ -8,16 +8,17 @@ interface FieldProps {
   placeholder?: string
   secureTextEntry?: boolean
   multiline?: boolean
+  keyboardType?: KeyboardTypeOptions
 }
 
-export function Field({ label, value, onChangeText, placeholder, secureTextEntry, multiline }: FieldProps) {
+export function Field({ label, value, onChangeText, placeholder, secureTextEntry, multiline, keyboardType }: FieldProps) {
   return (
     <View style={{ gap: 8 }}>
       <Text style={{ color: "#4d4d49", fontSize: 13, fontWeight: "700" }}>{label}</Text>
       <TextInput
         autoCapitalize="none"
         autoCorrect={false}
-        keyboardType={secureTextEntry ? "default" : "url"}
+        keyboardType={keyboardType ?? (secureTextEntry ? "default" : "url")}
         multiline={multiline}
         onChangeText={onChangeText}
         placeholder={placeholder}

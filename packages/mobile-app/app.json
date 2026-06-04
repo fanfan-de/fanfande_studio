@@ -3,7 +3,8 @@
     "name": "Anybox Mobile",
     "slug": "anybox-mobile",
     "scheme": "anybox-mobile",
-    "version": "0.2.0",
+    "version": "0.2.2",
+    "icon": "./assets/icon.png",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -13,11 +14,20 @@
     },
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D1420"
+    },
     "newArchEnabled": false,
     "android": {
       "package": "studio.fanfande.anybox.mobile",
-      "versionCode": 2,
+      "versionCode": 4,
       "usesCleartextTraffic": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0D1420"
+      },
       "permissions": [
         "INTERNET",
         "CAMERA"
@@ -41,7 +51,8 @@
       "anyboxMobileGitHubRepository": "fanfan-de/fanfande_studio",
       "anyboxMobileGitHubReleaseTagPrefix": "mobile-v",
       "anyboxMobileGitHubApkAssetName": "anybox-mobile.apk",
-      "anyboxMobileGitHubManifestAssetName": "anybox-mobile-release.json"
+      "anyboxMobileGitHubManifestAssetName": "anybox-mobile-release.json",
+      "anyboxRelayUrl": "https://anybox.com.cn"
     }
   }
 }

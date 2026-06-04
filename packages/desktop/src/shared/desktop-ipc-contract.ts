@@ -612,6 +612,18 @@ export interface DesktopMobileDeviceSummary {
   capabilities: string[]
 }
 
+export interface DesktopCloudRelayStatus {
+  enabled: boolean
+  state: "disabled" | "idle" | "registering" | "connecting" | "connected" | "error"
+  baseUrl: string | null
+  desktopID: string | null
+  pairingCode: string | null
+  pairingExpiresAt: number | null
+  pairingDeepLink: string | null
+  connectedAt: number | null
+  lastError?: string
+}
+
 export interface DesktopMobileBridgeStatus {
   running: boolean
   host: string
@@ -626,6 +638,7 @@ export interface DesktopMobileBridgeStatus {
   pairingExpiresAt: number | null
   startedAt: number | null
   devices: DesktopMobileDeviceSummary[]
+  cloudRelay: DesktopCloudRelayStatus
 }
 
 export interface DesktopComposerPastedImageAttachment {

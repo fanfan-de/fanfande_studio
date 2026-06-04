@@ -58,6 +58,12 @@ function createPairingDeepLink(url: string) {
   return url ? `anybox-mobile://connect?url=${encodeURIComponent(url)}` : ""
 }
 
+function getPrimaryPairingDeepLink(status: DesktopMobileBridgeStatus | null, pairingUrl: string) {
+  return status?.cloudRelay.enabled && status.cloudRelay.pairingDeepLink
+    ? status.cloudRelay.pairingDeepLink
+    : createPairingDeepLink(pairingUrl)
+}
+
 function quotePowerShellArgument(value: string) {
   return `"${value.replace(/`/g, "``").replace(/"/g, '`"')}"`
 }
@@ -120,9 +126,9 @@ export function MobileConnectionPage() {
   const primaryPairingUrl = useMemo(() => getPrimaryPairingUrl(status), [status])
   const pairingUrls = useMemo(() => getPairingUrls(status), [status])
   const legacyUrls = useMemo(() => getLegacyUrls(status), [status])
-  const pairingDeepLink = useMemo(() => createPairingDeepLink(primaryPairingUrl), [primaryPairingUrl])
+  const pairingDeepLink = useMemo(() => getPrimaryPairingDeepLink(status, primaryPairingUrl), [primaryPairingUrl, status])
   const androidSmokeCommand = useMemo(() => createAndroidSmokeCommand(pairingDeepLink), [pairingDeepLink])
-  const pairingExpiryLabel = formatPairingExpiry(status?.pairingExpiresAt ?? null, now)
+  const pairingExpiryLabel = formatPairingExpiry(status?.cloudRelay.pairingExpiresAt ?? status?.pairingExpiresAt ?? null, now)
 
   useEffect(() => {
     let cancelled = false
@@ -212,7 +218,7 @@ export function MobileConnectionPage() {
           </span>
           <div>
             <h1>Mobile connection</h1>
-            <p>Pair Anybox Mobile with this desktop over your local network.</p>
+            <p>Pair Anybox Mobile with this desktop through the cloud relay, with local bridge fallback available.</p>
           </div>
         </header>
 
@@ -233,6 +239,11 @@ export function MobileConnectionPage() {
             <span className="settings-field-label">Paired devices</span>
             <strong>{activeDeviceCount}</strong>
             <small>{devices.length ? `${devices.length} records` : "No devices"}</small>
+          </article>
+          <article className="mobile-connection-card">
+            <span className="settings-field-label">Cloud relay</span>
+            <strong>{status?.cloudRelay.state ?? "disabled"}</strong>
+            <small>{status?.cloudRelay.baseUrl ?? status?.cloudRelay.lastError ?? "Not configured"}</small>
           </article>
         </section>
 
@@ -277,7 +288,7 @@ export function MobileConnectionPage() {
             {qrDataUrl ? (
               <img src={qrDataUrl} alt="Mobile connection QR code" />
             ) : (
-              <span>{primaryPairingUrl ? "Generating" : "Unavailable"}</span>
+              <span>{pairingDeepLink || primaryPairingUrl ? "Generating" : "Unavailable"}</span>
             )}
           </div>
 

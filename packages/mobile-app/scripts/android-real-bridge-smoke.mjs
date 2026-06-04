@@ -27,10 +27,11 @@ function usage() {
     "Usage:",
     "  pnpm --filter anybox-mobile-app run android:smoke:bridge -- --url \"https://anybox.com.cn/?code=...\"",
     "  pnpm --filter anybox-mobile-app run android:smoke:bridge -- --url \"anybox-mobile://connect?url=...\"",
+    "  pnpm --filter anybox-mobile-app run android:smoke:bridge -- --url \"anybox-mobile://pair?code=...&url=https%3A%2F%2Fanybox.com.cn\"",
     "  pnpm --filter anybox-mobile-app run android:smoke:bridge",
     "",
     "Options:",
-    "  --url <value>          Bridge URL or anybox-mobile://connect deep link. Defaults to MOBILE_BRIDGE_URL.",
+    "  --url <value>          Bridge URL, anybox-mobile://connect, or anybox-mobile://pair deep link. Defaults to MOBILE_BRIDGE_URL.",
     "  --token <value>        Token to append when the URL has no token/code. Defaults to MOBILE_BRIDGE_TOKEN.",
     "  --handoff <path>       Desktop handoff JSON path. Defaults to %APPDATA%/anybox-desktop-agent/mobile-bridge-handoff.json.",
     "  --apk <path>           APK path. Defaults to build/anybox-mobile-debug.apk.",
@@ -207,6 +208,19 @@ function readBridgeUrlFromConnectDeepLink(value) {
   }
 }
 
+function readRelayPairingFromDeepLink(value) {
+  try {
+    const parsed = new URL(value.trim())
+    const route = parsed.hostname || parsed.pathname.replace(/^\/+/, "")
+    if (parsed.protocol !== "anybox-mobile:" || route !== "pair") return null
+    const code = parsed.searchParams.get("code")?.trim() ?? ""
+    const baseUrl = parsed.searchParams.get("url")?.trim() || "https://anybox.com.cn"
+    return code ? { baseUrl: new URL(baseUrl).origin, code, deepLink: value.trim() } : null
+  } catch {
+    return null
+  }
+}
+
 function withTokenIfNeeded(rawUrl, token) {
   if (!token.trim()) return rawUrl
   const parsed = new URL(rawUrl)
@@ -240,10 +254,22 @@ function reverseBridgePort(port) {
 function normalizeBridgeInput(input, token) {
   const trimmed = input.trim()
   if (!trimmed) throw new Error("Bridge URL is required. Pass --url or set MOBILE_BRIDGE_URL.")
+  const relayPairing = readRelayPairingFromDeepLink(trimmed)
+  if (relayPairing) {
+    return {
+      kind: "relay",
+      baseUrl: relayPairing.baseUrl,
+      code: relayPairing.code,
+      bridgeUrl: relayPairing.baseUrl,
+      deepLink: relayPairing.deepLink,
+    }
+  }
+
   const bridgeUrl = readBridgeUrlFromConnectDeepLink(trimmed)
   if (bridgeUrl) {
     const url = withTokenIfNeeded(bridgeUrl, token)
     return {
+      kind: "bridge",
       baseUrl: new URL(url).origin,
       bridgeUrl: url,
       deepLink: `anybox-mobile://connect?url=${encodeURIComponent(url)}`,
@@ -252,6 +278,7 @@ function normalizeBridgeInput(input, token) {
   const candidate = /^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
   const url = withTokenIfNeeded(candidate, token)
   return {
+    kind: "bridge",
     baseUrl: new URL(url).origin,
     bridgeUrl: url,
     deepLink: `anybox-mobile://connect?url=${encodeURIComponent(url)}`,
@@ -259,6 +286,8 @@ function normalizeBridgeInput(input, token) {
 }
 
 function prepareAndroidBridgeInput(bridgeInput, args, device) {
+  if (bridgeInput.kind === "relay") return bridgeInput
+
   const parsed = new URL(bridgeInput.bridgeUrl)
   let androidBridgeUrl = bridgeInput.bridgeUrl
 
@@ -304,6 +333,32 @@ async function preflightBridgeStatus(baseUrl) {
 
   const status = value?.success === true ? value.data : value
   console.log(`Bridge preflight: ${status?.online ? "online" : "unknown"} (${status?.desktopName ?? "desktop"} ${status?.appVersion ?? ""})`)
+}
+
+async function preflightRelayPairing(bridgeInput) {
+  let response
+  const previewUrl = new URL("/api/relay/pair/preview", bridgeInput.baseUrl)
+  previewUrl.searchParams.set("code", bridgeInput.code)
+  try {
+    response = await fetch(previewUrl, {
+      headers: { accept: "application/json" },
+    })
+  } catch (error) {
+    throw new Error(`Relay preflight failed: ${previewUrl.origin}/api/relay/pair/preview is not reachable. ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  const text = await response.text()
+  const value = text.trim() ? JSON.parse(text) : null
+  if (!response.ok || value?.success !== true) {
+    const message = value?.error?.message ?? `HTTP ${response.status}`
+    throw new Error(`Relay preflight failed: ${message}`)
+  }
+
+  const preview = value.data
+  if (!preview?.pairing?.valid) {
+    throw new Error("Relay preflight failed: pairing code is expired or invalid.")
+  }
+  console.log(`Relay preflight: ${preview.online ? "online" : "registered"} (${preview.desktopName ?? "desktop"} ${preview.appVersion ?? ""})`)
 }
 
 function escapeRegExp(value) {
@@ -413,7 +468,8 @@ async function main() {
 
   const bridgeInput = normalizeBridgeInput(args.url, args.token)
   if (!args.skipPreflight) {
-    await preflightBridgeStatus(bridgeInput.baseUrl)
+    if (bridgeInput.kind === "relay") await preflightRelayPairing(bridgeInput)
+    else await preflightBridgeStatus(bridgeInput.baseUrl)
   }
   const device = requireConnectedDevice()
   const androidBridgeInput = prepareAndroidBridgeInput(bridgeInput, args, device)

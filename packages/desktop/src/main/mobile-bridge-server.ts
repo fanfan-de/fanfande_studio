@@ -8,6 +8,13 @@ import path from "node:path"
 import { URL } from "node:url"
 import { requestAgentJSON, resolveAgentURL } from "./agent-client"
 import { buildFolderWorkspaces } from "./folder-workspaces"
+import {
+  ensureDesktopCloudRelayClientRunning,
+  getDesktopCloudRelayStatus,
+  refreshDesktopCloudRelayPairing,
+  stopDesktopCloudRelayClient,
+  type DesktopCloudRelayStatus,
+} from "./desktop-cloud-relay-client"
 import { safeError, safeLog, safeWarn } from "./safe-console"
 import type { AgentFolderWorkspace, AgentProjectInfo, AgentProjectWorkspace, AgentSessionInfo, AgentWorkspaceSession } from "./types"
 import { getWorkspaceGitDiff } from "./workspace-diff"
@@ -53,6 +60,7 @@ export interface MobileBridgeStatus {
   pairingExpiresAt: number | null
   startedAt: number | null
   devices: MobileDeviceSummary[]
+  cloudRelay: DesktopCloudRelayStatus
 }
 
 export interface MobileDeviceSummary {
@@ -1174,23 +1182,31 @@ function isLoopbackBridgeHost(host: string) {
 }
 
 async function writeMobileHandoffFile(status: MobileBridgeStatus) {
+  const relayPairingDeepLink = status.cloudRelay.enabled ? status.cloudRelay.pairingDeepLink : null
   const primaryPairingUrl = status.publicPairingUrl ?? (isLoopbackBridgeHost(status.host) ? status.pairingLocalUrl : status.pairingUrls[0])
-  if (!status.running || !primaryPairingUrl || !status.pairingExpiresAt) {
+  const pairingExpiresAt = status.cloudRelay.pairingExpiresAt ?? status.pairingExpiresAt
+  if (!status.running || (!relayPairingDeepLink && !primaryPairingUrl) || !pairingExpiresAt) {
     await fs.rm(getMobileHandoffPath(), { force: true }).catch(() => undefined)
     return
   }
 
-  const deepLink = createPairingDeepLink(primaryPairingUrl)
+  const deepLink = relayPairingDeepLink ?? createPairingDeepLink(primaryPairingUrl ?? "")
   const document = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
-    pairingExpiresAt: new Date(status.pairingExpiresAt).toISOString(),
+    pairingExpiresAt: new Date(pairingExpiresAt).toISOString(),
     bridge: {
       host: status.host,
       port: status.port,
     },
+    relay: {
+      enabled: status.cloudRelay.enabled,
+      state: status.cloudRelay.state,
+      baseUrl: status.cloudRelay.baseUrl,
+      desktopID: status.cloudRelay.desktopID,
+    },
     android: {
-      pairingUrl: primaryPairingUrl,
+      pairingUrl: relayPairingDeepLink ?? primaryPairingUrl,
       deepLink,
       smokeCommand: `corepack pnpm mobile:android:smoke:bridge -- --url ${quotePowerShellArgument(deepLink)}`,
       handoffCommand: `corepack pnpm mobile:android:handoff-check -- --real-bridge-url ${quotePowerShellArgument(deepLink)}`,
@@ -1209,6 +1225,14 @@ async function writeMobileHandoffFile(status: MobileBridgeStatus) {
 export async function getMobileBridgeStatus(): Promise<MobileBridgeStatus> {
   const port = bridgePort
   ensureMobileBridgeTunnelRunning(port)
+  ensureDesktopCloudRelayClientRunning({
+    baseUrl: port ? readBridgePublicBaseUrl() : null,
+    desktopName: app.getName(),
+    appVersion: app.getVersion(),
+    capabilities: DEFAULT_MOBILE_DEVICE_CAPABILITIES,
+    getBridgeToken: () => bridgeToken,
+    getLocalBridgeBaseUrl: () => (bridgePort ? `http://127.0.0.1:${bridgePort}` : null),
+  })
   const pairingCode = port ? getCurrentPairingCode() : null
   const publicBaseUrl = port ? readBridgePublicBaseUrl() : null
   const publicUrl = publicBaseUrl ? publicUrlWithToken(publicBaseUrl) : null
@@ -1231,6 +1255,7 @@ export async function getMobileBridgeStatus(): Promise<MobileBridgeStatus> {
     pairingExpiresAt: pairingCode?.expiresAt ?? null,
     startedAt,
     devices: await listMobileDeviceSummaries(),
+    cloudRelay: getDesktopCloudRelayStatus(),
   }
   await writeMobileHandoffFile(status)
   return status
@@ -1244,6 +1269,9 @@ export async function rotateMobileBridgeToken() {
 
 export async function refreshMobilePairingCode() {
   mobilePairingCode = null
+  await refreshDesktopCloudRelayPairing().catch((error) => {
+    safeWarn("[desktop][mobile-relay] failed to refresh pairing code", error)
+  })
   return getMobileBridgeStatus()
 }
 
@@ -1310,6 +1338,11 @@ export async function ensureMobileBridgeServerRunning() {
     publicPairingUrl: status.publicPairingUrl ? "[redacted]" : null,
     pairingLocalUrl: status.pairingLocalUrl ? "[redacted]" : null,
     pairingUrls: status.pairingUrls.map(() => "[redacted]"),
+    cloudRelay: {
+      ...status.cloudRelay,
+      pairingCode: status.cloudRelay.pairingCode ? "[redacted]" : null,
+      pairingDeepLink: status.cloudRelay.pairingDeepLink ? "[redacted]" : null,
+    },
   })
   return getMobileBridgeStatus()
 }
@@ -1320,6 +1353,7 @@ export async function stopMobileBridgeServer() {
   bridgePort = null
   startedAt = null
   stopMobileBridgeTunnel()
+  stopDesktopCloudRelayClient()
   if (!current) return
 
   await new Promise<void>((resolve) => {

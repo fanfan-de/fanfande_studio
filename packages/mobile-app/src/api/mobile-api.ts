@@ -1,6 +1,8 @@
 export interface MobileConnection {
   baseUrl: string
   token: string
+  transport?: "bridge" | "relay"
+  desktopID?: string
   deviceID?: string
 }
 
@@ -250,6 +252,15 @@ export interface MobileStreamCallbacks {
 export interface MobilePairResult {
   token: string
   device: MobileDevice
+  desktopID?: string
+  desktop?: {
+    id: string
+    name: string
+    appVersion?: string
+    online: boolean
+    capabilities: string[]
+    pairingExpiresAt: number | null
+  }
 }
 
 export interface MobilePairPreview extends MobileStatus {
@@ -263,6 +274,8 @@ export interface MobilePairPreview extends MobileStatus {
 export interface NormalizedConnectionInput {
   baseUrl: string
   token: string
+  transport?: "bridge" | "relay"
+  desktopID?: string
   pairingCode?: string
 }
 
@@ -278,6 +291,19 @@ type Envelope<T> =
         message?: string
       }
     }
+
+interface RelayMobileHttpResult {
+  status: number
+  headers?: Record<string, string>
+  body: unknown
+  text?: string
+}
+
+interface RelayPairResult {
+  token: string
+  desktop: NonNullable<MobilePairResult["desktop"]>
+  device: MobileDevice
+}
 
 export class MobileApiError extends Error {
   constructor(
@@ -301,7 +327,37 @@ export function readBridgeUrlFromConnectDeepLink(value: string) {
   }
 }
 
+export function readRelayPairingFromDeepLink(value: string) {
+  try {
+    const parsed = new URL(value.trim())
+    const route = parsed.hostname || parsed.pathname.replace(/^\/+/, "")
+    if (parsed.protocol !== "anybox-mobile:" || route !== "pair") return null
+    const code = parsed.searchParams.get("code")?.trim() ?? ""
+    const baseUrl = parsed.searchParams.get("url")?.trim() || "https://anybox.com.cn"
+    return code ? { baseUrl, code } : null
+  } catch {
+    return null
+  }
+}
+
+export function readConnectionUrlFromDeepLink(value: string) {
+  if (readRelayPairingFromDeepLink(value)) return value.trim()
+  return readBridgeUrlFromConnectDeepLink(value)
+}
+
 export function normalizeConnectionInput(endpoint: string, tokenInput: string): NormalizedConnectionInput {
+  const relayPairing = readRelayPairingFromDeepLink(endpoint)
+  if (relayPairing) {
+    const parsed = new URL(relayPairing.baseUrl)
+    const token = tokenInput.trim()
+    return {
+      baseUrl: parsed.origin,
+      token,
+      transport: "relay",
+      pairingCode: relayPairing.code,
+    }
+  }
+
   const rawEndpoint = readBridgeUrlFromConnectDeepLink(endpoint) ?? endpoint.trim()
   if (!rawEndpoint) {
     throw new Error("Bridge URL is required.")
@@ -325,6 +381,20 @@ export function normalizeConnectionInput(endpoint: string, tokenInput: string): 
 }
 
 export async function getStatus(connection: MobileConnection) {
+  if (isRelayConnection(connection)) {
+    const status = await requestRelay<NonNullable<MobilePairResult["desktop"]>>(
+      connection,
+      `/api/relay/desktops/${encodeURIComponent(connection.desktopID)}/status`,
+    )
+    return {
+      service: "anybox-cloud-relay",
+      running: status.online,
+      desktopName: status.name,
+      appVersion: status.appVersion,
+      online: status.online,
+      capabilities: status.capabilities,
+    } satisfies MobileStatus
+  }
   return requestMobile<MobileStatus>(connection, "/api/mobile/status")
 }
 
@@ -332,7 +402,31 @@ export async function getWorkspaces(connection: MobileConnection) {
   return requestMobile<MobileWorkspace[]>(connection, "/api/mobile/workspaces")
 }
 
-export async function pairDevice(connection: MobileConnection & { pairingCode?: string }, name: string) {
+export async function pairDevice(connection: MobileConnection & { pairingCode?: string }, name: string, input?: { accountToken?: string }) {
+  if (connection.transport === "relay") {
+    const result = await requestRelay<RelayPairResult>(
+      { ...connection, token: "" },
+      "/api/relay/pair",
+      {
+        method: "POST",
+        body: JSON.stringify({ code: connection.pairingCode, name }),
+        ...(input?.accountToken
+          ? {
+              headers: {
+                authorization: `Bearer ${input.accountToken}`,
+              },
+            }
+          : {}),
+      },
+    )
+    return {
+      token: result.token,
+      device: result.device,
+      desktopID: result.desktop.id,
+      desktop: result.desktop,
+    } satisfies MobilePairResult
+  }
+
   const params = new URLSearchParams()
   if (connection.pairingCode) params.set("code", connection.pairingCode)
   const query = params.toString()
@@ -343,6 +437,16 @@ export async function pairDevice(connection: MobileConnection & { pairingCode?: 
 }
 
 export async function previewPairing(connection: MobileConnection & { pairingCode?: string }) {
+  if (connection.transport === "relay") {
+    const params = new URLSearchParams()
+    if (connection.pairingCode) params.set("code", connection.pairingCode)
+    const query = params.toString()
+    return requestRelay<MobilePairPreview>(
+      { ...connection, token: "" },
+      `/api/relay/pair/preview${query ? `?${query}` : ""}`,
+    )
+  }
+
   const params = new URLSearchParams()
   if (connection.pairingCode) params.set("code", connection.pairingCode)
   const query = params.toString()
@@ -491,16 +595,104 @@ export async function cancelSession(connection: MobileConnection, sessionID: str
 }
 
 export async function revokeCurrentDevice(connection: MobileConnection) {
+  if (isRelayConnection(connection)) {
+    return requestRelay<{ deviceID: string; revoked: boolean }>(connection, "/api/relay/devices/me/revoke", {
+      method: "POST",
+    })
+  }
+
   return requestMobile<{ deviceID: string; revoked: boolean }>(connection, "/api/mobile/devices/me/revoke", {
     method: "POST",
   })
 }
 
 export function mobileEventsURL(connection: MobileConnection) {
+  if (isRelayConnection(connection)) {
+    const params = new URLSearchParams({ desktopID: connection.desktopID })
+    return `${connection.baseUrl}/api/relay/events/stream?${params.toString()}`
+  }
   return `${connection.baseUrl}/api/mobile/events/stream`
 }
 
+export function isRelayConnection(connection: MobileConnection | null | undefined): connection is MobileConnection & { transport: "relay"; desktopID: string } {
+  return connection?.transport === "relay" && Boolean(connection.desktopID)
+}
+
+async function requestRelayMobile<T>(
+  connection: MobileConnection & { transport: "relay"; desktopID: string },
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const result = await requestRelayCommand<RelayMobileHttpResult>(connection, "mobile.http", {
+    method: (init?.method ?? "GET").toString(),
+    path,
+    body: typeof init?.body === "string" ? init.body : undefined,
+    headers: pickRelayRequestHeaders(init?.headers),
+  })
+
+  const value = result.body ?? parseJson(result.text ?? "")
+  if (result.status < 200 || result.status >= 300) {
+    const envelope = isEnvelope<unknown>(value) ? value : undefined
+    const message = envelope?.success === false ? envelope.error?.message : undefined
+    const code = envelope?.success === false ? envelope.error?.code : undefined
+    throw new MobileApiError(message || `Request failed with HTTP ${result.status}.`, result.status, code)
+  }
+
+  if (isEnvelope<T>(value)) {
+    if (value.success) return value.data
+    throw new MobileApiError(value.error?.message || "Mobile relay request failed.", result.status, value.error?.code)
+  }
+
+  return value as T
+}
+
+async function requestRelayCommand<T>(
+  connection: MobileConnection & { transport: "relay"; desktopID: string },
+  type: string,
+  payload?: unknown,
+): Promise<T> {
+  return requestRelay<T>(connection, "/api/relay/commands", {
+    method: "POST",
+    body: JSON.stringify({
+      desktopID: connection.desktopID,
+      type,
+      payload,
+    }),
+  })
+}
+
+async function requestRelay<T>(connection: MobileConnection, path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${connection.baseUrl}${path}`, {
+    ...init,
+    headers: buildHeaders(connection, init?.headers),
+  }).catch((error: unknown) => {
+    const detail = error instanceof Error && error.message ? ` ${error.message}` : ""
+    throw new MobileApiError(`Unable to reach ${connection.baseUrl}. Check your network and try again.${detail}`, 0)
+  })
+
+  const text = await response.text()
+  const value = parseJson(text)
+
+  if (!response.ok) {
+    const envelope = isEnvelope<unknown>(value) ? value : undefined
+    const message = envelope?.success === false ? envelope.error?.message : readErrorMessage(value)
+    const code = envelope?.success === false ? envelope.error?.code : readErrorCode(value)
+    throw new MobileApiError(message || `Request failed with HTTP ${response.status}.`, response.status, code)
+  }
+
+  if (isEnvelope<T>(value)) {
+    if (value.success) return value.data
+    throw new MobileApiError(value.error?.message || "Relay request failed.", response.status, value.error?.code)
+  }
+
+  return value as T
+}
+
 async function requestMobile<T>(connection: MobileConnection, path: string, init?: RequestInit): Promise<T> {
+  if (isRelayConnection(connection)) {
+    return requestRelayMobile<T>(connection, path, init)
+  }
+
   const response = await fetch(`${connection.baseUrl}${path}`, {
     ...init,
     headers: buildHeaders(connection, init?.headers),
@@ -533,6 +725,10 @@ async function requestMobileStream(
   init?: RequestInit,
   callbacks?: MobileStreamCallbacks,
 ) {
+  if (isRelayConnection(connection)) {
+    throw new MobileApiError("Streaming through the cloud relay is not available yet. Refreshing lists and reading existing sessions are supported.", 501, "STREAM_UNSUPPORTED")
+  }
+
   const response = await fetch(`${connection.baseUrl}${path}`, {
     ...init,
     headers: buildHeaders(connection, init?.headers),
@@ -569,6 +765,16 @@ function buildHeaders(connection: MobileConnection, headers?: HeadersInit): Head
   return nextHeaders
 }
 
+function pickRelayRequestHeaders(headers?: HeadersInit): Record<string, string> {
+  const result: Record<string, string> = {}
+  if (!headers) return result
+
+  const source = new Headers(headers)
+  const contentType = source.get("content-type")
+  if (contentType) result["content-type"] = contentType
+  return result
+}
+
 function parseJson(text: string) {
   if (!text.trim()) return null
   try {
@@ -576,6 +782,18 @@ function parseJson(text: string) {
   } catch {
     return text
   }
+}
+
+function readErrorMessage(value: unknown) {
+  const record = readRecord(value)
+  const error = readRecord(record?.error)
+  return typeof error?.message === "string" ? error.message : undefined
+}
+
+function readErrorCode(value: unknown) {
+  const record = readRecord(value)
+  const error = readRecord(record?.error)
+  return typeof error?.code === "string" ? error.code : undefined
 }
 
 function isEnvelope<T>(value: unknown): value is Envelope<T> {
