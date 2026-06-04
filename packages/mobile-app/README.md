@@ -158,6 +158,47 @@ For a Play Store app bundle:
 corepack pnpm --filter anybox-mobile-app build:android:production
 ```
 
+## Updates
+
+The app supports two update paths:
+
+- EAS Update for JavaScript, asset, and UI-only changes.
+- A release manifest URL for native Android APK/AAB updates.
+
+EAS Update needs an Expo project ID before it can serve OTA updates. Configure it once after logging in:
+
+```powershell
+corepack pnpm --filter anybox-mobile-app exec eas login
+corepack pnpm --filter anybox-mobile-app exec eas update:configure
+```
+
+The dynamic Expo config enables the update URL when `EXPO_PUBLIC_EAS_PROJECT_ID`, `EAS_PROJECT_ID`, or `EXPO_UPDATES_URL` is present at build time. Without one of those values, OTA updates stay disabled and the app continues to run from the embedded bundle.
+
+Publish OTA updates to the build channel:
+
+```powershell
+corepack pnpm mobile:update:preview -- --message "Fix mobile workspace refresh"
+corepack pnpm mobile:update:production -- --message "Fix mobile workspace refresh"
+```
+
+For full app updates, set `EXPO_PUBLIC_ANYBOX_MOBILE_RELEASE_URL` to a JSON manifest URL before building. The app checks this URL from the Updates screen and uses it for required-update prompts.
+
+Example manifest:
+
+```json
+{
+  "version": "0.2.0",
+  "versionCode": 2,
+  "minimumVersionCode": 1,
+  "apkUrl": "https://example.com/anybox-mobile-0.2.0.apk",
+  "sha256": "optional-sha256",
+  "notes": ["Fix pairing reliability", "Improve session refresh"],
+  "force": false
+}
+```
+
+The manifest can also contain platform-specific values under `android` or `platforms.android`. Use `minimumVersionCode` or `force: true` for a required update.
+
 ## Bridge API Smoke Test
 
 After starting the desktop app and opening the Mobile Connection page, copy the LAN URL or the `anybox-mobile://connect?...` deep link and run:
@@ -188,6 +229,7 @@ The desktop Mobile Connection page also shows a QR code. In an installed Android
 - Refresh Android pairing codes, list paired devices, inspect device capabilities, and revoke paired Android devices from the desktop Mobile Connection page.
 - View pending approval requests, approval history, and allow or deny requests from Android.
 - View read-only workspace git change summaries from the Workspace screen.
+- Check for OTA updates and native Android release updates from the Updates screen.
 
 Release signing, store metadata, notifications, and cloud relay are not implemented yet.
 

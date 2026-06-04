@@ -31,6 +31,8 @@
     "android:handoff-check": "node ./scripts/android-handoff-check.mjs",
     "build:android:apk": "eas build --platform android --profile preview",
     "build:android:production": "eas build --platform android --profile production",
+    "update:preview": "eas update --channel preview --environment preview",
+    "update:production": "eas update --channel production --environment production",
     "doctor": "node ./scripts/mobile-doctor.mjs",
     "smoke": "node ./scripts/mobile-smoke.mjs",
     "typecheck": "tsc --noEmit"
@@ -42,6 +44,7 @@
     "expo-router": "56.2.8",
     "expo-secure-store": "56.0.4",
     "expo-status-bar": "56.0.4",
+    "expo-updates": "~56.0.17",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.85.3",

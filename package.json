@@ -34,6 +34,8 @@
     "mobile:android:handoff-check": "corepack pnpm --filter anybox-mobile-app run android:handoff-check",
     "mobile:build:android:apk": "corepack pnpm --filter anybox-mobile-app build:android:apk",
     "mobile:build:android:production": "corepack pnpm --filter anybox-mobile-app build:android:production",
+    "mobile:update:preview": "corepack pnpm --filter anybox-mobile-app update:preview",
+    "mobile:update:production": "corepack pnpm --filter anybox-mobile-app update:production",
     "mobile:doctor": "corepack pnpm --filter anybox-mobile-app run doctor",
     "mobile:smoke": "corepack pnpm --filter anybox-mobile-app run smoke",
     "mobile:typecheck": "corepack pnpm --filter anybox-mobile-app typecheck",

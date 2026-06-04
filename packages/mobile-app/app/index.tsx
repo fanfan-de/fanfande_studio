@@ -20,6 +20,7 @@ import {
   type MobileWorkspace,
 } from "@/api/mobile-api"
 import { useMobileEvents } from "@/hooks/use-mobile-events"
+import { formatAppVersionLabel, getCurrentAppInfo } from "@/services/app-updates"
 import { useConnection } from "@/state/connection"
 import { encodeRouteParam, formatRelativeTime, trimMiddle } from "@/utils/format"
 
@@ -37,6 +38,7 @@ export default function HomeScreen() {
   const [workspaces, setWorkspaces] = useState<MobileWorkspace[]>([])
   const [approvals, setApprovals] = useState<MobileApproval[]>([])
   const [error, setError] = useState<string | null>(null)
+  const currentApp = useMemo(() => getCurrentAppInfo(), [])
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
     if (!connection) return
@@ -208,6 +210,10 @@ export default function HomeScreen() {
           {error ? <StateCard title="Connection failed" detail={error} tone="danger" /> : null}
           <Button disabled={!endpoint.trim()} label="Connect" loading={saving} onPress={handleSave} />
         </Section>
+
+        <Section title="Updates" caption={formatAppVersionLabel(currentApp)}>
+          <ListRow title="Check for updates" meta="Open" onPress={() => router.push("/updates" as never)} />
+        </Section>
       </Screen>
     )
   }
@@ -229,6 +235,10 @@ export default function HomeScreen() {
             <Button label="Change" loading={disconnecting} onPress={() => void handleChangeConnection()} variant="secondary" />
           </View>
         </View>
+      </Section>
+
+      <Section title="Updates" caption={formatAppVersionLabel(currentApp)}>
+        <ListRow title="Check for updates" meta="Open" onPress={() => router.push("/updates" as never)} />
       </Section>
 
       <Section title="Workspaces" caption={`${workspaces.length}`}>

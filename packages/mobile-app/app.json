@@ -4,11 +4,19 @@
     "slug": "anybox-mobile",
     "scheme": "anybox-mobile",
     "version": "0.1.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "checkAutomatically": "ON_ERROR_RECOVERY",
+      "fallbackToCacheTimeout": 0
+    },
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
     "android": {
       "package": "studio.fanfande.anybox.mobile",
+      "versionCode": 1,
       "usesCleartextTraffic": true,
       "permissions": [
         "INTERNET"
@@ -20,6 +28,9 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "anyboxMobileReleaseUrl": ""
     }
   }
 }
