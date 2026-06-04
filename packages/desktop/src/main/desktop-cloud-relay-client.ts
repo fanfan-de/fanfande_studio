@@ -22,7 +22,24 @@ export interface DesktopCloudRelayStatus {
   pairingExpiresAt: number | null
   pairingDeepLink: string | null
   connectedAt: number | null
+  account: DesktopCloudRelayAccountStatus
   lastError?: string
+}
+
+export interface DesktopCloudRelayAccountStatus {
+  state: "unknown" | "not_connected" | "connected" | "error"
+  email?: string
+  workspaceName?: string
+  expiresAt?: number
+  lastError?: string
+}
+
+export interface DesktopCloudRelayAccountSession {
+  accessToken: string
+  baseUrl?: string
+  email?: string
+  workspaceName?: string
+  expiresAt?: number
 }
 
 export interface DesktopCloudRelayClientOptions {
@@ -32,6 +49,7 @@ export interface DesktopCloudRelayClientOptions {
   capabilities: string[]
   getBridgeToken: () => string | null
   getLocalBridgeBaseUrl: () => string | null
+  getAccountSession?: () => Promise<DesktopCloudRelayAccountSession | null>
 }
 
 interface RelayIdentityDocument {
@@ -109,7 +127,12 @@ export async function refreshDesktopCloudRelayPairing() {
 
   try {
     const identity = await readRelayIdentity()
-    const registration = await registerDesktop(currentOptions, identity, true)
+    const account = await readRelayAccountSession(currentOptions)
+    status = {
+      ...status,
+      account: account.status,
+    }
+    const registration = await registerDesktop(currentOptions, identity, true, account.session)
     updatePairingStatus(currentOptions.baseUrl, identity.desktopID, registration)
     reconnectDelayMs = RELAY_RECONNECT_MIN_MS
     scheduleReconnect(0)
@@ -156,6 +179,9 @@ function disabledStatus(baseUrl: string | null): DesktopCloudRelayStatus {
     pairingExpiresAt: null,
     pairingDeepLink: null,
     connectedAt: null,
+    account: {
+      state: "unknown",
+    },
   }
 }
 
@@ -183,7 +209,13 @@ async function connectOnce() {
       lastError: undefined,
     }
 
-    const registration = await registerDesktop(currentOptions, identity, false)
+    const account = await readRelayAccountSession(currentOptions)
+    status = {
+      ...status,
+      account: account.status,
+    }
+
+    const registration = await registerDesktop(currentOptions, identity, false, account.session)
     updatePairingStatus(currentOptions.baseUrl, identity.desktopID, registration)
     status = {
       ...status,
@@ -381,9 +413,17 @@ async function registerDesktop(
   currentOptions: DesktopCloudRelayClientOptions,
   identity: RelayIdentityDocument,
   refreshPairing: boolean,
+  accountSession?: DesktopCloudRelayAccountSession | null,
 ) {
   return relayRequest<RelayRegisterResult>(currentOptions.baseUrl ?? "", "/api/relay/desktop/register", {
     method: "POST",
+    ...(accountSession?.accessToken
+      ? {
+          headers: {
+            authorization: `Bearer ${accountSession.accessToken}`,
+          },
+        }
+      : {}),
     body: JSON.stringify({
       desktopID: identity.desktopID,
       token: identity.token,
@@ -393,6 +433,51 @@ async function registerDesktop(
       refreshPairing,
     }),
   })
+}
+
+async function readRelayAccountSession(currentOptions: DesktopCloudRelayClientOptions): Promise<{
+  session: DesktopCloudRelayAccountSession | null
+  status: DesktopCloudRelayAccountStatus
+}> {
+  if (!currentOptions.getAccountSession) {
+    return { session: null, status: { state: "unknown" } }
+  }
+
+  try {
+    const session = await currentOptions.getAccountSession()
+    if (!session?.accessToken) {
+      return { session: null, status: { state: "not_connected" } }
+    }
+    if (session.baseUrl && currentOptions.baseUrl && normalizeRelayBaseUrl(session.baseUrl) !== currentOptions.baseUrl) {
+      return {
+        session: null,
+        status: {
+          state: "error",
+          email: session.email,
+          workspaceName: session.workspaceName,
+          expiresAt: session.expiresAt,
+          lastError: "Anybox Provider account URL does not match the mobile relay URL.",
+        },
+      }
+    }
+    return {
+      session,
+      status: {
+        state: "connected",
+        email: session.email,
+        workspaceName: session.workspaceName,
+        expiresAt: session.expiresAt,
+      },
+    }
+  } catch (error) {
+    return {
+      session: null,
+      status: {
+        state: "error",
+        lastError: error instanceof Error ? error.message : String(error),
+      },
+    }
+  }
 }
 
 async function relayRequest<T>(baseUrl: string, pathName: string, init: RequestInit): Promise<T> {

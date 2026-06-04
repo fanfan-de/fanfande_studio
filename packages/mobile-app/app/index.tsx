@@ -8,6 +8,12 @@ import { Screen } from "@/components/screen"
 import { Section } from "@/components/section"
 import { StateCard } from "@/components/state-card"
 import {
+  connectAccountRelayDesktop,
+  listAccountRelayDesktops,
+  type MobileAccountRelayDesktop,
+  type MobileAccountSession,
+} from "@/api/account-api"
+import {
   getApprovals,
   getStatus,
   getWorkspaces,
@@ -30,12 +36,16 @@ const handledIncomingLinks = new Set<string>()
 export default function HomeScreen() {
   const router = useRouter()
   const { account, loading: accountLoading } = useAccount()
-  const { connection, loading, clearConnection } = useConnection()
+  const { connection, loading, clearConnection, saveConnection } = useConnection()
   const [endpoint, setEndpoint] = useState("")
   const [token, setToken] = useState("")
   const [manualOpen, setManualOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
+  const [accountDesktops, setAccountDesktops] = useState<MobileAccountRelayDesktop[]>([])
+  const [accountDesktopsLoading, setAccountDesktopsLoading] = useState(false)
+  const [accountDesktopError, setAccountDesktopError] = useState<string | null>(null)
+  const [connectingDesktopID, setConnectingDesktopID] = useState<string | null>(null)
   const [status, setStatus] = useState<MobileStatus | null>(null)
   const [workspaces, setWorkspaces] = useState<MobileWorkspace[]>([])
   const [approvals, setApprovals] = useState<MobileApproval[]>([])
@@ -103,6 +113,46 @@ export default function HomeScreen() {
     if (!account) return "Not signed in"
     return account.workspace?.name ? `${account.user.email} - ${account.workspace.name}` : account.user.email
   }, [account, accountLoading])
+
+  const loadAccountDesktops = useCallback(async (nextAccount: MobileAccountSession | null = account) => {
+    if (!nextAccount) {
+      setAccountDesktops([])
+      setAccountDesktopError(null)
+      return
+    }
+    setAccountDesktopsLoading(true)
+    setAccountDesktopError(null)
+    try {
+      setAccountDesktops(await listAccountRelayDesktops(nextAccount))
+    } catch (desktopError) {
+      setAccountDesktopError(desktopError instanceof Error ? desktopError.message : "Unable to load desktop devices.")
+    } finally {
+      setAccountDesktopsLoading(false)
+    }
+  }, [account])
+
+  useEffect(() => {
+    if (connection || accountLoading) return
+    void loadAccountDesktops(account)
+  }, [account, accountLoading, connection, loadAccountDesktops])
+
+  const connectAccountDesktop = useCallback(async (desktop: MobileAccountRelayDesktop) => {
+    if (!account || !desktop.online) return
+    setConnectingDesktopID(desktop.id)
+    setError(null)
+    setAccountDesktopError(null)
+    try {
+      const result = await connectAccountRelayDesktop(account, desktop.id, "Anybox Android")
+      await saveConnection(account.baseUrl, result.token, result.device.id, {
+        transport: "relay",
+        desktopID: result.desktop?.id ?? result.desktopID ?? desktop.id,
+      })
+    } catch (connectError) {
+      setAccountDesktopError(connectError instanceof Error ? connectError.message : "Unable to connect this desktop.")
+    } finally {
+      setConnectingDesktopID(null)
+    }
+  }, [account, saveConnection])
 
   const openConnectionConfirmation = useCallback((nextEndpoint: string, nextToken: string) => {
     setError(null)
@@ -196,6 +246,26 @@ export default function HomeScreen() {
           <StateCard title={account ? "Anybox Provider" : "Email account"} detail={accountDetail} tone={account ? "success" : "neutral"} />
           <Button label={account ? "Manage account" : "Email login / register"} onPress={() => router.push("/account" as never)} variant="secondary" />
         </Section>
+
+        {account ? (
+          <Section title="Desktop devices" caption={accountDesktops.length ? `${accountDesktops.length}` : "Account relay"}>
+            {accountDesktopsLoading ? <StateCard title="Loading desktop devices" /> : null}
+            {accountDesktopError ? <StateCard title="Desktop discovery failed" detail={accountDesktopError} tone="danger" /> : null}
+            {!accountDesktopsLoading && !accountDesktopError && accountDesktops.length === 0 ? (
+              <StateCard title="No desktop devices" detail="Sign in on the desktop app and keep it running, then refresh this list." />
+            ) : null}
+            {accountDesktops.map((desktop) => (
+              <ListRow
+                key={desktop.id}
+                title={desktop.appVersion ? `${desktop.name} ${desktop.appVersion}` : desktop.name}
+                subtitle={desktop.online ? "Available through Anybox Provider relay" : "Offline"}
+                meta={connectingDesktopID === desktop.id ? "Connecting" : desktop.online ? "Online" : "Offline"}
+                onPress={desktop.online && connectingDesktopID !== desktop.id ? () => void connectAccountDesktop(desktop) : undefined}
+              />
+            ))}
+            <Button label="Refresh desktop list" loading={accountDesktopsLoading} onPress={() => void loadAccountDesktops(account)} variant="secondary" />
+          </Section>
+        ) : null}
 
         <Section title="Connect">
           <Button label="Scan QR code" onPress={() => router.push("/scan" as never)} />

@@ -80,6 +80,23 @@ function formatCapabilities(capabilities: string[]) {
   return capabilities.length ? capabilities.join(", ") : "No capabilities recorded"
 }
 
+function formatCloudRelayDetail(status: DesktopMobileBridgeStatus | null) {
+  if (!status?.cloudRelay.enabled) return status?.cloudRelay.lastError ?? "Not configured"
+  const baseUrl = status.cloudRelay.baseUrl ?? "Relay URL unavailable"
+  const account = status.cloudRelay.account ?? { state: "unknown" as const }
+  const accountLabel =
+    account.state === "connected"
+      ? account.email
+        ? `Account discovery: ${account.email}`
+        : "Account discovery enabled"
+      : account.state === "not_connected"
+        ? "Sign in to Anybox Provider for no-scan discovery"
+        : account.state === "error"
+          ? account.lastError ?? "Account discovery unavailable"
+          : "Account discovery unknown"
+  return `${baseUrl} - ${accountLabel}`
+}
+
 export function MobileConnectionPage() {
   const [status, setStatus] = useState<DesktopMobileBridgeStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -243,7 +260,7 @@ export function MobileConnectionPage() {
           <article className="mobile-connection-card">
             <span className="settings-field-label">Cloud relay</span>
             <strong>{status?.cloudRelay.state ?? "disabled"}</strong>
-            <small>{status?.cloudRelay.baseUrl ?? status?.cloudRelay.lastError ?? "Not configured"}</small>
+            <small>{formatCloudRelayDetail(status)}</small>
           </article>
         </section>
 

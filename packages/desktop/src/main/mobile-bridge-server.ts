@@ -87,6 +87,18 @@ interface MobileDevicesDocument {
   devices: MobileDeviceRecord[]
 }
 
+interface AnyboxProviderRelaySession {
+  connected: boolean
+  status: string
+  accessToken?: string
+  baseURL?: string
+  expiresAt?: number
+  account?: {
+    email?: string
+    workspaceName?: string
+  }
+}
+
 interface MobilePairingCode {
   code: string
   createdAt: number
@@ -154,6 +166,19 @@ function readBridgeTunnelTarget() {
 
 function shouldStartBridgeTunnel() {
   return Boolean(readBridgePublicBaseUrl()) && !isDisabledEnvValue(process.env[MOBILE_BRIDGE_TUNNEL_ENV])
+}
+
+async function getAnyboxProviderRelaySession() {
+  const result = await requestAgentJSON<AnyboxProviderRelaySession>("/api/providers/anybox/auth/relay-session")
+  const session = result.data
+  if (!session.connected || !session.accessToken) return null
+  return {
+    accessToken: session.accessToken,
+    baseUrl: session.baseURL,
+    email: session.account?.email,
+    workspaceName: session.account?.workspaceName,
+    expiresAt: session.expiresAt,
+  }
 }
 
 function createBridgeToken() {
@@ -1232,6 +1257,7 @@ export async function getMobileBridgeStatus(): Promise<MobileBridgeStatus> {
     capabilities: DEFAULT_MOBILE_DEVICE_CAPABILITIES,
     getBridgeToken: () => bridgeToken,
     getLocalBridgeBaseUrl: () => (bridgePort ? `http://127.0.0.1:${bridgePort}` : null),
+    getAccountSession: getAnyboxProviderRelaySession,
   })
   const pairingCode = port ? getCurrentPairingCode() : null
   const publicBaseUrl = port ? readBridgePublicBaseUrl() : null

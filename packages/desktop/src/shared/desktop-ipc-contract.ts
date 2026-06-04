@@ -621,6 +621,15 @@ export interface DesktopCloudRelayStatus {
   pairingExpiresAt: number | null
   pairingDeepLink: string | null
   connectedAt: number | null
+  account: DesktopCloudRelayAccountStatus
+  lastError?: string
+}
+
+export interface DesktopCloudRelayAccountStatus {
+  state: "unknown" | "not_connected" | "connected" | "error"
+  email?: string
+  workspaceName?: string
+  expiresAt?: number
   lastError?: string
 }
 

@@ -469,6 +469,31 @@ export async function getProviderAuth(providerID: string) {
   return readProviderAuthState(providerID)
 }
 
+export async function getAnyboxProviderRelaySession() {
+  const runtimeAuth = await ProviderAuth.resolveProviderRuntimeAuth("anybox", {}, {})
+  const baseURL = runtimeAuth.runtimeBaseURL
+  const account = runtimeAuth.authState.account
+
+  if (!runtimeAuth.apiKey || runtimeAuth.authState.status !== "connected") {
+    return {
+      connected: false,
+      status: runtimeAuth.authState.status,
+      ...(baseURL ? { baseURL } : {}),
+      ...(account ? { account } : {}),
+      ...(runtimeAuth.authState.lastError ? { error: runtimeAuth.authState.lastError } : {}),
+    }
+  }
+
+  return {
+    connected: true,
+    status: runtimeAuth.authState.status,
+    accessToken: runtimeAuth.apiKey,
+    ...(baseURL ? { baseURL } : {}),
+    ...(account ? { account } : {}),
+    ...(runtimeAuth.authState.expiresAt ? { expiresAt: runtimeAuth.authState.expiresAt } : {}),
+  }
+}
+
 function classifyProviderConnectionError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   if (error instanceof AnyboxHTTP.AnyboxHTTPError) {

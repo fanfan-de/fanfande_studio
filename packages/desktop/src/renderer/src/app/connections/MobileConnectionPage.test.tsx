@@ -34,6 +34,9 @@ function createMobileBridgeStatus(overrides: Partial<DesktopMobileBridgeStatus> 
       pairingExpiresAt: null,
       pairingDeepLink: null,
       connectedAt: null,
+      account: {
+        state: "unknown",
+      },
     },
     ...overrides,
   }

@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Anybox Mobile Canvas Mockup</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #ededec;
+        color: #151515;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(237, 237, 236, 0.94)),
+          #ededec;
+      }
+
+      main {
+        display: grid;
+        gap: 18px;
+        margin: 0 auto;
+        max-width: 1680px;
+        padding: 24px;
+      }
+
+      .toolbar {
+        align-items: center;
+        display: flex;
+        gap: 16px;
+        justify-content: space-between;
+      }
+
+      .title {
+        display: grid;
+        gap: 4px;
+      }
+
+      h1,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 18px;
+        font-weight: 760;
+        letter-spacing: 0;
+      }
+
+      p {
+        color: #5f605b;
+        font-size: 13px;
+        line-height: 18px;
+      }
+
+      a,
+      button {
+        align-items: center;
+        background: #151515;
+        border: 0;
+        border-radius: 8px;
+        color: #ffffff;
+        cursor: pointer;
+        display: inline-flex;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        min-height: 36px;
+        padding: 0 12px;
+        text-decoration: none;
+      }
+
+      button.secondary {
+        background: rgba(21, 21, 21, 0.07);
+        color: #151515;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .stage {
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(21, 21, 21, 0.08);
+        border-radius: 8px;
+        overflow: auto;
+        padding: 16px;
+      }
+
+      canvas {
+        display: block;
+        height: auto;
+        max-width: 100%;
+      }
+
+      @media (max-width: 720px) {
+        main {
+          padding: 16px;
+        }
+
+        .toolbar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .actions {
+          justify-content: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="toolbar">
+        <div class="title">
+          <h1>Anybox Mobile canvas mockup</h1>
+          <p>Connected dashboard, pairing setup, approval decision, and active chat direction.</p>
+        </div>
+        <div class="actions">
+          <button type="button" class="secondary" id="toggle-theme">Toggle dark preview</button>
+          <button type="button" id="download-png">Download PNG</button>
+        </div>
+      </div>
+      <div class="stage">
+        <canvas id="mockup" width="1620" height="980" aria-label="Anybox Mobile interface mockups"></canvas>
+      </div>
+    </main>
+
+    <script>
+      const canvas = document.querySelector("#mockup");
+      const ctx = canvas.getContext("2d");
+      const exportButton = document.querySelector("#download-png");
+      const themeButton = document.querySelector("#toggle-theme");
+      let darkPreview = false;
+
+      const palette = {
+        paper: "#f7f7f4",
+        paperAlt: "#eeeee9",
+        surface: "#ffffff",
+        surfaceRaised: "#fbfbf8",
+        text: "#151515",
+        muted: "#676760",
+        soft: "#8b8b84",
+        line: "#e5e3dc",
+        lineStrong: "#d2d0c7",
+        ink: "#151515",
+        success: "#155c34",
+        successBg: "#edf8ef",
+        danger: "#9d1c1f",
+        dangerBg: "#fff0f0",
+        warn: "#8a5a00",
+        warnBg: "#fff5dd",
+        live: "#245a86",
+        liveBg: "#eaf3f8",
+      };
+
+      const darkPalette = {
+        paper: "#171816",
+        paperAlt: "#20211f",
+        surface: "#242521",
+        surfaceRaised: "#2b2c27",
+        text: "#f5f5ef",
+        muted: "#b7b7ae",
+        soft: "#8e8f87",
+        line: "#3a3b35",
+        lineStrong: "#515248",
+        ink: "#f5f5ef",
+        success: "#7ac78d",
+        successBg: "#193521",
+        danger: "#ff9f9f",
+        dangerBg: "#3b1f1f",
+        warn: "#f0c46c",
+        warnBg: "#3a2e16",
+        live: "#8bc3e6",
+        liveBg: "#183142",
+      };
+
+      function colors() {
+        return darkPreview ? darkPalette : palette;
+      }
+
+      function rr(x, y, w, h, r) {
+        const radius = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.arcTo(x + w, y, x + w, y + h, radius);
+        ctx.arcTo(x + w, y + h, x, y + h, radius);
+        ctx.arcTo(x, y + h, x, y, radius);
+        ctx.arcTo(x, y, x + w, y, radius);
+        ctx.closePath();
+      }
+
+      function fillRound(x, y, w, h, r, fill, stroke, lineWidth = 1) {
+        rr(x, y, w, h, r);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        if (stroke) {
+          ctx.strokeStyle = stroke;
+          ctx.lineWidth = lineWidth;
+          ctx.stroke();
+        }
+      }
+
+      function text(value, x, y, size, weight = 500, color = colors().text, align = "left") {
+        ctx.fillStyle = color;
+        ctx.font = `${weight} ${size}px Inter, Segoe UI, Arial, sans-serif`;
+        ctx.textAlign = align;
+        ctx.textBaseline = "top";
+        ctx.fillText(value, x, y);
+      }
+
+      function clippedText(value, x, y, maxWidth, size, weight = 500, color = colors().text) {
+        ctx.fillStyle = color;
+        ctx.font = `${weight} ${size}px Inter, Segoe UI, Arial, sans-serif`;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        const ellipsis = "...";
+        let next = value;
+        while (ctx.measureText(next).width > maxWidth && next.length > 4) {
+          next = next.slice(0, -2);
+        }
+        if (next !== value) next = next.slice(0, -ellipsis.length) + ellipsis;
+        ctx.fillText(next, x, y);
+      }
+
+      function paragraph(lines, x, y, size, lineHeight, color = colors().muted, weight = 500) {
+        lines.forEach((line, index) => text(line, x, y + index * lineHeight, size, weight, color));
+      }
+
+      function dot(x, y, color, radius = 4) {
+        ctx.beginPath();
+        ctx.fillStyle = color;
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function phoneShell(x, y, title, caption) {
+        const c = colors();
+        fillRound(x, y, 360, 808, 42, "#10110f", "#10110f");
+        fillRound(x + 10, y + 10, 340, 788, 34, c.paper, "#000000");
+        fillRound(x + 123, y + 21, 114, 24, 12, darkPreview ? "#10110f" : "#151515");
+        ctx.save();
+        rr(x + 10, y + 10, 340, 788, 34);
+        ctx.clip();
+        fillRound(x + 10, y + 10, 340, 70, 0, c.paper, null);
+        text("9:41", x + 30, y + 28, 12, 760, c.text);
+        text("5G", x + 288, y + 28, 11, 760, c.muted);
+        dot(x + 324, y + 34, c.text, 4);
+        text(title, x + 30, y + 56, 26, 820, c.text);
+        text(caption, x + 30, y + 88, 12, 650, c.muted);
+        ctx.restore();
+      }
+
+      function bottomNav(x, y, active) {
+        const c = colors();
+        const navY = y + 724;
+        fillRound(x + 10, navY, 340, 74, 0, c.surface, c.line);
+        const items = [
+          ["Home", "H"],
+          ["Work", "W"],
+          ["Approve", "A"],
+          ["Chat", "C"],
+        ];
+        items.forEach((item, index) => {
+          const cx = x + 52 + index * 84;
+          const isActive = item[0] === active;
+          fillRound(cx - 18, navY + 12, 36, 30, 8, isActive ? c.ink : "transparent");
+          text(item[1], cx, navY + 19, 11, 800, isActive ? c.paper : c.muted, "center");
+          text(item[0], cx, navY + 47, 10, 700, isActive ? c.text : c.muted, "center");
+        });
+      }
+
+      function sectionTitle(label, meta, x, y) {
+        const c = colors();
+        text(label, x, y, 15, 790, c.text);
+        if (meta) text(meta, x + 300, y + 2, 12, 720, c.muted, "right");
+      }
+
+      function button(label, x, y, w, variant = "primary") {
+        const c = colors();
+        const fill =
+          variant === "primary"
+            ? c.ink
+            : variant === "danger"
+              ? c.danger
+              : darkPreview
+                ? "rgba(255,255,255,0.08)"
+                : "rgba(21,21,21,0.07)";
+        const color = variant === "secondary" ? c.text : c.paper;
+        fillRound(x, y, w, 42, 8, fill, null);
+        text(label, x + w / 2, y + 12, 13, 760, color, "center");
+      }
+
+      function stateCard(title, detail, x, y, w, tone = "neutral") {
+        const c = colors();
+        const toneColor = tone === "success" ? c.success : tone === "danger" ? c.danger : tone === "live" ? c.live : c.muted;
+        const fill = tone === "success" ? c.successBg : tone === "danger" ? c.dangerBg : tone === "live" ? c.liveBg : c.surface;
+        fillRound(x, y, w, detail ? 74 : 54, 8, fill, tone === "neutral" ? c.line : toneColor + "55");
+        dot(x + 15, y + 18, toneColor, 4);
+        text(title, x + 27, y + 12, 13, 820, toneColor);
+        if (detail) clippedText(detail, x + 15, y + 40, w - 30, 12, 560, c.muted);
+      }
+
+      function listRow(title, subtitle, meta, x, y, w, tone = "neutral") {
+        const c = colors();
+        fillRound(x, y, w, subtitle ? 68 : 52, 8, c.surface, c.line);
+        clippedText(title, x + 14, y + 13, w - 94, 14, 760, c.text);
+        if (meta) text(meta, x + w - 14, y + 15, 11, 720, tone === "danger" ? c.danger : c.muted, "right");
+        if (subtitle) clippedText(subtitle, x + 14, y + 39, w - 28, 12, 520, c.muted);
+      }
+
+      function miniMetric(label, value, x, y, w, color) {
+        const c = colors();
+        fillRound(x, y, w, 64, 8, c.surface, c.line);
+        text(value, x + 14, y + 10, 22, 830, color);
+        text(label, x + 14, y + 40, 11, 680, c.muted);
+      }
+
+      function drawSetup(x, y) {
+        const c = colors();
+        phoneShell(x, y, "Anybox", "Pair this phone with a desktop");
+        const sx = x + 30;
+        let top = y + 118;
+        stateCard("Provider account ready", "cody@example.com - Studio", sx, top, 300, "success");
+        top += 96;
+        sectionTitle("Desktop devices", "2", sx, top);
+        top += 30;
+        listRow("Studio Desktop 0.2.2", "Available through Anybox Provider relay", "Online", sx, top, 300);
+        top += 78;
+        listRow("Home Workstation", "Last seen 18m ago", "Offline", sx, top, 300);
+        top += 96;
+        sectionTitle("Connect", null, sx, top);
+        top += 30;
+        fillRound(sx, top, 300, 188, 8, c.surface, c.line);
+        fillRound(sx + 54, top + 26, 192, 116, 8, c.paperAlt, c.lineStrong);
+        for (let row = 0; row < 5; row += 1) {
+          for (let col = 0; col < 7; col += 1) {
+            if ((row + col) % 2 === 0 || row === 0 || col === 6) {
+              fillRound(sx + 75 + col * 20, top + 43 + row * 16, 9, 9, 2, c.text);
+            }
+          }
+        }
+        text("Scan desktop QR", sx + 150, top + 152, 13, 800, c.text, "center");
+        top += 212;
+        button("Scan QR code", sx, top, 300);
+        button("Advanced URL login", sx, top + 52, 300, "secondary");
+      }
+
+      function drawHome(x, y) {
+        const c = colors();
+        phoneShell(x, y, "Command center", "Live desktop bridge");
+        const sx = x + 30;
+        let top = y + 118;
+        fillRound(sx, top, 300, 122, 8, c.surfaceRaised, c.line);
+        text("Fanfande Desktop", sx + 16, top + 15, 18, 840, c.text);
+        text("0.2.2 - paired device - 7 capabilities", sx + 16, top + 44, 12, 560, c.muted);
+        dot(sx + 18, top + 84, c.success, 5);
+        text("Live updates connected", sx + 31, top + 78, 12, 760, c.success);
+        button("Refresh", sx + 176, top + 70, 108, "secondary");
+        top += 146;
+        miniMetric("Workspaces", "4", sx, top, 92, c.live);
+        miniMetric("Approvals", "2", sx + 104, top, 92, c.danger);
+        miniMetric("Chats", "12", sx + 208, top, 92, c.success);
+        top += 88;
+        sectionTitle("Workspaces", "4", sx, top);
+        top += 30;
+        listRow("fanfande_studio", "C:/Projects/fanfande_studio", "8 chats", sx, top, 300);
+        top += 78;
+        listRow("anyboxProvider", "C:/Projects/anyboxProvider", "3 chats", sx, top, 300);
+        top += 96;
+        sectionTitle("Approvals", "2", sx, top);
+        top += 30;
+        listRow("Run deployment check", "PowerShell command requests network access", "high", sx, top, 300, "danger");
+        top += 86;
+        sectionTitle("Recent", "12", sx, top);
+        top += 30;
+        listRow("Mobile release smoke", "fanfande_studio", "4m", sx, top, 300);
+        bottomNav(x, y, "Home");
+      }
+
+      function drawApproval(x, y) {
+        const c = colors();
+        phoneShell(x, y, "Approvals", "Review before the desktop agent continues");
+        const sx = x + 30;
+        let top = y + 118;
+        fillRound(sx, top, 300, 42, 8, darkPreview ? "rgba(255,255,255,0.08)" : "rgba(21,21,21,0.07)");
+        fillRound(sx + 4, top + 4, 144, 34, 7, c.surface, c.line);
+        text("Pending", sx + 76, top + 13, 12, 800, c.text, "center");
+        text("History", sx + 224, top + 13, 12, 760, c.muted, "center");
+        top += 62;
+        sectionTitle("Requests", "2 live", sx, top);
+        top += 30;
+        fillRound(sx, top, 300, 312, 8, c.surface, c.danger);
+        text("Run release script", sx + 14, top + 14, 17, 840, c.text);
+        text("high", sx + 286, top + 17, 12, 840, c.danger, "right");
+        paragraph(
+          ["The desktop agent wants to execute", "a release verification command."],
+          sx + 14,
+          top + 50,
+          12,
+          18,
+          c.muted,
+        );
+        fillRound(sx + 14, top + 99, 272, 78, 8, darkPreview ? "#111210" : "#151515");
+        paragraph(["npm run android:delivery-check", "-- --profile preview"], sx + 28, top + 115, 12, 18, darkPreview ? "#f5f5ef" : "#f7f7f4", 650);
+        text("Workdir", sx + 14, top + 195, 11, 820, c.muted);
+        clippedText("C:/Projects/fanfande_studio/packages/mobile-app", sx + 14, top + 215, 272, 12, 520, c.text);
+        text("Requested 2m ago", sx + 14, top + 242, 12, 650, c.muted);
+        button("Deny", sx + 14, top + 258, 128, "danger");
+        button("Allow", sx + 158, top + 258, 128, "primary");
+        top += 334;
+        listRow("Open app update link", "External browser request", "medium", sx, top, 300);
+        top += 86;
+        stateCard("No hidden auto-approval", "Every command stays explicit on mobile.", sx, top, 300, "neutral");
+        bottomNav(x, y, "Approve");
+      }
+
+      function drawChat(x, y) {
+        const c = colors();
+        phoneShell(x, y, "Mobile release smoke", "Session in fanfande_studio");
+        const sx = x + 30;
+        let top = y + 118;
+        stateCard("Prompt is running", "Messages refresh while the desktop agent works.", sx, top, 300, "live");
+        top += 92;
+        sectionTitle("Tasks", "1 running", sx, top);
+        top += 30;
+        listRow("Verify Android bridge", "Current - check release handoff", "now", sx, top, 300);
+        top += 88;
+        sectionTitle("Messages", "8", sx, top);
+        top += 30;
+        fillRound(sx + 78, top, 222, 82, 8, c.ink, c.ink);
+        text("user", sx + 92, top + 12, 11, 820, c.paperAlt);
+        paragraph(["Please run the mobile smoke", "check and tell me what failed."], sx + 92, top + 34, 13, 19, c.paper, 560);
+        top += 98;
+        fillRound(sx, top, 276, 114, 8, c.surface, c.line);
+        text("assistant", sx + 14, top + 12, 11, 820, c.muted);
+        paragraph(
+          ["The launch smoke passed.", "Delivery check is waiting for", "a connected Android device."],
+          sx + 14,
+          top + 34,
+          13,
+          19,
+          c.text,
+        );
+        top += 134;
+        sectionTitle("Composer", null, sx, top);
+        top += 30;
+        fillRound(sx, top, 300, 102, 8, c.surface, c.line);
+        text("Ask the desktop agent to continue...", sx + 14, top + 14, 13, 520, c.soft);
+        button("Send", sx + 210, top + 118, 90, "primary");
+        button("Stop", sx, top + 118, 90, "danger");
+        button("Resume", sx + 100, top + 118, 96, "secondary");
+        bottomNav(x, y, "Chat");
+      }
+
+      function drawLegend() {
+        const c = colors();
+        text("Design direction", 48, 42, 24, 850, c.text);
+        paragraph(
+          [
+            "Quiet mobile workbench with explicit trust moments, dense scan-friendly rows, and small native controls.",
+            "The proposal keeps the current Expo surface language while adding a clearer bottom-level information model.",
+          ],
+          48,
+          78,
+          14,
+          22,
+          c.muted,
+        );
+        const notes = [
+          ["Connection", c.success, "Bridge and account status stay first, with QR setup as the primary empty state."],
+          ["Decision", c.danger, "Approval screens prioritize risk, command, workdir, and paired action buttons."],
+          ["Continuity", c.live, "Live state is visible without turning every status into a text badge."],
+          ["Density", c.warn, "Rows remain compact and stable so long paths do not disturb layout."],
+        ];
+        notes.forEach(([label, color, body], index) => {
+          const x = 48 + index * 374;
+          const y = 878;
+          fillRound(x, y, 330, 64, 8, c.surface, c.line);
+          dot(x + 18, y + 18, color, 5);
+          text(label, x + 32, y + 12, 13, 820, c.text);
+          clippedText(body, x + 32, y + 36, 278, 12, 520, c.muted);
+        });
+      }
+
+      function draw() {
+        const c = colors();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = darkPreview ? "#10110f" : "#ededec";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawLegend();
+        drawSetup(48, 142);
+        drawHome(430, 142);
+        drawApproval(812, 142);
+        drawChat(1194, 142);
+        ctx.strokeStyle = c.line;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(48, 850);
+        ctx.lineTo(1572, 850);
+        ctx.stroke();
+      }
+
+      exportButton.addEventListener("click", () => {
+        const link = document.createElement("a");
+        link.download = darkPreview ? "anybox-mobile-dark-mockup.png" : "anybox-mobile-mockup.png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      });
+
+      themeButton.addEventListener("click", () => {
+        darkPreview = !darkPreview;
+        draw();
+      });
+
+      draw();
+    </script>
+  </body>
+</html>

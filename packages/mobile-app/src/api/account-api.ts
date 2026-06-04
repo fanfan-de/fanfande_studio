@@ -1,4 +1,5 @@
 import Constants from "expo-constants"
+import type { MobilePairResult } from "@/api/mobile-api"
 
 export const DEFAULT_ACCOUNT_RELAY_BASE_URL = "https://anybox.com.cn"
 
@@ -34,6 +35,18 @@ export interface MobileAccountRegistration {
   workspace?: MobileAccountWorkspace
   verificationEmailSent?: boolean
   emailVerificationRequired?: boolean
+}
+
+export interface MobileAccountRelayDesktop {
+  id: string
+  name: string
+  appVersion?: string
+  online: boolean
+  capabilities: string[]
+  pairingExpiresAt: number | null
+  connectedAt?: number
+  lastSeenAt: number
+  accountBound?: boolean
 }
 
 interface AccountAuthInput {
@@ -148,6 +161,26 @@ export async function logoutAccount(baseUrlInput: string, token: string) {
   })
 }
 
+export async function listAccountRelayDesktops(account: MobileAccountSession) {
+  const value = await requestAccount<unknown>(account.baseUrl, "/api/relay/desktops", {
+    headers: {
+      authorization: `Bearer ${account.token}`,
+    },
+  })
+  return normalizeAccountRelayDesktops(value)
+}
+
+export async function connectAccountRelayDesktop(account: MobileAccountSession, desktopID: string, name = "Anybox Android") {
+  const value = await requestAccount<unknown>(account.baseUrl, `/api/relay/desktops/${encodeURIComponent(desktopID)}/connect`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${account.token}`,
+    },
+    body: JSON.stringify({ name }),
+  })
+  return normalizeAccountRelayPairResult(value)
+}
+
 async function requestAccount<T>(baseUrl: string, path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
@@ -215,6 +248,61 @@ function normalizeAccountRegistration(value: unknown): MobileAccountRegistration
     ...(workspace ? { workspace } : {}),
     ...(typeof record?.verificationEmailSent === "boolean" ? { verificationEmailSent: record.verificationEmailSent } : {}),
     ...(typeof record?.emailVerificationRequired === "boolean" ? { emailVerificationRequired: record.emailVerificationRequired } : {}),
+  }
+}
+
+function normalizeAccountRelayDesktops(value: unknown): MobileAccountRelayDesktop[] {
+  const rows = Array.isArray(value) ? value : []
+  return rows
+    .map((row) => normalizeAccountRelayDesktop(row))
+    .filter((desktop): desktop is MobileAccountRelayDesktop => Boolean(desktop))
+}
+
+function normalizeAccountRelayDesktop(value: unknown): MobileAccountRelayDesktop | null {
+  const record = readRecord(value)
+  const id = readString(record?.id)
+  const name = readString(record?.name)
+  if (!id || !name) return null
+  const appVersion = readString(record?.appVersion)
+  const capabilities = Array.isArray(record?.capabilities)
+    ? record.capabilities.filter((capability): capability is string => typeof capability === "string" && capability.trim().length > 0)
+    : []
+  return {
+    id,
+    name,
+    ...(appVersion ? { appVersion } : {}),
+    online: record?.online === true,
+    capabilities,
+    pairingExpiresAt: typeof record?.pairingExpiresAt === "number" ? record.pairingExpiresAt : null,
+    ...(typeof record?.connectedAt === "number" ? { connectedAt: record.connectedAt } : {}),
+    lastSeenAt: typeof record?.lastSeenAt === "number" ? record.lastSeenAt : 0,
+    ...(typeof record?.accountBound === "boolean" ? { accountBound: record.accountBound } : {}),
+  }
+}
+
+function normalizeAccountRelayPairResult(value: unknown): MobilePairResult {
+  const record = readRecord(value)
+  const token = readString(record?.token)
+  const device = readRecord(record?.device)
+  const desktop = normalizeAccountRelayDesktop(record?.desktop)
+  const deviceID = readString(device?.id)
+  const deviceName = readString(device?.name)
+  if (!token || !deviceID || !desktop) {
+    throw new AccountApiError("Relay connection response did not include a mobile token, device, and desktop.", 0, "INVALID_RELAY_RESPONSE")
+  }
+  return {
+    token,
+    desktopID: desktop.id,
+    desktop,
+    device: {
+      id: deviceID,
+      name: deviceName ?? "Anybox Mobile",
+      createdAt: typeof device?.createdAt === "number" ? device.createdAt : Date.now(),
+      lastSeenAt: typeof device?.lastSeenAt === "number" ? device.lastSeenAt : Date.now(),
+      capabilities: Array.isArray(device?.capabilities)
+        ? device.capabilities.filter((capability): capability is string => typeof capability === "string" && capability.trim().length > 0)
+        : desktop.capabilities,
+    },
   }
 }
 

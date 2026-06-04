@@ -43,6 +43,10 @@ export function SettingsRoutes() {
     return ok(c, await SettingsUseCase.updateModelSelection(payload))
   })
 
+  app.get("/providers/anybox/auth/relay-session", async (c) =>
+    ok(c, await SettingsUseCase.getAnyboxProviderRelaySession()),
+  )
+
   app.get("/providers/:providerID/auth", async (c) =>
     ok(c, await SettingsUseCase.getProviderAuth(c.req.param("providerID"))),
   )
