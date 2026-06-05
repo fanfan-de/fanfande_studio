@@ -1,5 +1,6 @@
 import React from "react"
 import { Text, View } from "react-native"
+import { theme, type ThemeTone } from "@/theme"
 
 export function StateCard({
   title,
@@ -8,27 +9,40 @@ export function StateCard({
 }: {
   title: string
   detail?: string
-  tone?: "neutral" | "success" | "danger"
+  tone?: ThemeTone
 }) {
-  const color = tone === "success" ? "#155c34" : tone === "danger" ? "#8f1f1f" : "#4d4d49"
-  const backgroundColor = tone === "success" ? "#edf8ef" : tone === "danger" ? "#fff0f0" : "#ffffff"
+  const toneColors = theme.colors.status[tone]
 
   return (
     <View
       style={{
-        backgroundColor,
-        borderColor: tone === "neutral" ? "#e5e3dc" : `${color}33`,
-        borderRadius: 8,
+        backgroundColor: toneColors.background,
+        borderColor: toneColors.border,
+        borderRadius: theme.radius.sm,
         borderWidth: 1,
-        gap: 6,
-        padding: 14,
+        gap: theme.spacing.sm,
+        padding: theme.spacing.xxl,
       }}
     >
-      <Text selectable style={{ color, fontSize: 15, fontWeight: "800" }}>
+      <Text
+        selectable
+        style={{
+          color: toneColors.text,
+          fontSize: theme.typography.size.md,
+          fontWeight: theme.typography.weight.heavy,
+        }}
+      >
         {title}
       </Text>
       {detail ? (
-        <Text selectable style={{ color: "#676760", fontSize: 13, lineHeight: 18 }}>
+        <Text
+          selectable
+          style={{
+            color: theme.colors.textMuted,
+            fontSize: theme.typography.size.sm,
+            lineHeight: theme.typography.lineHeight.sm,
+          }}
+        >
           {detail}
         </Text>
       ) : null}

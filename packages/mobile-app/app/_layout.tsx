@@ -5,6 +5,7 @@ import { AccountProvider } from "@/state/account"
 import { ConnectionProvider } from "@/state/connection"
 import { FocusProvider } from "@/state/focus"
 import { UpdateGate } from "@/components/update-gate"
+import { theme } from "@/theme"
 
 export default function RootLayout() {
   return (
@@ -15,7 +16,7 @@ export default function RootLayout() {
           <StatusBar style="auto" />
           <Stack
             screenOptions={{
-              contentStyle: { backgroundColor: "#f7f7f4" },
+              contentStyle: { backgroundColor: theme.colors.canvas },
               headerShadowVisible: false,
             }}
           >

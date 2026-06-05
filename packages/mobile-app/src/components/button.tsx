@@ -1,5 +1,6 @@
 import React from "react"
 import { ActivityIndicator, Pressable, Text } from "react-native"
+import { theme } from "@/theme"
 
 interface ButtonProps {
   label: string
@@ -9,11 +10,24 @@ interface ButtonProps {
   variant?: "primary" | "secondary" | "danger"
 }
 
+const buttonVariantStyles = {
+  primary: {
+    backgroundColor: theme.colors.actionPrimary,
+    color: theme.colors.textInverted,
+  },
+  secondary: {
+    backgroundColor: theme.colors.actionSecondary,
+    color: theme.colors.text,
+  },
+  danger: {
+    backgroundColor: theme.colors.actionDanger,
+    color: theme.colors.textInverted,
+  },
+} as const
+
 export function Button({ label, onPress, disabled, loading, variant = "primary" }: ButtonProps) {
   const isDisabled = disabled || loading
-  const backgroundColor =
-    variant === "primary" ? "#151515" : variant === "danger" ? "#9d1c1f" : "rgba(21, 21, 21, 0.06)"
-  const color = variant === "secondary" ? "#151515" : "#ffffff"
+  const variantStyle = buttonVariantStyles[variant]
 
   return (
     <Pressable
@@ -22,19 +36,27 @@ export function Button({ label, onPress, disabled, loading, variant = "primary" 
       onPress={onPress}
       style={({ pressed }) => ({
         alignItems: "center",
-        backgroundColor,
-        borderRadius: 8,
+        backgroundColor: variantStyle.backgroundColor,
+        borderRadius: theme.radius.sm,
         flexDirection: "row",
-        gap: 8,
+        gap: theme.spacing.md,
         justifyContent: "center",
         minHeight: 46,
-        opacity: isDisabled ? 0.52 : pressed ? 0.82 : 1,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+        opacity: isDisabled ? theme.opacity.disabled : pressed ? theme.opacity.pressedStrong : 1,
+        paddingHorizontal: theme.spacing.screen,
+        paddingVertical: theme.spacing.xl,
       })}
     >
-      {loading ? <ActivityIndicator color={color} /> : null}
-      <Text style={{ color, fontSize: 16, fontWeight: "700" }}>{label}</Text>
+      {loading ? <ActivityIndicator color={variantStyle.color} /> : null}
+      <Text
+        style={{
+          color: variantStyle.color,
+          fontSize: theme.typography.size.lg,
+          fontWeight: theme.typography.weight.bold,
+        }}
+      >
+        {label}
+      </Text>
     </Pressable>
   )
 }

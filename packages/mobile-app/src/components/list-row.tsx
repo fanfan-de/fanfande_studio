@@ -1,5 +1,6 @@
 import React from "react"
 import { Pressable, Text, View } from "react-native"
+import { theme } from "@/theme"
 
 interface ListRowProps {
   title: string
@@ -19,27 +20,49 @@ export function ListRow({ title, subtitle, meta, onPress }: ListRowProps) {
       disabled={!onPress}
       onPress={onPress}
       style={({ pressed }) => ({
-        backgroundColor: "#ffffff",
-        borderColor: "#e5e3dc",
-        borderRadius: 8,
+        backgroundColor: theme.colors.surface,
+        borderColor: theme.colors.border,
+        borderRadius: theme.radius.sm,
         borderWidth: 1,
-        gap: 8,
-        opacity: pressed ? 0.78 : 1,
-        padding: 14,
+        gap: theme.spacing.md,
+        opacity: pressed ? theme.opacity.pressed : 1,
+        padding: theme.spacing.xxl,
       })}
     >
-      <View style={{ flexDirection: "row", gap: 12, justifyContent: "space-between" }}>
-        <Text selectable={selectable} style={{ color: "#151515", flex: 1, fontSize: 16, fontWeight: "700" }}>
+      <View style={{ flexDirection: "row", gap: theme.spacing.xl, justifyContent: "space-between" }}>
+        <Text
+          selectable={selectable}
+          style={{
+            color: theme.colors.text,
+            flex: 1,
+            fontSize: theme.typography.size.lg,
+            fontWeight: theme.typography.weight.bold,
+          }}
+        >
           {title}
         </Text>
         {meta ? (
-          <Text selectable={selectable} style={{ color: "#676760", fontSize: 13, fontVariant: ["tabular-nums"] }}>
+          <Text
+            selectable={selectable}
+            style={{
+              color: theme.colors.textMuted,
+              fontSize: theme.typography.size.sm,
+              fontVariant: ["tabular-nums"],
+            }}
+          >
             {meta}
           </Text>
         ) : null}
       </View>
       {subtitle ? (
-        <Text selectable={selectable} style={{ color: "#676760", fontSize: 13, lineHeight: 18 }}>
+        <Text
+          selectable={selectable}
+          style={{
+            color: theme.colors.textMuted,
+            fontSize: theme.typography.size.sm,
+            lineHeight: theme.typography.lineHeight.sm,
+          }}
+        >
           {subtitle}
         </Text>
       ) : null}

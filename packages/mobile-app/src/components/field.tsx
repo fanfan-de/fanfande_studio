@@ -1,5 +1,6 @@
 import React from "react"
 import { Text, TextInput, View, type KeyboardTypeOptions } from "react-native"
+import { theme } from "@/theme"
 
 interface FieldProps {
   label: string
@@ -13,8 +14,16 @@ interface FieldProps {
 
 export function Field({ label, value, onChangeText, placeholder, secureTextEntry, multiline, keyboardType }: FieldProps) {
   return (
-    <View style={{ gap: 8 }}>
-      <Text style={{ color: "#4d4d49", fontSize: 13, fontWeight: "700" }}>{label}</Text>
+    <View style={{ gap: theme.spacing.md }}>
+      <Text
+        style={{
+          color: theme.colors.textSubtle,
+          fontSize: theme.typography.size.sm,
+          fontWeight: theme.typography.weight.bold,
+        }}
+      >
+        {label}
+      </Text>
       <TextInput
         autoCapitalize="none"
         autoCorrect={false}
@@ -22,18 +31,18 @@ export function Field({ label, value, onChangeText, placeholder, secureTextEntry
         multiline={multiline}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#8b8b84"
+        placeholderTextColor={theme.colors.textPlaceholder}
         secureTextEntry={secureTextEntry}
         style={{
-          backgroundColor: "#ffffff",
-          borderColor: "#deded8",
-          borderRadius: 8,
+          backgroundColor: theme.colors.surface,
+          borderColor: theme.colors.borderStrong,
+          borderRadius: theme.radius.sm,
           borderWidth: 1,
-          color: "#151515",
-          fontSize: 16,
+          color: theme.colors.text,
+          fontSize: theme.typography.size.lg,
           minHeight: multiline ? 110 : 48,
-          paddingHorizontal: 14,
-          paddingVertical: multiline ? 12 : 10,
+          paddingHorizontal: theme.spacing.xxl,
+          paddingVertical: multiline ? theme.spacing.xl : theme.spacing.lg,
           textAlignVertical: multiline ? "top" : "center",
         }}
         value={value}
