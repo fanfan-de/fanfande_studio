@@ -53,7 +53,7 @@ export default function AccountScreen() {
 
       await loginWithEmail({ baseUrl, email, password })
       setPassword("")
-      setMessage("Signed in.")
+      router.replace("/")
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Account request failed.")
     } finally {
