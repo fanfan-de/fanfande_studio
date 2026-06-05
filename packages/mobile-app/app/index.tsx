@@ -21,7 +21,6 @@ import {
   getMessages,
   getStatus,
   getWorkspaces,
-  isRelayConnection,
   normalizeConnectionInput,
   readConnectionUrlFromDeepLink,
   sendPrompt,
@@ -120,7 +119,7 @@ export default function HomeScreen() {
 
   useMobileEvents({
     connection,
-    enabled: Boolean(connection && !isRelayConnection(connection)),
+    enabled: Boolean(connection),
     onEvent: () => void load({ silent: true }),
   })
 

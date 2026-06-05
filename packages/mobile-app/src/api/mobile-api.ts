@@ -607,11 +607,22 @@ export async function revokeCurrentDevice(connection: MobileConnection) {
 }
 
 export function mobileEventsURL(connection: MobileConnection) {
+  return mobileStreamURL(connection, "/api/mobile/events/stream")
+}
+
+export function mobileSessionEventsURL(connection: MobileConnection, sessionID: string) {
+  return mobileStreamURL(connection, `/api/mobile/sessions/${encodeURIComponent(sessionID)}/events/stream`)
+}
+
+export function mobileStreamURL(connection: MobileConnection, path: string) {
   if (isRelayConnection(connection)) {
-    const params = new URLSearchParams({ desktopID: connection.desktopID })
-    return `${connection.baseUrl}/api/relay/events/stream?${params.toString()}`
+    const params = new URLSearchParams({
+      desktopID: connection.desktopID,
+      path,
+    })
+    return `${connection.baseUrl}/api/relay/mobile/stream?${params.toString()}`
   }
-  return `${connection.baseUrl}/api/mobile/events/stream`
+  return `${connection.baseUrl}${path}`
 }
 
 export function isRelayConnection(connection: MobileConnection | null | undefined): connection is MobileConnection & { transport: "relay"; desktopID: string } {
@@ -725,17 +736,18 @@ async function requestMobileStream(
   init?: RequestInit,
   callbacks?: MobileStreamCallbacks,
 ) {
+  let response: Response
   if (isRelayConnection(connection)) {
-    throw new MobileApiError("Streaming through the cloud relay is not available yet. Refreshing lists and reading existing sessions are supported.", 501, "STREAM_UNSUPPORTED")
+    response = await requestRelayMobileStream(connection, path, init)
+  } else {
+    response = await fetch(`${connection.baseUrl}${path}`, {
+      ...init,
+      headers: buildHeaders(connection, init?.headers),
+    }).catch((error: unknown) => {
+      const detail = error instanceof Error && error.message ? ` ${error.message}` : ""
+      throw new MobileApiError(`Unable to reach ${connection.baseUrl}. Check that the phone and desktop are on the same network, then refresh the QR code.${detail}`, 0)
+    })
   }
-
-  const response = await fetch(`${connection.baseUrl}${path}`, {
-    ...init,
-    headers: buildHeaders(connection, init?.headers),
-  }).catch((error: unknown) => {
-    const detail = error instanceof Error && error.message ? ` ${error.message}` : ""
-    throw new MobileApiError(`Unable to reach ${connection.baseUrl}. Check that the phone and desktop are on the same network, then refresh the QR code.${detail}`, 0)
-  })
 
   if (!response.ok) {
     const text = await response.text().catch(() => "")
@@ -748,6 +760,27 @@ async function requestMobileStream(
 
   callbacks?.onOpen?.()
   await readMobileSSEStream(response, callbacks)
+}
+
+async function requestRelayMobileStream(
+  connection: MobileConnection & { transport: "relay"; desktopID: string },
+  path: string,
+  init?: RequestInit,
+) {
+  return fetch(`${connection.baseUrl}/api/relay/mobile/stream`, {
+    method: "POST",
+    headers: buildHeaders(connection),
+    body: JSON.stringify({
+      desktopID: connection.desktopID,
+      method: (init?.method ?? "GET").toString().toUpperCase(),
+      path,
+      body: typeof init?.body === "string" ? init.body : undefined,
+      headers: pickRelayRequestHeaders(init?.headers),
+    }),
+  }).catch((error: unknown) => {
+    const detail = error instanceof Error && error.message ? ` ${error.message}` : ""
+    throw new MobileApiError(`Unable to reach ${connection.baseUrl}. Check your network and try again.${detail}`, 0)
+  })
 }
 
 function buildHeaders(connection: MobileConnection, headers?: HeadersInit): HeadersInit {

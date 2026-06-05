@@ -12,6 +12,7 @@ const RELAY_RECONNECT_MIN_MS = 2_000
 const RELAY_RECONNECT_MAX_MS = 30_000
 const RELAY_REQUEST_TIMEOUT_MS = 15_000
 const RELAY_MOBILE_HTTP_TIMEOUT_MS = 60_000
+const RELAY_STREAM_CHUNK_BYTES = 48 * 1024
 
 export interface DesktopCloudRelayStatus {
   enabled: boolean
@@ -98,6 +99,7 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let reconnectDelayMs = RELAY_RECONNECT_MIN_MS
 let stopped = true
 let connectInFlight = false
+const activeMobileStreams = new Map<string, AbortController>()
 
 export function ensureDesktopCloudRelayClientRunning(nextOptions: DesktopCloudRelayClientOptions) {
   options = normalizeOptions(nextOptions)
@@ -149,6 +151,7 @@ export function stopDesktopCloudRelayClient() {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
   }
+  abortActiveMobileStreams()
   socket?.close(1000, "desktop app stopped")
   socket = null
   status = disabledStatus(options?.baseUrl ?? null)
@@ -241,6 +244,7 @@ function openRelaySocket(currentOptions: DesktopCloudRelayClientOptions, identit
   url.searchParams.set("token", identity.token)
 
   const nextSocket = new WebSocket(url.toString())
+  abortActiveMobileStreams()
   socket?.close(4000, "replaced by newer relay socket")
   socket = nextSocket
 
@@ -266,6 +270,7 @@ function openRelaySocket(currentOptions: DesktopCloudRelayClientOptions, identit
 
   nextSocket.addEventListener("error", () => {
     if (socket !== nextSocket) return
+    abortActiveMobileStreams()
     status = {
       ...status,
       state: "error",
@@ -275,6 +280,7 @@ function openRelaySocket(currentOptions: DesktopCloudRelayClientOptions, identit
 
   nextSocket.addEventListener("close", () => {
     if (socket !== nextSocket) return
+    abortActiveMobileStreams()
     socket = null
     status = {
       ...status,
@@ -292,6 +298,16 @@ async function handleRelayMessage(currentSocket: WebSocket, data: MessageEvent["
   if (!command?.id || command.type === "relay.ready") return
 
   try {
+    if (command.type === "mobile.stream") {
+      await relayMobileStream(currentSocket, command)
+      return
+    }
+
+    if (command.type === "mobile.stream.cancel") {
+      sendRelayResult(currentSocket, command, true, cancelRelayMobileStream(command.payload))
+      return
+    }
+
     const payload = command.type === "workspace.list"
       ? readSuccessfulMobileHttpBody(await relayMobileHttp({ method: "GET", path: "/api/mobile/workspaces" }))
       : command.type === "mobile.http"
@@ -349,6 +365,75 @@ async function relayMobileHttp(payload: unknown): Promise<RelayMobileHttpResult>
   }
 }
 
+async function relayMobileStream(currentSocket: WebSocket, command: RelayCommandEnvelope) {
+  const request = parseMobileStreamPayload(command.payload)
+  const currentOptions = options
+  const bridgeBaseUrl = currentOptions?.getLocalBridgeBaseUrl()
+  const bridgeToken = currentOptions?.getBridgeToken()
+  if (!bridgeBaseUrl || !bridgeToken) {
+    throw new RelayCommandError("bridge_unavailable", "Local mobile bridge is not available.")
+  }
+
+  const controller = new AbortController()
+  activeMobileStreams.set(command.id, controller)
+  let opened = false
+
+  try {
+    const response = await fetch(new URL(request.path, bridgeBaseUrl).toString(), {
+      method: request.method,
+      headers: {
+        accept: "text/event-stream, application/json, text/plain",
+        authorization: `Bearer ${bridgeToken}`,
+        "content-type": "application/json",
+        ...request.headers,
+      },
+      body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      throw readRelayStreamResponseError(response.status, await response.text().catch(() => ""))
+    }
+
+    sendRelayStreamOpen(currentSocket, command, response)
+    opened = true
+
+    if (!response.body) {
+      const text = await response.text().catch(() => "")
+      if (text) sendRelayStreamChunk(currentSocket, command, new TextEncoder().encode(text))
+      sendRelayStreamEnd(currentSocket, command, true)
+      return
+    }
+
+    const reader = response.body.getReader()
+    try {
+      while (true) {
+        const chunk = await reader.read()
+        if (chunk.done) break
+        if (chunk.value) sendRelayStreamChunk(currentSocket, command, chunk.value)
+      }
+    } finally {
+      reader.releaseLock()
+    }
+
+    sendRelayStreamEnd(currentSocket, command, true)
+  } catch (error) {
+    const relayError = error instanceof RelayCommandError
+      ? error
+      : new RelayCommandError("desktop_stream_failed", error instanceof Error ? error.message : String(error))
+    if (opened) {
+      sendRelayStreamEnd(currentSocket, command, false, relayError)
+    } else {
+      sendRelayResult(currentSocket, command, false, undefined, {
+        code: relayError.code,
+        message: relayError.message,
+      })
+    }
+  } finally {
+    activeMobileStreams.delete(command.id)
+  }
+}
+
 function parseMobileHttpPayload(payload: unknown) {
   const record = readRecord(payload)
   const method = typeof record?.method === "string" ? record.method.trim().toUpperCase() : "GET"
@@ -372,6 +457,41 @@ function parseMobileHttpPayload(payload: unknown) {
     body: typeof record?.body === "string" ? record.body : undefined,
     headers: safeHeaders,
   }
+}
+
+function parseMobileStreamPayload(payload: unknown) {
+  const request = parseMobileHttpPayload(payload)
+  let parsed: URL
+  try {
+    parsed = new URL(request.path, "http://relay.local")
+  } catch {
+    throw new RelayCommandError("path_forbidden", "Relay mobile stream path is invalid.")
+  }
+  if (parsed.origin !== "http://relay.local" || !parsed.pathname.startsWith("/api/mobile/") || !parsed.pathname.endsWith("/stream")) {
+    throw new RelayCommandError("path_forbidden", "Relay mobile stream path is invalid.")
+  }
+  return request
+}
+
+function cancelRelayMobileStream(payload: unknown) {
+  const record = readRecord(payload)
+  const streamID = typeof record?.streamID === "string" ? record.streamID : ""
+  const controller = streamID ? activeMobileStreams.get(streamID) : undefined
+  if (controller) {
+    controller.abort()
+    activeMobileStreams.delete(streamID)
+  }
+  return {
+    streamID,
+    cancelled: Boolean(controller),
+  }
+}
+
+function abortActiveMobileStreams() {
+  for (const controller of activeMobileStreams.values()) {
+    controller.abort()
+  }
+  activeMobileStreams.clear()
 }
 
 async function unsupportedCommand(type: string): Promise<never> {
@@ -407,6 +527,68 @@ function sendRelayResult(
     ...(payload !== undefined ? { payload } : {}),
     ...(error ? { error } : {}),
   }))
+}
+
+function sendRelayStreamOpen(currentSocket: WebSocket, command: RelayCommandEnvelope, response: Response) {
+  if (currentSocket.readyState !== WebSocket.OPEN) return
+  const headers: Record<string, string> = {}
+  response.headers.forEach((value, key) => {
+    const normalizedKey = key.toLowerCase()
+    if (normalizedKey === "set-cookie" || normalizedKey === "content-length" || normalizedKey === "transfer-encoding") return
+    headers[key] = value
+  })
+  currentSocket.send(JSON.stringify({
+    id: createRelayEventID(),
+    replyTo: command.id,
+    type: "mobile.stream.open",
+    ok: true,
+    payload: {
+      status: response.status,
+      headers,
+    },
+  }))
+}
+
+function sendRelayStreamChunk(currentSocket: WebSocket, command: RelayCommandEnvelope, value: Uint8Array) {
+  if (currentSocket.readyState !== WebSocket.OPEN) return
+  for (let offset = 0; offset < value.byteLength; offset += RELAY_STREAM_CHUNK_BYTES) {
+    const chunk = value.subarray(offset, offset + RELAY_STREAM_CHUNK_BYTES)
+    currentSocket.send(JSON.stringify({
+      id: createRelayEventID(),
+      replyTo: command.id,
+      type: "mobile.stream.chunk",
+      ok: true,
+      payload: {
+        chunk: Buffer.from(chunk).toString("base64"),
+      },
+    }))
+  }
+}
+
+function sendRelayStreamEnd(currentSocket: WebSocket, command: RelayCommandEnvelope, ok: boolean, error?: RelayCommandError) {
+  if (currentSocket.readyState !== WebSocket.OPEN) return
+  currentSocket.send(JSON.stringify({
+    id: createRelayEventID(),
+    replyTo: command.id,
+    type: "mobile.stream.end",
+    ok,
+    ...(error ? {
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    } : {}),
+  }))
+}
+
+function readRelayStreamResponseError(status: number, text: string) {
+  const body = parseJson(text)
+  const record = readRecord(body)
+  const error = readRecord(record?.error)
+  return new RelayCommandError(
+    typeof error?.code === "string" ? error.code : "mobile_stream_failed",
+    typeof error?.message === "string" ? error.message : `Local mobile bridge stream failed with HTTP ${status}.`,
+  )
 }
 
 async function registerDesktop(
