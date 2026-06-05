@@ -121,6 +121,12 @@ function requireConnectedDevice() {
   console.log(`adb device: ${activeDevices[0]?.split(/\s+/)[0]}`)
 }
 
+function prepareInteractiveDevice() {
+  run("adb", ["shell", "input", "keyevent", "224"], { allowFailure: true })
+  run("adb", ["shell", "wm", "dismiss-keyguard"], { allowFailure: true })
+  run("adb", ["shell", "cmd", "statusbar", "collapse"], { allowFailure: true })
+}
+
 function assertApkExists(apkPath) {
   if (!existsSync(apkPath)) {
     throw new Error(`APK not found: ${apkPath}. Build it first with corepack pnpm mobile:android:build:debug`)
@@ -148,10 +154,12 @@ async function waitForReadyUi(packageName, timeoutSeconds) {
 
   while (Date.now() < deadline) {
     await sleep(1000)
+    prepareInteractiveDevice()
     lastHierarchy = dumpWindowHierarchy()
     const isAppWindow = lastHierarchy.includes(`package="${packageName}"`)
     const hasConnectScreen = lastHierarchy.includes('text="Anybox"') && lastHierarchy.includes('text="Connect"')
-    if (isAppWindow && hasConnectScreen) return
+    const hasAccountScreen = lastHierarchy.includes('text="Account"') && lastHierarchy.includes('text="Email sign in"')
+    if (isAppWindow && (hasConnectScreen || hasAccountScreen)) return
   }
 
   const visibleText = [...lastHierarchy.matchAll(/text="([^"]*)"/g)]
@@ -171,9 +179,10 @@ async function main() {
   }
 
   requireConnectedDevice()
+  prepareInteractiveDevice()
   if (!args.skipInstall) {
     assertApkExists(args.apk)
-    run("adb", ["install", "-r", args.apk])
+    run("adb", ["install", "-r", "-g", args.apk])
   }
 
   if (!args.keepData) {
@@ -181,6 +190,7 @@ async function main() {
   }
 
   run("adb", ["logcat", "-c"])
+  prepareInteractiveDevice()
   run("adb", ["shell", "monkey", "-p", args.packageName, "-c", "android.intent.category.LAUNCHER", "1"])
   await waitForReadyUi(args.packageName, args.waitSeconds)
 

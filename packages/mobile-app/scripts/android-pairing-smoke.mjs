@@ -133,13 +133,38 @@ function requireConnectedDevice() {
     throw new Error("No adb device is connected. Start an emulator or connect an Android device with USB debugging enabled.")
   }
 
-  console.log(`adb device: ${activeDevices[0]?.split(/\s+/)[0]}`)
+  const serial = activeDevices[0]?.split(/\s+/)[0] ?? ""
+  console.log(`adb device: ${serial}`)
+  return {
+    isEmulator: serial.startsWith("emulator-"),
+    serial,
+  }
+}
+
+function prepareInteractiveDevice() {
+  run("adb", ["shell", "input", "keyevent", "224"], { allowFailure: true })
+  run("adb", ["shell", "wm", "dismiss-keyguard"], { allowFailure: true })
+  run("adb", ["shell", "cmd", "statusbar", "collapse"], { allowFailure: true })
 }
 
 function assertApkExists(apkPath) {
   if (!existsSync(apkPath)) {
     throw new Error(`APK not found: ${apkPath}. Build it first with corepack pnpm mobile:android:build:debug`)
   }
+}
+
+function androidLocalBridgeUrl(port, device) {
+  if (device.isEmulator) {
+    return `http://10.0.2.2:${port}`
+  }
+
+  run("adb", ["reverse", `tcp:${port}`, `tcp:${port}`])
+  console.log(`adb reverse: tcp:${port} -> tcp:${port}`)
+  return `http://127.0.0.1:${port}`
+}
+
+function removeAndroidReverse(port) {
+  run("adb", ["reverse", "--remove", `tcp:${port}`], { allowFailure: true })
 }
 
 function jsonResponse(response, status, value) {
@@ -567,6 +592,7 @@ async function waitForUi(packageName, timeoutSeconds, expectedTexts, label) {
 
   while (Date.now() < deadline) {
     await sleep(1000)
+    prepareInteractiveDevice()
     lastHierarchy = dumpWindowHierarchy()
     const isAppWindow = lastHierarchy.includes(`package="${packageName}"`)
     const hasExpectedText = expectedTexts.every((text) => lastHierarchy.includes(`text="${text}"`))
@@ -588,6 +614,7 @@ async function waitForUiContaining(packageName, timeoutSeconds, expectedSnippets
 
   while (Date.now() < deadline) {
     await sleep(1000)
+    prepareInteractiveDevice()
     lastHierarchy = dumpWindowHierarchy()
     const isAppWindow = lastHierarchy.includes(`package="${packageName}"`)
     const hasExpectedText = expectedSnippets.every((text) => lastHierarchy.includes(text))
@@ -609,6 +636,7 @@ async function waitForAnyUi(packageName, timeoutSeconds, choices, label) {
 
   while (Date.now() < deadline) {
     await sleep(1000)
+    prepareInteractiveDevice()
     lastHierarchy = dumpWindowHierarchy()
     const isAppWindow = lastHierarchy.includes(`package="${packageName}"`)
     if (isAppWindow) {
@@ -629,12 +657,22 @@ async function waitForAnyUi(packageName, timeoutSeconds, choices, label) {
 }
 
 async function waitForPairedHomeUi(packageName, timeoutSeconds) {
-  return waitForUi(
+  const result = await waitForAnyUi(
     packageName,
     timeoutSeconds,
-    ["Smoke Desktop 0.0.0", "Workspaces", "Smoke Workspace", "Smoke Chat"],
+    [
+      {
+        name: "thread",
+        expectedTexts: ["Smoke Chat", "Ready from mock bridge.", "Send to Smoke Chat"],
+      },
+      {
+        name: "drawer",
+        expectedTexts: ["AnyboxProvider", "Smoke Workspace", "Smoke Chat"],
+      },
+    ],
     "Paired Home",
   )
+  return result.hierarchy
 }
 
 async function waitForReplaceConnectionUi(packageName, timeoutSeconds) {
@@ -647,7 +685,7 @@ async function waitForReplaceConnectionUi(packageName, timeoutSeconds) {
 }
 
 async function waitForConfirmConnectionUi(packageName, timeoutSeconds) {
-  return waitForUi(
+  return waitForUiContaining(
     packageName,
     timeoutSeconds,
     ["Confirm desktop connection", "Smoke Desktop 0.0.0", "Confirm connection"],
@@ -668,7 +706,7 @@ async function waitForSessionUi(packageName, timeoutSeconds) {
   return waitForUi(
     packageName,
     timeoutSeconds,
-    ["Smoke Chat", "Messages", "Composer"],
+    ["Smoke Chat", "Messages", "Stop"],
     "Session",
   )
 }
@@ -695,7 +733,7 @@ async function waitForApprovalClearedUi(packageName, timeoutSeconds) {
   return waitForUi(
     packageName,
     timeoutSeconds,
-    ["No pending approvals", "Messages", "Composer"],
+    ["No pending approvals", "Messages", "Resume"],
     "Approval cleared",
   )
 }
@@ -747,6 +785,7 @@ async function waitForExpectedUiOrNull(packageName, timeoutSeconds, expectedText
 
   while (Date.now() < deadline) {
     await sleep(700)
+    prepareInteractiveDevice()
     lastHierarchy = dumpWindowHierarchy()
     const isAppWindow = lastHierarchy.includes(`package="${packageName}"`)
     const hasExpectedText = expectedTexts.every((text) => lastHierarchy.includes(`text="${text}"`))
@@ -781,6 +820,15 @@ async function tapAccessibilityLabelUntilUi(packageName, label, expectedTexts, t
     .join(", ")
   const suffix = visibleText ? ` Visible text: ${visibleText}` : ""
   throw new Error(`${targetLabel} UI was not visible after tapping ${label}.${suffix}`)
+}
+
+async function openApprovalsFromCurrentUi(packageName, timeoutSeconds, hierarchy) {
+  if (hierarchy.includes('content-desc="2"') || hierarchy.includes('text="2"')) {
+    tapAccessibilityLabel(hierarchy, "2")
+  } else {
+    tapText(hierarchy, "Open approvals")
+  }
+  return waitForGlobalApprovalsUi(packageName, timeoutSeconds)
 }
 
 async function confirmReplaceConnection(packageName, hierarchy) {
@@ -837,14 +885,6 @@ async function scrollTowardTopUntilText(packageName, timeoutSeconds, text) {
   throw new Error(`Unable to find text while scrolling toward top: ${text}.${suffix}`)
 }
 
-async function tryScrollUntilText(packageName, timeoutSeconds, text) {
-  try {
-    return await scrollUntilText(packageName, timeoutSeconds, text)
-  } catch {
-    return ""
-  }
-}
-
 async function sendSmokePrompt(packageName, timeoutSeconds) {
   const inputHierarchy = await scrollUntilText(packageName, timeoutSeconds, "Send a prompt")
   tapText(inputHierarchy, "Send a prompt")
@@ -856,14 +896,9 @@ async function sendSmokePrompt(packageName, timeoutSeconds) {
     throw new Error(`Prompt input was not filled with ${smokePromptText}.`)
   }
 
-  let sendHierarchy = await tryScrollUntilText(packageName, 5, "Send")
-  if (!sendHierarchy) {
-    run("adb", ["shell", "input", "keyevent", "4"])
-    await sleep(800)
-    await waitForSessionUi(packageName, timeoutSeconds)
-    sendHierarchy = await scrollUntilText(packageName, timeoutSeconds, "Send")
-  }
-  tapText(sendHierarchy, "Send")
+  run("adb", ["shell", "input", "keyevent", "61"])
+  await sleep(500)
+  run("adb", ["shell", "input", "keyevent", "66"])
 }
 
 async function allowApprovalByTitle(packageName, timeoutSeconds, approvalTitle) {
@@ -940,36 +975,38 @@ async function main() {
     return
   }
 
-  requireConnectedDevice()
+  const device = requireConnectedDevice()
+  prepareInteractiveDevice()
   if (!args.skipInstall) {
     assertApkExists(args.apk)
-    run("adb", ["install", "-r", args.apk])
+    run("adb", ["install", "-r", "-g", args.apk])
   }
 
   const bridge = await startMockBridge()
   let replacementBridge = null
   try {
-    const bridgeUrl = `http://10.0.2.2:${bridge.port}/?code=${encodeURIComponent(mockPairingCode)}`
+    const bridgeUrl = `${androidLocalBridgeUrl(bridge.port, device)}/?code=${encodeURIComponent(mockPairingCode)}`
     const deepLink = `anybox-mobile://connect?url=${encodeURIComponent(bridgeUrl)}`
 
     run("adb", ["shell", "pm", "clear", args.packageName])
     run("adb", ["logcat", "-c"])
+    prepareInteractiveDevice()
     run("adb", ["shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", deepLink, args.packageName])
     const initialPairingHierarchy = await waitForConfirmConnectionUi(args.packageName, args.waitSeconds)
     await confirmReplaceConnection(args.packageName, initialPairingHierarchy)
     await waitForPairedHomeUi(args.packageName, args.waitSeconds)
 
     replacementBridge = await startMockBridge()
-    const replacementBridgeUrl = `http://10.0.2.2:${replacementBridge.port}/?code=${encodeURIComponent(mockPairingCode)}`
+    const replacementBridgeUrl = `${androidLocalBridgeUrl(replacementBridge.port, device)}/?code=${encodeURIComponent(mockPairingCode)}`
     const replacementDeepLink = `anybox-mobile://connect?url=${encodeURIComponent(replacementBridgeUrl)}`
 
+    prepareInteractiveDevice()
     run("adb", ["shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", replacementDeepLink, args.packageName])
     const replaceConnectionHierarchy = await waitForReplaceConnectionUi(args.packageName, args.waitSeconds)
     await confirmReplaceConnection(args.packageName, replaceConnectionHierarchy)
     const homeAfterReplaceHierarchy = await waitForPairedHomeUi(args.packageName, args.waitSeconds)
 
-    tapText(homeAfterReplaceHierarchy, "Open approvals")
-    await waitForGlobalApprovalsUi(args.packageName, args.waitSeconds)
+    await openApprovalsFromCurrentUi(args.packageName, args.waitSeconds, homeAfterReplaceHierarchy)
     await allowApprovalByTitle(args.packageName, args.waitSeconds, smokeGlobalApprovalTitle)
     await waitForUi(args.packageName, args.waitSeconds, ["Requests", smokeApprovalTitle], "Remaining session approval")
     const historyButtonHierarchy = await scrollUntilText(args.packageName, args.waitSeconds, "History")
@@ -978,13 +1015,19 @@ async function main() {
     run("adb", ["shell", "input", "keyevent", "4"])
     await sleep(700)
 
-    const homeAfterApprovalsHierarchy = await waitForPairedHomeUi(args.packageName, args.waitSeconds)
-    await tapAccessibilityLabelUntilUi(
+    await waitForPairedHomeUi(args.packageName, args.waitSeconds)
+    run("adb", [
+      "shell",
+      "am",
+      "start",
+      "-W",
+      "-a",
+      "android.intent.action.VIEW",
+      "-d",
+      "anybox-mobile://workspaces/workspace-smoke",
       args.packageName,
-      "Smoke Workspace",
-      ["Smoke Workspace", "Chats", "Changes", "Files", "README.md"],
-      "Workspace",
-    )
+    ])
+    await waitForWorkspaceUi(args.packageName, args.waitSeconds)
     try {
       await waitForMockRequest(replacementBridge.requests, "GET /api/mobile/workspaces/workspace-smoke/files", 10)
     } catch (requestError) {
@@ -993,7 +1036,7 @@ async function main() {
       throw requestError
     }
     await sleep(1500)
-    await tapAccessibilityLabelUntilUi(args.packageName, "Smoke Chat", ["Smoke Chat", "Messages", "Composer"], "Session")
+    await tapAccessibilityLabelUntilUi(args.packageName, "Smoke Chat", ["Smoke Chat", "Messages", "Stop"], "Session")
     await stopSmokeSession(args.packageName, args.waitSeconds)
     await waitForMockRequest(replacementBridge.requests, "POST /api/mobile/sessions/session-smoke/cancel", 10)
     await waitForSessionUi(args.packageName, args.waitSeconds)
@@ -1031,6 +1074,8 @@ async function main() {
     console.log(`Screenshot: ${args.screenshot}`)
     console.log("Android pairing smoke passed.")
   } finally {
+    if (replacementBridge) removeAndroidReverse(replacementBridge.port)
+    removeAndroidReverse(bridge.port)
     if (replacementBridge) await replacementBridge.close()
     await bridge.close()
   }
