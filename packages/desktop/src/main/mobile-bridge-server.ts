@@ -1207,9 +1207,12 @@ function isLoopbackBridgeHost(host: string) {
 }
 
 async function writeMobileHandoffFile(status: MobileBridgeStatus) {
-  const relayPairingDeepLink = status.cloudRelay.enabled ? status.cloudRelay.pairingDeepLink : null
+  const now = Date.now()
+  const relayPairingDeepLink = status.cloudRelay.enabled && status.cloudRelay.pairingExpiresAt && status.cloudRelay.pairingExpiresAt > now
+    ? status.cloudRelay.pairingDeepLink
+    : null
   const primaryPairingUrl = status.publicPairingUrl ?? (isLoopbackBridgeHost(status.host) ? status.pairingLocalUrl : status.pairingUrls[0])
-  const pairingExpiresAt = status.cloudRelay.pairingExpiresAt ?? status.pairingExpiresAt
+  const pairingExpiresAt = relayPairingDeepLink ? status.cloudRelay.pairingExpiresAt : status.pairingExpiresAt
   if (!status.running || (!relayPairingDeepLink && !primaryPairingUrl) || !pairingExpiresAt) {
     await fs.rm(getMobileHandoffPath(), { force: true }).catch(() => undefined)
     return

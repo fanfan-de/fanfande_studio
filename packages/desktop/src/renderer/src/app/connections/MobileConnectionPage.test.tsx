@@ -135,6 +135,38 @@ describe("MobileConnectionPage", () => {
     })
   })
 
+  it("falls back to the public pairing URL when the cloud relay pairing code has expired", async () => {
+    window.desktop!.getMobileBridgeStatus = vi.fn().mockResolvedValue(createMobileBridgeStatus({
+      cloudRelay: {
+        enabled: true,
+        state: "connected",
+        baseUrl: "https://anybox.com.cn",
+        desktopID: "desktop-123",
+        pairingCode: "expired-relay-pair",
+        pairingExpiresAt: Date.now() - 1_000,
+        pairingDeepLink: "anybox-mobile://pair?code=expired-relay-pair&url=https%3A%2F%2Fanybox.com.cn",
+        connectedAt: Date.now() - 30_000,
+        account: {
+          state: "connected",
+          email: "owner@example.com",
+        },
+      },
+    }))
+
+    render(<MobileConnectionPage />)
+
+    fireEvent.click(await screen.findByRole("button", { name: /Copy deep link/ }))
+
+    await waitFor(() => {
+      expect(window.navigator.clipboard.writeText).toHaveBeenCalledWith(
+        "anybox-mobile://connect?url=https%3A%2F%2Fanybox.com.cn%2F%3Fcode%3Dpair-123",
+      )
+    })
+    expect(window.navigator.clipboard.writeText).not.toHaveBeenCalledWith(
+      "anybox-mobile://pair?code=expired-relay-pair&url=https%3A%2F%2Fanybox.com.cn",
+    )
+  })
+
   it("refreshes only the Android pairing code from the primary pairing panel", async () => {
     const nextStatus = createMobileBridgeStatus({
       token: "legacy-token",

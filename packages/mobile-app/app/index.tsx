@@ -194,7 +194,8 @@ export default function HomeScreen() {
       setEndpoint(bridgeUrl)
       setToken("")
       try {
-        if (connection && normalizeConnectionInput(bridgeUrl, "").baseUrl === connection.baseUrl) return
+        const nextCandidate = normalizeConnectionInput(bridgeUrl, "")
+        if (connection && !nextCandidate.pairingCode && nextCandidate.baseUrl === connection.baseUrl && nextCandidate.token === connection.token) return
       } catch {
         return
       }
@@ -452,6 +453,11 @@ export default function HomeScreen() {
                 label={providerStatus.label}
                 tone={providerStatus.tone}
                 onPress={() => router.push("/provider" as never)}
+              />
+              <MobileUtilityRow
+                appVersion={formatAppVersionLabel(currentApp)}
+                onOpenProvider={() => router.push("/provider" as never)}
+                onOpenUpdates={() => router.push("/updates" as never)}
               />
               <ConnectionSetupSection
                 accountDesktops={accountDesktops}

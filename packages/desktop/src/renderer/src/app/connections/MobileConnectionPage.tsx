@@ -58,9 +58,19 @@ function createPairingDeepLink(url: string) {
   return url ? `anybox-mobile://connect?url=${encodeURIComponent(url)}` : ""
 }
 
-function getPrimaryPairingDeepLink(status: DesktopMobileBridgeStatus | null, pairingUrl: string) {
-  return status?.cloudRelay.enabled && status.cloudRelay.pairingDeepLink
+function getCloudRelayPairingDeepLink(status: DesktopMobileBridgeStatus | null, now = Date.now()) {
+  return status?.cloudRelay?.enabled &&
+    status.cloudRelay.pairingDeepLink &&
+    status.cloudRelay.pairingExpiresAt &&
+    status.cloudRelay.pairingExpiresAt > now
     ? status.cloudRelay.pairingDeepLink
+    : ""
+}
+
+function getPrimaryPairingDeepLink(status: DesktopMobileBridgeStatus | null, pairingUrl: string, now = Date.now()) {
+  const relayDeepLink = getCloudRelayPairingDeepLink(status, now)
+  return relayDeepLink
+    ? relayDeepLink
     : createPairingDeepLink(pairingUrl)
 }
 
@@ -81,9 +91,10 @@ function formatCapabilities(capabilities: string[]) {
 }
 
 function formatCloudRelayDetail(status: DesktopMobileBridgeStatus | null) {
-  if (!status?.cloudRelay.enabled) return status?.cloudRelay.lastError ?? "Not configured"
-  const baseUrl = status.cloudRelay.baseUrl ?? "Relay URL unavailable"
-  const account = status.cloudRelay.account ?? { state: "unknown" as const }
+  const cloudRelay = status?.cloudRelay
+  if (!cloudRelay?.enabled) return cloudRelay?.lastError ?? "Not configured"
+  const baseUrl = cloudRelay.baseUrl ?? "Relay URL unavailable"
+  const account = cloudRelay.account ?? { state: "unknown" as const }
   const accountLabel =
     account.state === "connected"
       ? account.email
@@ -143,9 +154,9 @@ export function MobileConnectionPage() {
   const primaryPairingUrl = useMemo(() => getPrimaryPairingUrl(status), [status])
   const pairingUrls = useMemo(() => getPairingUrls(status), [status])
   const legacyUrls = useMemo(() => getLegacyUrls(status), [status])
-  const pairingDeepLink = useMemo(() => getPrimaryPairingDeepLink(status, primaryPairingUrl), [primaryPairingUrl, status])
+  const pairingDeepLink = useMemo(() => getPrimaryPairingDeepLink(status, primaryPairingUrl, now), [now, primaryPairingUrl, status])
   const androidSmokeCommand = useMemo(() => createAndroidSmokeCommand(pairingDeepLink), [pairingDeepLink])
-  const pairingExpiryLabel = formatPairingExpiry(status?.cloudRelay.pairingExpiresAt ?? status?.pairingExpiresAt ?? null, now)
+  const pairingExpiryLabel = formatPairingExpiry(getCloudRelayPairingDeepLink(status, now) ? status?.cloudRelay?.pairingExpiresAt ?? null : status?.pairingExpiresAt ?? null, now)
 
   useEffect(() => {
     let cancelled = false
@@ -259,7 +270,7 @@ export function MobileConnectionPage() {
           </article>
           <article className="mobile-connection-card">
             <span className="settings-field-label">Cloud relay</span>
-            <strong>{status?.cloudRelay.state ?? "disabled"}</strong>
+            <strong>{status?.cloudRelay?.state ?? "disabled"}</strong>
             <small>{formatCloudRelayDetail(status)}</small>
           </article>
         </section>

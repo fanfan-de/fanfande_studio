@@ -70,7 +70,7 @@ export default function ConnectScreen() {
       try {
         if (!bridgeUrl) throw new Error("Connection URL is missing.")
         const nextCandidate = normalizeConnectionInput(bridgeUrl, bridgeToken)
-        if (connection && nextCandidate.baseUrl === connection.baseUrl) {
+        if (connection && !nextCandidate.pairingCode && nextCandidate.baseUrl === connection.baseUrl && nextCandidate.token === connection.token) {
           router.replace("/")
           return
         }

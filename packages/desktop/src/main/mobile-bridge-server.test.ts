@@ -13,6 +13,21 @@ const requestAgentJSONMock = vi.hoisted(() => vi.fn())
 const agentClientState = vi.hoisted(() => ({
   baseUrl: "http://127.0.0.1:4096",
 }))
+const desktopCloudRelayState = vi.hoisted(() => ({
+  status: {
+    account: {
+      state: "unknown",
+    },
+    baseUrl: null,
+    connectedAt: null,
+    desktopID: null,
+    enabled: false,
+    pairingCode: null,
+    pairingDeepLink: null,
+    pairingExpiresAt: null,
+    state: "disabled",
+  } as any,
+}))
 
 vi.mock("electron", () => ({
   app: {
@@ -31,6 +46,13 @@ vi.mock("./safe-console", () => ({
   safeError: vi.fn(),
   safeLog: vi.fn(),
   safeWarn: vi.fn(),
+}))
+
+vi.mock("./desktop-cloud-relay-client", () => ({
+  ensureDesktopCloudRelayClientRunning: vi.fn(() => desktopCloudRelayState.status),
+  getDesktopCloudRelayStatus: vi.fn(() => desktopCloudRelayState.status),
+  refreshDesktopCloudRelayPairing: vi.fn(async () => desktopCloudRelayState.status),
+  stopDesktopCloudRelayClient: vi.fn(),
 }))
 
 import { ensureMobileBridgeServerRunning, getMobileBridgeStatus, refreshMobilePairingCode, stopMobileBridgeServer } from "./mobile-bridge-server"
@@ -288,6 +310,19 @@ describe("mobile bridge server", () => {
     process.env.ANYBOX_MOBILE_BRIDGE_TUNNEL = "0"
     delete process.env.ANYBOX_MOBILE_BRIDGE_PUBLIC_URL
     agentClientState.baseUrl = "http://127.0.0.1:4096"
+    desktopCloudRelayState.status = {
+      account: {
+        state: "unknown",
+      },
+      baseUrl: null,
+      connectedAt: null,
+      desktopID: null,
+      enabled: false,
+      pairingCode: null,
+      pairingDeepLink: null,
+      pairingExpiresAt: null,
+      state: "disabled",
+    }
 
     requestAgentJSONMock.mockReset()
     requestAgentJSONMock.mockImplementation(async (agentPath: string) => {
@@ -644,5 +679,37 @@ describe("mobile bridge server", () => {
     expect(handoff.android?.handoffCommand).toContain("corepack pnpm mobile:android:handoff-check")
     expect(handoff.pairingExpiresAt).toBe(new Date(status.pairingExpiresAt ?? 0).toISOString())
     expect(JSON.stringify(handoff)).not.toContain(status.token)
+  })
+
+  it("does not write an expired cloud relay pairing deep link to the Android handoff file", async () => {
+    desktopCloudRelayState.status = {
+      account: {
+        state: "connected",
+        email: "owner@example.com",
+      },
+      baseUrl: "https://anybox.com.cn",
+      connectedAt: Date.now() - 30_000,
+      desktopID: "desktop-123",
+      enabled: true,
+      pairingCode: "expired-relay-pair",
+      pairingDeepLink: "anybox-mobile://pair?code=expired-relay-pair&url=https%3A%2F%2Fanybox.com.cn",
+      pairingExpiresAt: Date.now() - 1_000,
+      state: "connected",
+    }
+
+    const status = await ensureMobileBridgeServerRunning()
+    const handoffPath = path.join(userDataPath, "mobile-bridge-handoff.json")
+    const handoff = JSON.parse(await fs.readFile(handoffPath, "utf8")) as {
+      android?: {
+        deepLink?: string
+        pairingUrl?: string
+      }
+      pairingExpiresAt?: string
+    }
+
+    expect(handoff.android?.pairingUrl).toBe(status.publicPairingUrl)
+    expect(handoff.android?.deepLink).toBe(`anybox-mobile://connect?url=${encodeURIComponent(status.publicPairingUrl ?? "")}`)
+    expect(handoff.android?.deepLink).not.toContain("expired-relay-pair")
+    expect(handoff.pairingExpiresAt).toBe(new Date(status.pairingExpiresAt ?? 0).toISOString())
   })
 })
