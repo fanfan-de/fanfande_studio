@@ -1,14 +1,14 @@
 import { Stack, useRouter } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Linking, ScrollView, useWindowDimensions, View } from "react-native"
+import { Linking, useWindowDimensions } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Screen } from "@/components/screen"
 import { StateCard } from "@/components/state-card"
 import { ConnectionHomePage } from "@/home/connection"
-import { SessionDrawerPage } from "@/home/drawer"
+import { CurrentSessionHomePage } from "@/home/current-session"
 import { buildSessionTitle, formatProviderStatus, sortSessions } from "@/home/format"
-import { ThreadViewPage } from "@/home/thread"
+import { ContextSelectorSheet } from "@/home/sheets"
 import {
   connectAccountRelayDesktop,
   listAccountRelayDesktops,
@@ -43,7 +43,6 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const maxWidth = width >= 760 ? 720 : undefined
-  const pagerRef = useRef<ScrollView | null>(null)
   const { account, loading: accountLoading } = useAccount()
   const { connection, loading: connectionLoading, saveConnection } = useConnection()
   const focus = useFocus()
@@ -66,15 +65,9 @@ export default function HomeScreen() {
   const [sending, setSending] = useState(false)
   const [pendingPrompt, setPendingPrompt] = useState<{ id: string; text: string } | null>(null)
   const [streamingAssistant, setStreamingAssistant] = useState<{ id: string; text: string } | null>(null)
+  const [selectorKind, setSelectorKind] = useState<"projects" | "conversations" | null>(null)
   const autoConnectAttemptedDesktopIDRef = useRef<string | null>(null)
   const currentApp = useMemo(() => getCurrentAppInfo(), [])
-
-  const scrollToPage = useCallback(
-    (page: 0 | 1) => {
-      pagerRef.current?.scrollTo({ x: page * width, animated: true })
-    },
-    [width],
-  )
 
   useEffect(() => {
     if (!accountLoading && !connectionLoading && !account && !connection) {
@@ -445,6 +438,7 @@ export default function HomeScreen() {
           onConnectDesktop={connectAccountDesktop}
           onEndpointChange={setEndpoint}
           onManualToggle={() => setManualOpen((current) => !current)}
+          onOpenDiagnostics={() => router.push("/diagnostics" as never)}
           onOpenProvider={() => router.push("/provider" as never)}
           onOpenUpdates={() => router.push("/updates" as never)}
           onRefreshDesktopList={() => void loadAccountDesktops(account)}
@@ -459,72 +453,60 @@ export default function HomeScreen() {
           token={token}
         />
       ) : (
-        <View style={{ flex: 1, backgroundColor: "#171717" }}>
-          <ScrollView
-            ref={pagerRef}
-            contentOffset={{ x: width, y: 0 }}
-            horizontal
-            keyboardShouldPersistTaps="handled"
-            pagingEnabled
-            scrollEventThrottle={16}
-            showsHorizontalScrollIndicator={false}
-            style={{ flex: 1 }}
-          >
-            <View style={{ width }}>
-              <SessionDrawerPage
-                appVersion={formatAppVersionLabel(currentApp)}
-                focusedSessionID={focusedSession?.id}
-                focusedWorkspaceID={focusedWorkspace?.id}
-                onNewChat={() => {
-                  void handleCreateConversation()
-                  scrollToPage(1)
-                }}
-                onOpenProvider={() => router.push("/provider" as never)}
-                onOpenUpdates={() => router.push("/updates" as never)}
-                onRefresh={load}
-                onSelectSession={(session) => {
-                  handleSelectSession(session)
-                  scrollToPage(1)
-                }}
-                onSelectWorkspace={handleSelectWorkspace}
-                paddingBottom={Math.max(insets.bottom, 14)}
-                paddingTop={insets.top}
-                providerDetail={providerStatus.detail}
-                providerLabel={providerStatus.label}
-                providerTone={providerStatus.tone}
-                refreshing={refreshing}
-                sending={sending}
-                sessions={focusedSessions}
-                workspaces={sortedWorkspaces}
-              />
-            </View>
-            <View style={{ width }}>
-              <ThreadViewPage
-                disabled={composerDisabled}
-                draft={draft}
-                focusedSession={focusedSession}
-                focusedWorkspace={focusedWorkspace}
-                messageError={messageError}
-                messages={visibleMessages}
-                messagesLoading={messagesLoading}
-                onBack={() => scrollToPage(0)}
-                onChangeText={setDraft}
-                onNewChat={() => void handleCreateConversation()}
-                onOpenApprovals={() => router.push("/approvals")}
-                onOpenProvider={() => router.push("/provider" as never)}
-                onOpenSessionPicker={() => scrollToPage(0)}
-                onRefresh={load}
-                onSend={() => void handleSend()}
-                paddingBottom={Math.max(insets.bottom, 10)}
-                paddingTop={insets.top}
-                pendingApprovals={approvals.length}
-                placeholder={composerPlaceholder}
-                refreshing={refreshing}
-                sending={sending}
-              />
-            </View>
-          </ScrollView>
-        </View>
+        <>
+          <CurrentSessionHomePage
+            appVersion={formatAppVersionLabel(currentApp)}
+            approvals={approvals}
+            disabled={composerDisabled}
+            draft={draft}
+            focusedSession={focusedSession}
+            focusedWorkspace={focusedWorkspace}
+            messageError={messageError}
+            messages={visibleMessages}
+            messagesLoading={messagesLoading}
+            onChangeText={setDraft}
+            onNewChat={() => void handleCreateConversation()}
+            onOpenApprovals={() => router.push("/approvals" as never)}
+            onOpenDiagnostics={() => router.push("/diagnostics" as never)}
+            onOpenProvider={() => router.push("/provider" as never)}
+            onOpenSessionPicker={() => setSelectorKind("conversations")}
+            onOpenUpdates={() => router.push("/updates" as never)}
+            onOpenWorkspacePicker={() => setSelectorKind("projects")}
+            onRefresh={() => void load()}
+            onSend={() => void handleSend()}
+            paddingBottom={Math.max(insets.bottom, 10)}
+            paddingTop={insets.top}
+            placeholder={composerPlaceholder}
+            providerDetail={providerStatus.detail}
+            providerLabel={providerStatus.label}
+            providerTone={providerStatus.tone}
+            refreshing={refreshing}
+            sending={sending}
+          />
+          <ContextSelectorSheet
+            focusedSessionID={focusedSession?.id}
+            focusedWorkspaceID={focusedWorkspace?.id}
+            kind={selectorKind}
+            maxWidth={maxWidth}
+            onClose={() => setSelectorKind(null)}
+            onNewChat={() => {
+              setSelectorKind(null)
+              void handleCreateConversation()
+            }}
+            onSelectSession={(session) => {
+              handleSelectSession(session)
+              setSelectorKind(null)
+            }}
+            onSelectWorkspace={(workspace) => {
+              handleSelectWorkspace(workspace)
+              setSelectorKind(null)
+            }}
+            paddingBottom={Math.max(insets.bottom, 14)}
+            sending={sending}
+            sessions={focusedSessions}
+            workspaces={sortedWorkspaces}
+          />
+        </>
       )}
     </>
   )

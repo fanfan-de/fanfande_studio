@@ -7,7 +7,7 @@ import { Section } from "@/components/section"
 import { StateCard } from "@/components/state-card"
 import type { MobileAccountRelayDesktop } from "@/api/account-api"
 import { formatRelativeTime } from "@/utils/format"
-import { DarkProviderRow } from "./shared"
+import { darkToneColor } from "./shared"
 import type { ProviderStatusTone } from "./types"
 
 export function ConnectionHomePage({
@@ -23,6 +23,7 @@ export function ConnectionHomePage({
   onConnectDesktop,
   onEndpointChange,
   onManualToggle,
+  onOpenDiagnostics,
   onOpenProvider,
   onOpenUpdates,
   onRefreshDesktopList,
@@ -48,6 +49,7 @@ export function ConnectionHomePage({
   onConnectDesktop: (desktop: MobileAccountRelayDesktop) => Promise<void>
   onEndpointChange: (value: string) => void
   onManualToggle: () => void
+  onOpenDiagnostics: () => void
   onOpenProvider: () => void
   onOpenUpdates: () => void
   onRefreshDesktopList: () => void
@@ -76,13 +78,6 @@ export function ConnectionHomePage({
         }}
       >
         <View style={{ maxWidth, width: "100%", gap: 14 }}>
-          <DarkProviderRow
-            detail={providerDetail}
-            label={providerLabel}
-            tone={providerTone}
-            onPress={onOpenProvider}
-          />
-          <MobileUtilityRow appVersion={appVersion} onOpenProvider={onOpenProvider} onOpenUpdates={onOpenUpdates} />
           <ConnectionSetupSection
             accountDesktops={accountDesktops}
             accountDesktopsLoading={accountDesktopsLoading}
@@ -100,58 +95,71 @@ export function ConnectionHomePage({
             onTokenChange={onTokenChange}
             token={token}
           />
+          <ConnectionSecondaryLinks
+            appVersion={appVersion}
+            providerDetail={providerDetail}
+            providerLabel={providerLabel}
+            providerTone={providerTone}
+            onOpenDiagnostics={onOpenDiagnostics}
+            onOpenProvider={onOpenProvider}
+            onOpenUpdates={onOpenUpdates}
+          />
         </View>
       </ScrollView>
     </View>
   )
 }
 
-
-export function MobileUtilityRow({
+function ConnectionSecondaryLinks({
   appVersion,
+  providerDetail,
+  providerLabel,
+  providerTone,
+  onOpenDiagnostics,
   onOpenProvider,
   onOpenUpdates,
 }: {
   appVersion: string
+  providerDetail: string
+  providerLabel: string
+  providerTone: ProviderStatusTone
+  onOpenDiagnostics: () => void
   onOpenProvider: () => void
   onOpenUpdates: () => void
 }) {
   return (
-    <View style={{ flexDirection: "row", gap: 10 }}>
-      <UtilityTile label="Provider" onPress={onOpenProvider} value="Details" />
-      <UtilityTile label="Updates" onPress={onOpenUpdates} value={appVersion} />
+    <View style={{ alignItems: "center", gap: 8, paddingTop: 2 }}>
+      <View style={{ alignItems: "center", flexDirection: "row", gap: 8, width: "100%" }}>
+        <View style={{ backgroundColor: darkToneColor(providerTone), borderRadius: 4, height: 8, width: 8 }} />
+        <Text numberOfLines={1} style={{ color: "#9a9a9a", flex: 1, fontSize: 12 }}>
+          {providerDetail}
+        </Text>
+        <Text style={{ color: darkToneColor(providerTone), fontSize: 12, fontWeight: "800" }}>{providerLabel}</Text>
+      </View>
+      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "center", minHeight: 30 }}>
+        <SecondaryLink label="Provider" onPress={onOpenProvider} />
+        <SecondaryDivider />
+        <SecondaryLink label={`Updates ${appVersion}`} onPress={onOpenUpdates} />
+        <SecondaryDivider />
+        <SecondaryLink label="Diagnostics" onPress={onOpenDiagnostics} />
+      </View>
     </View>
   )
 }
 
-function UtilityTile({
-  label,
-  onPress,
-  value,
-}: {
-  label: string
-  onPress: () => void
-  value: string
-}) {
+function SecondaryDivider() {
+  return <Text style={{ color: "#5f5f5f", fontSize: 12 }}> / </Text>
+}
+
+function SecondaryLink({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
-      style={({ pressed }) => ({
-        backgroundColor: "#ffffff",
-        borderColor: "#e5e3dc",
-        borderRadius: 14,
-        borderWidth: 1,
-        flex: 1,
-        gap: 6,
-        minHeight: 70,
-        opacity: pressed ? 0.78 : 1,
-        padding: 12,
-      })}
+      style={({ pressed }) => ({ opacity: pressed ? 0.62 : 1, padding: 5 })}
     >
-      <Text style={{ color: "#151515", fontSize: 15, fontWeight: "800", letterSpacing: 0 }}>{label}</Text>
-      <Text selectable numberOfLines={1} style={{ color: "#676760", fontSize: 12, fontVariant: ["tabular-nums"], letterSpacing: 0 }}>
-        {value}
+      <Text numberOfLines={1} style={{ color: "#c8c8c8", fontSize: 12, fontWeight: "800" }}>
+        {label}
       </Text>
     </Pressable>
   )
@@ -241,10 +249,18 @@ export function ConnectionSetupSection({
 }) {
   return (
     <Section title="Connect Desktop" caption={accountDesktopsLoading ? "Searching" : `${accountDesktops.length}`}>
+      <View style={{ flexDirection: "row", gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Button label="Scan QR" onPress={onScan} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Button label="Refresh" loading={accountDesktopsLoading} onPress={onRefreshDesktopList} variant="secondary" />
+        </View>
+      </View>
       {accountDesktopsLoading ? <StateCard title="Finding desktop devices" /> : null}
       {accountDesktopError ? <StateCard title="Desktop discovery failed" detail={accountDesktopError} tone="danger" /> : null}
       {!accountDesktopsLoading && !accountDesktopError && !accountDesktops.length ? (
-        <StateCard title="No desktop devices" detail="Sign in on the desktop app and keep it running." />
+        <StateCard title="No desktop devices" detail="Scan the QR code on the desktop Mobile connection page." />
       ) : null}
       {accountDesktops.map((desktop) => (
         <ListRow
@@ -255,15 +271,7 @@ export function ConnectionSetupSection({
           onPress={desktop.online && connectingDesktopID !== desktop.id ? () => void onConnectDesktop(desktop) : undefined}
         />
       ))}
-      <View style={{ flexDirection: "row", gap: 10 }}>
-        <View style={{ flex: 1 }}>
-          <Button label="Refresh" loading={accountDesktopsLoading} onPress={onRefreshDesktopList} variant="secondary" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Button label="Scan QR" onPress={onScan} />
-        </View>
-      </View>
-      <Button label={manualOpen ? "Hide advanced" : "Advanced URL login"} onPress={onManualToggle} variant="secondary" />
+      <Button label={manualOpen ? "Hide bridge URL" : "Use bridge URL"} onPress={onManualToggle} variant="secondary" />
       {manualOpen ? (
         <>
           <Field label="Bridge URL" onChangeText={onEndpointChange} placeholder="https://anybox.com.cn/?code=..." value={endpoint} />
