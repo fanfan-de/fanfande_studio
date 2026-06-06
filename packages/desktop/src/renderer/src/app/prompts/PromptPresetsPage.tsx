@@ -791,6 +791,9 @@ export function PromptPresetsPage({
   const selectedPromptPresetUsageLabels = selectedPromptPreset
     ? getPromptPresetUsageLabels(selectedPromptPreset.id, promptPresetSelection)
     : []
+  const isSystemPromptSlotOpen = selectedPromptPreset?.id === promptPresetSelection?.systemPromptPresetID
+  const isPlanModePromptSlotOpen = selectedPromptPreset?.id === promptPresetSelection?.planModePromptPresetID
+  const isSideChatPromptSlotOpen = selectedPromptPreset?.id === promptPresetSelection?.sideChatPromptPresetID
   const promptPresetSelectOptions = promptPresetOptions.map((preset) => ({
     value: preset.id,
     label: preset.label,
@@ -857,10 +860,14 @@ export function PromptPresetsPage({
         ) : (
           <section className={hideNavigator ? "settings-prompts-shell is-sidebar-hosted" : "settings-prompts-shell"} aria-label="Prompt preset layout">
             <section className="settings-panel settings-prompt-slots-panel">
+              <header className="settings-prompt-slots-header">
+                <h3>Prompt slots</h3>
+              </header>
               <div className="settings-prompt-assignment-list">
-                <div className="settings-prompt-assignment-row">
+                <div className={isSystemPromptSlotOpen ? "settings-prompt-assignment-row is-open" : "settings-prompt-assignment-row"}>
                   <div className="settings-prompt-assignment-copy">
                     <span className="settings-prompt-assignment-title">System prompt</span>
+                    {isSystemPromptSlotOpen ? <span className="settings-badge is-highlight">Open</span> : null}
                   </div>
 
                   <div className="settings-prompt-assignment-control">
@@ -879,9 +886,10 @@ export function PromptPresetsPage({
                   </div>
                 </div>
 
-                <div className="settings-prompt-assignment-row">
+                <div className={isPlanModePromptSlotOpen ? "settings-prompt-assignment-row is-open" : "settings-prompt-assignment-row"}>
                   <div className="settings-prompt-assignment-copy">
                     <span className="settings-prompt-assignment-title">Plan mode prompt</span>
+                    {isPlanModePromptSlotOpen ? <span className="settings-badge is-highlight">Open</span> : null}
                   </div>
 
                   <div className="settings-prompt-assignment-control">
@@ -900,9 +908,10 @@ export function PromptPresetsPage({
                   </div>
                 </div>
 
-                <div className="settings-prompt-assignment-row">
+                <div className={isSideChatPromptSlotOpen ? "settings-prompt-assignment-row is-open" : "settings-prompt-assignment-row"}>
                   <div className="settings-prompt-assignment-copy">
                     <span className="settings-prompt-assignment-title">Side chat prompt</span>
+                    {isSideChatPromptSlotOpen ? <span className="settings-badge is-highlight">Open</span> : null}
                   </div>
 
                   <div className="settings-prompt-assignment-control">

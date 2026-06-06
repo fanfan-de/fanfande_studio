@@ -1079,19 +1079,17 @@ body.is-dragging-settings-page {
   height: 100%;
   overflow: hidden;
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: 320px minmax(0, 1fr) clamp(230px, 17vw, 300px);
+  grid-template-rows: minmax(0, 1fr);
   grid-template-areas:
-    "library slots"
-    "library detail";
-  gap: 14px 18px;
+    "library detail slots";
+  gap: 18px 22px;
 }
 
 .settings-prompts-shell.is-sidebar-hosted {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) clamp(230px, 17vw, 300px);
   grid-template-areas:
-    "slots"
-    "detail";
+    "detail slots";
 }
 
 .settings-page-main.prompt-presets-page-main {
@@ -3538,6 +3536,14 @@ body.is-dragging-settings-page {
     grid-template-rows: auto auto auto;
     grid-template-areas:
       "library"
+      "slots"
+      "detail";
+  }
+
+  .settings-prompts-shell.is-sidebar-hosted {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
       "slots"
       "detail";
   }
@@ -9552,12 +9558,132 @@ body.is-dragging-settings-page {
 }
 
 .settings-page-main.is-services.prompt-presets-page-main .settings-prompt-slots-panel {
-  padding: 0 0 12px;
+  align-self: start;
+  padding: 4px 0 0;
   border: 0;
-  border-bottom: 1px solid var(--seg-border);
+  border-bottom: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  gap: 12px;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-slots-header {
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-slots-header h3 {
+  margin: 0;
+  color: var(--seg-text-3);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-list {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-row {
+  position: relative;
+  min-height: auto;
+  padding: 10px 10px 11px 13px;
+  border-left: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.32);
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-row::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(120, 130, 140, 0.28);
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-row:hover,
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-row:focus-within {
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-row.is-open {
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 8px 22px rgba(22, 34, 48, 0.04);
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-row.is-open::before {
+  background: rgba(143, 99, 233, 0.66);
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-row + .settings-prompt-assignment-row {
+  border-left: 0;
+  border-top: 0;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-copy .settings-badge {
+  min-height: 18px;
+  padding: 0 6px;
+  font-size: 10px;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-title {
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-control,
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-actions,
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-select {
+  width: 100%;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-assignment-actions {
+  align-items: stretch;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main
+  .settings-prompt-assignment-select
+  .settings-select-trigger {
+  min-height: 30px;
+  padding: 0;
+  background: transparent;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main
+  .settings-prompt-assignment-select
+  .settings-select-trigger:hover,
+.settings-page-main.is-services.prompt-presets-page-main
+  .settings-prompt-assignment-select
+  .settings-select-trigger:focus-visible,
+.settings-page-main.is-services.prompt-presets-page-main
+  .settings-prompt-assignment-select.is-open
+  .settings-select-trigger {
+  background: transparent;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-editor-header {
+  width: min(100%, 1320px);
+  justify-self: center;
 }
 
 .settings-page-main.is-services.prompt-presets-page-main
