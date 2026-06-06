@@ -1175,11 +1175,32 @@ export interface ProviderAuthCapability {
   supportsDisconnect?: boolean
 }
 
+export interface WorkspaceSubscription {
+  id?: string | null
+  workspaceId?: string
+  planCode?: string
+  status?: string
+  source?: string | null
+  currentPeriodStart?: number | null
+  currentPeriodEnd?: number | null
+  cancelAtPeriodEnd?: boolean
+}
+
+export interface WorkspaceEntitlements {
+  modelGatewayEnabled?: boolean
+  relayEnabled?: boolean
+  maxDesktopDevices?: number
+  maxMobileDevices?: number
+}
+
 export interface ProviderAuthAccountSummary {
   accountID?: string
   userID?: string
   email?: string
   planType?: string
+  planLabel?: string
+  subscription?: WorkspaceSubscription | null
+  entitlements?: WorkspaceEntitlements
   workspaceID?: string
   workspaceName?: string
   balanceMicrocents?: number
@@ -1226,6 +1247,9 @@ export interface ProviderAuthState {
     label?: string
     email?: string
     planType?: string
+    planLabel?: string
+    subscription?: WorkspaceSubscription | null
+    entitlements?: WorkspaceEntitlements
     workspaceID?: string
     workspaceName?: string
     balanceMicrocents?: number

@@ -35,6 +35,7 @@ import { formatAppVersionLabel, getCurrentAppInfo } from "@/services/app-updates
 import { useAccount } from "@/state/account"
 import { useConnection } from "@/state/connection"
 import { useFocus } from "@/state/focus"
+import { describeAccountApiError, isRelayDisabledByEntitlement } from "@/utils/account-entitlements"
 import {
   mergeOptimisticMessages,
   type PendingPromptOverlay,
@@ -136,6 +137,11 @@ export default function HomeScreen() {
       setAccountDesktopError(null)
       return
     }
+    if (isRelayDisabledByEntitlement(nextAccount)) {
+      setAccountDesktops([])
+      setAccountDesktopError("当前套餐不支持 Relay。请在管理后台启用 Relay 权益后重试。")
+      return
+    }
     if (accountDesktopRefreshInFlightRef.current) return
     accountDesktopRefreshInFlightRef.current = true
     if (!options?.silent) setAccountDesktopsLoading(true)
@@ -145,7 +151,7 @@ export default function HomeScreen() {
       setAccountDesktopError(null)
     } catch (desktopError) {
       if (!options?.silent) {
-        setAccountDesktopError(desktopError instanceof Error ? desktopError.message : "Unable to load desktop devices.")
+        setAccountDesktopError(describeAccountApiError(desktopError, "Unable to load desktop devices."))
       }
     } finally {
       accountDesktopRefreshInFlightRef.current = false
@@ -165,7 +171,7 @@ export default function HomeScreen() {
         desktopID: result.desktop?.id ?? result.desktopID ?? desktop.id,
       })
     } catch (connectError) {
-      setAccountDesktopError(connectError instanceof Error ? connectError.message : "Unable to connect this desktop.")
+      setAccountDesktopError(describeAccountApiError(connectError, "Unable to connect this desktop."))
     } finally {
       setConnectingDesktopID(null)
     }

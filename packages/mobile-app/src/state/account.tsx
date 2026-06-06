@@ -6,6 +6,7 @@ import {
   logoutAccount,
   refreshAccountSession,
   registerAccountWithEmail,
+  updateAccountProfile,
   type MobileAccountRegistration,
   type MobileAccountSession,
 } from "@/api/account-api"
@@ -21,6 +22,7 @@ interface AccountContextValue {
   defaultBaseUrl: string
   loginWithEmail: (input: { baseUrl: string; email: string; password: string }) => Promise<MobileAccountSession>
   registerWithEmail: (input: { baseUrl: string; email: string; password: string; name?: string }) => Promise<MobileAccountRegistration>
+  updateProfile: (input: { displayName?: string | null; username?: string | null; avatarUrl?: string | null }) => Promise<MobileAccountSession>
   refreshAccount: () => Promise<MobileAccountSession | null>
   clearAccount: () => Promise<void>
 }
@@ -88,6 +90,16 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     setAccount(null)
   }, [account])
 
+  const updateProfile = useCallback(
+    async (input: { displayName?: string | null; username?: string | null; avatarUrl?: string | null }) => {
+      const currentAccount = account ?? (await loadStoredAccountSession())
+      if (!currentAccount) throw new Error("No account is signed in.")
+      const updated = await updateAccountProfile(currentAccount, input)
+      return saveAccount(updated)
+    },
+    [account, saveAccount],
+  )
+
   const refreshAccount = useCallback(async () => {
     const currentAccount = account ?? (await loadStoredAccountSession())
     if (!currentAccount) {
@@ -107,10 +119,11 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       defaultBaseUrl,
       loginWithEmail,
       registerWithEmail,
+      updateProfile,
       refreshAccount,
       clearAccount,
     }),
-    [account, clearAccount, defaultBaseUrl, loading, loginWithEmail, refreshAccount, registerWithEmail],
+    [account, clearAccount, defaultBaseUrl, loading, loginWithEmail, refreshAccount, registerWithEmail, updateProfile],
   )
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>

@@ -6,7 +6,10 @@ export const DEFAULT_ACCOUNT_RELAY_BASE_URL = "https://anybox.com.cn"
 export interface MobileAccountUser {
   id: string
   email: string
+  username?: string | null
   name?: string
+  displayName?: string | null
+  avatarUrl?: string | null
   role?: string
   status?: string
   emailVerifiedAt?: string
@@ -19,6 +22,24 @@ export interface MobileAccountWorkspace {
   status?: string
 }
 
+export interface MobileAccountSubscription {
+  id?: string | null
+  workspaceId?: string
+  planCode: string
+  status: string
+  source?: string | null
+  currentPeriodStart?: number | null
+  currentPeriodEnd?: number | null
+  cancelAtPeriodEnd: boolean
+}
+
+export interface MobileAccountEntitlements {
+  modelGatewayEnabled?: boolean
+  relayEnabled?: boolean
+  maxDesktopDevices?: number
+  maxMobileDevices?: number
+}
+
 export interface MobileAccountSession {
   baseUrl: string
   token: string
@@ -28,6 +49,9 @@ export interface MobileAccountSession {
   user: MobileAccountUser
   workspace?: MobileAccountWorkspace
   planType?: string
+  planLabel?: string
+  subscription?: MobileAccountSubscription | null
+  entitlements?: MobileAccountEntitlements
 }
 
 export interface MobileAccountRegistration {
@@ -134,7 +158,7 @@ export async function getAccountProfile(baseUrlInput: string, token: string) {
   return {
     user: normalizeAccountUser(record?.user),
     workspace: normalizeAccountWorkspace(record?.workspace),
-    planType: readString(readRecord(record?.account)?.planType) ?? readString(readRecord(record?.account)?.plan_type),
+    ...normalizeAccountMetadata(record),
   }
 }
 
@@ -159,6 +183,34 @@ export async function logoutAccount(baseUrlInput: string, token: string) {
       authorization: `Bearer ${token}`,
     },
   })
+}
+
+export async function updateAccountProfile(
+  account: MobileAccountSession,
+  input: { displayName?: string | null; username?: string | null; avatarUrl?: string | null },
+) {
+  const value = await requestAccount<unknown>(account.baseUrl, "/api/client/me", {
+    method: "PATCH",
+    headers: {
+      authorization: `Bearer ${account.token}`,
+    },
+    body: JSON.stringify({
+      ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
+      ...(input.username !== undefined ? { username: input.username } : {}),
+      ...(input.avatarUrl !== undefined ? { avatarUrl: input.avatarUrl } : {}),
+    }),
+  })
+  const record = readRecord(value)
+  const user = normalizeAccountUser(record?.user)
+  if (!user) {
+    throw new AccountApiError("Profile response did not include a user.", 0, "INVALID_ACCOUNT_RESPONSE")
+  }
+  return {
+    ...account,
+    user,
+    ...(normalizeAccountWorkspace(record?.workspace) ? { workspace: normalizeAccountWorkspace(record?.workspace)! } : {}),
+    ...normalizeAccountMetadata(record),
+  }
 }
 
 export async function listAccountRelayDesktops(account: MobileAccountSession) {
@@ -231,8 +283,75 @@ function normalizeAccountSession(baseUrl: string, value: unknown): MobileAccount
     ...(readTimestamp(record?.refreshExpiresAt) ? { refreshExpiresAt: readTimestamp(record?.refreshExpiresAt) } : {}),
     user,
     ...(workspace ? { workspace } : {}),
-    ...(readString(account?.planType) ?? readString(account?.plan_type) ? { planType: readString(account?.planType) ?? readString(account?.plan_type) } : {}),
+    ...normalizeAccountMetadata(record),
   }
+}
+
+function normalizeAccountMetadata(value: unknown) {
+  const record = readRecord(value)
+  const account = readRecord(record?.account)
+  const subscription = normalizeAccountSubscription(readNestedValue(record, account, "subscription"))
+  const entitlements = normalizeAccountEntitlements(readNestedValue(record, account, "entitlements"))
+  const planType =
+    readString(account?.planType) ??
+    readString(account?.plan_type) ??
+    readString(record?.planType) ??
+    readString(record?.plan_type) ??
+    subscription?.planCode
+  const planLabel =
+    readString(account?.planLabel) ??
+    readString(account?.plan_label) ??
+    readString(record?.planLabel) ??
+    readString(record?.plan_label) ??
+    (planType ? formatPlanLabel(planType) : undefined)
+
+  return {
+    ...(planType ? { planType } : {}),
+    ...(planLabel ? { planLabel } : {}),
+    ...(subscription !== undefined ? { subscription } : {}),
+    ...(entitlements ? { entitlements } : {}),
+  }
+}
+
+function normalizeAccountSubscription(value: unknown): MobileAccountSubscription | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  const record = readRecord(value)
+  if (!record) return undefined
+  const planCode = readString(record?.planCode) ?? readString(record?.plan_code)
+  const status = readString(record?.status)
+  if (!planCode || !status) return undefined
+  const currentPeriodStart = readTimestamp(record?.currentPeriodStart) ?? readTimestamp(record?.current_period_start)
+  const currentPeriodEnd = readTimestamp(record?.currentPeriodEnd) ?? readTimestamp(record?.current_period_end)
+  return {
+    id: readString(record?.id) ?? null,
+    ...(readString(record?.workspaceId) ?? readString(record?.workspace_id)
+      ? { workspaceId: readString(record?.workspaceId) ?? readString(record?.workspace_id) }
+      : {}),
+    planCode,
+    status,
+    source: readString(record?.source) ?? null,
+    currentPeriodStart: currentPeriodStart ?? null,
+    currentPeriodEnd: currentPeriodEnd ?? null,
+    cancelAtPeriodEnd: readBoolean(record?.cancelAtPeriodEnd) ?? readBoolean(record?.cancel_at_period_end) ?? false,
+  }
+}
+
+function normalizeAccountEntitlements(value: unknown): MobileAccountEntitlements | undefined {
+  const record = readRecord(value)
+  if (!record) return undefined
+  const entitlements: MobileAccountEntitlements = {}
+  const modelGatewayEnabled = readBoolean(record?.modelGatewayEnabled) ?? readBoolean(record?.model_gateway_enabled)
+  const relayEnabled = readBoolean(record?.relayEnabled) ?? readBoolean(record?.relay_enabled)
+  const maxDesktopDevices = readNumber(record?.maxDesktopDevices) ?? readNumber(record?.max_desktop_devices)
+  const maxMobileDevices = readNumber(record?.maxMobileDevices) ?? readNumber(record?.max_mobile_devices)
+
+  if (modelGatewayEnabled !== undefined) entitlements.modelGatewayEnabled = modelGatewayEnabled
+  if (relayEnabled !== undefined) entitlements.relayEnabled = relayEnabled
+  if (maxDesktopDevices !== undefined) entitlements.maxDesktopDevices = maxDesktopDevices
+  if (maxMobileDevices !== undefined) entitlements.maxMobileDevices = maxMobileDevices
+
+  return Object.keys(entitlements).length ? entitlements : undefined
 }
 
 function normalizeAccountRegistration(value: unknown): MobileAccountRegistration {
@@ -311,7 +430,10 @@ export function normalizeAccountUser(value: unknown): MobileAccountUser | null {
   const email = readString(record?.email)
   if (!email) return null
   const id = readString(record?.id) ?? readString(record?.accountID) ?? readString(record?.account_id) ?? email
+  const username = readString(record?.username)
   const name = readString(record?.name)
+  const displayName = readString(record?.displayName) ?? readString(record?.display_name) ?? name
+  const avatarUrl = readString(record?.avatarUrl) ?? readString(record?.avatar_url)
   const role = readString(record?.role)
   const status = readString(record?.status)
   const emailVerifiedAt = readString(record?.emailVerifiedAt) ?? readString(record?.email_verified_at)
@@ -319,7 +441,10 @@ export function normalizeAccountUser(value: unknown): MobileAccountUser | null {
   return {
     id,
     email,
+    ...(username ? { username } : {}),
     ...(name ? { name } : {}),
+    ...(displayName ? { displayName } : {}),
+    ...(avatarUrl ? { avatarUrl } : {}),
     ...(role ? { role } : {}),
     ...(status ? { status } : {}),
     ...(emailVerifiedAt ? { emailVerifiedAt } : {}),
@@ -369,8 +494,31 @@ function readRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
 
+function readNestedValue(record: Record<string, unknown> | null, account: Record<string, unknown> | null, key: string) {
+  if (account && key in account) return account[key]
+  return record ? record[key] : undefined
+}
+
 function readString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function readBoolean(value: unknown) {
+  if (typeof value === "boolean") return value
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (["true", "1", "yes"].includes(normalized)) return true
+    if (["false", "0", "no"].includes(normalized)) return false
+  }
+  return undefined
+}
+
+function readNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  const stringValue = readString(value)
+  if (!stringValue) return undefined
+  const parsed = Number(stringValue)
+  return Number.isFinite(parsed) ? parsed : undefined
 }
 
 function readTimestamp(value: unknown) {
@@ -379,4 +527,12 @@ function readTimestamp(value: unknown) {
   if (!stringValue) return undefined
   const parsed = Date.parse(stringValue)
   return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function formatPlanLabel(value: string) {
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toLocaleUpperCase()}${part.slice(1).toLocaleLowerCase()}`)
+    .join(" ")
 }

@@ -442,7 +442,20 @@ describe("SettingsPage built-in tools", () => {
                 account: {
                   email: "agent@example.com",
                   workspaceName: "Studio",
-                  planType: "Pro",
+                  planType: "pro",
+                  planLabel: "Pro",
+                  subscription: {
+                    planCode: "pro",
+                    status: "active",
+                    source: "system_migration",
+                    cancelAtPeriodEnd: false,
+                  },
+                  entitlements: {
+                    modelGatewayEnabled: true,
+                    relayEnabled: true,
+                    maxDesktopDevices: 3,
+                    maxMobileDevices: 5,
+                  },
                   balanceMicrocents: 250000000,
                   currency: "CNY",
                   rechargeUrl: "https://provider.example/billing",
@@ -469,6 +482,9 @@ describe("SettingsPage built-in tools", () => {
     expect(screen.getByText("agent@example.com")).toBeInTheDocument()
     expect(screen.getByText("Studio")).toBeInTheDocument()
     expect(screen.getByText("Pro")).toBeInTheDocument()
+    expect(screen.getByText("Active")).toBeInTheDocument()
+    expect(screen.getAllByText("Enabled")).toHaveLength(2)
+    expect(screen.getByText("3 / 5")).toBeInTheDocument()
     expect(screen.getByText(/2\.50/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }))

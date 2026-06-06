@@ -76,6 +76,9 @@ export const ProviderAuthAccountSummary = z
     userID: z.string().optional(),
     email: z.string().optional(),
     planType: z.string().optional(),
+    planLabel: z.string().optional(),
+    subscription: Auth.WorkspaceSubscription.nullable().optional(),
+    entitlements: Auth.WorkspaceEntitlements.optional(),
     workspaceID: z.string().optional(),
     workspaceName: z.string().optional(),
     balanceMicrocents: z.number().optional(),
@@ -303,6 +306,25 @@ function parseNumeric(value: unknown) {
   return undefined
 }
 
+function parseBoolean(value: unknown) {
+  if (typeof value === "boolean") return value
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (["true", "1", "yes"].includes(normalized)) return true
+    if (["false", "0", "no"].includes(normalized)) return false
+  }
+  return undefined
+}
+
+function parseTimestamp(value: unknown) {
+  const numeric = parseNumeric(value)
+  if (numeric !== undefined) return numeric
+  const stringValue = normalizeString(value)
+  if (!stringValue) return undefined
+  const parsed = Date.parse(stringValue)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 function getOpenAILocalCallbackHost() {
   return normalizeString(getProcessEnvValue("ANYBOX_OPENAI_CODEX_CALLBACK_HOST")) ?? "localhost"
 }
@@ -375,6 +397,9 @@ function summarizeOAuthAccount(credential: Auth.OAuthSessionCredential): Provide
     !credential.userID &&
     !credential.email &&
     !credential.planType &&
+    !credential.planLabel &&
+    !credential.subscription &&
+    !credential.entitlements &&
     !credential.workspaceID &&
     !credential.workspaceName &&
     credential.balanceMicrocents === undefined &&
@@ -390,6 +415,9 @@ function summarizeOAuthAccount(credential: Auth.OAuthSessionCredential): Provide
     userID: credential.userID,
     email: credential.email,
     planType: credential.planType,
+    planLabel: credential.planLabel,
+    subscription: credential.subscription,
+    entitlements: credential.entitlements,
     workspaceID: credential.workspaceID,
     workspaceName: credential.workspaceName,
     balanceMicrocents: credential.balanceMicrocents,
@@ -413,7 +441,7 @@ function connectionLabelForCredential(
   if (!credential) return undefined
 
   if (credential.kind === "oauth_session") {
-    const planLabel = normalizeString(credential.planType)?.toUpperCase()
+    const planLabel = normalizeString(credential.planLabel) ?? normalizeString(credential.planType)?.toUpperCase()
     const baseLabel =
       providerID === ANYBOX_PROVIDER_ID
         ? "Connected via Anybox account"
@@ -780,6 +808,9 @@ function makeDescriptor(
     expiresAt: credential.expiresAt,
     email: credential.email,
     planType: credential.planType,
+    planLabel: credential.planLabel,
+    subscription: credential.subscription,
+    entitlements: credential.entitlements,
     workspaceID: credential.workspaceID,
     workspaceName: credential.workspaceName,
     balanceMicrocents: credential.balanceMicrocents,
@@ -893,12 +924,28 @@ function readAnyboxAccount(payload: unknown) {
       : record.billing && typeof record.billing === "object"
         ? (record.billing as Record<string, unknown>)
         : {}
+  const subscription = readAnyboxSubscription(readNestedRecordValue(record, account, "subscription"))
+  const entitlements = readAnyboxEntitlements(readNestedRecordValue(record, account, "entitlements"))
+  const planType =
+    normalizeString(account.plan_type) ??
+    normalizeString(account.planType) ??
+    normalizeString(record.plan_type) ??
+    normalizeString(record.planType) ??
+    subscription?.planCode
 
   return {
     accountID: normalizeString(account.account_id) ?? normalizeString(account.accountID) ?? normalizeString(account.id),
     userID: normalizeString(account.user_id) ?? normalizeString(account.userID) ?? normalizeString(account.id),
     email: normalizeString(account.email),
-    planType: normalizeString(account.plan_type) ?? normalizeString(account.planType),
+    planType,
+    planLabel:
+      normalizeString(account.plan_label) ??
+      normalizeString(account.planLabel) ??
+      normalizeString(record.plan_label) ??
+      normalizeString(record.planLabel) ??
+      (planType ? formatAnyboxPlanLabel(planType) : undefined),
+    subscription,
+    entitlements,
     workspaceID:
       normalizeString(account.workspace_id) ??
       normalizeString(account.workspaceID) ??
@@ -921,6 +968,53 @@ function readAnyboxAccount(payload: unknown) {
       normalizeString(billing.recharge_url) ??
       normalizeString(billing.rechargeUrl),
   }
+}
+
+function readNestedRecordValue(record: Record<string, unknown>, account: Record<string, unknown>, key: string) {
+  return key in account ? account[key] : record[key]
+}
+
+function readAnyboxSubscription(value: unknown): Auth.WorkspaceSubscription | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  const record = readOptionalRecord(value)
+  if (!record) return undefined
+  const planCode = normalizeString(record.planCode) ?? normalizeString(record.plan_code)
+  const status = normalizeString(record.status)
+  if (!planCode && !status) return undefined
+  return {
+    id: normalizeString(record.id) ?? null,
+    workspaceId: normalizeString(record.workspaceId) ?? normalizeString(record.workspace_id),
+    planCode,
+    status,
+    source: normalizeString(record.source) ?? null,
+    currentPeriodStart: parseTimestamp(record.currentPeriodStart) ?? parseTimestamp(record.current_period_start) ?? null,
+    currentPeriodEnd: parseTimestamp(record.currentPeriodEnd) ?? parseTimestamp(record.current_period_end) ?? null,
+    cancelAtPeriodEnd: parseBoolean(record.cancelAtPeriodEnd) ?? parseBoolean(record.cancel_at_period_end) ?? false,
+  }
+}
+
+function readAnyboxEntitlements(value: unknown): Auth.WorkspaceEntitlements | undefined {
+  const record = readOptionalRecord(value)
+  if (!record) return undefined
+  const entitlements: Auth.WorkspaceEntitlements = {}
+  const modelGatewayEnabled = parseBoolean(record.modelGatewayEnabled) ?? parseBoolean(record.model_gateway_enabled)
+  const relayEnabled = parseBoolean(record.relayEnabled) ?? parseBoolean(record.relay_enabled)
+  const maxDesktopDevices = parseNumeric(record.maxDesktopDevices) ?? parseNumeric(record.max_desktop_devices)
+  const maxMobileDevices = parseNumeric(record.maxMobileDevices) ?? parseNumeric(record.max_mobile_devices)
+  if (modelGatewayEnabled !== undefined) entitlements.modelGatewayEnabled = modelGatewayEnabled
+  if (relayEnabled !== undefined) entitlements.relayEnabled = relayEnabled
+  if (maxDesktopDevices !== undefined) entitlements.maxDesktopDevices = maxDesktopDevices
+  if (maxMobileDevices !== undefined) entitlements.maxMobileDevices = maxMobileDevices
+  return Object.keys(entitlements).length ? entitlements : undefined
+}
+
+function formatAnyboxPlanLabel(value: string) {
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toLocaleUpperCase()}${part.slice(1).toLocaleLowerCase()}`)
+    .join(" ")
 }
 
 function readOptionalRecord(value: unknown): Record<string, unknown> | undefined {
@@ -949,6 +1043,9 @@ function parseAnyboxIdToken(idToken: string | undefined) {
       email: payload.email ?? profile.email,
       name: profile.name ?? payload.name,
       plan_type: auth.anybox_plan_type ?? auth.plan_type,
+      plan_label: auth.anybox_plan_label ?? auth.plan_label,
+      subscription: auth.subscription,
+      entitlements: auth.entitlements,
       workspace_id: auth.anybox_workspace_id ?? auth.workspace_id,
       workspace_name: auth.anybox_workspace_name ?? auth.workspace_name,
       balance_microcents: auth.balance_microcents,
@@ -970,6 +1067,9 @@ function mergeAnyboxAccount(
     userID: primary.userID ?? secondary.userID ?? fallback?.userID,
     email: primary.email ?? secondary.email ?? fallback?.email,
     planType: primary.planType ?? secondary.planType ?? fallback?.planType,
+    planLabel: primary.planLabel ?? secondary.planLabel ?? fallback?.planLabel,
+    subscription: primary.subscription ?? secondary.subscription ?? fallback?.subscription,
+    entitlements: primary.entitlements ?? secondary.entitlements ?? fallback?.entitlements,
     workspaceID: primary.workspaceID ?? secondary.workspaceID ?? fallback?.workspaceID,
     workspaceName: primary.workspaceName ?? secondary.workspaceName ?? fallback?.workspaceName,
     balanceMicrocents: primary.balanceMicrocents ?? secondary.balanceMicrocents ?? fallback?.balanceMicrocents,
@@ -1113,6 +1213,9 @@ async function refreshOpenAISession(credential: Auth.OAuthSessionCredential) {
     userID: parsed.userID ?? credential.userID,
     email: parsed.email ?? credential.email,
     planType: parsed.planType ?? credential.planType,
+    planLabel: credential.planLabel,
+    subscription: credential.subscription,
+    entitlements: credential.entitlements,
     workspaceID: parsed.workspaceID ?? credential.workspaceID,
     workspaceName: parsed.workspaceName ?? credential.workspaceName,
     originator: credential.originator ?? OPENAI_ORIGINATOR,
@@ -1242,6 +1345,9 @@ async function refreshAnyboxSession(
     userID: account.userID,
     email: account.email,
     planType: account.planType,
+    planLabel: account.planLabel,
+    subscription: account.subscription,
+    entitlements: account.entitlements,
     workspaceID: account.workspaceID,
     workspaceName: account.workspaceName,
     balanceMicrocents: account.balanceMicrocents,
@@ -1277,6 +1383,9 @@ async function saveAnyboxTokens(
     userID: account.userID,
     email: account.email,
     planType: account.planType,
+    planLabel: account.planLabel,
+    subscription: account.subscription,
+    entitlements: account.entitlements,
     workspaceID: account.workspaceID,
     workspaceName: account.workspaceName,
     balanceMicrocents: account.balanceMicrocents,

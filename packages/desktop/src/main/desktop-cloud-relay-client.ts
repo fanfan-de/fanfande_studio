@@ -31,6 +31,13 @@ export interface DesktopCloudRelayAccountStatus {
   state: "unknown" | "not_connected" | "connected" | "error"
   email?: string
   workspaceName?: string
+  planLabel?: string
+  entitlements?: {
+    modelGatewayEnabled?: boolean
+    relayEnabled?: boolean
+    maxDesktopDevices?: number
+    maxMobileDevices?: number
+  }
   expiresAt?: number
   lastError?: string
 }
@@ -40,6 +47,13 @@ export interface DesktopCloudRelayAccountSession {
   baseUrl?: string
   email?: string
   workspaceName?: string
+  planLabel?: string
+  entitlements?: {
+    modelGatewayEnabled?: boolean
+    relayEnabled?: boolean
+    maxDesktopDevices?: number
+    maxMobileDevices?: number
+  }
   expiresAt?: number
 }
 
@@ -637,6 +651,8 @@ async function readRelayAccountSession(currentOptions: DesktopCloudRelayClientOp
           state: "error",
           email: session.email,
           workspaceName: session.workspaceName,
+          planLabel: session.planLabel,
+          entitlements: session.entitlements,
           expiresAt: session.expiresAt,
           lastError: "Anybox Provider account URL does not match the mobile relay URL.",
         },
@@ -648,6 +664,8 @@ async function readRelayAccountSession(currentOptions: DesktopCloudRelayClientOp
         state: "connected",
         email: session.email,
         workspaceName: session.workspaceName,
+        planLabel: session.planLabel,
+        entitlements: session.entitlements,
         expiresAt: session.expiresAt,
       },
     }
@@ -677,8 +695,9 @@ async function relayRequest<T>(baseUrl: string, pathName: string, init: RequestI
     })
     const body = await response.json().catch(() => null) as RelayResponse<T> | null
     if (!response.ok || !body || body.success !== true) {
-      const message = body?.success === false ? body.error?.message : undefined
-      throw new Error(message || `Relay request failed with HTTP ${response.status}.`)
+      const code = body?.success === false ? body.error?.code : undefined
+      const message = describeRelayRequestError(code, body?.success === false ? body.error?.message : undefined, response.status)
+      throw new RelayRequestError(response.status, code ?? "relay_request_failed", message)
     }
     return body.data
   } finally {
@@ -826,4 +845,29 @@ class RelayCommandError extends Error {
     super(message)
     this.name = "RelayCommandError"
   }
+}
+
+class RelayRequestError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = "RelayRequestError"
+  }
+}
+
+function describeRelayRequestError(code: string | undefined, message: string | undefined, status: number) {
+  if (code === "relay_disabled") {
+    return "当前套餐不支持 Relay。请在管理后台启用 Relay 权益后重试。"
+  }
+  if (code === "device_limit_exceeded") {
+    return "桌面设备数量已达上限。请移除旧设备，或在管理后台提高设备上限后重试。"
+  }
+  return message || `Relay request failed with HTTP ${status}.`
+}
+
+export const internal = {
+  describeRelayRequestError,
 }

@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router"
-import React, { useCallback, useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Alert, Text, View } from "react-native"
 import { Button } from "@/components/button"
 import { ListRow } from "@/components/list-row"
@@ -24,12 +24,19 @@ import {
 import { useAccount } from "@/state/account"
 import { useConnection } from "@/state/connection"
 import { useFocus } from "@/state/focus"
+import {
+  buildEntitlementDetail,
+  describeAccountApiError,
+  formatAccountPlanLabel,
+  formatSubscriptionStatus,
+  isRelayDisabledByEntitlement,
+} from "@/utils/account-entitlements"
 import { formatRelativeTime, trimMiddle } from "@/utils/format"
 import { getMobileDeviceName } from "@/utils/platform"
 
 export default function ProviderScreen() {
   const router = useRouter()
-  const { account } = useAccount()
+  const { account, refreshAccount } = useAccount()
   const { connection, clearConnection, saveConnection } = useConnection()
   const focus = useFocus()
   const [status, setStatus] = useState<MobileStatus | null>(null)
@@ -42,6 +49,7 @@ export default function ProviderScreen() {
   const [disconnecting, setDisconnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [desktopError, setDesktopError] = useState<string | null>(null)
+  const refreshedAccountKeyRef = useRef<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -74,12 +82,17 @@ export default function ProviderScreen() {
       setDesktopError(null)
       return
     }
+    if (isRelayDisabledByEntitlement(account)) {
+      setDesktops([])
+      setDesktopError(null)
+      return
+    }
     setDesktopLoading(true)
     setDesktopError(null)
     try {
       setDesktops(await listAccountRelayDesktops(account))
     } catch (loadError) {
-      setDesktopError(loadError instanceof Error ? loadError.message : "Unable to load desktop devices.")
+      setDesktopError(describeAccountApiError(loadError, "Unable to load desktop devices."))
     } finally {
       setDesktopLoading(false)
     }
@@ -92,6 +105,23 @@ export default function ProviderScreen() {
   useEffect(() => {
     void loadDesktops()
   }, [loadDesktops])
+
+  useEffect(() => {
+    if (!account) {
+      refreshedAccountKeyRef.current = null
+      return
+    }
+    const refreshKey = `${account.baseUrl}:${account.user.id}`
+    if (refreshedAccountKeyRef.current === refreshKey) return
+    refreshedAccountKeyRef.current = refreshKey
+    let cancelled = false
+    refreshAccount().catch((refreshError) => {
+      if (!cancelled) setDesktopError((current) => current ?? describeAccountApiError(refreshError, "Unable to refresh account."))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [account?.baseUrl, account?.user.id, refreshAccount])
 
   const focusedWorkspace = useMemo(
     () => workspaces.find((workspace) => workspace.id === focus.workspaceID) ?? null,
@@ -146,13 +176,14 @@ export default function ProviderScreen() {
         await revokeCurrentDevice(previousConnection).catch(() => undefined)
       }
     } catch (connectError) {
-      setDesktopError(connectError instanceof Error ? connectError.message : "Unable to connect this desktop.")
+      setDesktopError(describeAccountApiError(connectError, "Unable to connect this desktop."))
     } finally {
       setConnectingDesktopID(null)
     }
   }, [account, connection, saveConnection])
 
   const connectionState = status?.online ? "Connected" : connection ? "Checking" : "Not connected"
+  const relayDisabled = isRelayDisabledByEntitlement(account)
   const desktopName = status?.desktopName?.trim() || currentDesktopName(connection?.desktopID, desktops) || "Desktop"
   const diagnostics = buildDiagnostics({
     accountEmail: account?.user.email,
@@ -199,7 +230,9 @@ export default function ProviderScreen() {
       <Section title="Account">
         <ListRow title="Email" subtitle={account?.user.email ?? "Not signed in"} />
         <ListRow title="Workspace" subtitle={account?.workspace?.name ?? "Unknown"} />
-        <ListRow title="Plan" meta={account?.planType ?? "Unknown"} />
+        <ListRow title="Plan" meta={formatAccountPlanLabel(account)} />
+        <ListRow title="Subscription" meta={formatSubscriptionStatus(account)} />
+        <StateCard title="Workspace entitlements" detail={buildEntitlementDetail(account)} tone={relayDisabled ? "danger" : "neutral"} />
         <Button label="Manage account" onPress={() => router.push("/account" as never)} variant="secondary" />
       </Section>
 
@@ -210,20 +243,38 @@ export default function ProviderScreen() {
       </Section>
 
       <Section title="Desktop Devices" caption={desktopLoading ? "Loading" : `${desktops.length}`}>
+        {relayDisabled ? <StateCard title="Relay unavailable" detail="当前套餐不支持 Relay。请在管理后台启用 Relay 权益后重试。" tone="danger" /> : null}
         {desktopError ? <StateCard title="Desktop list failed" detail={desktopError} tone="danger" /> : null}
-        {desktops.length ? (
-          desktops.map((desktop) => (
-            <ListRow
-              key={desktop.id}
-              title={desktop.appVersion ? `${desktop.name} ${desktop.appVersion}` : desktop.name}
-              subtitle={desktop.online ? "Online" : `Last seen ${formatRelativeTime(desktop.lastSeenAt)}`}
-              meta={desktop.id === connection?.desktopID ? "Current" : connectingDesktopID === desktop.id ? "Connecting" : desktop.online ? "Switch" : "Offline"}
-              onPress={desktop.online && desktop.id !== connection?.desktopID ? () => void connectDesktop(desktop) : undefined}
-            />
-          ))
-        ) : (
+        {!relayDisabled && desktops.length ? (
+          desktops.map((desktop) => {
+            const isCurrentDesktop = desktop.id === connection?.desktopID
+            const currentConnectionIsOnline = isCurrentDesktop && status?.online === true
+            const canConnectDesktop = desktop.online && connectingDesktopID !== desktop.id && (!isCurrentDesktop || !currentConnectionIsOnline)
+            return (
+              <ListRow
+                key={desktop.id}
+                title={desktop.appVersion ? `${desktop.name} ${desktop.appVersion}` : desktop.name}
+                subtitle={desktop.online ? "Online" : `Last seen ${formatRelativeTime(desktop.lastSeenAt)}`}
+                meta={
+                  connectingDesktopID === desktop.id
+                    ? "Connecting"
+                    : isCurrentDesktop
+                      ? currentConnectionIsOnline
+                        ? "Current"
+                        : desktop.online
+                          ? "Reconnect"
+                          : "Current"
+                      : desktop.online
+                        ? "Switch"
+                        : "Offline"
+                }
+                onPress={canConnectDesktop ? () => void connectDesktop(desktop) : undefined}
+              />
+            )
+          })
+        ) : !relayDisabled ? (
           <StateCard title={desktopLoading ? "Loading desktop devices" : "No desktop devices"} />
-        )}
+        ) : null}
         <View style={{ flexDirection: "row", gap: 10 }}>
           <View style={{ flex: 1 }}>
             <Button label="Refresh" loading={desktopLoading} onPress={() => void loadDesktops()} variant="secondary" />

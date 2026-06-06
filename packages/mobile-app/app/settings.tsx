@@ -1,14 +1,21 @@
 import Feather from "@expo/vector-icons/Feather"
 import { Stack, useRouter } from "expo-router"
 import { StatusBar } from "expo-status-bar"
-import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { Alert, Pressable, ScrollView, Share, Text, useWindowDimensions, View } from "react-native"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Alert, Image, Pressable, ScrollView, Share, Text, useWindowDimensions, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { getApprovals, getStatus, isRelayConnection, type MobileStatus } from "@/api/mobile-api"
 import { formatAppVersionLabel, getCurrentAppInfo } from "@/services/app-updates"
 import { useAccount } from "@/state/account"
 import { useConnection } from "@/state/connection"
 import { useFocus } from "@/state/focus"
+import {
+  describeAccountApiError,
+  formatAccountPlanLabel,
+  formatDeviceLimit,
+  formatEntitlementFlag,
+  formatSubscriptionStatus,
+} from "@/utils/account-entitlements"
 import { trimMiddle } from "@/utils/format"
 
 type FeatherName = React.ComponentProps<typeof Feather>["name"]
@@ -17,14 +24,16 @@ export default function SettingsScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const { account, clearAccount, loading: accountLoading } = useAccount()
+  const { account, clearAccount, loading: accountLoading, refreshAccount } = useAccount()
   const { connection, loading: connectionLoading } = useConnection()
   const focus = useFocus()
   const [status, setStatus] = useState<MobileStatus | null>(null)
   const [pendingApprovals, setPendingApprovals] = useState(0)
   const [statusLoading, setStatusLoading] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
+  const [accountRefreshError, setAccountRefreshError] = useState<string | null>(null)
   const [signingOut, setSigningOut] = useState(false)
+  const refreshedAccountKeyRef = useRef<string | null>(null)
   const appInfo = useMemo(() => getCurrentAppInfo(), [])
   const appVersion = formatAppVersionLabel(appInfo)
   const maxWidth = width >= 760 ? 430 : undefined
@@ -57,9 +66,37 @@ export default function SettingsScreen() {
     void loadConnectionOverview()
   }, [loadConnectionOverview])
 
-  const displayName = account?.user.name?.trim() || account?.user.email?.split("@")[0] || "Anybox User"
+  useEffect(() => {
+    if (!account) {
+      refreshedAccountKeyRef.current = null
+      return
+    }
+    const refreshKey = `${account.baseUrl}:${account.user.id}`
+    if (refreshedAccountKeyRef.current === refreshKey) return
+    refreshedAccountKeyRef.current = refreshKey
+    let cancelled = false
+    refreshAccount()
+      .then(() => {
+        if (!cancelled) setAccountRefreshError(null)
+      })
+      .catch((refreshError) => {
+        if (!cancelled) setAccountRefreshError(describeAccountApiError(refreshError, "Unable to refresh account."))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [account?.baseUrl, account?.user.id, refreshAccount])
+
+  const displayName = account?.user.displayName?.trim() || account?.user.name?.trim() || account?.user.username?.trim() || account?.user.email?.split("@")[0] || "Anybox User"
   const avatarLabel = (displayName.trim()[0] || account?.user.email?.trim()[0] || "A").toLocaleUpperCase()
-  const planLabel = account?.planType ? formatPlanLabel(account.planType) : account ? "Personal" : "Guest"
+  const avatarUrl = account?.user.avatarUrl?.trim()
+  const planLabel = formatAccountPlanLabel(account)
+  const subscriptionLabel = formatSubscriptionStatus(account)
+  const relayLabel = formatEntitlementFlag(account?.entitlements?.relayEnabled)
+  const modelGatewayLabel = formatEntitlementFlag(account?.entitlements?.modelGatewayEnabled)
+  const deviceLimitLabel = account?.entitlements
+    ? `${formatDeviceLimit(account.entitlements.maxDesktopDevices)} / ${formatDeviceLimit(account.entitlements.maxMobileDevices)}`
+    : "Unknown"
   const accountLabel = accountLoading ? "Loading" : account ? account.user.email : "Sign in"
   const workspaceLabel = account?.workspace?.name ?? "No workspace"
   const connectionState = connectionLoading
@@ -150,15 +187,15 @@ export default function SettingsScreen() {
         style={{ backgroundColor: "#191919", flex: 1 }}
         contentContainerStyle={{
           alignItems: "center",
-          paddingBottom: Math.max(insets.bottom, 18) + 18,
-          paddingHorizontal: 24,
-          paddingTop: insets.top + 14,
+          paddingBottom: Math.max(insets.bottom, 18) + 14,
+          paddingHorizontal: 20,
+          paddingTop: insets.top + 10,
         }}
       >
-        <View style={{ gap: 26, width: "100%", maxWidth }}>
-          <View style={{ alignItems: "center", flexDirection: "row", minHeight: 44 }}>
+        <View style={{ gap: 18, width: "100%", maxWidth }}>
+          <View style={{ alignItems: "center", flexDirection: "row", minHeight: 38 }}>
             <HeaderIconButton icon="chevron-left" label="Back" onPress={() => router.back()} />
-            <Text numberOfLines={1} style={{ color: "#f2f2f2", flex: 1, fontSize: 30, fontWeight: "900", textAlign: "center" }}>
+            <Text numberOfLines={1} style={{ color: "#f2f2f2", flex: 1, fontSize: 24, fontWeight: "900", textAlign: "center" }}>
               Anybox
             </Text>
             <View>
@@ -167,40 +204,48 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          <View style={{ alignItems: "center", gap: 12 }}>
-            <View style={{ alignItems: "center", backgroundColor: "#7e55d6", borderRadius: 49, height: 98, justifyContent: "center", width: 98 }}>
-              <Text style={{ color: "#ffffff", fontSize: 46, fontWeight: "800" }}>{avatarLabel}</Text>
+          <View style={{ alignItems: "center", gap: 8 }}>
+            <View style={{ alignItems: "center", backgroundColor: "#7e55d6", borderRadius: 39, height: 78, justifyContent: "center", width: 78 }}>
+              {avatarUrl ? (
+                <Image
+                  accessibilityIgnoresInvertColors
+                  source={{ uri: avatarUrl }}
+                  style={{ borderRadius: 39, height: 78, width: 78 }}
+                />
+              ) : (
+                <Text style={{ color: "#ffffff", fontSize: 36, fontWeight: "800" }}>{avatarLabel}</Text>
+              )}
               <View
                 style={{
                   alignItems: "center",
                   backgroundColor: "#5b5b5b",
                   borderColor: "#191919",
-                  borderRadius: 15,
+                  borderRadius: 12,
                   borderWidth: 2,
                   bottom: 2,
-                  height: 30,
+                  height: 24,
                   justifyContent: "center",
                   position: "absolute",
                   right: 1,
-                  width: 30,
+                  width: 24,
                 }}
               >
-                <Feather color="#ffffff" name="star" size={15} />
+                <Feather color="#ffffff" name="star" size={12} />
               </View>
             </View>
-            <View style={{ alignItems: "center", gap: 4 }}>
-              <Text numberOfLines={1} style={{ color: "#eeeeee", fontSize: 26, fontWeight: "800", textAlign: "center" }}>
+            <View style={{ alignItems: "center", gap: 2 }}>
+              <Text numberOfLines={1} style={{ color: "#eeeeee", fontSize: 22, fontWeight: "800", textAlign: "center" }}>
                 {displayName}
               </Text>
-              <Text numberOfLines={1} style={{ color: "#8f8f8f", fontSize: 16, fontWeight: "700", textAlign: "center" }}>
+              <Text numberOfLines={1} style={{ color: "#8f8f8f", fontSize: 14, fontWeight: "700", textAlign: "center" }}>
                 {planLabel}
               </Text>
             </View>
           </View>
 
           <SettingsCard>
-            <View style={{ alignItems: "center", flexDirection: "row", gap: 14, minHeight: 54, paddingHorizontal: 24, paddingVertical: 18 }}>
-              <Text numberOfLines={1} style={{ color: "#f2f2f2", flex: 1, fontSize: 26, fontWeight: "900" }}>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: 12, minHeight: 48, paddingHorizontal: 20, paddingVertical: 12 }}>
+              <Text numberOfLines={1} style={{ color: "#f2f2f2", flex: 1, fontSize: 22, fontWeight: "900" }}>
                 Anybox
               </Text>
               <Pressable
@@ -210,11 +255,11 @@ export default function SettingsScreen() {
                   backgroundColor: "#f2f2f2",
                   borderRadius: 8,
                   opacity: pressed ? 0.78 : 1,
-                  paddingHorizontal: 18,
-                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
                 })}
               >
-                <Text style={{ color: "#151515", fontSize: 16, fontWeight: "800" }}>Manage</Text>
+                <Text style={{ color: "#151515", fontSize: 14, fontWeight: "800" }}>Manage</Text>
               </Pressable>
             </View>
             <SettingsRow
@@ -228,6 +273,7 @@ export default function SettingsScreen() {
           </SettingsCard>
 
           {statusError ? <InlineNotice title="Connection check failed" detail={statusError} /> : null}
+          {accountRefreshError ? <InlineNotice title="Account sync failed" detail={accountRefreshError} /> : null}
 
           <SettingsCard>
             <SettingsRow icon="share-2" title="Share Anybox" onPress={() => void shareAnybox()} />
@@ -242,6 +288,11 @@ export default function SettingsScreen() {
           <SettingsCard>
             <SettingsRow icon="user" title="Account" value={accountLabel} onPress={() => router.push("/account" as never)} />
             <SettingsRow icon="briefcase" title="Workspace" value={workspaceLabel} onPress={() => router.push("/account" as never)} />
+            <SettingsRow icon="star" title="Plan" value={planLabel} onPress={() => router.push("/account" as never)} />
+            <SettingsRow icon="clock" title="Subscription" value={subscriptionLabel} onPress={() => router.push("/account" as never)} />
+            <SettingsRow icon="activity" title="Relay" value={relayLabel} onPress={() => router.push("/provider" as never)} />
+            <SettingsRow icon="zap" title="Model Gateway" value={modelGatewayLabel} onPress={() => router.push("/account" as never)} />
+            <SettingsRow icon="monitor" title="Device Limits" value={deviceLimitLabel} onPress={() => router.push("/account" as never)} />
             <SettingsRow icon="monitor" title="Provider Details" value={providerHost} onPress={() => router.push("/provider" as never)} />
             <SettingsRow icon="bell" title="Approvals" value={pendingApprovals ? `${pendingApprovals}` : "None"} onPress={() => router.push("/approvals" as never)} />
           </SettingsCard>
@@ -273,13 +324,13 @@ function HeaderIconButton({ icon, label, onPress }: { icon: FeatherName; label: 
       onPress={onPress}
       style={({ pressed }) => ({
         alignItems: "center",
-        height: 42,
+        height: 38,
         justifyContent: "center",
         opacity: pressed ? 0.62 : 1,
-        width: 42,
+        width: 38,
       })}
     >
-      <Feather color="#f2f2f2" name={icon} size={30} />
+      <Feather color="#f2f2f2" name={icon} size={24} />
     </Pressable>
   )
 }
@@ -325,13 +376,13 @@ function SettingsRow({
       style={({ pressed }) => ({
         alignItems: "center",
         flexDirection: "row",
-        gap: 16,
-        minHeight: 72,
+        gap: 12,
+        minHeight: 60,
         opacity: disabled ? 0.48 : pressed ? 0.72 : 1,
-        paddingHorizontal: 24,
+        paddingHorizontal: 20,
       })}
     >
-      <Feather color="#e4e4e4" name={icon} size={25} />
+      <Feather color="#e4e4e4" name={icon} size={22} />
       <View
         style={{
           alignItems: "center",
@@ -339,19 +390,19 @@ function SettingsRow({
           borderBottomWidth: 1,
           flex: 1,
           flexDirection: "row",
-          gap: 12,
-          minHeight: 72,
+          gap: 10,
+          minHeight: 60,
         }}
       >
-        <Text numberOfLines={1} style={{ color: "#eeeeee", flex: 1, fontSize: 21, fontWeight: "700" }}>
+        <Text numberOfLines={1} style={{ color: "#eeeeee", flex: 1, fontSize: 18, fontWeight: "700" }}>
           {title}
         </Text>
         {value ? (
-          <Text numberOfLines={1} style={{ color: valueColor, flexShrink: 1, fontSize: 18, fontVariant: ["tabular-nums"], fontWeight: "700", maxWidth: "48%" }}>
+          <Text numberOfLines={1} style={{ color: valueColor, flexShrink: 1, fontSize: 16, fontVariant: ["tabular-nums"], fontWeight: "700", maxWidth: "50%" }}>
             {value}
           </Text>
         ) : null}
-        {interactive ? <Feather color="#7f7f7f" name="chevron-right" size={24} /> : null}
+        {interactive ? <Feather color="#7f7f7f" name="chevron-right" size={22} /> : null}
       </View>
     </Pressable>
   )
@@ -371,14 +422,14 @@ function SignOutButton({ loading, onPress }: { loading: boolean; onPress: () => 
         borderRadius: 8,
         borderWidth: 1,
         flexDirection: "row",
-        gap: 16,
-        minHeight: 72,
+        gap: 12,
+        minHeight: 60,
         opacity: loading ? 0.52 : pressed ? 0.72 : 1,
-        paddingHorizontal: 24,
+        paddingHorizontal: 20,
       })}
     >
-      <Feather color="#eeeeee" name="log-out" size={25} />
-      <Text numberOfLines={1} style={{ color: "#eeeeee", flex: 1, fontSize: 21, fontWeight: "700" }}>
+      <Feather color="#eeeeee" name="log-out" size={22} />
+      <Text numberOfLines={1} style={{ color: "#eeeeee", flex: 1, fontSize: 18, fontWeight: "700" }}>
         {loading ? "正在退出登录" : "退出登录"}
       </Text>
     </Pressable>
@@ -392,16 +443,6 @@ function InlineNotice({ detail, title }: { detail: string; title: string }) {
       <Text style={{ color: "#d9c6c6", fontSize: 13, lineHeight: 18 }}>{detail}</Text>
     </View>
   )
-}
-
-function formatPlanLabel(value: string) {
-  const normalized = value.trim()
-  if (!normalized) return "Personal"
-  return normalized
-    .split(/[_\s-]+/)
-    .filter(Boolean)
-    .map((part) => `${part.slice(0, 1).toLocaleUpperCase()}${part.slice(1).toLocaleLowerCase()}`)
-    .join(" ")
 }
 
 function hostFromUrl(value?: string) {

@@ -18,6 +18,30 @@ export const ApiKeyCredential = z
   .meta({ ref: "ApiKeyCredential" })
 export type ApiKeyCredential = z.infer<typeof ApiKeyCredential>
 
+export const WorkspaceSubscription = z
+  .object({
+    id: z.string().nullable().optional(),
+    workspaceId: z.string().optional(),
+    planCode: z.string().optional(),
+    status: z.string().optional(),
+    source: z.string().nullable().optional(),
+    currentPeriodStart: z.number().nullable().optional(),
+    currentPeriodEnd: z.number().nullable().optional(),
+    cancelAtPeriodEnd: z.boolean().optional(),
+  })
+  .meta({ ref: "WorkspaceSubscription" })
+export type WorkspaceSubscription = z.infer<typeof WorkspaceSubscription>
+
+export const WorkspaceEntitlements = z
+  .object({
+    modelGatewayEnabled: z.boolean().optional(),
+    relayEnabled: z.boolean().optional(),
+    maxDesktopDevices: z.number().optional(),
+    maxMobileDevices: z.number().optional(),
+  })
+  .meta({ ref: "WorkspaceEntitlements" })
+export type WorkspaceEntitlements = z.infer<typeof WorkspaceEntitlements>
+
 export const OAuthSessionCredential = z
   .object({
     kind: z.literal("oauth_session"),
@@ -31,6 +55,9 @@ export const OAuthSessionCredential = z
     userID: z.string().optional(),
     email: z.string().optional(),
     planType: z.string().optional(),
+    planLabel: z.string().optional(),
+    subscription: WorkspaceSubscription.nullable().optional(),
+    entitlements: WorkspaceEntitlements.optional(),
     workspaceID: z.string().optional(),
     workspaceName: z.string().optional(),
     balanceMicrocents: z.number().optional(),
@@ -76,6 +103,9 @@ export const ProviderCredentialDescriptor = z
     label: z.string().optional(),
     email: z.string().optional(),
     planType: z.string().optional(),
+    planLabel: z.string().optional(),
+    subscription: WorkspaceSubscription.nullable().optional(),
+    entitlements: WorkspaceEntitlements.optional(),
     workspaceID: z.string().optional(),
     workspaceName: z.string().optional(),
     balanceMicrocents: z.number().optional(),
@@ -150,6 +180,9 @@ function descriptorFromCredential(
     label: credential.email ?? credential.workspaceName ?? credential.planType,
     email: credential.email,
     planType: credential.planType,
+    planLabel: credential.planLabel,
+    subscription: credential.subscription,
+    entitlements: credential.entitlements,
     workspaceID: credential.workspaceID,
     workspaceName: credential.workspaceName,
     balanceMicrocents: credential.balanceMicrocents,

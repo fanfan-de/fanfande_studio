@@ -1420,11 +1420,22 @@ function extractValidationErrorMessage(payload: unknown): string | undefined {
   if (!payload || typeof payload !== "object") return undefined
 
   const record = payload as Record<string, unknown>
+  const directCode = firstNonEmptyString(record.code, record.error_code)
+  if (directCode === "model_gateway_disabled") {
+    return "当前 workspace 没有模型网关权限。请在管理后台启用模型网关权益后重试。"
+  }
   const directMessage = firstNonEmptyString(record.message, record.detail, record.error_description)
   if (directMessage) return directMessage
 
   const errorRecord = record.error
   if (errorRecord && typeof errorRecord === "object") {
+    const nestedCode = firstNonEmptyString(
+      (errorRecord as Record<string, unknown>).code,
+      (errorRecord as Record<string, unknown>).error_code,
+    )
+    if (nestedCode === "model_gateway_disabled") {
+      return "当前 workspace 没有模型网关权限。请在管理后台启用模型网关权益后重试。"
+    }
     return firstNonEmptyString(
       (errorRecord as Record<string, unknown>).message,
       (errorRecord as Record<string, unknown>).detail,
@@ -1433,6 +1444,21 @@ function extractValidationErrorMessage(payload: unknown): string | undefined {
   }
 
   return undefined
+}
+
+async function readEntitlementFailureMessage(response: Response) {
+  if (response.status !== 403) return undefined
+  const contentType = response.headers.get("content-type") ?? ""
+  if (!contentType.includes("application/json")) return undefined
+  const payload = await response.json().catch(() => undefined)
+  const detail = extractValidationErrorMessage(payload)
+  return detail?.includes("模型网关权限") ? detail : undefined
+}
+
+function runtimeFetchInputURL(input: RuntimeFetchInput) {
+  if (typeof input === "string") return input
+  if (input instanceof URL) return input.toString()
+  return input.url
 }
 
 async function readValidationFailureMessage(response: Response) {
@@ -1857,6 +1883,14 @@ function createAnyboxRuntimeFetch(provider: ProviderInfo) {
 
     const firstRequest = withBearerToken(input, init, accessToken)
     const response = await AnyboxHTTP.anyboxFetch(firstRequest.input, firstRequest.init)
+    const entitlementMessage = await readEntitlementFailureMessage(response.clone())
+    if (entitlementMessage) {
+      throw new AnyboxHTTP.AnyboxHTTPError(
+        "http_error",
+        entitlementMessage,
+        await AnyboxHTTP.createAnyboxDiagnostics(runtimeFetchInputURL(firstRequest.input)),
+      )
+    }
     if (response.status !== 401) return response
 
     const refreshed = await ProviderAuth.resolveProviderRuntimeAuth(
@@ -1885,7 +1919,16 @@ function createAnyboxRuntimeFetch(provider: ProviderInfo) {
     provider.runtimeHeaders = refreshed.runtimeHeaders ?? provider.runtimeHeaders
 
     const retryRequest = withBearerToken(input, init, accessToken)
-    return await AnyboxHTTP.anyboxFetch(retryRequest.input, retryRequest.init)
+    const retryResponse = await AnyboxHTTP.anyboxFetch(retryRequest.input, retryRequest.init)
+    const retryEntitlementMessage = await readEntitlementFailureMessage(retryResponse.clone())
+    if (retryEntitlementMessage) {
+      throw new AnyboxHTTP.AnyboxHTTPError(
+        "http_error",
+        retryEntitlementMessage,
+        await AnyboxHTTP.createAnyboxDiagnostics(runtimeFetchInputURL(retryRequest.input)),
+      )
+    }
+    return retryResponse
   }
 }
 

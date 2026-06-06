@@ -439,6 +439,34 @@ function formatProviderBalance(account: ProviderCatalogItem["authState"]["accoun
   }).format(account.balanceMicrocents / 100_000_000)
 }
 
+function formatProviderPlanLabel(account: ProviderCatalogItem["authState"]["account"]) {
+  return account?.planLabel ?? formatPlanCode(account?.planType ?? account?.subscription?.planCode) ?? null
+}
+
+function formatProviderSubscriptionStatus(account: ProviderCatalogItem["authState"]["account"]) {
+  return formatPlanCode(account?.subscription?.status) ?? null
+}
+
+function formatProviderEntitlementFlag(value: boolean | undefined, t: SettingsTranslate) {
+  if (value === true) return t("settings.account.entitlementEnabled")
+  if (value === false) return t("settings.account.entitlementDisabled")
+  return t("settings.account.entitlementUnknown")
+}
+
+function formatProviderDeviceLimit(value: number | undefined, t: SettingsTranslate) {
+  return typeof value === "number" && Number.isFinite(value) ? `${value}` : t("settings.account.entitlementUnknown")
+}
+
+function formatPlanCode(value: string | undefined) {
+  const normalized = value?.trim()
+  if (!normalized) return null
+  return normalized
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toLocaleUpperCase()}${part.slice(1).toLocaleLowerCase()}`)
+    .join(" ")
+}
+
 function getAnyboxRechargeUrl(provider: ProviderCatalogItem) {
   const account = provider.authState.account
   const credential = getProviderActiveCredential(provider)
@@ -1292,6 +1320,13 @@ export function SettingsPage({
       ? savingProviderID === anyboxAccountProvider.id || deletingProviderID === anyboxAccountProvider.id
       : false
     const anyboxAccountBalance = anyboxAccountProvider ? formatProviderBalance(anyboxAccountView.account ?? undefined) : null
+    const anyboxAccountPlanLabel = formatProviderPlanLabel(anyboxAccountView.account ?? undefined)
+    const anyboxAccountSubscriptionStatus = formatProviderSubscriptionStatus(anyboxAccountView.account ?? undefined)
+    const anyboxAccountRelayStatus = formatProviderEntitlementFlag(anyboxAccountView.account?.entitlements?.relayEnabled, t)
+    const anyboxAccountModelGatewayStatus = formatProviderEntitlementFlag(anyboxAccountView.account?.entitlements?.modelGatewayEnabled, t)
+    const anyboxAccountDeviceLimits = anyboxAccountView.account?.entitlements
+      ? `${formatProviderDeviceLimit(anyboxAccountView.account.entitlements.maxDesktopDevices, t)} / ${formatProviderDeviceLimit(anyboxAccountView.account.entitlements.maxMobileDevices, t)}`
+      : t("settings.account.entitlementUnknown")
     const anyboxAccountRechargeUrl = anyboxAccountProvider ? getAnyboxRechargeUrl(anyboxAccountProvider) : null
     const activeProviderModels = activeProvider ? modelGroups[activeProvider.id] ?? [] : []
     const activeProviderBusy = activeProvider ? savingProviderID === activeProvider.id || deletingProviderID === activeProvider.id : false
@@ -1917,8 +1952,30 @@ export function SettingsPage({
                 <div className="settings-account-row">
                   <span className="settings-account-title">{t("settings.account.plan")}</span>
                   <strong className="settings-account-value">
-                    {anyboxAccountView.account?.planType ?? t("settings.account.noValue")}
+                    {anyboxAccountPlanLabel ?? t("settings.account.noValue")}
                   </strong>
+                </div>
+
+                <div className="settings-account-row">
+                  <span className="settings-account-title">{t("settings.account.subscriptionStatus")}</span>
+                  <strong className="settings-account-value">
+                    {anyboxAccountSubscriptionStatus ?? t("settings.account.noValue")}
+                  </strong>
+                </div>
+
+                <div className="settings-account-row">
+                  <span className="settings-account-title">{t("settings.account.relay")}</span>
+                  <strong className="settings-account-value">{anyboxAccountRelayStatus}</strong>
+                </div>
+
+                <div className="settings-account-row">
+                  <span className="settings-account-title">{t("settings.account.modelGateway")}</span>
+                  <strong className="settings-account-value">{anyboxAccountModelGatewayStatus}</strong>
+                </div>
+
+                <div className="settings-account-row">
+                  <span className="settings-account-title">{t("settings.account.deviceLimits")}</span>
+                  <strong className="settings-account-value">{anyboxAccountDeviceLimits}</strong>
                 </div>
 
                 {anyboxAccountBalance ? (
@@ -2851,13 +2908,13 @@ export function SettingsPage({
                                             <strong>{anyboxAccountView.account.email}</strong>
                                           </div>
                                         ) : null}
-                                        {anyboxAccountView.account?.workspaceName || anyboxAccountView.account?.planType ? (
+                                        {anyboxAccountView.account?.workspaceName || anyboxAccountPlanLabel ? (
                                           <div className="provider-account-summary-row">
                                             <span>
                                               {t("settings.account.workspace")} / {t("settings.account.plan")}
                                             </span>
                                             <strong>
-                                              {[anyboxAccountView.account.workspaceName, anyboxAccountView.account.planType]
+                                              {[anyboxAccountView.account?.workspaceName, anyboxAccountPlanLabel]
                                                 .filter(Boolean)
                                                 .join(" / ")}
                                             </strong>
@@ -2895,13 +2952,13 @@ export function SettingsPage({
                                               <strong>{activeProviderAccount.email}</strong>
                                             </div>
                                           ) : null}
-                                          {activeProviderAccount?.workspaceName || activeProviderAccount?.planType ? (
+                                          {activeProviderAccount?.workspaceName || activeProviderAccount?.planLabel || activeProviderAccount?.planType ? (
                                             <div className="provider-account-summary-row">
                                               <span>
                                                 {t("settings.account.workspace")} / {t("settings.account.plan")}
                                               </span>
                                               <strong>
-                                                {[activeProviderAccount.workspaceName, activeProviderAccount.planType]
+                                                {[activeProviderAccount.workspaceName, formatProviderPlanLabel(activeProviderAccount)]
                                                   .filter(Boolean)
                                                   .join(" / ")}
                                               </strong>

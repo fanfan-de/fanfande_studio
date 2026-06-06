@@ -101,6 +101,13 @@ interface AnyboxProviderRelaySession {
   account?: {
     email?: string
     workspaceName?: string
+    planLabel?: string
+    entitlements?: {
+      modelGatewayEnabled?: boolean
+      relayEnabled?: boolean
+      maxDesktopDevices?: number
+      maxMobileDevices?: number
+    }
   }
 }
 
@@ -182,6 +189,8 @@ async function getAnyboxProviderRelaySession() {
     baseUrl: session.baseURL,
     email: session.account?.email,
     workspaceName: session.account?.workspaceName,
+    planLabel: session.account?.planLabel,
+    entitlements: session.account?.entitlements,
     expiresAt: session.expiresAt,
   }
 }

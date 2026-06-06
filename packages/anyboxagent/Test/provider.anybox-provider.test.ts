@@ -241,6 +241,19 @@ test("anybox browser login stores oauth session and runtime uses openai-compatib
           user_id: "user_anybox",
           email: "agent-user@anybox.test",
           plan_type: "pro",
+          plan_label: "Pro",
+          subscription: {
+            plan_code: "pro",
+            status: "active",
+            source: "system_migration",
+            cancel_at_period_end: false,
+          },
+          entitlements: {
+            model_gateway_enabled: true,
+            relay_enabled: true,
+            max_desktop_devices: 3,
+            max_mobile_devices: 5,
+          },
           workspace: {
             id: "ws_anybox",
             name: "Anybox Workspace",
@@ -363,6 +376,19 @@ test("anybox browser login stores oauth session and runtime uses openai-compatib
           account: {
             email: "agent-user@anybox.test",
             planType: "pro",
+            planLabel: "Pro",
+            subscription: {
+              planCode: "pro",
+              status: "active",
+              source: "system_migration",
+              cancelAtPeriodEnd: false,
+            },
+            entitlements: {
+              modelGatewayEnabled: true,
+              relayEnabled: true,
+              maxDesktopDevices: 3,
+              maxMobileDevices: 5,
+            },
             workspaceName: "Anybox Workspace",
             balanceMicrocents: 123_000_000,
             currency: "CNY",
@@ -671,9 +697,33 @@ test("anybox runtime fetch refreshes and retries chat completion after 401", asy
         expires_in: 3600,
         account: {
           email: "fresh@anybox.test",
+          plan_type: "pro",
+          plan_label: "Pro",
           workspace_name: "Anybox Workspace",
+          subscription: {
+            plan_code: "pro",
+            status: "active",
+            source: "manual_admin",
+            cancel_at_period_end: false,
+          },
+          entitlements: {
+            model_gateway_enabled: true,
+            relay_enabled: true,
+            max_desktop_devices: 3,
+            max_mobile_devices: 5,
+          },
         },
       })
+    }
+
+    if (url === "https://anybox.test/api/models/retry-model/chat/disabled") {
+      return Response.json({
+        success: false,
+        error: {
+          code: "model_gateway_disabled",
+          message: "This workspace does not have access to the model gateway",
+        },
+      }, { status: 403 })
     }
 
     if (url === "https://anybox.test/api/models/retry-model/chat/chat/completions") {
@@ -746,6 +796,16 @@ test("anybox runtime fetch refreshes and retries chat completion after 401", asy
         expect(response.status).toBe(200)
         expect(chatAuthorizations).toEqual(["Bearer old-anybox-access", "Bearer new-anybox-access"])
         expect(chatProxies).toEqual([undefined, undefined])
+        await expect(
+          (runtimeFetch as typeof fetch)("https://anybox.test/api/models/retry-model/chat/disabled", {
+            method: "POST",
+            headers: {
+              authorization: "Bearer new-anybox-access",
+              "content-type": "application/json",
+            },
+            body: "{}",
+          }),
+        ).rejects.toThrow("模型网关权限")
 
         const active = await Auth.getActiveProviderCredential("anybox")
         expect(active?.credential).toMatchObject({
@@ -753,6 +813,19 @@ test("anybox runtime fetch refreshes and retries chat completion after 401", asy
           accessToken: "new-anybox-access",
           refreshToken: "new-anybox-refresh",
           email: "fresh@anybox.test",
+          planLabel: "Pro",
+          subscription: {
+            planCode: "pro",
+            status: "active",
+            source: "manual_admin",
+            cancelAtPeriodEnd: false,
+          },
+          entitlements: {
+            modelGatewayEnabled: true,
+            relayEnabled: true,
+            maxDesktopDevices: 3,
+            maxMobileDevices: 5,
+          },
         })
       },
     })
