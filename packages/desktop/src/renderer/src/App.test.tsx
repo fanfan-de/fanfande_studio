@@ -13252,6 +13252,10 @@ describe("App", () => {
     expect(styles).toMatch(/\.settings-prompt-assignment-select\s+\.settings-select-option span\s*\{[^}]*overflow:\s*visible;[^}]*text-overflow:\s*clip;/s)
     expect(styles).toMatch(/\.settings-page-main\.is-services\.prompt-presets-page-main\s+\.settings-prompt-slots-panel\s*\{[^}]*padding:\s*0 0 12px;[^}]*border:\s*0;[^}]*border-bottom:\s*1px solid var\(--seg-border\);[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
     expect(styles).toMatch(/\.settings-page-main\.is-services\.prompt-presets-page-main\s+\.settings-service-detail-panel\s*>\s*\.settings-prompt-editor-panel\s*\{[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
+    expect(styles).toMatch(/\.settings-page-main\.is-services\.prompt-presets-page-main\s+\.settings-prompt-editor,\s*\.settings-page-main\.is-services\.prompt-presets-page-main\s+\.settings-prompt-preview-surface\s*\{[^}]*width:\s*min\(100%,\s*1320px\);[^}]*justify-self:\s*center;[^}]*border:\s*0;[^}]*border-radius:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
+    expect(styles).toMatch(/\.settings-page-main\.is-services\.prompt-presets-page-main\s+\.settings-prompt-editor\s*\{[^}]*resize:\s*none;/s)
+    expect(styles).toMatch(/\.settings-page-main\.is-services\.prompt-presets-page-main\s+\.settings-prompt-editor:focus-visible\s*\{[^}]*box-shadow:\s*none;[^}]*outline:\s*var\(--focus-outline-width\) solid rgba\(143,\s*99,\s*233,\s*0\.22\);/s)
+    expect(styles).toMatch(/\.settings-page-main\.is-services\.prompt-presets-page-main\s+\.settings-prompt-source-path\s*\{[^}]*width:\s*min\(100%,\s*1320px\);[^}]*justify-self:\s*center;/s)
     expect(styles).not.toMatch(/\.settings-prompt-assignment-control select/)
   })
 

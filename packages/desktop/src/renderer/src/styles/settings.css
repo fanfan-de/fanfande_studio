@@ -9571,6 +9571,31 @@ body.is-dragging-settings-page {
   gap: 10px;
 }
 
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-editor,
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-preview-surface {
+  width: min(100%, 1320px);
+  justify-self: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-editor {
+  resize: none;
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-editor:focus-visible {
+  box-shadow: none;
+  outline: var(--focus-outline-width) solid rgba(143, 99, 233, 0.22);
+  outline-offset: calc(-1 * var(--focus-outline-width));
+}
+
+.settings-page-main.is-services.prompt-presets-page-main .settings-prompt-source-path {
+  width: min(100%, 1320px);
+  justify-self: center;
+}
+
 .settings-page-main.is-services .settings-section-header {
   gap: 4px;
 }
