@@ -662,6 +662,8 @@ function mobileAgentPath(url: URL) {
     if (action === "events/stream") return `/api/sessions/${sessionID}/events/stream${sanitizedSearch(url)}`
     if (action === "cancel") return `/api/sessions/${sessionID}/cancel`
     if (action === "tasks") return `/api/sessions/${sessionID}/tasks${sanitizedSearch(url)}`
+    if (action === "models") return `/api/sessions/${sessionID}/models${sanitizedSearch(url)}`
+    if (action === "model-selection") return `/api/sessions/${sessionID}/model-selection`
   }
 
   return undefined
@@ -689,6 +691,8 @@ function mobileAgentRouteCapability(url: URL, method: string) {
     if (action === "events/stream") return "session:read"
     if (action === "cancel") return "task:cancel"
     if (action === "tasks") return "session:read"
+    if (action === "models") return "session:read"
+    if (action === "model-selection") return "session:read"
   }
 
   return undefined
@@ -726,6 +730,10 @@ function mobileAgentRouteAudit(url: URL, method: string) {
                 ? "session.cancel"
                 : routeAction === "tasks"
                   ? "tasks.read"
+                  : routeAction === "models"
+                    ? "models.read"
+                    : routeAction === "model-selection"
+                      ? "model.selection.update"
                   : "agent.proxy"
 
     return {
@@ -738,8 +746,6 @@ function mobileAgentRouteAudit(url: URL, method: string) {
 }
 
 function mobileAgentRouteDesktopEvent(url: URL, method: string): Omit<MobileBridgeDesktopEvent, "generatedAt" | "source"> | null {
-  if (method !== "POST") return null
-
   const segments = url.pathname.split("/").filter(Boolean)
   if (segments[0] !== "api" || segments[1] !== "mobile" || segments[2] !== "sessions" || segments.length < 5) {
     return null
@@ -748,6 +754,13 @@ function mobileAgentRouteDesktopEvent(url: URL, method: string): Omit<MobileBrid
   const sessionID = segments[3]
   const action = segments.slice(4).join("/")
   if (!sessionID) return null
+  if (method === "PATCH" && action === "model-selection") {
+    return {
+      type: "session.updated",
+      sessionID,
+    }
+  }
+  if (method !== "POST") return null
   if (action === "messages" || action === "messages/stream" || action === "resume/stream" || action === "cancel") {
     return {
       type: "session.updated",

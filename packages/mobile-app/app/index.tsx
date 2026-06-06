@@ -1,7 +1,7 @@
 import { Stack, useRouter } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Animated, Easing, Linking, Pressable, useWindowDimensions, View } from "react-native"
+import { Animated, Easing, Linking, PanResponder, Pressable, useWindowDimensions, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Screen } from "@/components/screen"
 import { StateCard } from "@/components/state-card"
@@ -19,13 +19,18 @@ import {
   createSession,
   getApprovals,
   getMessages,
+  getSessionModels,
   getStatus,
   getWorkspaces,
   normalizeConnectionInput,
   readConnectionUrlFromDeepLink,
+  respondApproval,
   sendPrompt,
+  updateSessionModelSelection,
   type MobileApproval,
   type MobileMessage,
+  type MobileModelSelection,
+  type MobileProviderModel,
   type MobileSessionSummary,
   type MobileStatus,
   type MobileWorkspace,
@@ -37,6 +42,7 @@ import { useConnection } from "@/state/connection"
 import { useFocus } from "@/state/focus"
 import { describeAccountApiError, isRelayDisabledByEntitlement } from "@/utils/account-entitlements"
 import {
+  appendMessageContentSegment,
   mergeOptimisticMessages,
   type PendingPromptOverlay,
   type StreamingAssistantOverlay,
@@ -67,11 +73,21 @@ export default function HomeScreen() {
   const [connectingDesktopID, setConnectingDesktopID] = useState<string | null>(null)
   const [status, setStatus] = useState<MobileStatus | null>(null)
   const [workspaces, setWorkspaces] = useState<MobileWorkspace[]>([])
-  const [approvals, setApprovals] = useState<MobileApproval[]>([])
   const [error, setError] = useState<string | null>(null)
   const [messages, setMessages] = useState<MobileMessage[]>([])
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [messageError, setMessageError] = useState<string | null>(null)
+  const [sessionApprovals, setSessionApprovals] = useState<MobileApproval[]>([])
+  const [approvalsLoading, setApprovalsLoading] = useState(false)
+  const [approvalError, setApprovalError] = useState<string | null>(null)
+  const [actingApprovalID, setActingApprovalID] = useState<string | null>(null)
+  const [optimisticSession, setOptimisticSession] = useState<{ session: MobileSessionSummary; workspaceID: string } | null>(null)
+  const [modelOptions, setModelOptions] = useState<MobileProviderModel[]>([])
+  const [modelSelection, setModelSelection] = useState<MobileModelSelection>({})
+  const [effectiveModel, setEffectiveModel] = useState<MobileProviderModel | null>(null)
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [modelError, setModelError] = useState<string | null>(null)
+  const [savingModel, setSavingModel] = useState(false)
   const [draft, setDraft] = useState("")
   const [sending, setSending] = useState(false)
   const [drawerMounted, setDrawerMounted] = useState(false)
@@ -104,6 +120,30 @@ export default function HomeScreen() {
     })
   }, [drawerProgress])
 
+  const drawerPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          drawerMounted && gestureState.dx < -8 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+        onPanResponderGrant: () => {
+          drawerProgress.stopAnimation()
+        },
+        onPanResponderMove: (_, gestureState) => {
+          const nextProgress = Math.max(0, Math.min(1, 1 + gestureState.dx / drawerWidth))
+          drawerProgress.setValue(nextProgress)
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (gestureState.dx < -drawerWidth * 0.24 || gestureState.vx < -0.75) {
+            closeSessionDrawer()
+            return
+          }
+          openSessionDrawer()
+        },
+        onPanResponderTerminate: openSessionDrawer,
+      }),
+    [closeSessionDrawer, drawerMounted, drawerProgress, drawerWidth, openSessionDrawer],
+  )
+
   useEffect(() => {
     if (connection) return
     drawerProgress.stopAnimation()
@@ -121,7 +161,10 @@ export default function HomeScreen() {
     if (!connection) {
       setStatus(null)
       setWorkspaces([])
-      setApprovals([])
+      setSessionApprovals([])
+      setApprovalsLoading(false)
+      setApprovalError(null)
+      setActingApprovalID(null)
       return
     }
     if (!options?.silent) {
@@ -129,14 +172,12 @@ export default function HomeScreen() {
       setError(null)
     }
     try {
-      const [nextStatus, nextWorkspaces, nextApprovals] = await Promise.all([
+      const [nextStatus, nextWorkspaces] = await Promise.all([
         getStatus(connection),
         getWorkspaces(connection),
-        getApprovals(connection, { status: "pending" }),
       ])
       setStatus(nextStatus)
       setWorkspaces(nextWorkspaces)
-      setApprovals(nextApprovals)
     } catch (loadError) {
       if (!options?.silent) {
         setError(loadError instanceof Error ? loadError.message : "Unable to load Anybox.")
@@ -149,12 +190,6 @@ export default function HomeScreen() {
   useEffect(() => {
     void load()
   }, [load])
-
-  useMobileEvents({
-    connection,
-    enabled: Boolean(connection),
-    onEvent: () => void load({ silent: true }),
-  })
 
   const loadAccountDesktops = useCallback(async (nextAccount: MobileAccountSession | null = account, options?: { silent?: boolean }) => {
     if (!nextAccount) {
@@ -286,12 +321,29 @@ export default function HomeScreen() {
     () => workspaces.find((workspace) => workspace.id === focus.workspaceID) ?? sortedWorkspaces[0] ?? null,
     [focus.workspaceID, sortedWorkspaces, workspaces],
   )
-  const focusedSessions = useMemo(() => sortSessions(focusedWorkspace?.sessions ?? []), [focusedWorkspace])
+  const focusedSessions = useMemo(() => {
+    const sessions = focusedWorkspace?.sessions ?? []
+    if (!focusedWorkspace || !optimisticSession || optimisticSession.workspaceID !== focusedWorkspace.id) {
+      return sortSessions(sessions)
+    }
+    if (sessions.some((session) => session.id === optimisticSession.session.id)) {
+      return sortSessions(sessions)
+    }
+    return sortSessions([optimisticSession.session, ...sessions])
+  }, [focusedWorkspace, optimisticSession])
   const focusedSession = useMemo(
     () => (focus.sessionID ? focusedSessions.find((session) => session.id === focus.sessionID) ?? null : null),
     [focus.sessionID, focusedSessions],
   )
   const selectedSessionID = focusedSession?.id ?? null
+
+  useEffect(() => {
+    if (!optimisticSession) return
+    const workspace = workspaces.find((item) => item.id === optimisticSession.workspaceID)
+    if (workspace?.sessions.some((session) => session.id === optimisticSession.session.id)) {
+      setOptimisticSession(null)
+    }
+  }, [optimisticSession, workspaces])
 
   useEffect(() => {
     if (focus.loading || !focusedWorkspace) return
@@ -331,6 +383,90 @@ export default function HomeScreen() {
     void loadMessages()
   }, [loadMessages])
 
+  const readSessionApprovals = useCallback(async (sessionID: string) => {
+    if (!connection) return
+    const nextApprovals = await getApprovals(connection, { sessionID, status: "pending" })
+    setSessionApprovals(
+      nextApprovals
+        .filter((approval) => approval.status === "pending")
+        .sort((left, right) => left.createdAt - right.createdAt),
+    )
+  }, [connection])
+
+  const loadSessionApprovals = useCallback(async (options?: { silent?: boolean }) => {
+    if (!connection || !selectedSessionID) {
+      setSessionApprovals([])
+      setApprovalsLoading(false)
+      setApprovalError(null)
+      setActingApprovalID(null)
+      return
+    }
+    if (!options?.silent) {
+      setApprovalsLoading(true)
+      setApprovalError(null)
+    }
+    try {
+      await readSessionApprovals(selectedSessionID)
+    } catch (loadError) {
+      if (!options?.silent) {
+        setApprovalError(loadError instanceof Error ? loadError.message : "Unable to load approvals.")
+      }
+    } finally {
+      if (!options?.silent) setApprovalsLoading(false)
+    }
+  }, [connection, readSessionApprovals, selectedSessionID])
+
+  useEffect(() => {
+    void loadSessionApprovals()
+  }, [loadSessionApprovals])
+
+  const loadSessionModels = useCallback(async (options?: { silent?: boolean }) => {
+    if (!connection || !selectedSessionID) {
+      setModelOptions([])
+      setModelSelection({})
+      setEffectiveModel(null)
+      setModelsLoading(false)
+      setModelError(null)
+      setSavingModel(false)
+      return
+    }
+    if (!options?.silent) {
+      setModelsLoading(true)
+      setModelError(null)
+    }
+    try {
+      const result = await getSessionModels(connection, selectedSessionID)
+      setModelOptions(result.items.filter((model) => model.available))
+      setModelSelection(result.selection ?? {})
+      setEffectiveModel(result.effectiveModel ?? null)
+    } catch (loadError) {
+      if (!options?.silent) {
+        setModelError(loadError instanceof Error ? loadError.message : "Unable to load models.")
+      }
+    } finally {
+      if (!options?.silent) setModelsLoading(false)
+    }
+  }, [connection, selectedSessionID])
+
+  useEffect(() => {
+    void loadSessionModels()
+  }, [loadSessionModels])
+
+  const refreshFromMobileEvent = useCallback(() => {
+    void load({ silent: true })
+    void loadSessionApprovals({ silent: true })
+    void loadSessionModels({ silent: true })
+    if (selectedSessionID) {
+      void readSessionMessages(selectedSessionID).catch(() => undefined)
+    }
+  }, [load, loadSessionApprovals, loadSessionModels, readSessionMessages, selectedSessionID])
+
+  useMobileEvents({
+    connection,
+    enabled: Boolean(connection),
+    onEvent: refreshFromMobileEvent,
+  })
+
   const visibleMessages = useMemo(
     () => mergeOptimisticMessages(messages, pendingPrompt, streamingAssistant),
     [messages, pendingPrompt, streamingAssistant],
@@ -338,32 +474,36 @@ export default function HomeScreen() {
 
   const handleSelectWorkspace = useCallback(
     (workspace: MobileWorkspace) => {
-      closeSessionDrawer()
+      setOptimisticSession(null)
       void focus.setFocus({
         workspaceID: workspace.id,
         sessionID: null,
       })
     },
-    [closeSessionDrawer, focus],
+    [focus],
   )
 
   const handleSelectSession = useCallback(
     (session: MobileSessionSummary, workspace?: MobileWorkspace) => {
-      closeSessionDrawer()
+      setOptimisticSession((current) => (current?.session.id === session.id ? current : null))
       void focus.setFocus({
         workspaceID: workspace?.id ?? focusedWorkspace?.id ?? focus.workspaceID ?? null,
         sessionID: session.id,
       })
     },
-    [closeSessionDrawer, focus, focusedWorkspace?.id],
+    [focus, focusedWorkspace?.id],
   )
 
   const handleCreateConversation = useCallback(async () => {
     if (!connection || !focusedWorkspace) return
     setSending(true)
     setMessageError(null)
+    setApprovalError(null)
     try {
       const session = await createSession(connection, focusedWorkspace.id, { title: "Mobile chat" })
+      setOptimisticSession({ session, workspaceID: focusedWorkspace.id })
+      setMessages([])
+      setSessionApprovals([])
       await focus.setFocus({ workspaceID: focusedWorkspace.id, sessionID: session.id })
       await load({ silent: true })
     } catch (createError) {
@@ -372,6 +512,48 @@ export default function HomeScreen() {
       setSending(false)
     }
   }, [connection, focus, focusedWorkspace, load])
+
+  const handleApprovalDecision = useCallback(async (approval: MobileApproval, decision: "approve" | "deny") => {
+    if (!connection) return
+    setActingApprovalID(approval.id)
+    setApprovalError(null)
+    try {
+      await respondApproval(connection, approval.id, decision, { resume: true })
+      setSessionApprovals((current) => current.filter((item) => item.id !== approval.id))
+      if (selectedSessionID) {
+        await Promise.all([
+          readSessionApprovals(selectedSessionID).catch(() => undefined),
+          readSessionMessages(selectedSessionID).catch(() => undefined),
+          load({ silent: true }).catch(() => undefined),
+        ])
+      }
+    } catch (decisionError) {
+      setApprovalError(decisionError instanceof Error ? decisionError.message : "Unable to resolve approval.")
+    } finally {
+      setActingApprovalID(null)
+    }
+  }, [connection, load, readSessionApprovals, readSessionMessages, selectedSessionID])
+
+  const handleModelSelection = useCallback(async (modelValue: string | null) => {
+    if (!connection || !selectedSessionID) return
+    const previousSelection = modelSelection
+    setSavingModel(true)
+    setModelError(null)
+    setModelSelection((current) => ({
+      ...current,
+      model: modelValue ?? undefined,
+    }))
+    try {
+      const nextSelection = await updateSessionModelSelection(connection, selectedSessionID, { model: modelValue })
+      setModelSelection(nextSelection)
+      void load({ silent: true })
+    } catch (saveError) {
+      setModelSelection(previousSelection)
+      setModelError(saveError instanceof Error ? saveError.message : "Unable to update model.")
+    } finally {
+      setSavingModel(false)
+    }
+  }, [connection, load, modelSelection, selectedSessionID])
 
   const handleSend = useCallback(async () => {
     const text = draft.trim()
@@ -390,7 +572,7 @@ export default function HomeScreen() {
     const anchorMessageID = messages.at(-1)?.info?.id ?? null
     setPendingPrompt({ id: `local-${Date.now()}`, text, anchorMessageID })
     const streamID = `stream-${Date.now()}`
-    setStreamingAssistant({ id: streamID, text: "", anchorMessageID })
+    setStreamingAssistant({ id: streamID, segments: [], anchorMessageID })
     setMessageError(null)
 
     try {
@@ -400,6 +582,8 @@ export default function HomeScreen() {
           title: buildSessionTitle(text),
         })
         targetSessionID = session.id
+        setOptimisticSession({ session, workspaceID: focusedWorkspace.id })
+        setSessionApprovals([])
         await focus.setFocus({ workspaceID: focusedWorkspace.id, sessionID: session.id })
         await load({ silent: true })
       }
@@ -411,10 +595,14 @@ export default function HomeScreen() {
         onOpen: () => {
           setSending(false)
         },
-        onTextDelta: (delta) => {
+        onTextDelta: ({ kind, delta }) => {
           setStreamingAssistant((current) => ({
             id: current?.id ?? streamID,
-            text: `${current?.text ?? ""}${delta}`,
+            segments: appendMessageContentSegment(
+              current?.segments ?? [],
+              kind === "reasoning" ? "reasoning" : "response",
+              delta,
+            ),
             anchorMessageID: current?.anchorMessageID ?? anchorMessageID,
           }))
         },
@@ -500,25 +688,32 @@ export default function HomeScreen() {
       ) : (
         <View style={{ flex: 1, backgroundColor: "#171717" }}>
           <ThreadViewPage
+            actingApprovalID={actingApprovalID}
+            approvalError={approvalError}
+            approvals={sessionApprovals}
             disabled={composerDisabled}
             draft={draft}
             focusedSession={focusedSession}
             focusedWorkspace={focusedWorkspace}
+            effectiveModel={effectiveModel}
             messageError={messageError}
             messages={visibleMessages}
             messagesLoading={messagesLoading}
+            modelError={modelError}
+            modelOptions={modelOptions}
+            modelsLoading={modelsLoading}
+            onApproveApproval={(approval) => void handleApprovalDecision(approval, "approve")}
             onChangeText={setDraft}
+            onDenyApproval={(approval) => void handleApprovalDecision(approval, "deny")}
+            onModelSelect={(modelValue) => void handleModelSelection(modelValue)}
             onNewChat={() => void handleCreateConversation()}
-            onOpenApprovals={() => router.push("/approvals")}
             onOpenDrawer={openSessionDrawer}
-            onOpenProvider={() => router.push("/provider" as never)}
-            onRefresh={load}
             onSend={() => void handleSend()}
             paddingBottom={Math.max(insets.bottom, 10)}
             paddingTop={insets.top}
-            pendingApprovals={approvals.length}
             placeholder={composerPlaceholder}
-            refreshing={refreshing}
+            savingModel={savingModel}
+            selectedModel={modelSelection.model ?? null}
             sending={sending}
           />
           {drawerMounted ? (
@@ -567,12 +762,12 @@ export default function HomeScreen() {
                   width: drawerWidth,
                   zIndex: 11,
                 }}
+                {...drawerPanResponder.panHandlers}
               >
                 <SessionDrawerPage
                   focusedSessionID={focusedSession?.id}
                   focusedWorkspaceID={focusedWorkspace?.id}
                   onNewChat={() => {
-                    closeSessionDrawer()
                     void handleCreateConversation()
                   }}
                   onOpenSettings={() => {

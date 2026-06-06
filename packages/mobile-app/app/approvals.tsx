@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useState } from "react"
 import { useLocalSearchParams } from "expo-router"
-import { Alert, Text, View } from "react-native"
+import { Alert, View } from "react-native"
 import { Button } from "@/components/button"
 import { Screen } from "@/components/screen"
 import { Section } from "@/components/section"
 import { StateCard } from "@/components/state-card"
 import { getApprovalHistory, getApprovals, respondApproval, type MobileApproval } from "@/api/mobile-api"
+import { ApprovalCard } from "@/home/approval-card"
 import { useMobileEvents } from "@/hooks/use-mobile-events"
 import { useConnection } from "@/state/connection"
-import { formatRelativeTime, trimMiddle } from "@/utils/format"
 
 type ApprovalView = "pending" | "history"
 
@@ -132,93 +132,4 @@ export default function ApprovalsScreen() {
 
 function readParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] ?? "" : value ?? ""
-}
-
-function ApprovalCard({
-  approval,
-  acting,
-  onApprove,
-  onDeny,
-}: {
-  approval: MobileApproval
-  acting: boolean
-  onApprove?: () => void
-  onDeny?: () => void
-}) {
-  const details = approval.prompt.details
-  const isPending = approval.status === "pending"
-
-  return (
-    <View
-      style={{
-        backgroundColor: "#ffffff",
-        borderColor: riskColor(approval.prompt.risk),
-        borderRadius: 8,
-        borderWidth: 1,
-        gap: 12,
-        padding: 14,
-      }}
-    >
-      <View style={{ gap: 6 }}>
-        <View style={{ flexDirection: "row", gap: 10, justifyContent: "space-between" }}>
-          <Text selectable style={{ color: "#151515", flex: 1, fontSize: 16, fontWeight: "800" }}>
-            {approval.prompt.title}
-          </Text>
-          <Text selectable style={{ color: riskColor(approval.prompt.risk), fontSize: 12, fontWeight: "800" }}>
-            {isPending ? approval.prompt.risk : approval.status}
-          </Text>
-        </View>
-        <Text selectable style={{ color: "#4d4d49", fontSize: 14, lineHeight: 20 }}>
-          {approval.prompt.summary}
-        </Text>
-        <Text selectable style={{ color: "#676760", fontSize: 13, lineHeight: 18 }}>
-          {approval.prompt.rationale}
-        </Text>
-      </View>
-
-      <View style={{ gap: 6 }}>
-        {details?.command ? <Detail label="Command" value={details.command} /> : null}
-        {details?.workdir ? <Detail label="Workdir" value={trimMiddle(details.workdir, 72)} /> : null}
-        {details?.paths?.length ? <Detail label="Paths" value={details.paths.map((item) => trimMiddle(item, 64)).join("\n")} /> : null}
-        {details?.body ? <Detail label="Body" value={details.body} /> : null}
-        <Detail label="Requested" value={formatRelativeTime(approval.createdAt)} />
-        {approval.resolution ? <Detail label="Resolved" value={`${approval.resolution.decision} ${formatRelativeTime(approval.resolution.resolvedAt)}`} /> : null}
-      </View>
-
-      {onApprove && onDeny ? (
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          <View style={{ flex: 1 }}>
-            <Button disabled={acting} label="Deny" loading={acting} onPress={onDeny} variant="danger" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button disabled={acting} label="Allow" loading={acting} onPress={onApprove} />
-          </View>
-        </View>
-      ) : null}
-    </View>
-  )
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={{ gap: 2 }}>
-      <Text style={{ color: "#676760", fontSize: 11, fontWeight: "800" }}>{label}</Text>
-      <Text selectable style={{ color: "#151515", fontFamily: "monospace", fontSize: 12, lineHeight: 17 }}>
-        {value}
-      </Text>
-    </View>
-  )
-}
-
-function riskColor(risk: MobileApproval["prompt"]["risk"]) {
-  switch (risk) {
-    case "critical":
-      return "#9d1c1f"
-    case "high":
-      return "#b14600"
-    case "medium":
-      return "#8a5a00"
-    case "low":
-      return "#155c34"
-  }
 }

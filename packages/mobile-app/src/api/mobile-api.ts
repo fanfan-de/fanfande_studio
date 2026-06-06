@@ -217,6 +217,42 @@ export interface MobileApproval {
   }
 }
 
+export interface MobileProviderModel {
+  id: string
+  providerID: string
+  providerName?: string
+  name: string
+  family?: string
+  status: "alpha" | "beta" | "deprecated" | "active"
+  available: boolean
+  capabilities?: {
+    temperature?: boolean
+    reasoning?: boolean
+    attachment?: boolean
+    toolcall?: boolean
+    input?: Record<string, boolean | undefined>
+    output?: Record<string, boolean | undefined>
+  }
+  limit?: {
+    context: number
+    input?: number
+    output: number
+  }
+}
+
+export interface MobileModelSelection {
+  model?: string
+  small_model?: string
+  reasoning_effort?: string
+  image_model?: string
+}
+
+export interface MobileSessionModelsResult {
+  items: MobileProviderModel[]
+  selection: MobileModelSelection
+  effectiveModel?: MobileProviderModel | null
+}
+
 export type MobileEventName =
   | "sync.ready"
   | "sync.updated"
@@ -243,10 +279,17 @@ export interface MobileStreamEvent {
   data: unknown
 }
 
+export type MobileStreamTextDeltaKind = "text" | "reasoning"
+
+export interface MobileStreamTextDelta {
+  kind: MobileStreamTextDeltaKind
+  delta: string
+}
+
 export interface MobileStreamCallbacks {
   onEvent?: (event: MobileStreamEvent) => void
   onOpen?: () => void
-  onTextDelta?: (delta: string) => void
+  onTextDelta?: (delta: MobileStreamTextDelta) => void
 }
 
 export interface MobilePairResult {
@@ -473,6 +516,30 @@ export async function getMessages(connection: MobileConnection, sessionID: strin
   return requestMobile<MobileMessage[]>(
     connection,
     `/api/mobile/sessions/${encodeURIComponent(sessionID)}/messages?view=active`,
+  )
+}
+
+export async function getSessionModels(connection: MobileConnection, sessionID: string) {
+  return requestMobile<MobileSessionModelsResult>(
+    connection,
+    `/api/mobile/sessions/${encodeURIComponent(sessionID)}/models`,
+  )
+}
+
+export async function updateSessionModelSelection(
+  connection: MobileConnection,
+  sessionID: string,
+  input: {
+    model?: string | null
+  },
+) {
+  return requestMobile<MobileModelSelection>(
+    connection,
+    `/api/mobile/sessions/${encodeURIComponent(sessionID)}/model-selection`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
   )
 }
 
@@ -865,17 +932,27 @@ function emitMobileStreamEvent(event: MobileStreamEvent, callbacks?: MobileStrea
   if (delta) callbacks?.onTextDelta?.(delta)
 }
 
-function readMobileStreamTextDelta(event: MobileStreamEvent) {
+function readMobileStreamTextDelta(event: MobileStreamEvent): MobileStreamTextDelta | null {
   const data = readRecord(event.data)
-  if (!data) return ""
+  if (!data) return null
 
-  if (event.event === "delta" && data.kind === "text" && typeof data.delta === "string") {
-    return data.delta
+  const eventKind = data.kind
+  if (event.event === "delta" && isMobileStreamTextDeltaKind(eventKind) && typeof data.delta === "string") {
+    return { kind: eventKind, delta: data.delta }
   }
 
-  if (event.event !== "runtime" || data.type !== "text.part.delta") return ""
+  if (event.event !== "runtime") return null
+  if (data.type !== "text.part.delta" && data.type !== "reasoning.part.delta") return null
   const payload = readRecord(data.payload)
-  return typeof payload?.delta === "string" ? payload.delta : ""
+  if (typeof payload?.delta !== "string") return null
+  return {
+    kind: data.type === "reasoning.part.delta" ? "reasoning" : "text",
+    delta: payload.delta,
+  }
+}
+
+function isMobileStreamTextDeltaKind(value: unknown): value is MobileStreamTextDeltaKind {
+  return value === "text" || value === "reasoning"
 }
 
 function consumeSSEBuffer(raw: string, flush = false) {

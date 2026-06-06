@@ -238,6 +238,55 @@ function startAgentStub() {
       return
     }
 
+    if (requestUrl.pathname === "/api/sessions/session-smoke/models" && request.method === "GET") {
+      const model = {
+        id: "gpt-smoke",
+        providerID: "openai",
+        providerName: "OpenAI",
+        name: "GPT Smoke",
+        status: "active",
+        available: true,
+        capabilities: {
+          temperature: true,
+          reasoning: false,
+          attachment: false,
+          toolcall: true,
+          input: {
+            text: true,
+            image: false,
+            video: false,
+            pdf: false,
+          },
+          output: {
+            text: true,
+            image: false,
+            video: false,
+            pdf: false,
+          },
+        },
+        limit: {
+          context: 128_000,
+          output: 16_000,
+        },
+      }
+      jsonAgentResponse(response, 200, agentOk({
+        items: [model],
+        selection: {
+          model: "openai/gpt-smoke",
+        },
+        effectiveModel: model,
+      }))
+      return
+    }
+
+    if (requestUrl.pathname === "/api/sessions/session-smoke/model-selection" && request.method === "PATCH") {
+      const body = JSON.parse(await readNodeRequestBody(request)) as { model?: string | null }
+      jsonAgentResponse(response, 200, agentOk({
+        model: body.model ?? undefined,
+      }))
+      return
+    }
+
     if (requestUrl.pathname === "/api/sessions/session-smoke/cancel" && request.method === "POST") {
       jsonAgentResponse(response, 200, agentOk({ sessionID: "session-smoke", cancelled: true }))
       return
@@ -574,6 +623,30 @@ describe("mobile bridge server", () => {
         summary: { total: 0 },
       })
 
+      const models = await readMobileJSON(baseUrl, "/api/mobile/sessions/session-smoke/models", { headers: authHeaders })
+      expect(models.response.status).toBe(200)
+      expect(successData<{ items: Array<{ id: string }>; selection: { model?: string } }>(models.body)).toMatchObject({
+        items: [expect.objectContaining({ id: "gpt-smoke" })],
+        selection: { model: "openai/gpt-smoke" },
+      })
+
+      const modelSelection = await readMobileJSON(baseUrl, "/api/mobile/sessions/session-smoke/model-selection", {
+        body: JSON.stringify({ model: "openai/gpt-smoke" }),
+        headers: authHeaders,
+        method: "PATCH",
+      })
+      expect(modelSelection.response.status).toBe(200)
+      expect(successData<{ model?: string }>(modelSelection.body).model).toBe("openai/gpt-smoke")
+      expect(desktopSend).toHaveBeenCalledWith(
+        DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL,
+        expect.objectContaining({
+          type: "session.updated",
+          source: "mobile",
+          sessionID: "session-smoke",
+          generatedAt: expect.any(Number),
+        }),
+      )
+
       const cancelled = await readMobileJSON(baseUrl, "/api/mobile/sessions/session-smoke/cancel", {
         headers: authHeaders,
         method: "POST",
@@ -647,6 +720,8 @@ describe("mobile bridge server", () => {
         "GET /api/sessions/session-smoke/messages",
         "POST /api/sessions/session-smoke/messages/stream",
         "GET /api/sessions/session-smoke/tasks",
+        "GET /api/sessions/session-smoke/models",
+        "PATCH /api/sessions/session-smoke/model-selection",
         "POST /api/sessions/session-smoke/cancel",
         "GET /api/workspace-files/directory",
         "GET /api/workspace-files/file",
