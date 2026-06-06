@@ -1,7 +1,7 @@
 import { Stack, useRouter } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Linking, ScrollView, useWindowDimensions, View } from "react-native"
+import { Animated, Easing, Linking, Pressable, useWindowDimensions, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Screen } from "@/components/screen"
 import { StateCard } from "@/components/state-card"
@@ -52,7 +52,8 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const maxWidth = width >= 760 ? 720 : undefined
-  const pagerRef = useRef<ScrollView | null>(null)
+  const drawerWidth = Math.min(width * 0.86, 430)
+  const drawerProgress = useRef(new Animated.Value(0)).current
   const { account, loading: accountLoading } = useAccount()
   const { connection, loading: connectionLoading, saveConnection } = useConnection()
   const focus = useFocus()
@@ -73,18 +74,42 @@ export default function HomeScreen() {
   const [messageError, setMessageError] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
   const [sending, setSending] = useState(false)
+  const [drawerMounted, setDrawerMounted] = useState(false)
   const [pendingPrompt, setPendingPrompt] = useState<PendingPromptOverlay | null>(null)
   const [streamingAssistant, setStreamingAssistant] = useState<StreamingAssistantOverlay | null>(null)
   const autoConnectAttemptedAtRef = useRef<Record<string, number>>({})
   const accountDesktopRefreshInFlightRef = useRef(false)
   const currentApp = useMemo(() => getCurrentAppInfo(), [])
 
-  const scrollToPage = useCallback(
-    (page: 0 | 1) => {
-      pagerRef.current?.scrollTo({ x: page * width, animated: true })
-    },
-    [width],
-  )
+  const openSessionDrawer = useCallback(() => {
+    drawerProgress.stopAnimation()
+    setDrawerMounted(true)
+    Animated.timing(drawerProgress, {
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      toValue: 1,
+      useNativeDriver: true,
+    }).start()
+  }, [drawerProgress])
+
+  const closeSessionDrawer = useCallback(() => {
+    drawerProgress.stopAnimation()
+    Animated.timing(drawerProgress, {
+      duration: 180,
+      easing: Easing.in(Easing.cubic),
+      toValue: 0,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setDrawerMounted(false)
+    })
+  }, [drawerProgress])
+
+  useEffect(() => {
+    if (connection) return
+    drawerProgress.stopAnimation()
+    drawerProgress.setValue(0)
+    setDrawerMounted(false)
+  }, [connection, drawerProgress])
 
   useEffect(() => {
     if (!accountLoading && !connectionLoading && !account && !connection) {
@@ -313,22 +338,24 @@ export default function HomeScreen() {
 
   const handleSelectWorkspace = useCallback(
     (workspace: MobileWorkspace) => {
+      closeSessionDrawer()
       void focus.setFocus({
         workspaceID: workspace.id,
         sessionID: null,
       })
     },
-    [focus],
+    [closeSessionDrawer, focus],
   )
 
   const handleSelectSession = useCallback(
     (session: MobileSessionSummary, workspace?: MobileWorkspace) => {
+      closeSessionDrawer()
       void focus.setFocus({
         workspaceID: workspace?.id ?? focusedWorkspace?.id ?? focus.workspaceID ?? null,
         sessionID: session.id,
       })
     },
-    [focus, focusedWorkspace?.id],
+    [closeSessionDrawer, focus, focusedWorkspace?.id],
   )
 
   const handleCreateConversation = useCallback(async () => {
@@ -472,63 +499,97 @@ export default function HomeScreen() {
         />
       ) : (
         <View style={{ flex: 1, backgroundColor: "#171717" }}>
-          <ScrollView
-            ref={pagerRef}
-            contentOffset={{ x: width, y: 0 }}
-            horizontal
-            keyboardShouldPersistTaps="handled"
-            pagingEnabled
-            scrollEventThrottle={16}
-            showsHorizontalScrollIndicator={false}
-            style={{ flex: 1 }}
-          >
-            <View style={{ width }}>
-              <SessionDrawerPage
-                focusedSessionID={focusedSession?.id}
-                focusedWorkspaceID={focusedWorkspace?.id}
-                onNewChat={() => {
-                  void handleCreateConversation()
-                  scrollToPage(1)
+          <ThreadViewPage
+            disabled={composerDisabled}
+            draft={draft}
+            focusedSession={focusedSession}
+            focusedWorkspace={focusedWorkspace}
+            messageError={messageError}
+            messages={visibleMessages}
+            messagesLoading={messagesLoading}
+            onChangeText={setDraft}
+            onNewChat={() => void handleCreateConversation()}
+            onOpenApprovals={() => router.push("/approvals")}
+            onOpenDrawer={openSessionDrawer}
+            onOpenProvider={() => router.push("/provider" as never)}
+            onRefresh={load}
+            onSend={() => void handleSend()}
+            paddingBottom={Math.max(insets.bottom, 10)}
+            paddingTop={insets.top}
+            pendingApprovals={approvals.length}
+            placeholder={composerPlaceholder}
+            refreshing={refreshing}
+            sending={sending}
+          />
+          {drawerMounted ? (
+            <>
+              <Animated.View
+                style={{
+                  backgroundColor: "#000000",
+                  bottom: 0,
+                  left: 0,
+                  opacity: drawerProgress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 0.48],
+                  }),
+                  position: "absolute",
+                  right: 0,
+                  top: 0,
+                  zIndex: 10,
                 }}
-                onOpenSettings={() => router.push("/settings" as never)}
-                onSelectSession={(session, workspace) => {
-                  handleSelectSession(session, workspace)
-                  scrollToPage(1)
+              >
+                <Pressable
+                  accessibilityLabel="Close projects and sessions"
+                  accessibilityRole="button"
+                  onPress={closeSessionDrawer}
+                  style={{ flex: 1 }}
+                />
+              </Animated.View>
+              <Animated.View
+                style={{
+                  bottom: 0,
+                  left: 0,
+                  overflow: "hidden",
+                  position: "absolute",
+                  shadowColor: "#000000",
+                  shadowOpacity: 0.28,
+                  shadowRadius: 18,
+                  top: 0,
+                  elevation: 12,
+                  transform: [
+                    {
+                      translateX: drawerProgress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-drawerWidth, 0],
+                      }),
+                    },
+                  ],
+                  width: drawerWidth,
+                  zIndex: 11,
                 }}
-                onSelectWorkspace={handleSelectWorkspace}
-                paddingBottom={Math.max(insets.bottom, 14)}
-                paddingTop={insets.top}
-                sending={sending}
-                sessions={focusedSessions}
-                workspaces={sortedWorkspaces}
-              />
-            </View>
-            <View style={{ width }}>
-              <ThreadViewPage
-                disabled={composerDisabled}
-                draft={draft}
-                focusedSession={focusedSession}
-                focusedWorkspace={focusedWorkspace}
-                messageError={messageError}
-                messages={visibleMessages}
-                messagesLoading={messagesLoading}
-                onBack={() => scrollToPage(0)}
-                onChangeText={setDraft}
-                onNewChat={() => void handleCreateConversation()}
-                onOpenApprovals={() => router.push("/approvals")}
-                onOpenProvider={() => router.push("/provider" as never)}
-                onOpenSessionPicker={() => scrollToPage(0)}
-                onRefresh={load}
-                onSend={() => void handleSend()}
-                paddingBottom={Math.max(insets.bottom, 10)}
-                paddingTop={insets.top}
-                pendingApprovals={approvals.length}
-                placeholder={composerPlaceholder}
-                refreshing={refreshing}
-                sending={sending}
-              />
-            </View>
-          </ScrollView>
+              >
+                <SessionDrawerPage
+                  focusedSessionID={focusedSession?.id}
+                  focusedWorkspaceID={focusedWorkspace?.id}
+                  onNewChat={() => {
+                    closeSessionDrawer()
+                    void handleCreateConversation()
+                  }}
+                  onOpenSettings={() => {
+                    closeSessionDrawer()
+                    router.push("/settings" as never)
+                  }}
+                  onSelectSession={handleSelectSession}
+                  onSelectWorkspace={handleSelectWorkspace}
+                  paddingBottom={Math.max(insets.bottom, 14)}
+                  paddingTop={insets.top}
+                  sending={sending}
+                  sessions={focusedSessions}
+                  workspaces={sortedWorkspaces}
+                />
+              </Animated.View>
+            </>
+          ) : null}
         </View>
       )}
     </>

@@ -32,6 +32,7 @@ const MOBILE_BRIDGE_PORT_ENV = "ANYBOX_MOBILE_BRIDGE_PORT"
 const MOBILE_BRIDGE_PUBLIC_URL_ENV = "ANYBOX_MOBILE_BRIDGE_PUBLIC_URL"
 const MOBILE_BRIDGE_TUNNEL_ENV = "ANYBOX_MOBILE_BRIDGE_TUNNEL"
 const MOBILE_BRIDGE_TUNNEL_TARGET_ENV = "ANYBOX_MOBILE_BRIDGE_TUNNEL_TARGET"
+const DESKTOP_DEVICE_NAME_ENV = "ANYBOX_DESKTOP_DEVICE_NAME"
 const TOKEN_QUERY_PARAM = "token"
 const PAIRING_CODE_QUERY_PARAM = "code"
 const MOBILE_DEVICES_FILE_NAME = "mobile-devices.json"
@@ -176,8 +177,28 @@ function readBridgeTunnelTarget() {
   return process.env[MOBILE_BRIDGE_TUNNEL_TARGET_ENV]?.trim() || "anybox-server"
 }
 
+function sanitizeDesktopDeviceName(value: string | null | undefined) {
+  const normalized = value?.trim().replace(/\s+/g, " ").replace(/\.local$/i, "")
+  return normalized ? normalized.slice(0, 80) : null
+}
+
+function getDesktopDeviceName() {
+  return (
+    sanitizeDesktopDeviceName(process.env[DESKTOP_DEVICE_NAME_ENV]) ??
+    sanitizeDesktopDeviceName(os.hostname()) ??
+    sanitizeDesktopDeviceName(app.getName()) ??
+    "Desktop"
+  )
+}
+
 function shouldStartBridgeTunnel() {
   return Boolean(readBridgePublicBaseUrl()) && !isDisabledEnvValue(process.env[MOBILE_BRIDGE_TUNNEL_ENV])
+}
+
+function shouldRefreshRelayPairing(status: DesktopCloudRelayStatus, now = Date.now()) {
+  if (!status.enabled || status.state !== "connected") return false
+  if (!status.pairingDeepLink || !status.pairingExpiresAt) return true
+  return status.pairingExpiresAt <= now
 }
 
 async function getAnyboxProviderRelaySession() {
@@ -790,7 +811,7 @@ function publicStatus() {
   return {
     service: "anybox-mobile-bridge",
     running: Boolean(server),
-    desktopName: app.getName(),
+    desktopName: getDesktopDeviceName(),
     appVersion: app.getVersion(),
     online: Boolean(server),
     capabilities: DEFAULT_MOBILE_DEVICE_CAPABILITIES,
@@ -1306,7 +1327,7 @@ export async function getMobileBridgeStatus(): Promise<MobileBridgeStatus> {
   ensureMobileBridgeTunnelRunning(port)
   ensureDesktopCloudRelayClientRunning({
     baseUrl: port ? readBridgePublicBaseUrl() : null,
-    desktopName: app.getName(),
+    desktopName: getDesktopDeviceName(),
     appVersion: app.getVersion(),
     capabilities: DEFAULT_MOBILE_DEVICE_CAPABILITIES,
     getBridgeToken: () => bridgeToken,
@@ -1321,6 +1342,13 @@ export async function getMobileBridgeStatus(): Promise<MobileBridgeStatus> {
   const publicPairingUrl = publicBaseUrl && pairingCode ? publicUrlWithPairingCode(publicBaseUrl, pairingCode.code) : null
   const pairingLocalUrl = port && pairingCode ? urlWithPairingCode("127.0.0.1", port, pairingCode.code) : null
   const pairingUrls = port && pairingCode ? listLanHosts().map((host) => urlWithPairingCode(host, port, pairingCode.code)) : []
+  let cloudRelay = getDesktopCloudRelayStatus()
+  if (shouldRefreshRelayPairing(cloudRelay)) {
+    cloudRelay = await refreshDesktopCloudRelayPairing().catch((error) => {
+      safeWarn("[desktop][mobile-relay] failed to refresh expired pairing code", error)
+      return getDesktopCloudRelayStatus()
+    })
+  }
   const status = {
     running: Boolean(server),
     host: bridgeHost,
@@ -1335,7 +1363,7 @@ export async function getMobileBridgeStatus(): Promise<MobileBridgeStatus> {
     pairingExpiresAt: pairingCode?.expiresAt ?? null,
     startedAt,
     devices: await listMobileDeviceSummaries(),
-    cloudRelay: getDesktopCloudRelayStatus(),
+    cloudRelay,
   }
   await writeMobileHandoffFile(status)
   return status

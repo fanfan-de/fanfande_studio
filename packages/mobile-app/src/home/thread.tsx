@@ -1,8 +1,11 @@
 import React from "react"
+import Feather from "@expo/vector-icons/Feather"
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native"
 import type { MobileMessage, MobileSessionSummary, MobileWorkspace } from "@/api/mobile-api"
 import { messageRole, messageText } from "@/utils/message"
 import { DarkEmpty, DarkNotice } from "./shared"
+
+type FeatherName = React.ComponentProps<typeof Feather>["name"]
 
 export function ThreadViewPage({
   disabled,
@@ -12,12 +15,11 @@ export function ThreadViewPage({
   messageError,
   messages,
   messagesLoading,
-  onBack,
   onChangeText,
   onNewChat,
   onOpenApprovals,
+  onOpenDrawer,
   onOpenProvider,
-  onOpenSessionPicker,
   onRefresh,
   onSend,
   paddingBottom,
@@ -34,12 +36,11 @@ export function ThreadViewPage({
   messageError: string | null
   messages: MobileMessage[]
   messagesLoading: boolean
-  onBack: () => void
   onChangeText: (value: string) => void
   onNewChat: () => void
   onOpenApprovals: () => void
+  onOpenDrawer: () => void
   onOpenProvider: () => void
-  onOpenSessionPicker: () => void
   onRefresh: () => void
   onSend: () => void
   paddingBottom: number
@@ -55,23 +56,12 @@ export function ThreadViewPage({
     <View style={{ backgroundColor: "#171717", flex: 1, paddingBottom, paddingTop }}>
       <View style={{ alignSelf: "center", flex: 1, width: "100%", maxWidth: 430 }}>
         <View style={{ alignItems: "center", flexDirection: "row", gap: 10, height: 58, paddingHorizontal: 14 }}>
-          <TopIconButton label="‹" onPress={onBack} />
-          <Pressable
-            accessibilityRole="button"
-            onPress={onOpenSessionPicker}
-            style={({ pressed }) => ({
-              alignItems: "center",
-              flex: 1,
-              flexDirection: "row",
-              gap: 8,
-              opacity: pressed ? 0.78 : 1,
-            })}
-          >
+          <TopIconButton accessibilityLabel="Open projects and sessions" icon="menu" onPress={onOpenDrawer} />
+          <View style={{ alignItems: "center", flex: 1, flexDirection: "row" }}>
             <Text numberOfLines={1} style={{ color: "#e8e8e8", flexShrink: 1, fontSize: 25, fontWeight: "800" }}>
               {title}
             </Text>
-            <Text style={{ color: "#cfcfcf", fontSize: 16, fontWeight: "800" }}>⌄</Text>
-          </Pressable>
+          </View>
           <TopIconButton label={refreshing ? "…" : "↻"} onPress={onRefresh} />
           <TopIconButton label={pendingApprovals ? String(pendingApprovals) : "□"} onPress={onOpenApprovals} />
           <TopIconButton label="…" onPress={onOpenProvider} />
@@ -245,9 +235,20 @@ function ComposerIcon({ label, onPress }: { label: string; onPress: () => void }
   )
 }
 
-function TopIconButton({ label, onPress }: { label: string; onPress: () => void }) {
+function TopIconButton({
+  accessibilityLabel,
+  icon,
+  label,
+  onPress,
+}: {
+  accessibilityLabel?: string
+  icon?: FeatherName
+  label?: string
+  onPress: () => void
+}) {
   return (
     <Pressable
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => ({
@@ -259,7 +260,11 @@ function TopIconButton({ label, onPress }: { label: string; onPress: () => void 
         width: 32,
       })}
     >
-      <Text style={{ color: "#e8e8e8", fontSize: label.length > 1 ? 14 : 24, fontWeight: "800" }}>{label}</Text>
+      {icon ? (
+        <Feather color="#e8e8e8" name={icon} size={22} />
+      ) : (
+        <Text style={{ color: "#e8e8e8", fontSize: (label?.length ?? 0) > 1 ? 14 : 24, fontWeight: "800" }}>{label}</Text>
+      )}
     </Pressable>
   )
 }

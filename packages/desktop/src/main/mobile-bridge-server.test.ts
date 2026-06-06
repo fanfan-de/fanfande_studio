@@ -35,6 +35,7 @@ const desktopCloudRelayState = vi.hoisted(() => ({
     state: "disabled",
   } as any,
 }))
+const refreshDesktopCloudRelayPairingMock = vi.hoisted(() => vi.fn(async () => desktopCloudRelayState.status))
 
 vi.mock("electron", () => ({
   app: {
@@ -61,7 +62,7 @@ vi.mock("./safe-console", () => ({
 vi.mock("./desktop-cloud-relay-client", () => ({
   ensureDesktopCloudRelayClientRunning: vi.fn(() => desktopCloudRelayState.status),
   getDesktopCloudRelayStatus: vi.fn(() => desktopCloudRelayState.status),
-  refreshDesktopCloudRelayPairing: vi.fn(async () => desktopCloudRelayState.status),
+  refreshDesktopCloudRelayPairing: refreshDesktopCloudRelayPairingMock,
   stopDesktopCloudRelayClient: vi.fn(),
 }))
 
@@ -319,6 +320,7 @@ describe("mobile bridge server", () => {
     process.env.ANYBOX_MOBILE_BRIDGE_HOST = "127.0.0.1"
     process.env.ANYBOX_MOBILE_BRIDGE_PORT = String(await listenOnFreePort())
     process.env.ANYBOX_MOBILE_BRIDGE_TUNNEL = "0"
+    process.env.ANYBOX_DESKTOP_DEVICE_NAME = "Codex Workstation"
     delete process.env.ANYBOX_MOBILE_BRIDGE_PUBLIC_URL
     agentClientState.baseUrl = "http://127.0.0.1:4096"
     desktopCloudRelayState.status = {
@@ -336,6 +338,7 @@ describe("mobile bridge server", () => {
     }
 
     requestAgentJSONMock.mockReset()
+    refreshDesktopCloudRelayPairingMock.mockClear()
     electronState.windows = []
     requestAgentJSONMock.mockImplementation(async (agentPath: string) => {
       if (agentPath === "/api/projects") return { data: [] }
@@ -350,6 +353,7 @@ describe("mobile bridge server", () => {
     delete process.env.ANYBOX_MOBILE_BRIDGE_PORT
     delete process.env.ANYBOX_MOBILE_BRIDGE_TUNNEL
     delete process.env.ANYBOX_MOBILE_BRIDGE_PUBLIC_URL
+    delete process.env.ANYBOX_DESKTOP_DEVICE_NAME
     if (userDataPath) {
       await fs.rm(userDataPath, { force: true, recursive: true })
     }
@@ -431,7 +435,7 @@ describe("mobile bridge server", () => {
     }>(preview.body)
     expect(previewData).toMatchObject({
       appVersion: "0.1.13",
-      desktopName: "Anybox",
+      desktopName: "Codex Workstation",
       online: true,
       pairing: {
         expiresAt: status.pairingExpiresAt,
@@ -771,5 +775,50 @@ describe("mobile bridge server", () => {
     expect(handoff.android?.deepLink).toBe(`anybox-mobile://connect?url=${encodeURIComponent(status.publicPairingUrl ?? "")}`)
     expect(handoff.android?.deepLink).not.toContain("expired-relay-pair")
     expect(handoff.pairingExpiresAt).toBe(new Date(status.pairingExpiresAt ?? 0).toISOString())
+  })
+
+  it("refreshes an expired cloud relay pairing code before writing the Android handoff file", async () => {
+    process.env.ANYBOX_MOBILE_BRIDGE_PUBLIC_URL = "https://anybox.com.cn"
+    const refreshedRelayStatus = {
+      account: {
+        state: "connected",
+        email: "owner@example.com",
+      },
+      baseUrl: "https://anybox.com.cn",
+      connectedAt: Date.now() - 30_000,
+      desktopID: "desktop-123",
+      enabled: true,
+      pairingCode: "fresh-relay-pair",
+      pairingDeepLink: "anybox-mobile://pair?code=fresh-relay-pair&url=https%3A%2F%2Fanybox.com.cn",
+      pairingExpiresAt: Date.now() + 60_000,
+      state: "connected",
+    }
+    desktopCloudRelayState.status = {
+      ...refreshedRelayStatus,
+      pairingCode: "expired-relay-pair",
+      pairingDeepLink: "anybox-mobile://pair?code=expired-relay-pair&url=https%3A%2F%2Fanybox.com.cn",
+      pairingExpiresAt: Date.now() - 1_000,
+    }
+    refreshDesktopCloudRelayPairingMock.mockImplementationOnce(async () => {
+      desktopCloudRelayState.status = refreshedRelayStatus
+      return refreshedRelayStatus
+    })
+
+    const status = await ensureMobileBridgeServerRunning()
+    const handoffPath = path.join(userDataPath, "mobile-bridge-handoff.json")
+    const handoff = JSON.parse(await fs.readFile(handoffPath, "utf8")) as {
+      android?: {
+        deepLink?: string
+        pairingUrl?: string
+      }
+      pairingExpiresAt?: string
+    }
+
+    expect(refreshDesktopCloudRelayPairingMock).toHaveBeenCalledTimes(1)
+    expect(status.cloudRelay.pairingDeepLink).toBe(refreshedRelayStatus.pairingDeepLink)
+    expect(handoff.android?.pairingUrl).toBe(refreshedRelayStatus.pairingDeepLink)
+    expect(handoff.android?.deepLink).toBe(refreshedRelayStatus.pairingDeepLink)
+    expect(handoff.android?.deepLink).not.toContain("expired-relay-pair")
+    expect(handoff.pairingExpiresAt).toBe(new Date(refreshedRelayStatus.pairingExpiresAt).toISOString())
   })
 })

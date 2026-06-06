@@ -1,22 +1,14 @@
 import Feather from "@expo/vector-icons/Feather"
 import { Stack, useRouter } from "expo-router"
 import { StatusBar } from "expo-status-bar"
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { Alert, Image, Pressable, ScrollView, Share, Text, useWindowDimensions, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { getApprovals, getStatus, isRelayConnection, type MobileStatus } from "@/api/mobile-api"
+import { getApprovals, getStatus, type MobileStatus } from "@/api/mobile-api"
 import { formatAppVersionLabel, getCurrentAppInfo } from "@/services/app-updates"
 import { useAccount } from "@/state/account"
 import { useConnection } from "@/state/connection"
 import { useFocus } from "@/state/focus"
-import {
-  describeAccountApiError,
-  formatAccountPlanLabel,
-  formatDeviceLimit,
-  formatEntitlementFlag,
-  formatSubscriptionStatus,
-} from "@/utils/account-entitlements"
-import { trimMiddle } from "@/utils/format"
 
 type FeatherName = React.ComponentProps<typeof Feather>["name"]
 
@@ -24,16 +16,13 @@ export default function SettingsScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const { account, clearAccount, loading: accountLoading, refreshAccount } = useAccount()
+  const { account, clearAccount, loading: accountLoading } = useAccount()
   const { connection, loading: connectionLoading } = useConnection()
   const focus = useFocus()
   const [status, setStatus] = useState<MobileStatus | null>(null)
   const [pendingApprovals, setPendingApprovals] = useState(0)
   const [statusLoading, setStatusLoading] = useState(false)
-  const [statusError, setStatusError] = useState<string | null>(null)
-  const [accountRefreshError, setAccountRefreshError] = useState<string | null>(null)
   const [signingOut, setSigningOut] = useState(false)
-  const refreshedAccountKeyRef = useRef<string | null>(null)
   const appInfo = useMemo(() => getCurrentAppInfo(), [])
   const appVersion = formatAppVersionLabel(appInfo)
   const maxWidth = width >= 760 ? 430 : undefined
@@ -42,11 +31,10 @@ export default function SettingsScreen() {
     if (!connection) {
       setStatus(null)
       setPendingApprovals(0)
-      setStatusError(null)
+      setStatusLoading(false)
       return
     }
     setStatusLoading(true)
-    setStatusError(null)
     try {
       const [nextStatus, nextApprovals] = await Promise.all([
         getStatus(connection),
@@ -54,9 +42,9 @@ export default function SettingsScreen() {
       ])
       setStatus(nextStatus)
       setPendingApprovals(nextApprovals.length)
-    } catch (loadError) {
+    } catch {
       setStatus(null)
-      setStatusError(loadError instanceof Error ? loadError.message : "Unable to check desktop connection.")
+      setPendingApprovals(0)
     } finally {
       setStatusLoading(false)
     }
@@ -66,39 +54,11 @@ export default function SettingsScreen() {
     void loadConnectionOverview()
   }, [loadConnectionOverview])
 
-  useEffect(() => {
-    if (!account) {
-      refreshedAccountKeyRef.current = null
-      return
-    }
-    const refreshKey = `${account.baseUrl}:${account.user.id}`
-    if (refreshedAccountKeyRef.current === refreshKey) return
-    refreshedAccountKeyRef.current = refreshKey
-    let cancelled = false
-    refreshAccount()
-      .then(() => {
-        if (!cancelled) setAccountRefreshError(null)
-      })
-      .catch((refreshError) => {
-        if (!cancelled) setAccountRefreshError(describeAccountApiError(refreshError, "Unable to refresh account."))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [account?.baseUrl, account?.user.id, refreshAccount])
-
-  const displayName = account?.user.displayName?.trim() || account?.user.name?.trim() || account?.user.username?.trim() || account?.user.email?.split("@")[0] || "Anybox User"
+  const displayName = accountLoading
+    ? "Loading account"
+    : account?.user.displayName?.trim() || account?.user.name?.trim() || account?.user.username?.trim() || account?.user.email?.split("@")[0] || "Sign in to Anybox"
   const avatarLabel = (displayName.trim()[0] || account?.user.email?.trim()[0] || "A").toLocaleUpperCase()
   const avatarUrl = account?.user.avatarUrl?.trim()
-  const planLabel = formatAccountPlanLabel(account)
-  const subscriptionLabel = formatSubscriptionStatus(account)
-  const relayLabel = formatEntitlementFlag(account?.entitlements?.relayEnabled)
-  const modelGatewayLabel = formatEntitlementFlag(account?.entitlements?.modelGatewayEnabled)
-  const deviceLimitLabel = account?.entitlements
-    ? `${formatDeviceLimit(account.entitlements.maxDesktopDevices)} / ${formatDeviceLimit(account.entitlements.maxMobileDevices)}`
-    : "Unknown"
-  const accountLabel = accountLoading ? "Loading" : account ? account.user.email : "Sign in"
-  const workspaceLabel = account?.workspace?.name ?? "No workspace"
   const connectionState = connectionLoading
     ? "Loading"
     : status?.online
@@ -109,13 +69,7 @@ export default function SettingsScreen() {
           : "Needs attention"
         : "Offline"
   const connectionTone = status?.online ? "#74d58b" : connection ? "#f5c86b" : "#8a8a8a"
-  const desktopName = status?.desktopName?.trim() || "Anybox Desktop"
-  const desktopVersion = status?.appVersion ? ` ${status.appVersion}` : ""
-  const desktopDetail = connection
-    ? `${desktopName}${desktopVersion}`
-    : "Connect a desktop"
-  const providerHost = hostFromUrl(account?.baseUrl ?? connection?.baseUrl)
-  const focusLabel = focus.workspaceID || focus.sessionID ? "Saved" : "None"
+  const hasSavedFocus = Boolean(focus.workspaceID || focus.sessionID)
 
   function confirmClearFocus() {
     if (!focus.workspaceID && !focus.sessionID) return
@@ -204,7 +158,16 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          <View style={{ alignItems: "center", gap: 8 }}>
+          <Pressable
+            accessibilityLabel="Account"
+            accessibilityRole="button"
+            onPress={() => router.push("/account" as never)}
+            style={({ pressed }) => ({
+              alignItems: "center",
+              gap: 8,
+              opacity: pressed ? 0.72 : 1,
+            })}
+          >
             <View style={{ alignItems: "center", backgroundColor: "#7e55d6", borderRadius: 39, height: 78, justifyContent: "center", width: 78 }}>
               {avatarUrl ? (
                 <Image
@@ -215,53 +178,17 @@ export default function SettingsScreen() {
               ) : (
                 <Text style={{ color: "#ffffff", fontSize: 36, fontWeight: "800" }}>{avatarLabel}</Text>
               )}
-              <View
-                style={{
-                  alignItems: "center",
-                  backgroundColor: "#5b5b5b",
-                  borderColor: "#191919",
-                  borderRadius: 12,
-                  borderWidth: 2,
-                  bottom: 2,
-                  height: 24,
-                  justifyContent: "center",
-                  position: "absolute",
-                  right: 1,
-                  width: 24,
-                }}
-              >
-                <Feather color="#ffffff" name="star" size={12} />
-              </View>
             </View>
-            <View style={{ alignItems: "center", gap: 2 }}>
-              <Text numberOfLines={1} style={{ color: "#eeeeee", fontSize: 22, fontWeight: "800", textAlign: "center" }}>
+            <View style={{ alignItems: "center", flexDirection: "row", gap: 4, maxWidth: "100%" }}>
+              <Text numberOfLines={1} style={{ color: "#eeeeee", fontSize: 22, fontWeight: "800", maxWidth: "88%", textAlign: "center" }}>
                 {displayName}
               </Text>
-              <Text numberOfLines={1} style={{ color: "#8f8f8f", fontSize: 14, fontWeight: "700", textAlign: "center" }}>
-                {planLabel}
-              </Text>
+              <Feather color="#7f7f7f" name="chevron-right" size={20} />
             </View>
-          </View>
+          </Pressable>
 
           <SettingsCard>
-            <View style={{ alignItems: "center", flexDirection: "row", gap: 12, minHeight: 48, paddingHorizontal: 20, paddingVertical: 12 }}>
-              <Text numberOfLines={1} style={{ color: "#f2f2f2", flex: 1, fontSize: 22, fontWeight: "900" }}>
-                Anybox
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push("/account" as never)}
-                style={({ pressed }) => ({
-                  backgroundColor: "#f2f2f2",
-                  borderRadius: 8,
-                  opacity: pressed ? 0.78 : 1,
-                  paddingHorizontal: 14,
-                  paddingVertical: 8,
-                })}
-              >
-                <Text style={{ color: "#151515", fontSize: 14, fontWeight: "800" }}>Manage</Text>
-              </Pressable>
-            </View>
+            <SettingsCardTitle title="Anybox" />
             <SettingsRow
               icon="activity"
               title="Desktop Connection"
@@ -269,44 +196,23 @@ export default function SettingsScreen() {
               valueColor={connectionTone}
               onPress={() => router.push("/provider" as never)}
             />
-            <SettingsRow icon="cpu" title="Desktop Agent" value={desktopDetail} onPress={() => router.push("/provider" as never)} />
-          </SettingsCard>
-
-          {statusError ? <InlineNotice title="Connection check failed" detail={statusError} /> : null}
-          {accountRefreshError ? <InlineNotice title="Account sync failed" detail={accountRefreshError} /> : null}
-
-          <SettingsCard>
-            <SettingsRow icon="share-2" title="Share Anybox" onPress={() => void shareAnybox()} />
           </SettingsCard>
 
           <SettingsCard>
+            <SettingsCardTitle title="Preferences" />
             <SettingsRow icon="globe" title="语言" value="简体中文" onPress={showLanguageInfo} />
             <SettingsRow icon="moon" title="外观" value="跟随系统" onPress={showAppearanceInfo} />
+          </SettingsCard>
+
+          <SettingsCard>
+            <SettingsCardTitle title="App" />
             <SettingsRow icon="package" title="版本" value={appVersion} onPress={() => router.push("/updates" as never)} />
           </SettingsCard>
 
           <SettingsCard>
-            <SettingsRow icon="user" title="Account" value={accountLabel} onPress={() => router.push("/account" as never)} />
-            <SettingsRow icon="briefcase" title="Workspace" value={workspaceLabel} onPress={() => router.push("/account" as never)} />
-            <SettingsRow icon="star" title="Plan" value={planLabel} onPress={() => router.push("/account" as never)} />
-            <SettingsRow icon="clock" title="Subscription" value={subscriptionLabel} onPress={() => router.push("/account" as never)} />
-            <SettingsRow icon="activity" title="Relay" value={relayLabel} onPress={() => router.push("/provider" as never)} />
-            <SettingsRow icon="zap" title="Model Gateway" value={modelGatewayLabel} onPress={() => router.push("/account" as never)} />
-            <SettingsRow icon="monitor" title="Device Limits" value={deviceLimitLabel} onPress={() => router.push("/account" as never)} />
-            <SettingsRow icon="monitor" title="Provider Details" value={providerHost} onPress={() => router.push("/provider" as never)} />
-            <SettingsRow icon="bell" title="Approvals" value={pendingApprovals ? `${pendingApprovals}` : "None"} onPress={() => router.push("/approvals" as never)} />
-          </SettingsCard>
-
-          <SettingsCard>
-            <SettingsRow icon="folder" title="Projects and Sessions" onPress={() => router.replace("/" as never)} />
-            <SettingsRow icon="camera" title="Scan QR Code" onPress={() => router.push("/scan" as never)} />
-            <SettingsRow icon="download-cloud" title="Updates" value={appInfo.channel ?? "Embedded"} onPress={() => router.push("/updates" as never)} />
-            <SettingsRow icon="database" title="Saved Focus" value={focusLabel} disabled={!focus.workspaceID && !focus.sessionID} onPress={confirmClearFocus} />
-          </SettingsCard>
-
-          <SettingsCard>
-            <SettingsRow icon="server" title="Transport" value={isRelayConnection(connection) ? "Relay" : connection ? "Local" : "None"} onPress={() => router.push("/provider" as never)} />
-            <SettingsRow icon="globe" title="Endpoint" value={connection ? trimMiddle(connection.baseUrl, 34) : "Not connected"} onPress={() => router.push("/provider" as never)} />
+            <SettingsCardTitle title="Actions" />
+            <SettingsRow icon="share-2" title="Share Anybox" onPress={() => void shareAnybox()} />
+            {hasSavedFocus ? <SettingsRow icon="database" title="Saved Focus" value="Clear" onPress={confirmClearFocus} /> : null}
           </SettingsCard>
 
           {account ? <SignOutButton loading={signingOut} onPress={confirmSignOut} /> : null}
@@ -347,6 +253,16 @@ function SettingsCard({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
+    </View>
+  )
+}
+
+function SettingsCardTitle({ title }: { title: string }) {
+  return (
+    <View style={{ justifyContent: "center", minHeight: 40, paddingBottom: 6, paddingHorizontal: 20, paddingTop: 12 }}>
+      <Text numberOfLines={1} style={{ color: "#9d9d9d", fontSize: 13, fontWeight: "800" }}>
+        {title}
+      </Text>
     </View>
   )
 }
@@ -434,22 +350,4 @@ function SignOutButton({ loading, onPress }: { loading: boolean; onPress: () => 
       </Text>
     </Pressable>
   )
-}
-
-function InlineNotice({ detail, title }: { detail: string; title: string }) {
-  return (
-    <View style={{ backgroundColor: "#332323", borderColor: "#4a3030", borderRadius: 8, borderWidth: 1, gap: 6, padding: 14 }}>
-      <Text style={{ color: "#ffb7b7", fontSize: 15, fontWeight: "800" }}>{title}</Text>
-      <Text style={{ color: "#d9c6c6", fontSize: 13, lineHeight: 18 }}>{detail}</Text>
-    </View>
-  )
-}
-
-function hostFromUrl(value?: string) {
-  if (!value) return "Not configured"
-  try {
-    return new URL(value).host
-  } catch {
-    return trimMiddle(value, 34)
-  }
 }

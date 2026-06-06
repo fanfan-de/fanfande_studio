@@ -21,8 +21,8 @@ export default function RootLayout() {
             }}
           >
             <Stack.Screen name="index" options={{ title: "Anybox" }} />
-            <Stack.Screen name="account" options={{ title: "Account" }} />
-            <Stack.Screen name="provider" options={{ title: "AnyboxProvider" }} />
+            <Stack.Screen name="account" options={{ headerBackTitle: "Settings", title: "Account" }} />
+            <Stack.Screen name="provider" options={{ title: "Desktop Connection" }} />
             <Stack.Screen name="scan" options={{ title: "Scan QR" }} />
             <Stack.Screen name="connect" options={{ title: "Connect" }} />
             <Stack.Screen name="settings" options={{ title: "Account & Settings" }} />
