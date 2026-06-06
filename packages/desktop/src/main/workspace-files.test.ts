@@ -159,6 +159,36 @@ describe("workspace files", () => {
     })
   })
 
+  it("reads unknown file extensions when the content is text", async () => {
+    const workspaceRoot = await createWorkspaceFixture()
+    await writeFile(join(workspaceRoot, ".env.tencent"), "TENCENT_SECRET_ID=example\nTENCENT_REGION=ap-guangzhou\n")
+
+    const file = await readWorkspaceFile(workspaceRoot, ".env.tencent")
+
+    expect(file).toEqual({
+      path: ".env.tencent",
+      name: ".env.tencent",
+      extension: "tencent",
+      kind: "text",
+      content: "TENCENT_SECRET_ID=example\nTENCENT_REGION=ap-guangzhou\n",
+    })
+  })
+
+  it("reads extensionless files when the content is text", async () => {
+    const workspaceRoot = await createWorkspaceFixture()
+    await writeFile(join(workspaceRoot, "Dockerfile"), "FROM node:24\n")
+
+    const file = await readWorkspaceFile(workspaceRoot, "Dockerfile")
+
+    expect(file).toEqual({
+      path: "Dockerfile",
+      name: "Dockerfile",
+      extension: null,
+      kind: "text",
+      content: "FROM node:24\n",
+    })
+  })
+
   it("returns local image preview metadata without reading images as text", async () => {
     const workspaceRoot = await createWorkspaceFixture()
 
@@ -177,7 +207,7 @@ describe("workspace files", () => {
 
   it("marks unsupported non-previewable file types without reading them as text", async () => {
     const workspaceRoot = await createWorkspaceFixture()
-    await writeFile(join(workspaceRoot, "src", "archive.zip"), "binary", "utf8")
+    await writeFile(join(workspaceRoot, "src", "archive.zip"), Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x01]))
 
     const file = await readWorkspaceFile(workspaceRoot, "src/archive.zip")
 

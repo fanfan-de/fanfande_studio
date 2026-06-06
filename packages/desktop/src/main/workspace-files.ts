@@ -1,5 +1,6 @@
-import { readdir, readFile, realpath, stat } from "node:fs/promises"
+import { open, readdir, readFile, realpath, stat } from "node:fs/promises"
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { TextDecoder } from "node:util"
 import type {
   AgentWorkspaceDirectoryEntry,
   AgentWorkspaceFileDocument,
@@ -59,8 +60,10 @@ const TEXT_FILE_EXTENSIONS = new Set([
   "yml",
 ])
 const SEARCH_RESULT_LIMIT = 200
+const TEXT_DETECTION_SAMPLE_BYTES = 8192
 const UNSUPPORTED_FILE_MESSAGE = "This file type is not supported in the Files panel yet."
 const IMAGE_TOO_LARGE_MESSAGE = "This image is too large to preview in the Files panel."
+const UTF8_TEXT_DECODER = new TextDecoder("utf-8", { fatal: true })
 
 function getFileExtension(fileName: string) {
   const extension = extname(fileName).slice(1).toLowerCase()
@@ -80,6 +83,45 @@ function normalizeRelativeWorkspaceInputPath(input?: string | null) {
 function isPathInsideWorkspace(workspaceRoot: string, targetPath: string) {
   const relativePath = relative(workspaceRoot, targetPath)
   return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath))
+}
+
+function isLikelyTextBuffer(buffer: Buffer) {
+  if (buffer.length === 0) return true
+  if (buffer.includes(0)) return false
+
+  try {
+    UTF8_TEXT_DECODER.decode(buffer)
+  } catch {
+    return false
+  }
+
+  let disallowedControlBytes = 0
+  for (const byte of buffer) {
+    if (byte >= 32) continue
+    if (byte === 9 || byte === 10 || byte === 12 || byte === 13 || byte === 27) continue
+    disallowedControlBytes += 1
+  }
+
+  return disallowedControlBytes / buffer.length <= 0.01
+}
+
+async function isLikelyTextFile(filePath: string, fileSize: number) {
+  if (fileSize === 0) return true
+
+  const sampleBytes = Math.min(fileSize, TEXT_DETECTION_SAMPLE_BYTES)
+  const sampleBuffer = Buffer.alloc(sampleBytes)
+  const fileHandle = await open(filePath, "r")
+  try {
+    const { bytesRead } = await fileHandle.read(sampleBuffer, 0, sampleBytes, 0)
+    return isLikelyTextBuffer(sampleBuffer.subarray(0, bytesRead))
+  } finally {
+    await fileHandle.close()
+  }
+}
+
+async function readDetectedTextFile(filePath: string) {
+  const contentBuffer = await readFile(filePath)
+  return isLikelyTextBuffer(contentBuffer) ? UTF8_TEXT_DECODER.decode(contentBuffer) : null
 }
 
 async function resolveWorkspaceRoot(directory: string) {
@@ -256,7 +298,22 @@ export async function readWorkspaceFile(
     }
   }
 
-  if (!extension || !TEXT_FILE_EXTENSIONS.has(extension)) {
+  const hasKnownTextExtension = extension ? TEXT_FILE_EXTENSIONS.has(extension) : false
+  if (!hasKnownTextExtension && !(await isLikelyTextFile(resolvedFilePath, fileStats.size))) {
+    return {
+      path: normalizedPath,
+      name,
+      extension,
+      kind: "unsupported",
+      unsupportedReason: UNSUPPORTED_FILE_MESSAGE,
+    }
+  }
+
+  const content = hasKnownTextExtension
+    ? await readFile(resolvedFilePath, "utf8")
+    : await readDetectedTextFile(resolvedFilePath)
+
+  if (content === null) {
     return {
       path: normalizedPath,
       name,
@@ -271,6 +328,6 @@ export async function readWorkspaceFile(
     name,
     extension,
     kind: "text",
-    content: await readFile(resolvedFilePath, "utf8"),
+    content,
   }
 }

@@ -6,6 +6,7 @@ import { Instance } from "#project/instance.ts"
 import * as Ssh from "#remote/ssh/index.ts"
 import {
   listDirectoryEntries,
+  readSearchableTextFile,
   readTextFile,
   resolveToolPath,
   statResolvedPath,
@@ -188,7 +189,12 @@ export async function readWorkspaceFile(input: z.infer<typeof WorkspaceFileQuery
         }
       }
 
-      if (!extension || !TEXT_FILE_EXTENSIONS.has(extension)) {
+      const hasKnownTextExtension = extension ? TEXT_FILE_EXTENSIONS.has(extension) : false
+      const content = hasKnownTextExtension
+        ? await readTextFile(input.path)
+        : await readSearchableTextFile(resolved)
+
+      if (content == null) {
         return {
           path: normalizedPath,
           name,
@@ -203,7 +209,7 @@ export async function readWorkspaceFile(input: z.infer<typeof WorkspaceFileQuery
         name,
         extension,
         kind: "text" as const,
-        content: await readTextFile(input.path),
+        content,
       }
     },
   })
