@@ -96,6 +96,7 @@ import type {
 
 export const DESKTOP_AGENT_SESSION_EVENT_CHANNEL = "desktop:agent-session-event"
 export const DESKTOP_AUTOMATION_EVENT_CHANNEL = "desktop:automation-event"
+export const DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL = "desktop:mobile-bridge-event"
 export const DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL = "desktop:workspace-file-change"
 export const DESKTOP_PTY_EVENT_CHANNEL = "desktop:pty-event"
 export const DESKTOP_WINDOW_STATE_EVENT_CHANNEL = "desktop:window-state-changed"
@@ -285,6 +286,15 @@ export type SkillGitInstallResult = AgentSkillGitInstallResult
 export type WorkspaceFileChangeIPCEvent = {
   directory: string
   paths: string[]
+}
+export type MobileBridgeDesktopEvent = {
+  type: "workspace.updated" | "session.created" | "session.updated" | "approval.updated"
+  source: "mobile"
+  generatedAt: number
+  workspaceID?: string
+  directory?: string
+  sessionID?: string
+  approvalID?: string
 }
 export type WorkspaceFileDocument = AgentWorkspaceFileDocument
 export type WorkspaceDirectoryEntry = AgentWorkspaceDirectoryEntry
@@ -1747,6 +1757,7 @@ export interface DesktopIpcEventPayloads {
   [DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL]: DesktopAppUpdateState
   [DESKTOP_AGENT_SESSION_EVENT_CHANNEL]: AgentSessionBridgeIPCEvent
   [DESKTOP_AUTOMATION_EVENT_CHANNEL]: AgentAutomationIPCEvent
+  [DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL]: MobileBridgeDesktopEvent
   [DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL]: WorkspaceFileChangeIPCEvent
   [DESKTOP_PTY_EVENT_CHANNEL]: PtyTransportIPCEvent
   [DESKTOP_WINDOW_STATE_EVENT_CHANNEL]: DesktopWindowState
@@ -1992,6 +2003,7 @@ export interface DesktopApiMethods {
   deleteProjectProvider(input: DesktopIpcInput<"desktop:delete-project-provider">): Promise<DesktopIpcOutput<"desktop:delete-project-provider">>
   updateProjectModelSelection(input: DesktopIpcInput<"desktop:update-project-model-selection">): Promise<DesktopIpcOutput<"desktop:update-project-model-selection">>
   updateSessionModelSelection(input: DesktopIpcInput<"desktop:update-session-model-selection">): Promise<DesktopIpcOutput<"desktop:update-session-model-selection">>
+  onMobileBridgeEvent(listener: (event: DesktopIpcEventPayload<typeof DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL>) => void): () => void
   onWorkspaceFileChange(listener: (event: DesktopIpcEventPayload<typeof DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL>) => void): () => void
   onPtyEvent(listener: (event: DesktopIpcEventPayload<typeof DESKTOP_PTY_EVENT_CHANNEL>) => void): () => void
   onWindowStateChange(listener: (state: DesktopIpcEventPayload<typeof DESKTOP_WINDOW_STATE_EVENT_CHANNEL>) => void): () => void

@@ -25,6 +25,7 @@ import type {
   SessionRuntimeDebugState,
   SessionTaskListView,
   Turn,
+  UserTurn,
   WorkspaceGroup,
 } from "../types"
 import { buildSessionMessageTree, type SessionMessageTree } from "../session-message-tree"
@@ -60,6 +61,7 @@ const STREAM_DELTA_FLUSH_INTERVAL_MS = 32
 const STREAM_DELTA_EVENTS_PER_FRAME = 240
 const STREAM_DELTA_PENDING_EVENT_LIMIT = 1_600
 const STREAM_DELTA_BACKPRESSURE_LOG_INTERVAL_MS = 5_000
+const EXTERNAL_TURN_HISTORY_REFRESH_RETRY_MS = 500
 
 type StreamEventUpdateTarget = {
   assistantTurnID: string
@@ -709,6 +711,26 @@ function preserveAssistantTurnIdentity(previousTurns: Turn[], nextTurns: Turn[])
   })
 }
 
+function isLocalGeneratedUserTurn(turn: UserTurn) {
+  return turn.id.startsWith("user-")
+}
+
+function normalizeUserTurnIdentityText(turn: UserTurn) {
+  return (turn.displayText ?? turn.text).replace(/\s+/g, " ").trim()
+}
+
+function userTurnsAreCompatible(previousTurn: UserTurn, nextTurn: UserTurn) {
+  if (previousTurn.id === nextTurn.id) return true
+
+  const previousQuestionID = previousTurn.questionAnswer?.questionID ?? ""
+  const nextQuestionID = nextTurn.questionAnswer?.questionID ?? ""
+  if (previousQuestionID || nextQuestionID) return previousQuestionID === nextQuestionID
+
+  const previousText = normalizeUserTurnIdentityText(previousTurn)
+  const nextText = normalizeUserTurnIdentityText(nextTurn)
+  return Boolean(previousText && previousText === nextText)
+}
+
 export function mergeConversationTurnsFromHistory(
   previousTurns: Turn[],
   nextTurns: Turn[],
@@ -718,6 +740,74 @@ export function mergeConversationTurnsFromHistory(
     ? nextTurns
     : mergeUserTurnPresentationState(previousTurns, nextTurns)
   return preserveAssistantTurnIdentity(previousTurns, turnsWithUserPresentation)
+}
+
+export function mergeExternalUserTurnsFromHistory(
+  previousTurns: Turn[],
+  historyTurns: Turn[],
+  options?: { beforeTurnID?: string },
+) {
+  const previousUserTurnIDs = new Set(
+    previousTurns
+      .filter((turn): turn is UserTurn => turn.kind === "user")
+      .map((turn) => turn.id),
+  )
+  const missingUserTurns = historyTurns
+    .filter((turn): turn is UserTurn => turn.kind === "user" && !previousUserTurnIDs.has(turn.id))
+    .sort((left, right) => left.timestamp - right.timestamp)
+
+  if (missingUserTurns.length === 0) return previousTurns
+
+  const nextTurns = [...previousTurns]
+  const replacedLocalUserTurnIndices = new Set<number>()
+
+  function findLocalUserTurnReplacementIndex(userTurn: UserTurn) {
+    const anchorIndex = options?.beforeTurnID ? nextTurns.findIndex((turn) => turn.id === options.beforeTurnID) : -1
+    if (anchorIndex < 0) return -1
+
+    for (let index = anchorIndex - 1; index >= 0; index -= 1) {
+      const candidate = nextTurns[index]
+      if (!candidate) continue
+      if (candidate.kind === "assistant") break
+      if (candidate.kind !== "user") continue
+      if (replacedLocalUserTurnIndices.has(index)) continue
+      if (!isLocalGeneratedUserTurn(candidate)) continue
+      if (!userTurnsAreCompatible(candidate, userTurn)) continue
+      return index
+    }
+
+    return -1
+  }
+
+  for (const userTurn of missingUserTurns) {
+    const replacementIndex = findLocalUserTurnReplacementIndex(userTurn)
+    if (replacementIndex >= 0) {
+      const currentTurn = nextTurns[replacementIndex]
+      if (currentTurn?.kind === "user") {
+        const [mergedUserTurn] = mergeUserTurnPresentationState([currentTurn], [userTurn])
+        nextTurns[replacementIndex] = mergedUserTurn ?? userTurn
+        replacedLocalUserTurnIndices.add(replacementIndex)
+        previousUserTurnIDs.add(userTurn.id)
+        continue
+      }
+    }
+
+    const timestampIndex = nextTurns.findIndex(
+      (turn) => turn.timestamp > userTurn.timestamp || (turn.kind === "assistant" && turn.timestamp === userTurn.timestamp),
+    )
+    const anchorIndex = options?.beforeTurnID ? nextTurns.findIndex((turn) => turn.id === options.beforeTurnID) : -1
+    const insertIndex = anchorIndex >= 0 && (timestampIndex < 0 || anchorIndex < timestampIndex)
+      ? anchorIndex
+      : timestampIndex
+
+    if (insertIndex < 0) {
+      nextTurns.push(userTurn)
+    } else {
+      nextTurns.splice(insertIndex, 0, userTurn)
+    }
+  }
+
+  return reconcileConversationTurns(nextTurns)
 }
 
 export function conversationTurnsAreEquivalent(leftTurns: Turn[], rightTurns: Turn[]) {
@@ -953,6 +1043,9 @@ export function useSessionStreamController({
   const pendingDeltaUpdatesRef = useRef<PendingStreamDeltaUpdate[]>([])
   const pendingDeltaFlushHandleRef = useRef<{ id: number; kind: "frame" | "timer" } | null>(null)
   const lastDeltaBackpressureLogAtRef = useRef(0)
+  const externalTurnUserHistoryMergedRef = useRef<Set<string>>(new Set())
+  const externalTurnHistoryRefreshInFlightRef = useRef<Set<string>>(new Set())
+  const externalTurnHistoryLastAttemptAtRef = useRef<Record<string, number>>({})
 
   function updateSessionContextUsage(sessionID: string, usage: SessionContextUsage | null) {
     setContextUsageBySession((prev) => {
@@ -1341,6 +1434,61 @@ export function useSessionStreamController({
     return streamingTurn.id
   }
 
+  async function mergeExternalTurnUserHistory(input: {
+    uiSessionID: string
+    backendSessionID: string
+    backendTurnID: string
+    assistantTurnID: string
+  }) {
+    if (!canLoadSessionHistory) return
+    const refreshKey = `${input.backendSessionID}:${input.backendTurnID}`
+    if (externalTurnUserHistoryMergedRef.current.has(refreshKey)) return
+    if (externalTurnHistoryRefreshInFlightRef.current.has(refreshKey)) return
+
+    const now = Date.now()
+    const lastAttemptAt = externalTurnHistoryLastAttemptAtRef.current[refreshKey] ?? 0
+    if (now - lastAttemptAt < EXTERNAL_TURN_HISTORY_REFRESH_RETRY_MS) return
+    externalTurnHistoryLastAttemptAtRef.current[refreshKey] = now
+    externalTurnHistoryRefreshInFlightRef.current.add(refreshKey)
+
+    const agentSession = getAgentSessionBridge()
+    if (!agentSession) {
+      externalTurnHistoryRefreshInFlightRef.current.delete(refreshKey)
+      return
+    }
+
+    try {
+      const messages = await agentSession.loadHistory({ backendSessionID: input.backendSessionID }) ?? []
+      const historyTurns = buildTurnsFromHistory(messages)
+      const currentTurns = conversationStore.getSessionTurns(input.uiSessionID)
+      const candidateTurns = mergeExternalUserTurnsFromHistory(currentTurns, historyTurns, {
+        beforeTurnID: input.assistantTurnID,
+      })
+      if (conversationTurnsAreEquivalent(currentTurns, candidateTurns)) return
+
+      externalTurnUserHistoryMergedRef.current.add(refreshKey)
+      startTransition(() => {
+        setConversations((prev) => {
+          const currentTurns = prev[input.uiSessionID] ?? []
+          const mergedTurns = mergeExternalUserTurnsFromHistory(currentTurns, historyTurns, {
+            beforeTurnID: input.assistantTurnID,
+          })
+          if (conversationTurnsAreEquivalent(currentTurns, mergedTurns)) return prev
+          bumpConversationVersion(input.uiSessionID)
+          persistUserTurns(input.uiSessionID, mergedTurns)
+          return {
+            ...prev,
+            [input.uiSessionID]: mergedTurns,
+          }
+        })
+      })
+    } catch (error) {
+      console.error("[desktop] external session turn user history refresh failed:", error)
+    } finally {
+      externalTurnHistoryRefreshInFlightRef.current.delete(refreshKey)
+    }
+  }
+
   function handleRequestStreamEvent(streamEvent: AgentStreamIPCEvent) {
     const target = pendingStreamsRef.current[streamEvent.streamID]
     if (!target) return
@@ -1482,6 +1630,14 @@ export function useSessionStreamController({
       backendSessionID: streamEvent.sessionID,
       turnID: backendTurnID,
     })
+    if (!messageAssistantTurnID) {
+      void mergeExternalTurnUserHistory({
+        uiSessionID,
+        backendSessionID: streamEvent.sessionID,
+        backendTurnID,
+        assistantTurnID,
+      })
+    }
     if (messageAssistantTurnID) {
       sessionEventRouterRef.current.setTurnTarget(streamEvent.sessionID, backendTurnID, {
         sessionID: uiSessionID,

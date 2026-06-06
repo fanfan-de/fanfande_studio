@@ -25,12 +25,10 @@ export default function RootLayout() {
             <Stack.Screen name="provider" options={{ title: "AnyboxProvider" }} />
             <Stack.Screen name="scan" options={{ title: "Scan QR" }} />
             <Stack.Screen name="connect" options={{ title: "Connect" }} />
+            <Stack.Screen name="settings" options={{ title: "Account & Settings" }} />
             <Stack.Screen name="updates" options={{ title: "Updates" }} />
             <Stack.Screen name="diagnostics" options={{ title: "Diagnostics" }} />
             <Stack.Screen name="approvals" options={{ title: "Approvals" }} />
-            <Stack.Screen name="workspaces/[workspaceID]" options={{ title: "Workspace" }} />
-            <Stack.Screen name="workspaces/[workspaceID]/file" options={{ title: "File" }} />
-            <Stack.Screen name="sessions/[sessionID]" options={{ title: "Chat" }} />
           </Stack>
         </FocusProvider>
       </ConnectionProvider>

@@ -12,7 +12,13 @@ import { ensureMobileBridgeServerRunning, stopMobileBridgeServer } from "./mobil
 import { stopRendererHttpServer } from "./renderer-http-server"
 import { safeError } from "./safe-console"
 import { checkForAppUpdates, initializeAutoUpdater } from "./updater"
-import { createWindow, resolvePopoutWindowOptions, resolveRendererEntryUrl } from "./window"
+import {
+  createWindow,
+  installDockIcon,
+  installNativeMacWindowControls,
+  resolvePopoutWindowOptions,
+  resolveRendererEntryUrl,
+} from "./window"
 import { WorkbenchWindowManager } from "./workbench-window-manager"
 
 const mainDir = path.dirname(fileURLToPath(import.meta.url))
@@ -22,6 +28,8 @@ registerLocalImageProtocolScheme(protocol)
 registerLocalPreviewProtocolScheme(protocol)
 
 void app.whenReady().then(async () => {
+  installDockIcon(mainDir)
+
   try {
     await ensureManagedAgentRunning()
   } catch (error) {
@@ -48,6 +56,7 @@ void app.whenReady().then(async () => {
   const rendererEntryUrl = await resolveRendererEntryUrl(mainDir)
   const workbenchWindowManager = new WorkbenchWindowManager({
     rendererEntryUrl,
+    configureWindow: installNativeMacWindowControls,
     createPopoutWindowOptions: () => resolvePopoutWindowOptions(mainDir),
   })
   registerIpcHandlers(menus, {

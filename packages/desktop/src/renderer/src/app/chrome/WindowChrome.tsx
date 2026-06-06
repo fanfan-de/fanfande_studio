@@ -28,3 +28,7 @@ export function WindowChrome({ controlsRef, isWindowMaximized, onWindowAction }:
     </div>
   )
 }
+
+export function NativeMacWindowControlsSlot({ controlsRef }: { controlsRef: Ref<HTMLDivElement> }) {
+  return <div ref={controlsRef} className="window-controls is-native-macos" aria-hidden="true" />
+}

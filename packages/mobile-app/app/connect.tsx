@@ -14,6 +14,7 @@ import {
 } from "@/api/mobile-api"
 import { useAccount } from "@/state/account"
 import { useConnection } from "@/state/connection"
+import { getMobileDeviceName } from "@/utils/platform"
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value
@@ -109,7 +110,7 @@ export default function ConnectScreen() {
     setError(null)
     try {
       const previousConnection = connection
-      const result = await pairDevice(candidate, "Anybox Android", { accountToken: account?.token })
+      const result = await pairDevice(candidate, getMobileDeviceName(), { accountToken: account?.token })
       await saveConnection(candidate.transport === "relay" ? bridgeUrl : candidate.baseUrl, result.token, result.device.id, {
         transport: candidate.transport,
         desktopID: result.desktopID,
@@ -119,7 +120,7 @@ export default function ConnectScreen() {
       }
       router.replace("/")
     } catch (connectError) {
-      setError(connectError instanceof Error ? connectError.message : "Unable to pair this Android device.")
+      setError(connectError instanceof Error ? connectError.message : "Unable to pair this mobile device.")
     } finally {
       setPairing(false)
     }

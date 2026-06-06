@@ -194,7 +194,7 @@ async function checkBinaryUpdate(current: CurrentAppInfo): Promise<BinaryUpdateC
       available: false,
       required: false,
       release: null,
-      message: "APK release manifest is not configured.",
+      message: "Native app release manifest is not configured.",
     }
   }
 
@@ -332,8 +332,7 @@ function normalizeBinaryRelease(value: unknown, fallback: Record<string, unknown
   const minimumVersionCode = readNumber(source.minimumVersionCode) ?? readNumber(source.minVersionCode)
   const minimumBuildNumber = readString(source.minimumBuildNumber) ?? readString(source.minimumBuildVersion)
   const minimumBuildVersion = minimumBuildNumber ?? (minimumVersionCode === null ? null : String(minimumVersionCode))
-  const downloadUrl =
-    readString(source.apkUrl) ?? readString(source.downloadUrl) ?? readString(source.url) ?? readString(source.storeUrl)
+  const downloadUrl = readPlatformDownloadUrl(source)
 
   if (!version) throw new Error("Release manifest is missing version.")
   if (!downloadUrl) throw new Error("Release manifest is missing a download URL.")
@@ -407,6 +406,8 @@ function getReleaseManifestUrl() {
 }
 
 function getGitHubReleaseSource(): GitHubReleaseSource | null {
+  if (Platform.OS !== "android") return null
+
   const extra = readRecord(Constants.expoConfig?.extra)
   const repository =
     process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_REPOSITORY?.trim() ||
@@ -432,6 +433,26 @@ function getGitHubReleaseSource(): GitHubReleaseSource | null {
       process.env.EXPO_PUBLIC_ANYBOX_MOBILE_GITHUB_INCLUDE_PRERELEASES === "1" ||
       extra?.anyboxMobileGitHubIncludePrereleases === true,
   }
+}
+
+function readPlatformDownloadUrl(source: Record<string, unknown>) {
+  const genericUrl = readString(source.downloadUrl) ?? readString(source.url) ?? readString(source.storeUrl)
+
+  if (Platform.OS === "ios") {
+    return (
+      readString(source.iosUrl) ??
+      readString(source.ipaUrl) ??
+      readString(source.appStoreUrl) ??
+      readString(source.testFlightUrl) ??
+      genericUrl
+    )
+  }
+
+  if (Platform.OS === "android") {
+    return readString(source.androidUrl) ?? readString(source.apkUrl) ?? genericUrl
+  }
+
+  return genericUrl
 }
 
 function createSkippedOtaUpdateCheck(): OtaUpdateCheck {

@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto"
 import { spawn, type ChildProcess } from "node:child_process"
-import { app } from "electron"
+import { app, BrowserWindow } from "electron"
 import fs from "node:fs/promises"
 import http from "node:http"
 import os from "node:os"
@@ -16,8 +16,13 @@ import {
   type DesktopCloudRelayStatus,
 } from "./desktop-cloud-relay-client"
 import { safeError, safeLog, safeWarn } from "./safe-console"
+import { getWebContentsForWindowSafely, sendWebContentsSafely } from "./safe-web-contents-send"
 import type { AgentFolderWorkspace, AgentProjectInfo, AgentProjectWorkspace, AgentSessionInfo, AgentWorkspaceSession } from "./types"
 import { getWorkspaceGitDiff } from "./workspace-diff"
+import {
+  DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL,
+  type MobileBridgeDesktopEvent,
+} from "../shared/desktop-ipc-contract"
 
 const DEFAULT_MOBILE_BRIDGE_HOST = "0.0.0.0"
 const DEFAULT_MOBILE_BRIDGE_PORT = 4896
@@ -702,6 +707,27 @@ function mobileAgentRouteAudit(url: URL, method: string) {
   return { action: "agent.proxy" }
 }
 
+function mobileAgentRouteDesktopEvent(url: URL, method: string): Omit<MobileBridgeDesktopEvent, "generatedAt" | "source"> | null {
+  if (method !== "POST") return null
+
+  const segments = url.pathname.split("/").filter(Boolean)
+  if (segments[0] !== "api" || segments[1] !== "mobile" || segments[2] !== "sessions" || segments.length < 5) {
+    return null
+  }
+
+  const sessionID = segments[3]
+  const action = segments.slice(4).join("/")
+  if (!sessionID) return null
+  if (action === "messages" || action === "messages/stream" || action === "resume/stream" || action === "cancel") {
+    return {
+      type: "session.updated",
+      sessionID,
+    }
+  }
+
+  return null
+}
+
 function mobileWorkspaceFilesAuditDetails(url: URL) {
   const match = url.pathname.match(/^\/api\/mobile\/workspaces\/([^/]+)\/files(?:\/(content|search))?$/)
   const encodedWorkspaceID = match?.[1]
@@ -1190,6 +1216,22 @@ function safeErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
+function broadcastMobileBridgeDesktopEvent(
+  input: Omit<MobileBridgeDesktopEvent, "generatedAt" | "source"> & { generatedAt?: number },
+) {
+  const mobileEvent: MobileBridgeDesktopEvent = {
+    ...input,
+    source: "mobile",
+    generatedAt: input.generatedAt ?? Date.now(),
+  }
+
+  for (const win of BrowserWindow.getAllWindows()) {
+    const webContents = getWebContentsForWindowSafely(win)
+    if (!webContents) continue
+    sendWebContentsSafely(webContents, DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL, mobileEvent)
+  }
+}
+
 function stopMobileBridgeTunnel() {
   const current = mobileTunnelProcess
   mobileTunnelProcess = undefined
@@ -1499,15 +1541,29 @@ async function handleMobileBridgeRequest(request: http.IncomingMessage, response
     auditMobileBridgeAction(authorization, mobileMethod === "POST" ? "session.create" : "sessions.read", {
       workspaceID: workspaceSessionsWorkspaceID,
     })
-    const data =
-      mobileMethod === "POST"
-        ? await createMobileWorkspaceSession(workspaceSessionsWorkspaceID, request)
-        : await listMobileWorkspaceSessions(workspaceSessionsWorkspaceID)
-    if (!data) {
+
+    if (mobileMethod === "POST") {
+      const session = await createMobileWorkspaceSession(workspaceSessionsWorkspaceID, request)
+      if (!session) {
+        jsonResponse(response, 404, errorBody("WORKSPACE_NOT_FOUND", "Mobile workspace not found."))
+        return
+      }
+      broadcastMobileBridgeDesktopEvent({
+        type: "session.created",
+        workspaceID: workspaceSessionsWorkspaceID,
+        directory: session.directory || workspaceSessionsWorkspaceID,
+        sessionID: session.id,
+      })
+      jsonResponse(response, 200, ok(session))
+      return
+    }
+
+    const sessions = await listMobileWorkspaceSessions(workspaceSessionsWorkspaceID)
+    if (!sessions) {
       jsonResponse(response, 404, errorBody("WORKSPACE_NOT_FOUND", "Mobile workspace not found."))
       return
     }
-    jsonResponse(response, 200, ok(data))
+    jsonResponse(response, 200, ok(sessions))
     return
   }
 
@@ -1548,7 +1604,16 @@ async function handleMobileBridgeRequest(request: http.IncomingMessage, response
     }
     if (!requireMobileCapabilities(authorization, response, ["approval:respond"])) return
     auditMobileBridgeAction(authorization, "approval.respond", { requestID, decision: action })
-    jsonResponse(response, 200, ok(await resolveMobileApproval(requestID, action === "approve" ? "allow" : "deny", request)))
+    const result = await resolveMobileApproval(requestID, action === "approve" ? "allow" : "deny", request)
+    const resultRecord = readRecord(result)
+    const requestRecord = readRecord(resultRecord?.request)
+    const sessionID = typeof requestRecord?.sessionID === "string" ? requestRecord.sessionID : undefined
+    broadcastMobileBridgeDesktopEvent({
+      type: "approval.updated",
+      approvalID: requestID,
+      sessionID,
+    })
+    jsonResponse(response, 200, ok(result))
     return
   }
 
@@ -1567,7 +1632,10 @@ async function handleMobileBridgeRequest(request: http.IncomingMessage, response
 
   const { action: auditAction, ...auditDetails } = mobileAgentRouteAudit(url, mobileMethod)
   auditMobileBridgeAction(authorization, auditAction, auditDetails)
+  const desktopEvent = mobileAgentRouteDesktopEvent(url, mobileMethod)
+  if (desktopEvent) broadcastMobileBridgeDesktopEvent(desktopEvent)
   await proxyAgentRequest(request, response, agentPath)
+  if (desktopEvent) broadcastMobileBridgeDesktopEvent(desktopEvent)
 }
 
 function mobileAppHtml() {

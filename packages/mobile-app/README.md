@@ -1,16 +1,16 @@
 # Anybox Mobile App
 
-Android-first Expo client for the desktop-hosted Anybox mobile bridge.
+iOS and Android Expo client for the desktop-hosted Anybox mobile bridge.
 
 ## Development
 
-Check the Android development environment first:
+Check the mobile development environment first:
 
 ```powershell
 corepack pnpm --filter anybox-mobile-app run doctor
 ```
 
-Use strict mode when you want CI-style failure if Expo Go, local Android builds, or EAS APK builds are not ready:
+Use strict mode when you want CI-style failure if Expo Go, local Android builds, or EAS native builds are not ready:
 
 ```powershell
 corepack pnpm --filter anybox-mobile-app run doctor -- --strict
@@ -20,6 +20,28 @@ corepack pnpm --filter anybox-mobile-app run doctor -- --strict
 corepack pnpm install
 corepack pnpm --filter anybox-mobile-app start
 ```
+
+For iOS on macOS with Xcode installed:
+
+```powershell
+corepack pnpm --filter anybox-mobile-app ios
+corepack pnpm --filter anybox-mobile-app ios:dev
+```
+
+For a local iOS simulator native build:
+
+```powershell
+corepack pnpm mobile:ios:simulator
+```
+
+For iOS builds through EAS:
+
+```powershell
+corepack pnpm --filter anybox-mobile-app build:ios:preview
+corepack pnpm --filter anybox-mobile-app build:ios:production
+```
+
+iOS uses the same `anybox-mobile://` deep link scheme and the same Provider/relay API path. Local HTTP bridge access is configured for local networking, but the public relay URL is still the preferred path for real-device testing because iOS has no `adb reverse` equivalent.
 
 On Windows, use a short pnpm virtual store path before local APK builds. Native CMake paths can otherwise exceed Windows path limits:
 
@@ -158,13 +180,19 @@ For a Play Store app bundle:
 corepack pnpm --filter anybox-mobile-app build:android:production
 ```
 
+For a TestFlight or App Store iOS build:
+
+```powershell
+corepack pnpm --filter anybox-mobile-app build:ios:production
+```
+
 ## Updates
 
 The app supports two update paths:
 
 - EAS Update for JavaScript, asset, and UI-only changes.
 - GitHub Releases for native Android APK updates, using only tags that start with `mobile-v`.
-- A direct release manifest URL for custom native Android update hosting.
+- A direct release manifest URL for custom native Android or iOS update hosting. On iOS, use a manifest with an App Store, TestFlight, or IPA URL; GitHub APK releases are ignored.
 
 EAS Update needs an Expo project ID before it can serve OTA updates. Configure it once after logging in:
 
@@ -217,11 +245,17 @@ Example manifest:
   "apkUrl": "https://example.com/anybox-mobile-0.2.0.apk",
   "sha256": "optional-sha256",
   "notes": ["Fix pairing reliability", "Improve session refresh"],
-  "force": false
+  "force": false,
+  "ios": {
+    "version": "0.2.0",
+    "buildNumber": "4",
+    "minimumBuildNumber": "4",
+    "testFlightUrl": "https://testflight.apple.com/join/example"
+  }
 }
 ```
 
-The manifest can also contain platform-specific values under `android` or `platforms.android`. Use `minimumVersionCode` or `force: true` for a required update.
+The manifest can also contain platform-specific values under `android`, `ios`, `platforms.android`, or `platforms.ios`. Use `minimumVersionCode`, `minimumBuildNumber`, or `force: true` for a required update.
 
 ## Bridge API Smoke Test
 
@@ -254,7 +288,7 @@ The advanced URL login path remains available for troubleshooting. Paste the pub
 ## Current Scope
 
 - Connect to the desktop bridge with QR pairing or the advanced public URL/token flow and exchange it for a per-device token.
-- Register or sign in to the Anybox Provider account with email/password and store Provider agent tokens securely on Android.
+- Register or sign in to the Anybox Provider account with email/password and store Provider agent tokens securely on iOS and Android.
 - Show bridge status, workspaces, recent chats, workspace chats, chat messages, and session tasks.
 - Create a chat inside an existing workspace.
 - Browse workspace files read-only, search by file name, and preview supported text/image files.
@@ -263,12 +297,30 @@ The advanced URL login path remains available for troubleshooting. Paste the pub
 - Receive global workspace/session/approval change events through the desktop bridge SSE stream.
 - Resume or stop the active session through the existing mobile bridge routes.
 - Revoke the current device token when changing connections.
-- Refresh Android pairing codes, list paired devices, inspect device capabilities, and revoke paired Android devices from the desktop Mobile Connection page.
-- View pending approval requests, approval history, and allow or deny requests from Android.
+- Refresh mobile pairing codes, list paired devices, inspect device capabilities, and revoke paired mobile devices from the desktop Mobile Connection page.
+- View pending approval requests, approval history, and allow or deny requests from mobile.
 - View read-only workspace git change summaries from the Workspace screen.
-- Check for OTA updates and native Android release updates from the Updates screen.
+- Check for OTA updates and native mobile release updates from the Updates screen.
 
 Release signing, store metadata, notifications, and account-linked desktop discovery are not implemented yet.
+
+## iOS Smoke Test
+
+The fastest iOS bring-up is Expo Go or a local simulator build:
+
+1. Start the mobile app:
+
+   ```powershell
+   corepack pnpm --filter anybox-mobile-app ios
+   ```
+
+2. Use the iOS simulator or Expo Go on an iPhone.
+3. Sign in to Anybox Provider, then connect through the public relay desktop list or scan/paste a pairing link.
+4. Verify Home loads workspaces, open a chat, send a short prompt, and watch Messages and Tasks refresh.
+5. Open a Workspace and verify Chats, Changes, and read-only Files load.
+6. Trigger a tool approval from the desktop agent and verify the Approvals screen can allow or deny it.
+
+For native-device iOS handoff, prefer the public relay URL or a LAN URL reachable from the iPhone. Localhost URLs that work with Android smoke scripts through `adb reverse` will not work on iOS.
 
 ## Android Smoke Test
 

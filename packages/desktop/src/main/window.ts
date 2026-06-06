@@ -1,4 +1,4 @@
-import { BrowserWindow, app } from "electron"
+import { BrowserWindow, app, type BrowserWindowConstructorOptions } from "electron"
 import fs from "node:fs"
 import path from "node:path"
 import { ensureRendererHttpServer } from "./renderer-http-server"
@@ -42,14 +42,70 @@ export function resolveWindowIconPath(mainDir: string) {
   return candidatePaths.find((candidate) => fs.existsSync(candidate))
 }
 
-export function resolvePopoutWindowOptions(mainDir: string) {
+export function installDockIcon(mainDir: string) {
+  if (process.platform !== "darwin") return
+
+  const iconPath = resolveWindowIconPath(mainDir)
+  if (iconPath) app.dock?.setIcon(iconPath)
+}
+
+const MAC_NATIVE_WINDOW_CONTROLS_SLOT_WIDTH = 88
+const MAC_NATIVE_TRAFFIC_LIGHT_LEFT_OFFSET = 12
+const MAC_NATIVE_TRAFFIC_LIGHT_Y = 14
+
+type WindowChromeOptions = Pick<BrowserWindowConstructorOptions, "frame" | "roundedCorners" | "titleBarStyle">
+
+export function resolveWindowChromeOptions(platform: NodeJS.Platform = process.platform): WindowChromeOptions {
+  if (platform === "darwin") {
+    return {
+      frame: false,
+      roundedCorners: true,
+      titleBarStyle: "hidden",
+    }
+  }
+
+  return {
+    frame: false,
+    roundedCorners: false,
+  }
+}
+
+export function resolveNativeMacWindowButtonPosition(contentWidth: number) {
+  return {
+    x: Math.max(12, contentWidth - MAC_NATIVE_WINDOW_CONTROLS_SLOT_WIDTH + MAC_NATIVE_TRAFFIC_LIGHT_LEFT_OFFSET),
+    y: MAC_NATIVE_TRAFFIC_LIGHT_Y,
+  }
+}
+
+export function installNativeMacWindowControls(win: BrowserWindow, platform: NodeJS.Platform = process.platform) {
+  if (platform !== "darwin") return
+
+  const syncWindowButtonPosition = () => {
+    if (win.isDestroyed()) return
+    win.setWindowButtonVisibility(true)
+    win.setWindowButtonPosition(resolveNativeMacWindowButtonPosition(win.getContentBounds().width))
+  }
+  const syncWindowButtonPositionSoon = () => {
+    syncWindowButtonPosition()
+    setTimeout(syncWindowButtonPosition, 0)
+  }
+
+  syncWindowButtonPosition()
+  win.on("ready-to-show", syncWindowButtonPosition)
+  win.on("resize", syncWindowButtonPosition)
+  win.on("maximize", syncWindowButtonPositionSoon)
+  win.on("unmaximize", syncWindowButtonPositionSoon)
+  win.on("enter-full-screen", syncWindowButtonPositionSoon)
+  win.on("leave-full-screen", syncWindowButtonPositionSoon)
+}
+
+export function resolvePopoutWindowOptions(mainDir: string, options: { platform?: NodeJS.Platform } = {}) {
   return {
     width: 1120,
     height: 760,
     minWidth: 720,
     minHeight: 520,
-    frame: false,
-    roundedCorners: false,
+    ...resolveWindowChromeOptions(options.platform),
     autoHideMenuBar: true,
     backgroundColor: "#eff3f7",
     icon: resolveWindowIconPath(mainDir),
@@ -118,8 +174,7 @@ export async function createWindow(mainDir: string, options: { workbenchWindowMa
     height: 960,
     minWidth: 1120,
     minHeight: 760,
-    frame: false,
-    roundedCorners: false,
+    ...resolveWindowChromeOptions(),
     autoHideMenuBar: true,
     backgroundColor: "#eff3f7",
     icon: resolveWindowIconPath(mainDir),
@@ -132,6 +187,7 @@ export async function createWindow(mainDir: string, options: { workbenchWindowMa
       webviewTag: true,
     },
   })
+  installNativeMacWindowControls(win)
   installWindowDiagnostics(win, { label: "main", url: rendererEntryUrl })
   options.workbenchWindowManager?.registerMainWindow(win)
 

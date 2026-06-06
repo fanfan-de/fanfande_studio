@@ -169,7 +169,7 @@ export function useDesktopShell() {
   const windowControlsRef = useCallback((node: HTMLDivElement | null) => {
     setWindowControlsElement((current) => (current === node ? current : node))
   }, [])
-  const [platform, setPlatform] = useState("Desktop")
+  const [platform, setPlatform] = useState(() => (typeof window === "undefined" ? "Desktop" : window.desktop?.platform ?? "Desktop"))
   const [isWindowMaximized, setIsWindowMaximized] = useState(false)
   const [windowControlsClearance, setWindowControlsClearance] = useState(WINDOW_CONTROLS_CLEARANCE_FALLBACK)
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)

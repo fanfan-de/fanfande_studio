@@ -2,6 +2,7 @@ import { useEffectEvent, type MutableRefObject } from "react"
 import type { SerializedDockview } from "dockview-react"
 import type {
   CreateSessionTab,
+  MobileBridgeEvent,
   SessionDiffState,
   Turn,
   WorkbenchTabReference,
@@ -9,8 +10,10 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import {
+  handleMobileBridgeEvent,
   handleWorkspaceFileChange,
   useInitialFolderWorkspacesEffect,
+  useMobileBridgeEventSubscription,
   useWorkspaceFileChangeSubscription,
   useWorkspaceWatchDirectoriesEffect,
 } from "./workspace-loading-hooks"
@@ -99,6 +102,17 @@ export function useWorkspaceLoadingController({
   })
 
   useWorkspaceFileChangeSubscription(handleWorkspaceFileChangeEffect)
+
+  const handleMobileBridgeEventEffect = useEffectEvent((mobileEvent: MobileBridgeEvent) => {
+    handleMobileBridgeEvent({
+      mobileEvent,
+      platform,
+      refreshWorkspaceFromDirectory,
+      workspaces,
+    })
+  })
+
+  useMobileBridgeEventSubscription(handleMobileBridgeEventEffect)
 
   useWorkspaceWatchDirectoriesEffect({
     activeSessionDirectory,

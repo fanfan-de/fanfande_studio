@@ -170,7 +170,7 @@ export async function listAccountRelayDesktops(account: MobileAccountSession) {
   return normalizeAccountRelayDesktops(value)
 }
 
-export async function connectAccountRelayDesktop(account: MobileAccountSession, desktopID: string, name = "Anybox Android") {
+export async function connectAccountRelayDesktop(account: MobileAccountSession, desktopID: string, name = "Anybox Mobile") {
   const value = await requestAccount<unknown>(account.baseUrl, `/api/relay/desktops/${encodeURIComponent(desktopID)}/connect`, {
     method: "POST",
     headers: {

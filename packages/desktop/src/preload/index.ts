@@ -83,6 +83,7 @@ import type {
   SkillInfo,
   ToolPermissionModePayload,
   WindowAction,
+  MobileBridgeDesktopEvent,
   WorkspaceFileChangeIPCEvent,
   WorkspaceDirectoryEntry,
   WorkspaceFileDocument,
@@ -94,6 +95,7 @@ import {
   DESKTOP_APP_UPDATE_STATE_EVENT_CHANNEL,
   DESKTOP_AGENT_SESSION_EVENT_CHANNEL,
   DESKTOP_AUTOMATION_EVENT_CHANNEL,
+  DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL,
   DESKTOP_PTY_EVENT_CHANNEL,
   DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL,
   DESKTOP_WINDOW_STATE_EVENT_CHANNEL,
@@ -895,6 +897,17 @@ try {
 
       return () => {
         ipcRenderer.removeListener(DESKTOP_AUTOMATION_EVENT_CHANNEL, wrappedListener)
+      }
+    },
+    onMobileBridgeEvent: (listener: (event: MobileBridgeDesktopEvent) => void) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, mobileEvent: MobileBridgeDesktopEvent) => {
+        listener(mobileEvent)
+      }
+
+      ipcRenderer.on(DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL, wrappedListener)
+
+      return () => {
+        ipcRenderer.removeListener(DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL, wrappedListener)
       }
     },
     onWorkspaceFileChange: (listener: (event: WorkspaceFileChangeIPCEvent) => void) => {

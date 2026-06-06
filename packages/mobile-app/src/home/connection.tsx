@@ -7,7 +7,7 @@ import { Section } from "@/components/section"
 import { StateCard } from "@/components/state-card"
 import type { MobileAccountRelayDesktop } from "@/api/account-api"
 import { formatRelativeTime } from "@/utils/format"
-import { darkToneColor } from "./shared"
+import { DarkProviderRow } from "./shared"
 import type { ProviderStatusTone } from "./types"
 
 export function ConnectionHomePage({
@@ -25,6 +25,7 @@ export function ConnectionHomePage({
   onManualToggle,
   onOpenDiagnostics,
   onOpenProvider,
+  onOpenSettings,
   onOpenUpdates,
   onRefreshDesktopList,
   onReviewConnection,
@@ -51,6 +52,7 @@ export function ConnectionHomePage({
   onManualToggle: () => void
   onOpenDiagnostics: () => void
   onOpenProvider: () => void
+  onOpenSettings: () => void
   onOpenUpdates: () => void
   onRefreshDesktopList: () => void
   onReviewConnection: () => void
@@ -78,6 +80,19 @@ export function ConnectionHomePage({
         }}
       >
         <View style={{ maxWidth, width: "100%", gap: 14 }}>
+          <DarkProviderRow
+            detail={providerDetail}
+            label={providerLabel}
+            tone={providerTone}
+            onPress={onOpenProvider}
+          />
+          <MobileUtilityRow
+            appVersion={appVersion}
+            onOpenDiagnostics={onOpenDiagnostics}
+            onOpenProvider={onOpenProvider}
+            onOpenSettings={onOpenSettings}
+            onOpenUpdates={onOpenUpdates}
+          />
           <ConnectionSetupSection
             accountDesktops={accountDesktops}
             accountDesktopsLoading={accountDesktopsLoading}
@@ -95,71 +110,63 @@ export function ConnectionHomePage({
             onTokenChange={onTokenChange}
             token={token}
           />
-          <ConnectionSecondaryLinks
-            appVersion={appVersion}
-            providerDetail={providerDetail}
-            providerLabel={providerLabel}
-            providerTone={providerTone}
-            onOpenDiagnostics={onOpenDiagnostics}
-            onOpenProvider={onOpenProvider}
-            onOpenUpdates={onOpenUpdates}
-          />
         </View>
       </ScrollView>
     </View>
   )
 }
 
-function ConnectionSecondaryLinks({
+export function MobileUtilityRow({
   appVersion,
-  providerDetail,
-  providerLabel,
-  providerTone,
   onOpenDiagnostics,
   onOpenProvider,
+  onOpenSettings,
   onOpenUpdates,
 }: {
   appVersion: string
-  providerDetail: string
-  providerLabel: string
-  providerTone: ProviderStatusTone
   onOpenDiagnostics: () => void
   onOpenProvider: () => void
+  onOpenSettings: () => void
   onOpenUpdates: () => void
 }) {
   return (
-    <View style={{ alignItems: "center", gap: 8, paddingTop: 2 }}>
-      <View style={{ alignItems: "center", flexDirection: "row", gap: 8, width: "100%" }}>
-        <View style={{ backgroundColor: darkToneColor(providerTone), borderRadius: 4, height: 8, width: 8 }} />
-        <Text numberOfLines={1} style={{ color: "#9a9a9a", flex: 1, fontSize: 12 }}>
-          {providerDetail}
-        </Text>
-        <Text style={{ color: darkToneColor(providerTone), fontSize: 12, fontWeight: "800" }}>{providerLabel}</Text>
-      </View>
-      <View style={{ alignItems: "center", flexDirection: "row", justifyContent: "center", minHeight: 30 }}>
-        <SecondaryLink label="Provider" onPress={onOpenProvider} />
-        <SecondaryDivider />
-        <SecondaryLink label={`Updates ${appVersion}`} onPress={onOpenUpdates} />
-        <SecondaryDivider />
-        <SecondaryLink label="Diagnostics" onPress={onOpenDiagnostics} />
-      </View>
+    <View style={{ flexDirection: "row", gap: 10 }}>
+      <UtilityTile label="Provider" onPress={onOpenProvider} value="Details" />
+      <UtilityTile label="Updates" onPress={onOpenUpdates} value={appVersion} />
+      <UtilityTile label="Settings" onPress={onOpenSettings} value="Manage" />
+      <UtilityTile label="Diagnostics" onPress={onOpenDiagnostics} value="Health" />
     </View>
   )
 }
 
-function SecondaryDivider() {
-  return <Text style={{ color: "#5f5f5f", fontSize: 12 }}> / </Text>
-}
-
-function SecondaryLink({ label, onPress }: { label: string; onPress: () => void }) {
+function UtilityTile({
+  label,
+  onPress,
+  value,
+}: {
+  label: string
+  onPress: () => void
+  value: string
+}) {
   return (
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
-      style={({ pressed }) => ({ opacity: pressed ? 0.62 : 1, padding: 5 })}
+      style={({ pressed }) => ({
+        backgroundColor: "#ffffff",
+        borderColor: "#e5e3dc",
+        borderRadius: 14,
+        borderWidth: 1,
+        flex: 1,
+        gap: 6,
+        minHeight: 70,
+        opacity: pressed ? 0.78 : 1,
+        padding: 12,
+      })}
     >
-      <Text numberOfLines={1} style={{ color: "#c8c8c8", fontSize: 12, fontWeight: "800" }}>
-        {label}
+      <Text style={{ color: "#151515", fontSize: 15, fontWeight: "800", letterSpacing: 0 }}>{label}</Text>
+      <Text selectable numberOfLines={1} style={{ color: "#676760", fontSize: 12, fontVariant: ["tabular-nums"], letterSpacing: 0 }}>
+        {value}
       </Text>
     </Pressable>
   )

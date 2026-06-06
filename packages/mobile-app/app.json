@@ -33,6 +33,18 @@
         "CAMERA"
       ]
     },
+    "ios": {
+      "bundleIdentifier": "studio.fanfande.anybox.mobile",
+      "buildNumber": "4",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Anybox Mobile to scan desktop pairing QR codes.",
+        "NSLocalNetworkUsageDescription": "Allow Anybox Mobile to connect to your desktop bridge on the local network.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
     "plugins": [
       "expo-router",
       "expo-secure-store",

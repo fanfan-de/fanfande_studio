@@ -23,6 +23,8 @@ extraResources:
     to: monitor
     filter:
       - "**/*"
+mac:
+  icon: build/icon.icns
 win:
   icon: build/icon.ico
   signAndEditExecutable: false

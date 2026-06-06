@@ -25,6 +25,7 @@ import { useAccount } from "@/state/account"
 import { useConnection } from "@/state/connection"
 import { useFocus } from "@/state/focus"
 import { formatRelativeTime, trimMiddle } from "@/utils/format"
+import { getMobileDeviceName } from "@/utils/platform"
 
 export default function ProviderScreen() {
   const router = useRouter()
@@ -136,7 +137,7 @@ export default function ProviderScreen() {
     setError(null)
     try {
       const previousConnection = connection
-      const result = await connectAccountRelayDesktop(account, desktop.id, "Anybox Android")
+      const result = await connectAccountRelayDesktop(account, desktop.id, getMobileDeviceName())
       await saveConnection(account.baseUrl, result.token, result.device.id, {
         transport: "relay",
         desktopID: result.desktop?.id ?? result.desktopID ?? desktop.id,

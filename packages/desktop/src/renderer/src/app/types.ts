@@ -13,6 +13,7 @@ import type { ReasoningEffort as SharedReasoningEffort } from "@anybox/shared"
 import type {
   DesktopPreviewRenderer,
   DesktopResolvedPreviewTarget,
+  MobileBridgeDesktopEvent as DesktopMobileBridgeEvent,
 } from "../../../shared/desktop-ipc-contract"
 
 export type {
@@ -38,6 +39,7 @@ export type WindowAction = "minimize" | "toggle-maximize" | "close"
 export type PreviewLoadStatus = "idle" | "resolving" | "ready" | "error"
 export type PreviewRenderer = DesktopPreviewRenderer
 export type ResolvedPreviewTarget = DesktopResolvedPreviewTarget
+export type MobileBridgeEvent = DesktopMobileBridgeEvent
 export type PreviewErrorKind =
   | "empty-url"
   | "invalid-url"

@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -63,6 +63,31 @@ function configureAgentLogging(args) {
 }
 
 configureAgentLogging(process.argv.slice(2))
+
+function ensureAppIcons() {
+  const result = spawnSync(process.execPath, [path.join(scriptDir, "generate-app-icons.mjs")], {
+    stdio: "inherit",
+    shell: false,
+    windowsHide: false,
+  })
+
+  if (!result.error && result.status === 0) return
+
+  if (process.platform !== "darwin" && process.platform !== "win32") {
+    console.warn("[desktop][icons] icon generation failed; continuing with the platform default icon.")
+    if (result.error) console.warn(result.error)
+    return
+  }
+
+  if (result.error) {
+    console.error(result.error)
+    process.exit(1)
+  }
+
+  process.exit(result.status ?? 1)
+}
+
+ensureAppIcons()
 
 const command =
   process.platform === "win32"

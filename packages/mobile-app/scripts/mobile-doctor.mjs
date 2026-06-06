@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url"
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const isWindows = process.platform === "win32"
+const isMac = process.platform === "darwin"
 const strict = process.argv.includes("--strict")
 
 function packageBin(name) {
@@ -56,6 +57,42 @@ function checkPackageBin(label, name, args = ["--version"]) {
   }
 }
 
+function checkIosRuntime() {
+  if (!isMac) {
+    return {
+      label: "iOS Simulator runtime",
+      ok: false,
+      detail: "macOS only",
+    }
+  }
+  const result = run("xcrun", ["simctl", "list", "runtimes", "-j"])
+  if (!result.ok) {
+    return {
+      label: "iOS Simulator runtime",
+      ok: false,
+      detail: firstLine(result.output) || "not found or not runnable",
+    }
+  }
+
+  try {
+    const value = JSON.parse(result.output)
+    const runtimes = Array.isArray(value.runtimes) ? value.runtimes : []
+    const runtime = runtimes.find((item) => item?.identifier === "com.apple.CoreSimulator.SimRuntime.iOS-26-5" && item?.isAvailable === true)
+      ?? runtimes.find((item) => typeof item?.identifier === "string" && item.identifier.includes(".SimRuntime.iOS-") && item.isAvailable === true)
+    return {
+      label: "iOS Simulator runtime",
+      ok: Boolean(runtime),
+      detail: runtime ? `${runtime.name ?? "iOS"} ${runtime.version ?? ""} ${runtime.buildversion ?? ""}`.trim() : "no available iOS runtime",
+    }
+  } catch {
+    return {
+      label: "iOS Simulator runtime",
+      ok: false,
+      detail: "unable to parse runtime list",
+    }
+  }
+}
+
 function checkEnv(name) {
   const value = process.env[name]?.trim()
   return {
@@ -74,6 +111,21 @@ const easLogin = existsSync(packageBin("eas"))
       ok: false,
       detail: "EAS CLI is not installed",
     }
+const xcode = isMac
+  ? checkCommand("Xcode", "xcodebuild", ["-version"])
+  : {
+      label: "Xcode",
+      ok: false,
+      detail: "macOS only",
+    }
+const iosSimulator = isMac
+  ? checkCommand("iOS Simulator", "xcrun", ["simctl", "help"])
+  : {
+      label: "iOS Simulator",
+      ok: false,
+      detail: "macOS only",
+    }
+const iosRuntime = checkIosRuntime()
 
 const checks = [
   checkCommand("Node.js", process.execPath, ["--version"]),
@@ -81,6 +133,7 @@ const checks = [
   expo,
   eas,
   easLogin,
+  ...(isMac ? [xcode, iosSimulator, iosRuntime] : []),
   checkCommand("Java", "java", ["-version"]),
   checkCommand("adb", "adb", ["version"]),
   checkCommand("sdkmanager", "sdkmanager", ["--version"], { shell: isWindows }),
@@ -93,6 +146,7 @@ const localAndroidReady =
   checks.find((item) => item.label === "Java")?.ok &&
   checks.find((item) => item.label === "adb")?.ok &&
   (checks.find((item) => item.label === "ANDROID_HOME")?.ok || checks.find((item) => item.label === "ANDROID_SDK_ROOT")?.ok)
+const localIosReady = isMac && xcode.ok && iosSimulator.ok && iosRuntime.ok
 const easReady = eas.ok && easLogin.ok
 const expoGoReady = expo.ok
 
@@ -105,17 +159,22 @@ for (const check of checks) {
 console.log("")
 console.log(`${expoGoReady ? "[ok]" : "[missing]"} Expo Go smoke test readiness`)
 console.log(`${localAndroidReady ? "[ok]" : "[missing]"} Local Android build readiness`)
-console.log(`${easReady ? "[ok]" : "[missing]"} EAS APK build readiness`)
+console.log(`${localIosReady ? "[ok]" : isMac ? "[missing]" : "[skip]"} Local iOS simulator readiness${isMac ? "" : ": macOS with Xcode required"}`)
+console.log(`${easReady ? "[ok]" : "[missing]"} EAS native build readiness`)
 
 if (!localAndroidReady) {
   console.log("")
   console.log("Local Android builds need Java, Android SDK, adb, and ANDROID_HOME or ANDROID_SDK_ROOT.")
 }
 
+if (isMac && !localIosReady) {
+  console.log("Local iOS builds need Xcode and the iOS Simulator command-line tools.")
+}
+
 if (!easReady) {
   console.log("EAS cloud builds need an Expo account login: corepack pnpm --filter anybox-mobile-app exec eas login")
 }
 
-if (strict && (!expoGoReady || !localAndroidReady || !easReady)) {
+if (strict && (!expoGoReady || !localAndroidReady || (isMac && !localIosReady) || !easReady)) {
   process.exit(1)
 }

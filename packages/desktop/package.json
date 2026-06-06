@@ -15,7 +15,7 @@
     "build:agent-runtime": "node ./scripts/prepare-agent-runtime.mjs",
     "build:monitor": "corepack pnpm --filter anybox-monitor build",
     "build": "corepack pnpm run build:agent-runtime && corepack pnpm run build:monitor && electron-vite build",
-    "icons:generate": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/generate-app-icons.ps1",
+    "icons:generate": "node ./scripts/generate-app-icons.mjs",
     "verify:agent-runtime": "node ./scripts/verify-agent-runtime.mjs",
     "dist": "corepack pnpm run build && corepack pnpm run verify:agent-runtime && corepack pnpm run icons:generate && node ./node_modules/electron-builder/cli.js --publish never",
     "dist:publish": "corepack pnpm run build && corepack pnpm run verify:agent-runtime && corepack pnpm run icons:generate && node ./node_modules/electron-builder/cli.js --publish always",

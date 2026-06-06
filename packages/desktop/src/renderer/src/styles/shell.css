@@ -33,6 +33,12 @@
   -webkit-app-region: no-drag;
 }
 
+.window-controls.is-native-macos {
+  width: 88px;
+  min-width: 88px;
+  pointer-events: none;
+}
+
 .window-control {
   -webkit-app-region: no-drag;
   width: 30px;

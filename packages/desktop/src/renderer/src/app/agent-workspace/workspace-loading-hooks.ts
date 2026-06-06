@@ -11,6 +11,7 @@ import type {
   SessionDiffState,
   Turn,
   WorkbenchTabReference,
+  MobileBridgeEvent,
   WorkspaceFileChangeIPCEvent,
   WorkspaceGroup,
 } from "../types"
@@ -210,6 +211,70 @@ export function handleWorkspaceFileChange({
 
   workspaceReloadSuppressedUntilRef.current[normalizedEventDirectory] = now + WORKSPACE_RELOAD_SUPPRESSION_MS
   void refreshWorkspaceFromDirectory(matchingWorkspace.directory)
+}
+
+interface HandleMobileBridgeEventOptions {
+  mobileEvent: MobileBridgeEvent
+  platform: string
+  refreshWorkspaceFromDirectory: (directory: string) => void | Promise<WorkspaceGroup | null>
+  workspaces: WorkspaceGroup[]
+}
+
+export function resolveMobileBridgeEventWorkspaceDirectory({
+  mobileEvent,
+  platform,
+  workspaces,
+}: Omit<HandleMobileBridgeEventOptions, "refreshWorkspaceFromDirectory">) {
+  const explicitDirectory = mobileEvent.directory?.trim()
+  if (explicitDirectory) return explicitDirectory
+
+  if (mobileEvent.workspaceID?.trim()) {
+    const normalizedWorkspaceID = normalizeWorkspacePath(mobileEvent.workspaceID, platform)
+    const matchingWorkspace = workspaces.find((workspace) =>
+      normalizeWorkspacePath(workspace.id, platform) === normalizedWorkspaceID ||
+      normalizeWorkspacePath(workspace.directory, platform) === normalizedWorkspaceID
+    )
+    if (matchingWorkspace) return matchingWorkspace.directory
+  }
+
+  if (mobileEvent.sessionID?.trim()) {
+    const matchingWorkspace = workspaces.find((workspace) =>
+      workspace.sessions.some((session) => session.id === mobileEvent.sessionID),
+    )
+    if (matchingWorkspace) return matchingWorkspace.directory
+  }
+
+  return null
+}
+
+export function handleMobileBridgeEvent({
+  mobileEvent,
+  platform,
+  refreshWorkspaceFromDirectory,
+  workspaces,
+}: HandleMobileBridgeEventOptions) {
+  const directory = resolveMobileBridgeEventWorkspaceDirectory({
+    mobileEvent,
+    platform,
+    workspaces,
+  })
+  if (!directory) return
+
+  void refreshWorkspaceFromDirectory(directory)
+}
+
+export function useMobileBridgeEventSubscription(
+  handler: (mobileEvent: MobileBridgeEvent) => void,
+) {
+  useEffect(() => {
+    const unsubscribe = window.desktop?.onMobileBridgeEvent?.((mobileEvent: MobileBridgeEvent) => {
+      handler(mobileEvent)
+    })
+
+    return () => {
+      unsubscribe?.()
+    }
+  }, [])
 }
 
 export function useWorkspaceFileChangeSubscription(

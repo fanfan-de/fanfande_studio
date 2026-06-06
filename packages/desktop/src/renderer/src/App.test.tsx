@@ -3,7 +3,7 @@ import type { DockviewApi } from "dockview-react"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { DesktopAppUpdateState } from "../../shared/desktop-ipc-contract"
+import type { DesktopAppUpdateState, MobileBridgeDesktopEvent } from "../../shared/desktop-ipc-contract"
 import type { PermissionRequestPrompt, PermissionResolveResult } from "../../shared/permission"
 import { App } from "./App"
 import {
@@ -1273,6 +1273,7 @@ describe("App", () => {
       }),
       windowAction: vi.fn().mockResolvedValue(undefined),
       onAppUpdateStateChange: vi.fn(() => vi.fn()),
+      onMobileBridgeEvent: vi.fn(() => vi.fn()),
       onPtyEvent: vi.fn(() => vi.fn()),
       onWindowStateChange: vi.fn(() => vi.fn()),
     }
@@ -1408,6 +1409,26 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^Select model:/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /^Agent mode:/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Clear draft" })).not.toBeInTheDocument()
+  })
+
+  it("renders a native macOS window controls slot instead of custom window buttons", () => {
+    window.desktop = {
+      ...window.desktop!,
+      platform: "darwin",
+      getInfo: vi.fn().mockResolvedValue({
+        platform: "darwin",
+        node: "22.0.0",
+        chrome: "130.0.0",
+        electron: "39.0.0",
+      }),
+    }
+
+    const { container } = render(<App />)
+
+    expect(container.firstChild).toHaveClass("window-shell", "is-macos")
+    expect(container.querySelector(".mac-titlebar")).not.toBeInTheDocument()
+    expect(container.querySelector(".window-controls.is-native-macos")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Minimize window" })).not.toBeInTheDocument()
   })
 
   it("does not publish workbench snapshots for streaming turn updates", async () => {
@@ -4549,6 +4570,78 @@ describe("App", () => {
     })
   })
 
+  it("refreshes the desktop workspace when the mobile bridge reports a created session", async () => {
+    const workspace: LoadedFolderWorkspace = {
+      id: "C:\\Projects\\Atlas\\client",
+      directory: "C:\\Projects\\Atlas\\client",
+      name: "client",
+      created: 1,
+      updated: 20,
+      project: {
+        id: "prj_atlas",
+        name: "Atlas",
+        worktree: "C:\\Projects\\Atlas",
+      },
+      sessions: [
+        {
+          id: "session-atlas-review",
+          projectID: "prj_atlas",
+          directory: "C:\\Projects\\Atlas\\client",
+          title: "Atlas review",
+          created: 18,
+          updated: 20,
+        },
+      ],
+    }
+    const updatedWorkspace: LoadedFolderWorkspace = {
+      ...workspace,
+      updated: 30,
+      sessions: [
+        {
+          id: "session-mobile-new",
+          projectID: "prj_atlas",
+          directory: "C:\\Projects\\Atlas\\client",
+          title: "Mobile Chat",
+          created: 30,
+          updated: 30,
+        },
+        ...workspace.sessions,
+      ],
+    }
+    let mobileBridgeListener: ((event: MobileBridgeDesktopEvent) => void) | null = null
+    window.desktop!.onMobileBridgeEvent = vi.fn((listener) => {
+      mobileBridgeListener = listener
+      return vi.fn(() => {
+        mobileBridgeListener = null
+      })
+    })
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([workspace])
+    window.desktop!.openFolderWorkspace = vi.fn().mockResolvedValue(updatedWorkspace)
+
+    render(<App />)
+
+    await screen.findByRole("button", { name: "Atlas review" })
+
+    const openFolderWorkspace = window.desktop!.openFolderWorkspace as ReturnType<typeof vi.fn>
+    openFolderWorkspace.mockClear()
+
+    act(() => {
+      mobileBridgeListener?.({
+        type: "session.created",
+        source: "mobile",
+        generatedAt: Date.now(),
+        workspaceID: workspace.id,
+        directory: workspace.directory,
+        sessionID: "session-mobile-new",
+      })
+    })
+
+    expect(await screen.findByRole("button", { name: "Mobile Chat" })).toBeInTheDocument()
+    expect(openFolderWorkspace).toHaveBeenCalledWith({
+      directory: workspace.directory,
+    })
+  })
+
   it("refreshes the workspace diff when files change under the active session directory", async () => {
     const workspace: LoadedFolderWorkspace = {
       id: "C:\\Projects\\Atlas\\client",
@@ -6073,6 +6166,22 @@ describe("App", () => {
     const detachedTurnHistory = [
       {
         info: {
+          id: "msg-mobile-user-1",
+          sessionID: "session-atlas-review",
+          role: "user",
+          created: 190,
+          displayText: "Run the mobile repo config check",
+        },
+        parts: [
+          {
+            id: "part-mobile-user-1",
+            type: "text",
+            text: "Run the mobile repo config check",
+          },
+        ],
+      },
+      {
+        info: {
           id: "msg-detached-1",
           sessionID: "session-atlas-review",
           role: "assistant",
@@ -6165,6 +6274,11 @@ describe("App", () => {
           cursor: "200:turn-detached:1",
         },
       }))
+    })
+
+    expect(await screen.findByText("Run the mobile repo config check")).toBeInTheDocument()
+
+    act(() => {
       sessionStreamListener?.(createSubscriptionStreamEvent({
         backendSessionID: "session-atlas-review",
         id: "201:turn-detached:2",
@@ -6209,6 +6323,9 @@ describe("App", () => {
     })
 
     await waitFor(() => {
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
+        backendSessionID: "session-atlas-review",
+      })
       expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
         backendSessionID: "session-atlas-review",
         view: "all",
@@ -12719,6 +12836,7 @@ describe("App", () => {
     expect(styles).toMatch(/\.workbench-pane-stage\s*\{[^}]*--pane-drop-preview-motion-duration:\s*220ms;[^}]*--pane-drop-preview-fade-duration:\s*180ms;[^}]*--pane-drop-preview-motion-curve:\s*cubic-bezier\(0\.22,\s*1,\s*0\.36,\s*1\);[^}]*--pane-drop-preview-sheen-x:\s*50%;[^}]*--pane-drop-preview-sheen-y:\s*50%;/s)
     expect(styles).toMatch(/\.workbench-pane-live-region\s*\{[^}]*position:\s*absolute;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*grid-template-rows:\s*auto auto minmax\(0,\s*1fr\) auto auto;/s)
     expect(styles).toMatch(/\.window-controls\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*flex-end;[^}]*gap:\s*4px;[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.window-controls\.is-native-macos\s*\{[^}]*width:\s*88px;[^}]*min-width:\s*88px;[^}]*pointer-events:\s*none;/s)
     expect(styles).toMatch(/\.window-control,[\s\S]*?\{[^}]*color:\s*var\(--semantic-accent-icon\);/s)
     expect(styles).toMatch(/\.window-control svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.window-control:hover,[\s\S]*?\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon-hover\);[^}]*transform:\s*none;/s)

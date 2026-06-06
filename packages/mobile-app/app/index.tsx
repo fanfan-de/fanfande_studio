@@ -1,14 +1,14 @@
 import { Stack, useRouter } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Linking, useWindowDimensions } from "react-native"
+import { Linking, ScrollView, useWindowDimensions, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Screen } from "@/components/screen"
 import { StateCard } from "@/components/state-card"
 import { ConnectionHomePage } from "@/home/connection"
-import { CurrentSessionHomePage } from "@/home/current-session"
+import { SessionDrawerPage } from "@/home/drawer"
 import { buildSessionTitle, formatProviderStatus, sortSessions } from "@/home/format"
-import { ContextSelectorSheet } from "@/home/sheets"
+import { ThreadViewPage } from "@/home/thread"
 import {
   connectAccountRelayDesktop,
   listAccountRelayDesktops,
@@ -35,14 +35,23 @@ import { formatAppVersionLabel, getCurrentAppInfo } from "@/services/app-updates
 import { useAccount } from "@/state/account"
 import { useConnection } from "@/state/connection"
 import { useFocus } from "@/state/focus"
+import {
+  mergeOptimisticMessages,
+  type PendingPromptOverlay,
+  type StreamingAssistantOverlay,
+} from "@/utils/message"
+import { getMobileDeviceName } from "@/utils/platform"
 
 const handledIncomingLinks = new Set<string>()
+const ACCOUNT_DESKTOP_REFRESH_INTERVAL_MS = 10_000
+const AUTO_CONNECT_RETRY_INTERVAL_MS = 30_000
 
 export default function HomeScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const maxWidth = width >= 760 ? 720 : undefined
+  const pagerRef = useRef<ScrollView | null>(null)
   const { account, loading: accountLoading } = useAccount()
   const { connection, loading: connectionLoading, saveConnection } = useConnection()
   const focus = useFocus()
@@ -63,11 +72,18 @@ export default function HomeScreen() {
   const [messageError, setMessageError] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
   const [sending, setSending] = useState(false)
-  const [pendingPrompt, setPendingPrompt] = useState<{ id: string; text: string } | null>(null)
-  const [streamingAssistant, setStreamingAssistant] = useState<{ id: string; text: string } | null>(null)
-  const [selectorKind, setSelectorKind] = useState<"projects" | "conversations" | null>(null)
-  const autoConnectAttemptedDesktopIDRef = useRef<string | null>(null)
+  const [pendingPrompt, setPendingPrompt] = useState<PendingPromptOverlay | null>(null)
+  const [streamingAssistant, setStreamingAssistant] = useState<StreamingAssistantOverlay | null>(null)
+  const autoConnectAttemptedAtRef = useRef<Record<string, number>>({})
+  const accountDesktopRefreshInFlightRef = useRef(false)
   const currentApp = useMemo(() => getCurrentAppInfo(), [])
+
+  const scrollToPage = useCallback(
+    (page: 0 | 1) => {
+      pagerRef.current?.scrollTo({ x: page * width, animated: true })
+    },
+    [width],
+  )
 
   useEffect(() => {
     if (!accountLoading && !connectionLoading && !account && !connection) {
@@ -114,20 +130,26 @@ export default function HomeScreen() {
     onEvent: () => void load({ silent: true }),
   })
 
-  const loadAccountDesktops = useCallback(async (nextAccount: MobileAccountSession | null = account) => {
+  const loadAccountDesktops = useCallback(async (nextAccount: MobileAccountSession | null = account, options?: { silent?: boolean }) => {
     if (!nextAccount) {
       setAccountDesktops([])
       setAccountDesktopError(null)
       return
     }
-    setAccountDesktopsLoading(true)
-    setAccountDesktopError(null)
+    if (accountDesktopRefreshInFlightRef.current) return
+    accountDesktopRefreshInFlightRef.current = true
+    if (!options?.silent) setAccountDesktopsLoading(true)
+    if (!options?.silent) setAccountDesktopError(null)
     try {
       setAccountDesktops(await listAccountRelayDesktops(nextAccount))
+      setAccountDesktopError(null)
     } catch (desktopError) {
-      setAccountDesktopError(desktopError instanceof Error ? desktopError.message : "Unable to load desktop devices.")
+      if (!options?.silent) {
+        setAccountDesktopError(desktopError instanceof Error ? desktopError.message : "Unable to load desktop devices.")
+      }
     } finally {
-      setAccountDesktopsLoading(false)
+      accountDesktopRefreshInFlightRef.current = false
+      if (!options?.silent) setAccountDesktopsLoading(false)
     }
   }, [account])
 
@@ -137,7 +159,7 @@ export default function HomeScreen() {
     setError(null)
     setAccountDesktopError(null)
     try {
-      const result = await connectAccountRelayDesktop(account, desktop.id, "Anybox Android")
+      const result = await connectAccountRelayDesktop(account, desktop.id, getMobileDeviceName())
       await saveConnection(account.baseUrl, result.token, result.device.id, {
         transport: "relay",
         desktopID: result.desktop?.id ?? result.desktopID ?? desktop.id,
@@ -154,13 +176,27 @@ export default function HomeScreen() {
     void loadAccountDesktops(account)
   }, [account, accountLoading, connection, loadAccountDesktops])
 
+  useEffect(() => {
+    if (connection || accountLoading || !account) return undefined
+    const interval = setInterval(() => {
+      void loadAccountDesktops(account, { silent: true })
+    }, ACCOUNT_DESKTOP_REFRESH_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [account, accountLoading, connection, loadAccountDesktops])
+
+  useEffect(() => {
+    autoConnectAttemptedAtRef.current = {}
+  }, [account?.baseUrl, account?.user.id])
+
   const onlineDesktops = useMemo(() => accountDesktops.filter((desktop) => desktop.online), [accountDesktops])
 
   useEffect(() => {
     if (connection || !account || accountDesktopsLoading || connectingDesktopID || onlineDesktops.length !== 1) return
     const [desktop] = onlineDesktops
-    if (!desktop || autoConnectAttemptedDesktopIDRef.current === desktop.id) return
-    autoConnectAttemptedDesktopIDRef.current = desktop.id
+    if (!desktop) return
+    const previousAttemptAt = autoConnectAttemptedAtRef.current[desktop.id] ?? 0
+    if (Date.now() - previousAttemptAt < AUTO_CONNECT_RETRY_INTERVAL_MS) return
+    autoConnectAttemptedAtRef.current[desktop.id] = Date.now()
     void connectAccountDesktop(desktop)
   }, [account, accountDesktopsLoading, connectAccountDesktop, connectingDesktopID, connection, onlineDesktops])
 
@@ -221,7 +257,7 @@ export default function HomeScreen() {
   )
   const focusedSessions = useMemo(() => sortSessions(focusedWorkspace?.sessions ?? []), [focusedWorkspace])
   const focusedSession = useMemo(
-    () => focusedSessions.find((session) => session.id === focus.sessionID) ?? focusedSessions[0] ?? null,
+    () => (focus.sessionID ? focusedSessions.find((session) => session.id === focus.sessionID) ?? null : null),
     [focus.sessionID, focusedSessions],
   )
   const selectedSessionID = focusedSession?.id ?? null
@@ -264,52 +300,25 @@ export default function HomeScreen() {
     void loadMessages()
   }, [loadMessages])
 
-  const visibleMessages = useMemo(() => {
-    const nextMessages = pendingPrompt
-      ? [
-          ...messages,
-          {
-            info: {
-              id: pendingPrompt.id,
-              role: "user",
-              created: Date.now(),
-              updated: Date.now(),
-            },
-            parts: [{ type: "text", text: pendingPrompt.text }],
-          },
-        ]
-      : [...messages]
-
-    if (streamingAssistant) {
-      nextMessages.push({
-        info: {
-          id: streamingAssistant.id,
-          role: "assistant",
-          created: Date.now(),
-          updated: Date.now(),
-        },
-        parts: [{ type: "text", text: streamingAssistant.text || "..." }],
-      })
-    }
-
-    return nextMessages satisfies MobileMessage[]
-  }, [messages, pendingPrompt, streamingAssistant])
+  const visibleMessages = useMemo(
+    () => mergeOptimisticMessages(messages, pendingPrompt, streamingAssistant),
+    [messages, pendingPrompt, streamingAssistant],
+  )
 
   const handleSelectWorkspace = useCallback(
     (workspace: MobileWorkspace) => {
-      const [firstSession] = sortSessions(workspace.sessions)
       void focus.setFocus({
         workspaceID: workspace.id,
-        sessionID: firstSession?.id ?? null,
+        sessionID: null,
       })
     },
     [focus],
   )
 
   const handleSelectSession = useCallback(
-    (session: MobileSessionSummary) => {
+    (session: MobileSessionSummary, workspace?: MobileWorkspace) => {
       void focus.setFocus({
-        workspaceID: focusedWorkspace?.id ?? focus.workspaceID ?? null,
+        workspaceID: workspace?.id ?? focusedWorkspace?.id ?? focus.workspaceID ?? null,
         sessionID: session.id,
       })
     },
@@ -345,9 +354,10 @@ export default function HomeScreen() {
 
     setSending(true)
     setDraft("")
-    setPendingPrompt({ id: `local-${Date.now()}`, text })
+    const anchorMessageID = messages.at(-1)?.info?.id ?? null
+    setPendingPrompt({ id: `local-${Date.now()}`, text, anchorMessageID })
     const streamID = `stream-${Date.now()}`
-    setStreamingAssistant({ id: streamID, text: "" })
+    setStreamingAssistant({ id: streamID, text: "", anchorMessageID })
     setMessageError(null)
 
     try {
@@ -372,6 +382,7 @@ export default function HomeScreen() {
           setStreamingAssistant((current) => ({
             id: current?.id ?? streamID,
             text: `${current?.text ?? ""}${delta}`,
+            anchorMessageID: current?.anchorMessageID ?? anchorMessageID,
           }))
         },
       })
@@ -386,7 +397,7 @@ export default function HomeScreen() {
     } finally {
       setSending(false)
     }
-  }, [connection, draft, focus, focusedSession?.id, focusedWorkspace, load, readSessionMessages, sending])
+  }, [connection, draft, focus, focusedSession?.id, focusedWorkspace, load, messages, readSessionMessages, sending])
 
   if (accountLoading || connectionLoading || focus.loading) {
     return (
@@ -440,6 +451,7 @@ export default function HomeScreen() {
           onManualToggle={() => setManualOpen((current) => !current)}
           onOpenDiagnostics={() => router.push("/diagnostics" as never)}
           onOpenProvider={() => router.push("/provider" as never)}
+          onOpenSettings={() => router.push("/settings" as never)}
           onOpenUpdates={() => router.push("/updates" as never)}
           onRefreshDesktopList={() => void loadAccountDesktops(account)}
           onReviewConnection={() => openConnectionConfirmation(endpoint, token)}
@@ -453,60 +465,65 @@ export default function HomeScreen() {
           token={token}
         />
       ) : (
-        <>
-          <CurrentSessionHomePage
-            appVersion={formatAppVersionLabel(currentApp)}
-            approvals={approvals}
-            disabled={composerDisabled}
-            draft={draft}
-            focusedSession={focusedSession}
-            focusedWorkspace={focusedWorkspace}
-            messageError={messageError}
-            messages={visibleMessages}
-            messagesLoading={messagesLoading}
-            onChangeText={setDraft}
-            onNewChat={() => void handleCreateConversation()}
-            onOpenApprovals={() => router.push("/approvals" as never)}
-            onOpenDiagnostics={() => router.push("/diagnostics" as never)}
-            onOpenProvider={() => router.push("/provider" as never)}
-            onOpenSessionPicker={() => setSelectorKind("conversations")}
-            onOpenUpdates={() => router.push("/updates" as never)}
-            onOpenWorkspacePicker={() => setSelectorKind("projects")}
-            onRefresh={() => void load()}
-            onSend={() => void handleSend()}
-            paddingBottom={Math.max(insets.bottom, 10)}
-            paddingTop={insets.top}
-            placeholder={composerPlaceholder}
-            providerDetail={providerStatus.detail}
-            providerLabel={providerStatus.label}
-            providerTone={providerStatus.tone}
-            refreshing={refreshing}
-            sending={sending}
-          />
-          <ContextSelectorSheet
-            focusedSessionID={focusedSession?.id}
-            focusedWorkspaceID={focusedWorkspace?.id}
-            kind={selectorKind}
-            maxWidth={maxWidth}
-            onClose={() => setSelectorKind(null)}
-            onNewChat={() => {
-              setSelectorKind(null)
-              void handleCreateConversation()
-            }}
-            onSelectSession={(session) => {
-              handleSelectSession(session)
-              setSelectorKind(null)
-            }}
-            onSelectWorkspace={(workspace) => {
-              handleSelectWorkspace(workspace)
-              setSelectorKind(null)
-            }}
-            paddingBottom={Math.max(insets.bottom, 14)}
-            sending={sending}
-            sessions={focusedSessions}
-            workspaces={sortedWorkspaces}
-          />
-        </>
+        <View style={{ flex: 1, backgroundColor: "#171717" }}>
+          <ScrollView
+            ref={pagerRef}
+            contentOffset={{ x: width, y: 0 }}
+            horizontal
+            keyboardShouldPersistTaps="handled"
+            pagingEnabled
+            scrollEventThrottle={16}
+            showsHorizontalScrollIndicator={false}
+            style={{ flex: 1 }}
+          >
+            <View style={{ width }}>
+              <SessionDrawerPage
+                focusedSessionID={focusedSession?.id}
+                focusedWorkspaceID={focusedWorkspace?.id}
+                onNewChat={() => {
+                  void handleCreateConversation()
+                  scrollToPage(1)
+                }}
+                onOpenSettings={() => router.push("/settings" as never)}
+                onSelectSession={(session, workspace) => {
+                  handleSelectSession(session, workspace)
+                  scrollToPage(1)
+                }}
+                onSelectWorkspace={handleSelectWorkspace}
+                paddingBottom={Math.max(insets.bottom, 14)}
+                paddingTop={insets.top}
+                sending={sending}
+                sessions={focusedSessions}
+                workspaces={sortedWorkspaces}
+              />
+            </View>
+            <View style={{ width }}>
+              <ThreadViewPage
+                disabled={composerDisabled}
+                draft={draft}
+                focusedSession={focusedSession}
+                focusedWorkspace={focusedWorkspace}
+                messageError={messageError}
+                messages={visibleMessages}
+                messagesLoading={messagesLoading}
+                onBack={() => scrollToPage(0)}
+                onChangeText={setDraft}
+                onNewChat={() => void handleCreateConversation()}
+                onOpenApprovals={() => router.push("/approvals")}
+                onOpenProvider={() => router.push("/provider" as never)}
+                onOpenSessionPicker={() => scrollToPage(0)}
+                onRefresh={load}
+                onSend={() => void handleSend()}
+                paddingBottom={Math.max(insets.bottom, 10)}
+                paddingTop={insets.top}
+                pendingApprovals={approvals.length}
+                placeholder={composerPlaceholder}
+                refreshing={refreshing}
+                sending={sending}
+              />
+            </View>
+          </ScrollView>
+        </View>
       )}
     </>
   )

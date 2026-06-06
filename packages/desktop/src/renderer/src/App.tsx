@@ -9,7 +9,7 @@ import { McpServersPage } from "./app/mcp/McpServersPage"
 import { RightSidebar } from "./app/sidebar/RightSidebar"
 import { Sidebar } from "./app/sidebar/Sidebar"
 import { SidebarResizer } from "./app/sidebar/SidebarResizer"
-import { WindowChrome } from "./app/chrome/WindowChrome"
+import { NativeMacWindowControlsSlot, WindowChrome } from "./app/chrome/WindowChrome"
 import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
 import {
   useWorkspaceStoreSelector,
@@ -580,9 +580,14 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
   } = useToolPermissionModeState()
   const didMarkMountedRef = useRef(false)
   const lastPublishedWorkbenchSnapshotSignatureRef = useRef<string | null>(null)
+  const isMacOS = platform === "darwin"
   const windowControls = useMemo(
-    () => <WindowChrome controlsRef={null} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />,
-    [handleWindowAction, isWindowMaximized],
+    () => (
+      isMacOS
+        ? <NativeMacWindowControlsSlot controlsRef={null} />
+        : <WindowChrome controlsRef={null} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
+    ),
+    [handleWindowAction, isMacOS, isWindowMaximized],
   )
 
   async function handleDetachSessionPanel(input: {
@@ -718,7 +723,7 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
 
   return (
     <WorkspaceStoreProvider store={workspaceStore}>
-      <div className="session-popout-shell">
+      <div className={isMacOS ? "session-popout-shell is-macos" : "session-popout-shell"}>
         <main ref={appShellRef} className="session-popout-app" style={appShellStyle}>
           <WorkbenchShell
           assistantTraceVisibility={assistantTraceVisibility}
@@ -1946,8 +1951,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handleLeftSidebarViewChange("connections")
   }
 
+  const isMacOS = platform === "darwin"
   const windowShellClassName = [
     "window-shell",
+    isMacOS ? "is-macos" : "",
     isDebugLineColorsEnabled ? "debug-line-colors" : "",
     isDebugUiRegionsEnabled ? "debug-ui-regions" : "",
     isWindowMaximized ? "is-maximized" : "",
@@ -1962,12 +1969,20 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
   const isShellSidebarManagedView = isPromptEditorView || isGlobalSkillsView || isBuiltinToolsView
   const isFullSurfaceView = isConnectionsView || isAutomationsView
   const windowControls = useMemo(
-    () => <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />,
-    [handleWindowAction, isWindowMaximized, windowControlsRef],
+    () => (
+      isMacOS
+        ? <NativeMacWindowControlsSlot controlsRef={windowControlsRef} />
+        : <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
+    ),
+    [handleWindowAction, isMacOS, isWindowMaximized, windowControlsRef],
   )
   const workbenchWindowControls = useMemo(
-    () => <WindowChrome controlsRef={null} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />,
-    [handleWindowAction, isWindowMaximized],
+    () => (
+      isMacOS
+        ? <NativeMacWindowControlsSlot controlsRef={null} />
+        : <WindowChrome controlsRef={null} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
+    ),
+    [handleWindowAction, isMacOS, isWindowMaximized],
   )
   const appShellClassName = isOpen ? "app-shell is-settings-open" : "app-shell"
   const effectiveAppShellStyle = isShellSidebarManagedView

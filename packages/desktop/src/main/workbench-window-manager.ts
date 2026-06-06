@@ -54,6 +54,7 @@ interface PendingDetachTransaction {
 }
 
 export interface WorkbenchWindowManagerOptions {
+  configureWindow?: (browserWindow: BrowserWindow) => void
   createPopoutWindowOptions: () => BrowserWindowConstructorOptions
   rendererEntryUrl: string
 }
@@ -89,6 +90,7 @@ function getSharedStateContentSignature(state: WorkbenchSharedState) {
 }
 
 export class WorkbenchWindowManager {
+  private readonly configureWindow?: (browserWindow: BrowserWindow) => void
   private readonly createPopoutWindowOptions: () => BrowserWindowConstructorOptions
   private readonly rendererEntryUrl: string
   private readonly windows = new Map<string, WorkbenchWindowRecord>()
@@ -102,6 +104,7 @@ export class WorkbenchWindowManager {
   private stateVersion = 0
 
   constructor(options: WorkbenchWindowManagerOptions) {
+    this.configureWindow = options.configureWindow
     this.createPopoutWindowOptions = options.createPopoutWindowOptions
     this.rendererEntryUrl = options.rendererEntryUrl
   }
@@ -229,6 +232,7 @@ export class WorkbenchWindowManager {
       ...(input.bounds?.height ? { height: input.bounds.height } : {}),
       show: false,
     })
+    this.configureWindow?.(browserWindow)
     this.ensureSurface({
       id: surfaceID,
       kind: "session-popout",

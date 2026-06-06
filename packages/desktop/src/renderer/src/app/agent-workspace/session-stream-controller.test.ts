@@ -10,6 +10,7 @@ import {
   isTaskStateStreamEvent,
   isTerminalStreamEvent,
   mergeConversationTurnsFromHistory,
+  mergeExternalUserTurnsFromHistory,
   readLatestSessionContextUsageFromHistory,
   readSessionContextUsageFromDoneEventData,
   readSessionContextUsageFromLlmCompletedEventData,
@@ -513,6 +514,86 @@ describe("session stream controller helpers", () => {
           sourceID: "source-1",
         }),
       ],
+    })
+  })
+
+  it("inserts externally persisted user turns before the streaming assistant placeholder", () => {
+    const streamingAssistant: AssistantTurn = {
+      ...createAssistantTurn("assistant-streaming", "item-streaming", "Streaming reply"),
+      timestamp: 20,
+      isStreaming: true,
+      runtime: {
+        phase: "waiting_first_event",
+        startedAt: 20,
+        updatedAt: 20,
+      },
+      state: "Waiting for agent stream",
+    }
+    const currentTurns: Turn[] = [
+      createUserTurn("user-existing", "Earlier prompt"),
+      createAssistantTurn("assistant-existing", "item-existing", "Earlier reply"),
+      streamingAssistant,
+    ]
+    const historyTurns: Turn[] = [
+      createUserTurn("user-existing", "Earlier prompt"),
+      {
+        ...createUserTurn("user-mobile", "Message from mobile"),
+        timestamp: 19,
+      },
+    ]
+
+    const merged = mergeExternalUserTurnsFromHistory(currentTurns, historyTurns, {
+      beforeTurnID: "assistant-streaming",
+    })
+
+    expect(merged.map((turn) => turn.id)).toEqual([
+      "user-existing",
+      "assistant-existing",
+      "user-mobile",
+      "assistant-streaming",
+    ])
+  })
+
+  it("replaces the optimistic local user turn when subscription history contains the same prompt", () => {
+    const streamingAssistant: AssistantTurn = {
+      ...createAssistantTurn("assistant-streaming", "item-streaming", "Streaming reply"),
+      timestamp: 20,
+      isStreaming: true,
+      runtime: {
+        phase: "waiting_first_event",
+        startedAt: 20,
+        updatedAt: 20,
+      },
+      state: "Waiting for agent stream",
+    }
+    const currentTurns: Turn[] = [
+      {
+        ...createUserTurn("user-local", "Create a Markdown document"),
+        displayText: "Create a Markdown document",
+        timestamp: 18,
+      },
+      streamingAssistant,
+    ]
+    const historyTurns: Turn[] = [
+      {
+        ...createUserTurn("message-user-backend", "Create a Markdown document"),
+        timestamp: 19,
+      },
+    ]
+
+    const merged = mergeExternalUserTurnsFromHistory(currentTurns, historyTurns, {
+      beforeTurnID: "assistant-streaming",
+    })
+
+    expect(merged).toHaveLength(2)
+    expect(merged.map((turn) => turn.id)).toEqual([
+      "message-user-backend",
+      "assistant-streaming",
+    ])
+    expect(merged[0]).toMatchObject({
+      kind: "user",
+      displayText: "Create a Markdown document",
+      text: "Create a Markdown document",
     })
   })
 

@@ -7,6 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const electronState = vi.hoisted(() => ({
   userDataPath: "",
+  windows: [] as Array<{
+    isDestroyed: () => boolean
+    webContents: {
+      isDestroyed: () => boolean
+      send: (channel: string, ...args: unknown[]) => void
+    }
+  }>,
 }))
 
 const requestAgentJSONMock = vi.hoisted(() => vi.fn())
@@ -35,6 +42,9 @@ vi.mock("electron", () => ({
     getPath: vi.fn(() => electronState.userDataPath),
     getVersion: vi.fn(() => "0.1.13"),
   },
+  BrowserWindow: {
+    getAllWindows: vi.fn(() => electronState.windows),
+  },
 }))
 
 vi.mock("./agent-client", () => ({
@@ -55,6 +65,7 @@ vi.mock("./desktop-cloud-relay-client", () => ({
   stopDesktopCloudRelayClient: vi.fn(),
 }))
 
+import { DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL } from "../shared/desktop-ipc-contract"
 import { ensureMobileBridgeServerRunning, getMobileBridgeStatus, refreshMobilePairingCode, stopMobileBridgeServer } from "./mobile-bridge-server"
 
 function listenOnFreePort() {
@@ -325,6 +336,7 @@ describe("mobile bridge server", () => {
     }
 
     requestAgentJSONMock.mockReset()
+    electronState.windows = []
     requestAgentJSONMock.mockImplementation(async (agentPath: string) => {
       if (agentPath === "/api/projects") return { data: [] }
       if (agentPath.startsWith("/api/permissions/requests?")) return { data: [] }
@@ -484,6 +496,16 @@ describe("mobile bridge server", () => {
       const pairData = await pairMobileDevice(baseUrl)
       const authHeaders = { authorization: `Bearer ${pairData.token}` }
       const workspaceRoute = `/api/mobile/workspaces/${encodeURIComponent(workspaceDir)}`
+      const desktopSend = vi.fn()
+      electronState.windows = [
+        {
+          isDestroyed: () => false,
+          webContents: {
+            isDestroyed: () => false,
+            send: desktopSend,
+          },
+        },
+      ]
 
       const workspaces = await readMobileJSON(baseUrl, "/api/mobile/workspaces", { headers: authHeaders })
       expect(workspaces.response.status).toBe(200)
@@ -508,6 +530,17 @@ describe("mobile bridge server", () => {
         id: "session-created",
         title: "Created Chat",
       })
+      expect(desktopSend).toHaveBeenCalledWith(
+        DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL,
+        expect.objectContaining({
+          type: "session.created",
+          source: "mobile",
+          workspaceID: workspaceDir,
+          directory: workspaceDir,
+          sessionID: "session-created",
+          generatedAt: expect.any(Number),
+        }),
+      )
 
       const messages = await readMobileJSON(baseUrl, "/api/mobile/sessions/session-smoke/messages", { headers: authHeaders })
       expect(messages.response.status).toBe(200)
@@ -520,6 +553,15 @@ describe("mobile bridge server", () => {
       })
       expect(stream.response.status).toBe(200)
       expect(stream.body).toContain("streamed smoke reply")
+      expect(desktopSend).toHaveBeenCalledWith(
+        DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL,
+        expect.objectContaining({
+          type: "session.updated",
+          source: "mobile",
+          sessionID: "session-smoke",
+          generatedAt: expect.any(Number),
+        }),
+      )
 
       const tasks = await readMobileJSON(baseUrl, "/api/mobile/sessions/session-smoke/tasks", { headers: authHeaders })
       expect(tasks.response.status).toBe(200)
@@ -534,6 +576,15 @@ describe("mobile bridge server", () => {
       })
       expect(cancelled.response.status).toBe(200)
       expect(successData<{ cancelled: boolean }>(cancelled.body).cancelled).toBe(true)
+      expect(desktopSend).toHaveBeenCalledWith(
+        DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL,
+        expect.objectContaining({
+          type: "session.updated",
+          source: "mobile",
+          sessionID: "session-smoke",
+          generatedAt: expect.any(Number),
+        }),
+      )
 
       const files = await readMobileJSON(baseUrl, `${workspaceRoute}/files`, { headers: authHeaders })
       expect(files.response.status).toBe(200)
@@ -561,6 +612,15 @@ describe("mobile bridge server", () => {
       })
       expect(approved.response.status).toBe(200)
       expect(successData<{ approved: boolean }>(approved.body).approved).toBe(true)
+      expect(desktopSend).toHaveBeenCalledWith(
+        DESKTOP_MOBILE_BRIDGE_EVENT_CHANNEL,
+        expect.objectContaining({
+          type: "approval.updated",
+          source: "mobile",
+          approvalID: "approval-smoke",
+          generatedAt: expect.any(Number),
+        }),
+      )
 
       const eventController = new AbortController()
       const eventResponse = await fetch(`${baseUrl}/api/mobile/events/stream`, {
