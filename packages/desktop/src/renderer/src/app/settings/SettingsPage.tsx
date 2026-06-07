@@ -3751,7 +3751,7 @@ export function SettingsPage({
                           autoFocus
                           type="text"
                           value={customProviderDraft.apiBaseURL}
-                          placeholder="https://ai.zkmjnic.tech/v1"
+                          placeholder="https://api.example.com/v1"
                           onChange={(event) => onCustomProviderDraftChange("apiBaseURL", event.target.value)}
                         />
                       </label>
@@ -3762,7 +3762,7 @@ export function SettingsPage({
                           aria-label="Custom provider API key"
                           type="password"
                           value={customProviderDraft.apiKey}
-                          placeholder={isEditingCustomProvider ? "Leave blank to keep saved key" : "sk-..."}
+                          placeholder={isEditingCustomProvider ? "Leave blank to keep saved key" : "Enter API key"}
                           onChange={(event) => onCustomProviderDraftChange("apiKey", event.target.value)}
                         />
                       </label>
@@ -3773,7 +3773,7 @@ export function SettingsPage({
                           aria-label="Custom provider default model"
                           type="text"
                           value={customProviderDraft.defaultModel}
-                          placeholder="deepseek-chat"
+                          placeholder="model-name"
                           onChange={(event) => onCustomProviderDraftChange("defaultModel", event.target.value)}
                         />
                       </label>

@@ -584,22 +584,29 @@ describe("SettingsPage built-in tools", () => {
 
     expect(screen.getByRole("dialog", { name: "Custom Provider" })).toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Custom provider API Base URL" }), {
-      target: { value: "https://ai.zkmjnic.tech/v1" },
+    const apiBaseURLInput = screen.getByRole("textbox", { name: "Custom provider API Base URL" })
+    const defaultModelInput = screen.getByRole("textbox", { name: "Custom provider default model" })
+
+    expect(apiBaseURLInput).toHaveAttribute("placeholder", "https://api.example.com/v1")
+    expect(screen.getByLabelText("Custom provider API key")).toHaveAttribute("placeholder", "Enter API key")
+    expect(defaultModelInput).toHaveAttribute("placeholder", "model-name")
+
+    fireEvent.change(apiBaseURLInput, {
+      target: { value: "https://api.example.com/v1" },
     })
     fireEvent.change(screen.getByLabelText("Custom provider API key"), {
       target: { value: "sk-test" },
     })
-    fireEvent.change(screen.getByRole("textbox", { name: "Custom provider default model" }), {
-      target: { value: "deepseek-chat" },
+    fireEvent.change(defaultModelInput, {
+      target: { value: "custom-chat-model" },
     })
     fireEvent.change(screen.getByRole("textbox", { name: "Custom provider chat endpoint" }), {
       target: { value: "/compatible/chat" },
     })
 
-    expect(onCustomProviderDraftChange).toHaveBeenCalledWith("apiBaseURL", "https://ai.zkmjnic.tech/v1")
+    expect(onCustomProviderDraftChange).toHaveBeenCalledWith("apiBaseURL", "https://api.example.com/v1")
     expect(onCustomProviderDraftChange).toHaveBeenCalledWith("apiKey", "sk-test")
-    expect(onCustomProviderDraftChange).toHaveBeenCalledWith("defaultModel", "deepseek-chat")
+    expect(onCustomProviderDraftChange).toHaveBeenCalledWith("defaultModel", "custom-chat-model")
     expect(onCustomProviderDraftChange).toHaveBeenCalledWith("chatEndpoint", "/compatible/chat")
   })
 
@@ -611,9 +618,9 @@ describe("SettingsPage built-in tools", () => {
       <SettingsPage
         {...createSettingsPageProps({
           customProviderDraft: {
-            apiBaseURL: "https://ai.zkmjnic.tech/v1",
+            apiBaseURL: "https://api.example.com/v1",
             apiKey: "sk-test",
-            defaultModel: "deepseek-chat",
+            defaultModel: "custom-chat-model",
             chatEndpoint: "/chat/completions",
           },
           onSaveCustomProvider,
@@ -637,10 +644,10 @@ describe("SettingsPage built-in tools", () => {
     const onDeleteProvider = vi.fn()
     const onCustomProviderDraftReset = vi.fn()
     const customProvider = {
-      ...createProvider("custom-ai-zk", "Custom · ai.zkmjnic.tech"),
+      ...createProvider("custom-example", "Custom · api.example.com"),
       source: "config" as const,
       isCustomProvider: true,
-      baseURL: "https://ai.zkmjnic.tech/v1",
+      baseURL: "https://api.example.com/v1",
       customChatEndpoint: "/chat/completions",
       customDefaultModel: "deepseek-v4-flash",
     }
@@ -653,7 +660,7 @@ describe("SettingsPage built-in tools", () => {
       <SettingsPage
         {...createSettingsPageProps({
           catalog: [customProvider, catalogProvider],
-          models: [createModel("custom-ai-zk", "deepseek-v4-flash", "deepseek-v4-flash")],
+          models: [createModel("custom-example", "deepseek-v4-flash", "deepseek-v4-flash")],
           onDeleteProvider,
           onCustomProviderDraftReset,
         })}
@@ -662,18 +669,18 @@ describe("SettingsPage built-in tools", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Provider" }))
 
-    expect(screen.getByRole("button", { name: /Custom · ai\.zkmjnic\.tech.*Connected/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Custom · api\.example\.com.*Connected/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Delete OpenAI" })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Edit Custom · ai.zkmjnic.tech" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Edit Custom · api.example.com" })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Custom · ai.zkmjnic.tech" }))
+    fireEvent.click(screen.getByRole("button", { name: "Delete Custom · api.example.com" }))
 
-    expect(onDeleteProvider).toHaveBeenCalledWith("custom-ai-zk")
+    expect(onDeleteProvider).toHaveBeenCalledWith("custom-example")
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Custom · ai.zkmjnic.tech" }))
+    fireEvent.click(screen.getByRole("button", { name: "Edit Custom · api.example.com" }))
 
     expect(onCustomProviderDraftReset).toHaveBeenCalledWith({
-      apiBaseURL: "https://ai.zkmjnic.tech/v1",
+      apiBaseURL: "https://api.example.com/v1",
       apiKey: "",
       defaultModel: "deepseek-v4-flash",
       chatEndpoint: "/chat/completions",
