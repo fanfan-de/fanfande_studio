@@ -67,6 +67,17 @@ function toComposerModelValue(model: ProviderModel) {
   return `${model.providerID}/${model.id}`
 }
 
+function resolveComposerModelSelection(selectedModel: string | null, models: ProviderModel[]) {
+  if (!selectedModel) return null
+
+  const exactMatch = models.find((model) => toComposerModelValue(model) === selectedModel)
+  if (exactMatch) return exactMatch
+  if (selectedModel.includes("/")) return null
+
+  const modelIDMatches = models.filter((model) => model.id === selectedModel)
+  return modelIDMatches.length === 1 ? modelIDMatches[0] : null
+}
+
 function toComposerModelLabel(model: ProviderModel) {
   return model.name
 }
@@ -147,7 +158,7 @@ function resolveComposerEffectiveModel(
   defaultModel: ProviderModel | null,
 ) {
   if (!selectedModel) return defaultModel
-  return models.find((model) => toComposerModelValue(model) === selectedModel) ?? defaultModel
+  return resolveComposerModelSelection(selectedModel, models) ?? defaultModel
 }
 
 function resolveComposerModelLabel(
@@ -160,7 +171,7 @@ function resolveComposerModelLabel(
   if (!selectedModel) {
     return effectiveModel ? `Server default (${effectiveModel.name})` : "Server default"
   }
-  return models.find((model) => toComposerModelValue(model) === selectedModel)?.name ?? selectedModel
+  return resolveComposerModelSelection(selectedModel, models)?.name ?? selectedModel
 }
 
 function resolveComposerSkillLabel(selectedSkillIDs: string[], skills: SkillInfo[], isLoading: boolean) {

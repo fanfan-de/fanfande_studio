@@ -816,6 +816,14 @@ export interface DesktopProviderConnectionTestInput {
   baseURL?: string | null
 }
 
+export interface DesktopCustomProviderInput {
+  providerID?: string
+  apiBaseURL: string
+  apiKey: string
+  defaultModel: string
+  chatEndpoint: string
+}
+
 export type DesktopProviderAuthPrompt = "login" | "select_account"
 
 export interface DesktopModelSelectionUpdateInput {
@@ -1325,6 +1333,14 @@ export interface DesktopIpcContract {
   }
   "desktop:test-global-provider-connection": {
     input: DesktopProviderConnectionTestInput
+    output: AgentProviderConnectionTestResult
+  }
+  "desktop:upsert-custom-provider": {
+    input: DesktopCustomProviderInput
+    output: DesktopProviderMutationResult
+  }
+  "desktop:test-custom-provider-connection": {
+    input: DesktopCustomProviderInput
     output: AgentProviderConnectionTestResult
   }
   "desktop:get-global-models": {
@@ -1908,6 +1924,8 @@ export interface DesktopApiMethods {
   saveGlobalProviderApiKey(input: DesktopIpcInput<"desktop:save-global-provider-api-key">): Promise<DesktopIpcOutput<"desktop:save-global-provider-api-key">>
   deleteGlobalProviderAuthSession(input: DesktopIpcInput<"desktop:delete-global-provider-auth-session">): Promise<DesktopIpcOutput<"desktop:delete-global-provider-auth-session">>
   testGlobalProviderConnection(input: DesktopIpcInput<"desktop:test-global-provider-connection">): Promise<DesktopIpcOutput<"desktop:test-global-provider-connection">>
+  upsertCustomProvider(input: DesktopIpcInput<"desktop:upsert-custom-provider">): Promise<DesktopIpcOutput<"desktop:upsert-custom-provider">>
+  testCustomProviderConnection(input: DesktopIpcInput<"desktop:test-custom-provider-connection">): Promise<DesktopIpcOutput<"desktop:test-custom-provider-connection">>
   getGlobalModels(): Promise<DesktopIpcOutput<"desktop:get-global-models">>
   updateGlobalProvider(input: DesktopIpcInput<"desktop:update-global-provider">): Promise<DesktopIpcOutput<"desktop:update-global-provider">>
   deleteGlobalProvider(input: DesktopIpcInput<"desktop:delete-global-provider">): Promise<DesktopIpcOutput<"desktop:delete-global-provider">>

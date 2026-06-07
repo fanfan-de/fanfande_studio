@@ -97,6 +97,12 @@ function createSettingsPageProps(
     mcpServerDraft: createMcpDraft(),
     mcpServers: [],
     models: [],
+    customProviderDraft: {
+      apiBaseURL: "",
+      apiKey: "",
+      defaultModel: "",
+      chatEndpoint: "/chat/completions",
+    },
     onActivityRailVisibilityChange: vi.fn(),
     onAgentDebugTraceChange: vi.fn(),
     onAppearancePaletteReset: vi.fn(),
@@ -107,6 +113,8 @@ function createSettingsPageProps(
     onAssistantTraceVisibilityChange: vi.fn(),
     onBrandThemeChange: vi.fn(),
     onCancelProviderAuthFlow: vi.fn(),
+    onCustomProviderDraftChange: vi.fn(),
+    onCustomProviderDraftReset: vi.fn(),
     onCheckForUpdates: vi.fn(),
     onClose: vi.fn(),
     onColorModeChange: vi.fn(),
@@ -125,11 +133,14 @@ function createSettingsPageProps(
     onRefreshProviderCatalog: vi.fn(),
     onRestoreArchivedSession: vi.fn(),
     onSaveMcpServer: vi.fn(),
+    onSaveCustomProvider: vi.fn(),
     onSaveProvider: vi.fn(),
     onSaveProviderApiKey: vi.fn(),
     onSelectionChange: vi.fn(),
     onStartNewMcpServer: vi.fn(),
     onStartProviderAuthFlow: vi.fn(),
+    onTestCustomProviderConnection: vi.fn(),
+    onTestProviderConnection: vi.fn(),
     providerDrafts: {},
     restoringArchivedSessionID: null,
     savingMcpServerID: null,
@@ -555,6 +566,119 @@ describe("SettingsPage built-in tools", () => {
 
     expect(fallback).not.toHaveAttribute("hidden")
     expect(image).toHaveAttribute("hidden")
+  })
+
+  it("opens the custom provider dialog and edits its four fields", () => {
+    const onCustomProviderDraftChange = vi.fn()
+
+    render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          onCustomProviderDraftChange,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Provider" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add custom provider" }))
+
+    expect(screen.getByRole("dialog", { name: "Custom Provider" })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Custom provider API Base URL" }), {
+      target: { value: "https://ai.zkmjnic.tech/v1" },
+    })
+    fireEvent.change(screen.getByLabelText("Custom provider API key"), {
+      target: { value: "sk-test" },
+    })
+    fireEvent.change(screen.getByRole("textbox", { name: "Custom provider default model" }), {
+      target: { value: "deepseek-chat" },
+    })
+    fireEvent.change(screen.getByRole("textbox", { name: "Custom provider chat endpoint" }), {
+      target: { value: "/compatible/chat" },
+    })
+
+    expect(onCustomProviderDraftChange).toHaveBeenCalledWith("apiBaseURL", "https://ai.zkmjnic.tech/v1")
+    expect(onCustomProviderDraftChange).toHaveBeenCalledWith("apiKey", "sk-test")
+    expect(onCustomProviderDraftChange).toHaveBeenCalledWith("defaultModel", "deepseek-chat")
+    expect(onCustomProviderDraftChange).toHaveBeenCalledWith("chatEndpoint", "/compatible/chat")
+  })
+
+  it("tests and saves a complete custom provider draft", async () => {
+    const onSaveCustomProvider = vi.fn().mockResolvedValue(true)
+    const onTestCustomProviderConnection = vi.fn().mockResolvedValue(true)
+
+    render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          customProviderDraft: {
+            apiBaseURL: "https://ai.zkmjnic.tech/v1",
+            apiKey: "sk-test",
+            defaultModel: "deepseek-chat",
+            chatEndpoint: "/chat/completions",
+          },
+          onSaveCustomProvider,
+          onTestCustomProviderConnection,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Provider" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add custom provider" }))
+    fireEvent.click(screen.getByRole("button", { name: "Test" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save custom provider" }))
+
+    await waitFor(() => {
+      expect(onTestCustomProviderConnection).toHaveBeenCalledTimes(1)
+      expect(onSaveCustomProvider).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it("shows detail header edit and delete buttons for custom providers", () => {
+    const onDeleteProvider = vi.fn()
+    const onCustomProviderDraftReset = vi.fn()
+    const customProvider = {
+      ...createProvider("custom-ai-zk", "Custom · ai.zkmjnic.tech"),
+      source: "config" as const,
+      isCustomProvider: true,
+      baseURL: "https://ai.zkmjnic.tech/v1",
+      customChatEndpoint: "/chat/completions",
+      customDefaultModel: "deepseek-v4-flash",
+    }
+    const catalogProvider = {
+      ...createProvider("openai", "OpenAI"),
+      source: "api" as const,
+    }
+
+    render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          catalog: [customProvider, catalogProvider],
+          models: [createModel("custom-ai-zk", "deepseek-v4-flash", "deepseek-v4-flash")],
+          onDeleteProvider,
+          onCustomProviderDraftReset,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Provider" }))
+
+    expect(screen.getByRole("button", { name: /Custom · ai\.zkmjnic\.tech.*Connected/ })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Delete OpenAI" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Edit Custom · ai.zkmjnic.tech" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Custom · ai.zkmjnic.tech" }))
+
+    expect(onDeleteProvider).toHaveBeenCalledWith("custom-ai-zk")
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Custom · ai.zkmjnic.tech" }))
+
+    expect(onCustomProviderDraftReset).toHaveBeenCalledWith({
+      apiBaseURL: "https://ai.zkmjnic.tech/v1",
+      apiKey: "",
+      defaultModel: "deepseek-v4-flash",
+      chatEndpoint: "/chat/completions",
+    })
+    expect(screen.getByRole("dialog", { name: "Edit Custom Provider" })).toBeInTheDocument()
   })
 
   it("filters archived sessions by title, project, and path", () => {

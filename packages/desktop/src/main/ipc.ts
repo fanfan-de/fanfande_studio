@@ -2728,6 +2728,73 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     },
   )
 
+  handleDesktopIpc(
+    "desktop:upsert-custom-provider",
+    async (
+      _event,
+      input: {
+        providerID?: string
+        apiBaseURL: string
+        apiKey: string
+        defaultModel: string
+        chatEndpoint: string
+      },
+    ) => {
+      const result = await requestAgentJSON<{
+        provider: {
+          id: string
+          name: string
+          available: boolean
+          apiKeyConfigured: boolean
+          baseURL?: string
+        }
+        selection: AgentProjectModelSelection
+      }>("/api/providers/custom", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          providerID: input.providerID,
+          apiBaseURL: input.apiBaseURL,
+          apiKey: input.apiKey,
+          defaultModel: input.defaultModel,
+          chatEndpoint: input.chatEndpoint,
+        }),
+      })
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:test-custom-provider-connection",
+    async (
+      _event,
+      input: {
+        providerID?: string
+        apiBaseURL: string
+        apiKey: string
+        defaultModel: string
+        chatEndpoint: string
+      },
+    ) => {
+      const result = await requestAgentJSON<AgentProviderConnectionTestResult>("/api/providers/custom/test", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          providerID: input.providerID,
+          apiBaseURL: input.apiBaseURL,
+          apiKey: input.apiKey,
+          defaultModel: input.defaultModel,
+          chatEndpoint: input.chatEndpoint,
+        }),
+      })
+      return result.data
+    },
+  )
+
   handleDesktopIpc("desktop:get-global-models", async () => {
     const result = await requestAgentJSON<{
       items: AgentProviderModel[]

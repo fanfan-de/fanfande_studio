@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { readFile, readdir, stat } from "node:fs/promises"
 import { basename, isAbsolute, join, relative, resolve } from "node:path"
 import z from "zod"
@@ -23,6 +24,9 @@ import * as Log from "#util/log.ts"
 const log = Log.create({ service: "settings" })
 const SKILL_FILENAME = "SKILL.md"
 const PLUGIN_SKILLS_TREE_ROOT_PATH = "plugin-skills://installed"
+const CUSTOM_PROVIDER_PREFIX = "custom-"
+const CUSTOM_PROVIDER_SDK_PACKAGE = "@ai-sdk/openai-compatible"
+const CUSTOM_PROVIDER_TEST_TIMEOUT_MS = 15_000
 
 type GenerateTextFunction = typeof import("ai")["generateText"]
 
@@ -109,6 +113,24 @@ export const InstallSkillLocalFileBody = z.object({
 export const UpdateMcpServerBody = Config.McpServerInput
 export const UpdateGlobalProviderBody = Config.Provider
 export const UpdateGlobalModelSelectionBody = Config.ModelSelection
+const CustomProviderBodyBase = z.object({
+  providerID: z.string().min(1).optional(),
+  apiBaseURL: z.string().min(1),
+  apiKey: z.string().optional(),
+  authHeader: z.string().optional(),
+  defaultModel: z.string().min(1),
+  chatEndpoint: z.string().min(1),
+})
+const hasCustomProviderCredentialInput = (value: { providerID?: string; apiKey?: string; authHeader?: string }) =>
+  Boolean(value.providerID?.trim() || value.apiKey?.trim() || value.authHeader?.trim())
+export const UpsertCustomProviderBody = CustomProviderBodyBase.refine(hasCustomProviderCredentialInput, {
+  path: ["apiKey"],
+  message: "API key is required for new custom providers.",
+})
+export const TestCustomProviderConnectionBody = CustomProviderBodyBase.refine(hasCustomProviderCredentialInput, {
+  path: ["apiKey"],
+  message: "API key is required for new custom providers.",
+})
 export const PluginCatalogQuery = z.object({
   freshness: z.enum(["cached", "fresh"]).optional(),
 })
@@ -350,6 +372,293 @@ function assertProviderConfigDoesNotContainSecrets(input: Config.Provider) {
   }
 }
 
+function isCustomProviderConfig(provider: Config.Provider | undefined) {
+  return provider?.options?.customProvider === true
+}
+
+function normalizeCustomProviderBaseURL(raw: string) {
+  const value = raw.trim()
+  let url: URL
+
+  try {
+    url = new URL(value)
+  } catch {
+    throw new ApiError(400, "CUSTOM_PROVIDER_INVALID_BASE_URL", "API Base URL must be a valid URL.")
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new ApiError(400, "CUSTOM_PROVIDER_INVALID_BASE_URL", "API Base URL must use http or https.")
+  }
+
+  url.hash = ""
+  url.search = ""
+  return url.toString().replace(/\/+$/, "")
+}
+
+function normalizeCustomProviderChatEndpoint(raw: string) {
+  const value = raw.trim()
+  if (!value.startsWith("/") || value.startsWith("//") || /[\s?#]/.test(value)) {
+    throw new ApiError(
+      400,
+      "CUSTOM_PROVIDER_INVALID_CHAT_ENDPOINT",
+      "Chat endpoint must be a path like /chat/completions.",
+    )
+  }
+  return value.replace(/\/+$/, "") || "/"
+}
+
+function normalizeCustomProviderModel(raw: string) {
+  const value = raw.trim()
+  if (!value || /\s/.test(value)) {
+    throw new ApiError(400, "CUSTOM_PROVIDER_INVALID_MODEL", "Default model must be a non-empty model ID without spaces.")
+  }
+  return value
+}
+
+function parseCustomProviderAuthHeader(raw: string) {
+  const value = raw.trim()
+  const separatorIndex = value.indexOf(":")
+  if (separatorIndex <= 0) {
+    throw new ApiError(
+      400,
+      "CUSTOM_PROVIDER_INVALID_AUTH_HEADER",
+      "Authentication header must look like Authorization: Bearer sk-...",
+    )
+  }
+
+  const headerName = value.slice(0, separatorIndex).trim()
+  const headerValue = value.slice(separatorIndex + 1).trim()
+
+  if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(headerName) || !headerValue) {
+    throw new ApiError(
+      400,
+      "CUSTOM_PROVIDER_INVALID_AUTH_HEADER",
+      "Authentication header must include a valid header name and value.",
+    )
+  }
+
+  return { headerName, headerValue }
+}
+
+function toCustomProviderBearerHeaderValue(raw: string) {
+  const value = raw.trim()
+  return value.replace(/^Bearer\s+/i, "Bearer ").startsWith("Bearer ")
+    ? value.replace(/^Bearer\s+/i, "Bearer ")
+    : `Bearer ${value}`
+}
+
+function normalizeCustomProviderAuthorization(input: { apiKey?: string; authHeader?: string }) {
+  const rawApiKey = input.apiKey?.trim()
+  if (rawApiKey) {
+    if (/[\r\n]/.test(rawApiKey)) {
+      throw new ApiError(400, "CUSTOM_PROVIDER_INVALID_API_KEY", "API key must be a single line.")
+    }
+
+    if (rawApiKey.includes(":")) {
+      const parsed = parseCustomProviderAuthHeader(rawApiKey)
+      if (parsed.headerName.toLowerCase() !== "authorization") {
+        throw new ApiError(
+          400,
+          "CUSTOM_PROVIDER_INVALID_API_KEY",
+          "Custom provider API key uses the fixed Authorization: Bearer format.",
+        )
+      }
+      return {
+        headerName: "Authorization",
+        headerValue: toCustomProviderBearerHeaderValue(parsed.headerValue),
+      }
+    }
+
+    return {
+      headerName: "Authorization",
+      headerValue: toCustomProviderBearerHeaderValue(rawApiKey),
+    }
+  }
+
+  const legacyAuthHeader = input.authHeader?.trim()
+  if (legacyAuthHeader) {
+    const parsed = parseCustomProviderAuthHeader(legacyAuthHeader)
+    if (parsed.headerName.toLowerCase() !== "authorization") {
+      throw new ApiError(
+        400,
+        "CUSTOM_PROVIDER_INVALID_API_KEY",
+        "Custom provider API key uses the fixed Authorization: Bearer format.",
+      )
+    }
+    return {
+      headerName: "Authorization",
+      headerValue: toCustomProviderBearerHeaderValue(parsed.headerValue),
+    }
+  }
+
+  return {
+    headerName: "Authorization",
+    headerValue: undefined,
+  }
+}
+
+function customProviderIDFor(input: { apiBaseURL: string; defaultModel: string; chatEndpoint: string }) {
+  const host = new URL(input.apiBaseURL).host
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "endpoint"
+  const hash = createHash("sha256")
+    .update(`${input.apiBaseURL}\n${input.defaultModel}\n${input.chatEndpoint}`)
+    .digest("hex")
+    .slice(0, 8)
+  return `${CUSTOM_PROVIDER_PREFIX}${host}-${hash}`
+}
+
+function normalizeCustomProviderInput(input: z.infer<typeof UpsertCustomProviderBody>) {
+  const apiBaseURL = normalizeCustomProviderBaseURL(input.apiBaseURL)
+  const chatEndpoint = normalizeCustomProviderChatEndpoint(input.chatEndpoint)
+  const defaultModel = normalizeCustomProviderModel(input.defaultModel)
+  const authHeader = normalizeCustomProviderAuthorization(input)
+  const providerID = input.providerID?.trim() || customProviderIDFor({ apiBaseURL, defaultModel, chatEndpoint })
+
+  if (!providerID.startsWith(CUSTOM_PROVIDER_PREFIX)) {
+    throw new ApiError(400, "CUSTOM_PROVIDER_INVALID_ID", `Custom provider IDs must start with '${CUSTOM_PROVIDER_PREFIX}'.`)
+  }
+
+  return {
+    providerID,
+    apiBaseURL,
+    chatEndpoint,
+    defaultModel,
+    ...authHeader,
+  }
+}
+
+function buildCustomProviderChatURL(apiBaseURL: string, chatEndpoint: string) {
+  const url = new URL(apiBaseURL)
+  const basePath = url.pathname.replace(/\/+$/, "")
+  url.pathname = `${basePath}${chatEndpoint}`.replace(/\/{2,}/g, "/")
+  return url.toString()
+}
+
+type NormalizedCustomProviderInput = ReturnType<typeof normalizeCustomProviderInput>
+
+function buildCustomProviderConfig(input: NormalizedCustomProviderInput): Config.Provider {
+  const host = new URL(input.apiBaseURL).host
+  return {
+    id: input.providerID,
+    name: `Custom · ${host}`,
+    env: [],
+    api: input.apiBaseURL,
+    npm: CUSTOM_PROVIDER_SDK_PACKAGE,
+    options: {
+      baseURL: input.apiBaseURL,
+      customProvider: true,
+      customAuthHeaderName: input.headerName,
+      customChatEndpoint: input.chatEndpoint,
+      customDefaultModel: input.defaultModel,
+    },
+    models: {
+      [input.defaultModel]: {
+        id: input.defaultModel,
+        name: input.defaultModel,
+        provider: {
+          api: input.apiBaseURL,
+          npm: CUSTOM_PROVIDER_SDK_PACKAGE,
+        },
+        reasoning: false,
+        temperature: true,
+        tool_call: true,
+        attachment: false,
+        modalities: {
+          input: ["text"],
+          output: ["text"],
+        },
+        options: {},
+      },
+    },
+  }
+}
+
+async function resolveCustomProviderHeaderValue(input: NormalizedCustomProviderInput) {
+  if (input.headerValue) return input.headerValue
+
+  const existingConfig = await Config.get(Config.GLOBAL_CONFIG_ID)
+  if (!isCustomProviderConfig(existingConfig.provider?.[input.providerID])) {
+    throw new ApiError(400, "CUSTOM_PROVIDER_INVALID_API_KEY", "API key is required for new custom providers.")
+  }
+
+  const runtimeAuth = await ProviderAuth.resolveProviderRuntimeAuth(input.providerID, {}, {
+    method: "api-key",
+    credentialMode: "active",
+  })
+  if (runtimeAuth.apiKey) return runtimeAuth.apiKey
+
+  throw new ApiError(
+    400,
+    "CUSTOM_PROVIDER_INVALID_API_KEY",
+    "API key is required because this custom provider has no saved key.",
+  )
+}
+
+function extractCustomProviderTestFailure(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object") {
+    return typeof payload === "string" ? payload : undefined
+  }
+
+  const record = payload as Record<string, unknown>
+  const error = record.error
+  if (typeof error === "string") return error
+  if (error && typeof error === "object") {
+    const errorRecord = error as Record<string, unknown>
+    for (const key of ["message", "detail", "error"]) {
+      const value = errorRecord[key]
+      if (typeof value === "string" && value.trim()) return value.trim()
+    }
+  }
+
+  for (const key of ["message", "detail", "error"]) {
+    const value = record[key]
+    if (typeof value === "string" && value.trim()) return value.trim()
+  }
+
+  return undefined
+}
+
+async function runCustomProviderConnectionTest(input: NormalizedCustomProviderInput) {
+  const url = buildCustomProviderChatURL(input.apiBaseURL, input.chatEndpoint)
+  const headers = new Headers({
+    "content-type": "application/json",
+    accept: "application/json",
+  })
+  headers.set(input.headerName, await resolveCustomProviderHeaderValue(input))
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: input.defaultModel,
+      messages: [{ role: "user", content: "ping" }],
+      max_tokens: 1,
+      stream: false,
+    }),
+    signal: AbortSignal.timeout(CUSTOM_PROVIDER_TEST_TIMEOUT_MS),
+  })
+
+  if (response.ok) return
+
+  const contentType = response.headers.get("content-type") ?? ""
+  const payload = contentType.includes("application/json")
+    ? await response.json().catch(() => undefined)
+    : await response.text().catch(() => undefined)
+  const detail = extractCustomProviderTestFailure(payload)
+  const message = detail
+    ? `Custom provider chat test failed (${response.status}): ${detail}`
+    : `Custom provider chat test failed (${response.status}).`
+
+  throw new ApiError(
+    response.status === 401 || response.status === 403 ? 401 : 400,
+    response.status === 401 || response.status === 403 ? "CUSTOM_PROVIDER_AUTH_FAILED" : "CUSTOM_PROVIDER_TEST_FAILED",
+    message,
+  )
+}
+
 export async function listProviderCatalog() {
   return Provider.catalog()
 }
@@ -418,8 +727,77 @@ export async function updateProvider(
   }
 }
 
+export async function upsertCustomProvider(input: z.infer<typeof UpsertCustomProviderBody>) {
+  const normalized = normalizeCustomProviderInput(input)
+  const providerConfig = buildCustomProviderConfig(normalized)
+  const modelReference = `${normalized.providerID}/${normalized.defaultModel}`
+
+  if (normalized.headerValue) {
+    await ProviderAuth.saveProviderApiKey(normalized.providerID, normalized.headerValue)
+  } else {
+    await resolveCustomProviderHeaderValue(normalized)
+  }
+  const existingConfig = await Config.get(Config.GLOBAL_CONFIG_ID)
+  if (isCustomProviderConfig(existingConfig.provider?.[normalized.providerID])) {
+    await Config.removeProvider(Config.GLOBAL_CONFIG_ID, normalized.providerID)
+  }
+  await Config.setProvider(Config.GLOBAL_CONFIG_ID, normalized.providerID, providerConfig)
+  const selection = await Config.setModelSelection(Config.GLOBAL_CONFIG_ID, {
+    model: modelReference,
+    small_model: modelReference,
+    reasoning_effort: null,
+  })
+  clearProjectModelListCache()
+  const provider = await Provider.getPublicProvider(normalized.providerID)
+  if (!provider) {
+    throw new ApiError(404, "PROVIDER_NOT_FOUND", `Provider '${normalized.providerID}' not found after saving`)
+  }
+
+  return {
+    provider,
+    selection: {
+      model: selection.model,
+      small_model: selection.small_model,
+      image_model: selection.image_model,
+      image_generation: selection.image_generation,
+      reasoning_effort: selection.reasoning_effort,
+    },
+  }
+}
+
+export async function testCustomProviderConnection(input: z.infer<typeof TestCustomProviderConnectionBody>) {
+  const normalized = normalizeCustomProviderInput(input)
+
+  try {
+    await runCustomProviderConnectionTest(normalized)
+    return {
+      providerID: normalized.providerID,
+      ok: true,
+      status: "working" as const,
+      checkedAt: Date.now(),
+      message: "自定义 Provider 聊天接口测试成功。",
+    }
+  } catch (error) {
+    const classified = classifyProviderConnectionError(error)
+    return {
+      providerID: normalized.providerID,
+      ok: false,
+      status: classified.status,
+      checkedAt: Date.now(),
+      message: classified.message,
+      errorCode: classified.errorCode,
+      diagnostics: classified.diagnostics,
+    }
+  }
+}
+
 export async function removeProvider(providerID: string) {
+  const existingConfig = await Config.get(Config.GLOBAL_CONFIG_ID)
+  const shouldRemoveCredential = isCustomProviderConfig(existingConfig.provider?.[providerID])
   const providerConfig = await Config.removeProvider(Config.GLOBAL_CONFIG_ID, providerID)
+  if (shouldRemoveCredential) {
+    await ProviderAuth.saveProviderApiKey(providerID, null)
+  }
   clearProjectModelListCache()
 
   return {

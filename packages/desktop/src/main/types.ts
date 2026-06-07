@@ -985,9 +985,12 @@ export interface AgentProviderCatalogItem {
   source: "env" | "config" | "custom" | "api"
   env: string[]
   configured: boolean
+  isCustomProvider?: boolean
   available: boolean
   apiKeyConfigured: boolean
   baseURL?: string
+  customChatEndpoint?: string
+  customDefaultModel?: string
   modelCount: number
   authCapabilities: AgentProviderAuthCapability[]
   authState: AgentProviderAuthState

@@ -112,6 +112,32 @@ describe("useProjectComposer model selection", () => {
     expect(getSessionModels).not.toHaveBeenCalled()
   })
 
+  it("resolves unique bare model ids from the model catalog", async () => {
+    const getProjectModels = vi.fn(async () =>
+      createModelsPayload({
+        model: "claude-sonnet-4.5",
+      }),
+    )
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        getProjectModels,
+      } as unknown as typeof window.desktop,
+    })
+
+    const { result } = renderHook(() =>
+      useProjectComposer({
+        attachmentPaths: [],
+        projectID: "project-1",
+      }),
+    )
+
+    await waitFor(() => expect(result.current.selectedModel).toBe("claude-sonnet-4.5"))
+
+    expect(result.current.selectedModelLabel).toBe("anthropic/claude-sonnet-4.5")
+  })
+
   it("persists create-session model changes to the project selection", async () => {
     const getProjectModels = vi.fn(async () =>
       createModelsPayload({

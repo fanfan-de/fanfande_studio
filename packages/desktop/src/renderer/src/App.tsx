@@ -1222,6 +1222,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     promptUrlInstallPreview,
     promptUrlInstallSource,
     providerDrafts,
+    customProviderDraft,
     createPromptPreset,
     deletePromptPreset,
     closePromptUrlInstallDialog,
@@ -1243,12 +1244,14 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     savePromptPreset,
     saveProviderApiKey,
     saveProvider,
+    saveCustomProvider,
     savingMcpServerID,
     savingConnectorID,
     savingPromptPresetID,
     savingProviderID,
     savingPluginConnectorID,
     testProviderConnection,
+    testCustomProviderConnection,
     testingProviderID,
     translatePromptPreset,
     selectedPromptPreset,
@@ -1272,6 +1275,8 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     setBuiltinToolEnabled,
     setPromptDraftValue,
     setProviderDraftValue,
+    setCustomProviderDraftValue,
+    resetCustomProviderDraft,
     setSelectionDraftValue,
     togglePromptUrlInstallPrompt,
     startInstalledPluginConnectorAuthFlow,
@@ -2641,6 +2646,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               models={models}
               pluginCatalog={pluginCatalog}
               providerDrafts={providerDrafts}
+              customProviderDraft={customProviderDraft}
               restoringArchivedSessionID={restoringArchivedSessionID}
               savingMcpServerID={savingMcpServerID}
               savingProviderID={savingProviderID}
@@ -2677,11 +2683,15 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onSaveMcpServer={saveMcpServer}
               onSaveProviderApiKey={saveProviderApiKey}
               onSaveProvider={saveProvider}
+              onSaveCustomProvider={saveCustomProvider}
               onSelectionChange={setSelectionDraftValue}
               onTestProviderConnection={testProviderConnection}
+              onTestCustomProviderConnection={testCustomProviderConnection}
               onStartProviderAuthFlow={startProviderAuthFlow}
               onStartNewMcpServer={startNewMcpServer}
               onCancelProviderAuthFlow={cancelProviderAuthFlow}
+              onCustomProviderDraftChange={setCustomProviderDraftValue}
+              onCustomProviderDraftReset={resetCustomProviderDraft}
             />
           </Suspense>
         ) : null}

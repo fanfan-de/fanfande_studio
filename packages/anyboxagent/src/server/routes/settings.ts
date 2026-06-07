@@ -21,6 +21,24 @@ export function SettingsRoutes() {
 
   app.get("/models", async (c) => ok(c, await SettingsUseCase.listModels()))
 
+  app.post("/providers/custom", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.UpsertCustomProviderBody,
+      "Body must contain custom provider fields.",
+    )
+    return ok(c, await SettingsUseCase.upsertCustomProvider(payload))
+  })
+
+  app.post("/providers/custom/test", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.TestCustomProviderConnectionBody,
+      "Body must contain custom provider connection test fields.",
+    )
+    return ok(c, await SettingsUseCase.testCustomProviderConnection(payload))
+  })
+
   app.put("/providers/:providerID", async (c) => {
     const payload = await parseJsonBody(
       c,

@@ -158,6 +158,90 @@ describe("Composer", () => {
     expect(within(modelList).getByRole("option", { name: "GPT-4o mini OpenRouter" })).toBeInTheDocument()
   })
 
+  it("opens the model menu on the provider matching a bare selected model id", async () => {
+    renderComposer({
+      modelOptions: [
+        {
+          value: "openai/gpt-4o-mini",
+          label: "GPT-4o mini",
+          providerID: "openai",
+          providerLabel: "OpenAI",
+        },
+        {
+          value: "anybox/deepseek-v4-flash",
+          label: "deepseek-v4-flash",
+          providerID: "anybox",
+          providerLabel: "Anybox",
+        },
+      ],
+      selectedModel: "deepseek-v4-flash",
+      selectedModelLabel: "deepseek-v4-flash",
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Select model: deepseek-v4-flash" }))
+
+    const providerList = screen.getByRole("listbox", { name: "Model providers" })
+    const modelList = screen.getByRole("listbox", { name: "Model selection" })
+
+    await waitFor(() => {
+      expect(within(providerList).getByRole("option", { name: "Anybox" })).toHaveAttribute("aria-selected", "true")
+    })
+    expect(within(modelList).queryByRole("option", { name: "GPT-4o mini OpenAI" })).not.toBeInTheDocument()
+    expect(within(modelList).getByRole("option", { name: "deepseek-v4-flash Anybox" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+  })
+
+  it("scrolls the selected model into view when opening the model menu", async () => {
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    const scrollIntoView = vi.fn()
+
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    try {
+      renderComposer({
+        modelOptions: [
+          {
+            value: "openai/gpt-4o-mini",
+            label: "GPT-4o mini",
+            providerID: "openai",
+            providerLabel: "OpenAI",
+          },
+          {
+            value: "anybox/deepseek-v4-flash",
+            label: "deepseek-v4-flash",
+            providerID: "anybox",
+            providerLabel: "Anybox",
+          },
+        ],
+        selectedModel: "anybox/deepseek-v4-flash",
+        selectedModelLabel: "deepseek-v4-flash",
+      })
+
+      fireEvent.click(screen.getByRole("button", { name: "Select model: deepseek-v4-flash" }))
+
+      await waitFor(() => {
+        expect(
+          scrollIntoView.mock.contexts.some(
+            (element) =>
+              element instanceof HTMLElement &&
+              element.getAttribute("aria-label") === "deepseek-v4-flash Anybox",
+          ),
+        ).toBe(true)
+      })
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" })
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+        configurable: true,
+        value: originalScrollIntoView,
+      })
+    }
+  })
+
   it("keeps the active model provider while the parent rerenders", () => {
     const createModelOptions = () => [
       {

@@ -483,6 +483,31 @@ try {
       baseURL?: string | null
     }) =>
       invokeDesktop("desktop:test-global-provider-connection", input) as Promise<AgentProviderConnectionTestResult>,
+    upsertCustomProvider: (input: {
+      providerID?: string
+      apiBaseURL: string
+      apiKey: string
+      defaultModel: string
+      chatEndpoint: string
+    }) =>
+      invokeDesktop("desktop:upsert-custom-provider", input) as Promise<{
+        provider: {
+          id: string
+          name: string
+          available: boolean
+          apiKeyConfigured: boolean
+          baseURL?: string
+        }
+        selection: AgentProjectModelSelection
+      }>,
+    testCustomProviderConnection: (input: {
+      providerID?: string
+      apiBaseURL: string
+      apiKey: string
+      defaultModel: string
+      chatEndpoint: string
+    }) =>
+      invokeDesktop("desktop:test-custom-provider-connection", input) as Promise<AgentProviderConnectionTestResult>,
     getGlobalModels: () =>
       invokeDesktop("desktop:get-global-models") as Promise<{
         items: AgentProviderModel[]

@@ -640,7 +640,12 @@ async function removeDirectoryLink(linkPath: string) {
 }
 
 function mockModelsDevFetch(
-  validationHandler?: (input: { url: string; headers: Headers }) => Response | Promise<Response> | undefined,
+  validationHandler?: (input: {
+    url: string
+    headers: Headers
+    method?: string
+    body?: unknown
+  }) => Response | Promise<Response> | undefined,
 ) {
   const originalFetch = globalThis.fetch
   globalThis.fetch = new Proxy(originalFetch, {
@@ -652,7 +657,7 @@ function mockModelsDevFetch(
         return Promise.resolve(Response.json(modelsDevFixture))
       }
 
-      const customResponse = validationHandler?.({ url, headers })
+      const customResponse = validationHandler?.({ url, headers, method: init?.method, body: init?.body })
       if (customResponse) {
         return Promise.resolve(customResponse)
       }
@@ -2175,6 +2180,218 @@ describe("server api", () => {
       )
     } finally {
       await resetGlobalProviderState(app)
+      restoreFetch()
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("custom provider routes should save a single OpenAI-compatible model without /models validation", async () => {
+    const customRequests: Array<{ url: string; headers: Headers; method?: string; body?: unknown }> = []
+    const restoreFetch = mockModelsDevFetch(({ url, headers, method, body }) => {
+      if (url.startsWith("https://custom-gateway.test/v1")) {
+        customRequests.push({ url, headers, method, body })
+        return Response.json({
+          id: "chatcmpl-test",
+          object: "chat.completion",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "pong" },
+              finish_reason: "stop",
+            },
+          ],
+        })
+      }
+      return undefined
+    })
+    const app = createServerApp()
+    const providerID = "custom-custom-gateway-test"
+    const repositoryRoot = await createTempDirectory("anybox-custom-provider-project-")
+
+    try {
+      await withTemporaryEnv(
+        {
+          OPENAI_API_KEY: undefined,
+          DEEPSEEK_API_KEY: undefined,
+        },
+        async () => {
+          await app.request(`http://localhost/api/providers/${providerID}`, {
+            method: "DELETE",
+          })
+
+          const saveResponse = await app.request("http://localhost/api/providers/custom", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              providerID,
+              apiBaseURL: "https://custom-gateway.test/v1",
+              apiKey: "sk-custom",
+              defaultModel: "deepseek-chat",
+              chatEndpoint: "/chat/completions",
+            }),
+          })
+          const saveBody = (await saveResponse.json()) as ProviderUpdateEnvelope
+
+          expect(saveResponse.status).toBe(200)
+          expect(saveBody.success).toBe(true)
+          expect(saveBody.data?.provider).toMatchObject({
+            id: providerID,
+            name: "Custom · custom-gateway.test",
+            apiKeyConfigured: true,
+            available: true,
+            baseURL: "https://custom-gateway.test/v1",
+          })
+          expect(saveBody.data?.selection.model).toBe(`${providerID}/deepseek-chat`)
+          expect(customRequests).toHaveLength(0)
+
+          const catalogResponse = await app.request("http://localhost/api/providers/catalog")
+          const catalogBody = (await catalogResponse.json()) as ProviderCatalogEnvelope
+
+          expect(catalogResponse.status).toBe(200)
+          expect(catalogBody.data).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                id: providerID,
+                name: "Custom · custom-gateway.test",
+                configured: true,
+                available: true,
+                apiKeyConfigured: true,
+                customChatEndpoint: "/chat/completions",
+                customDefaultModel: "deepseek-chat",
+                modelCount: 1,
+              }),
+            ]),
+          )
+
+          const modelsResponse = await app.request("http://localhost/api/models")
+          const modelsBody = (await modelsResponse.json()) as ProjectModelsEnvelope
+
+          expect(modelsResponse.status).toBe(200)
+          expect(modelsBody.data?.items).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                providerID,
+                id: "deepseek-chat",
+                name: "deepseek-chat",
+                available: true,
+              }),
+            ]),
+          )
+
+          const projectResponse = await app.request("http://localhost/api/projects", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ directory: repositoryRoot }),
+          })
+          const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+          const projectID = projectBody.data?.id
+
+          expect(projectResponse.status).toBe(201)
+          expect(projectID).toBeString()
+
+          const projectModelsResponse = await app.request(`http://localhost/api/projects/${projectID}/models`)
+          const projectModelsBody = (await projectModelsResponse.json()) as ProjectModelsEnvelope
+
+          expect(projectModelsResponse.status).toBe(200)
+          expect(projectModelsBody.data?.items).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                providerID,
+                id: "deepseek-chat",
+                available: true,
+              }),
+            ]),
+          )
+          expect(projectModelsBody.data?.selection.model).toBe(`${providerID}/deepseek-chat`)
+          expect(projectModelsBody.data?.effectiveModel?.id).toBe("deepseek-chat")
+
+          const testResponse = await app.request("http://localhost/api/providers/custom/test", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              apiBaseURL: "https://custom-gateway.test/v1",
+              apiKey: "sk-custom",
+              defaultModel: "deepseek-chat",
+              chatEndpoint: "/chat/completions",
+            }),
+          })
+          const testBody = (await testResponse.json()) as JsonEnvelope<{ ok: boolean; status: string }>
+
+          expect(testResponse.status).toBe(200)
+          expect(testBody.data?.ok).toBe(true)
+          expect(customRequests).toHaveLength(1)
+          expect(customRequests[0]?.url).toBe("https://custom-gateway.test/v1/chat/completions")
+          expect(customRequests[0]?.method).toBe("POST")
+          expect(customRequests[0]?.headers.get("authorization")).toBe("Bearer sk-custom")
+          expect(JSON.parse(String(customRequests[0]?.body))).toMatchObject({
+            model: "deepseek-chat",
+            stream: false,
+          })
+          expect(customRequests.some((request) => request.url.endsWith("/models"))).toBe(false)
+
+          const editResponse = await app.request("http://localhost/api/providers/custom", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              providerID,
+              apiBaseURL: "https://custom-gateway.test/v1",
+              apiKey: "",
+              defaultModel: "deepseek-chat-edited",
+              chatEndpoint: "/compatible/chat",
+            }),
+          })
+          const editBody = (await editResponse.json()) as ProviderUpdateEnvelope
+
+          expect(editResponse.status).toBe(200)
+          expect(editBody.data?.selection.model).toBe(`${providerID}/deepseek-chat-edited`)
+          expect(customRequests).toHaveLength(1)
+
+          const editedCatalogResponse = await app.request("http://localhost/api/providers/catalog")
+          const editedCatalogBody = (await editedCatalogResponse.json()) as ProviderCatalogEnvelope
+
+          expect(editedCatalogBody.data).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                id: providerID,
+                customChatEndpoint: "/compatible/chat",
+                customDefaultModel: "deepseek-chat-edited",
+              }),
+            ]),
+          )
+
+          const preservedKeyTestResponse = await app.request("http://localhost/api/providers/custom/test", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              providerID,
+              apiBaseURL: "https://custom-gateway.test/v1",
+              apiKey: "",
+              defaultModel: "deepseek-chat-edited",
+              chatEndpoint: "/compatible/chat",
+            }),
+          })
+          const preservedKeyTestBody = (await preservedKeyTestResponse.json()) as JsonEnvelope<{ ok: boolean; status: string }>
+
+          expect(preservedKeyTestResponse.status).toBe(200)
+          expect(preservedKeyTestBody.data?.ok).toBe(true)
+          expect(customRequests).toHaveLength(2)
+          expect(customRequests[1]?.url).toBe("https://custom-gateway.test/v1/compatible/chat")
+          expect(customRequests[1]?.headers.get("authorization")).toBe("Bearer sk-custom")
+
+          const removeResponse = await app.request(`http://localhost/api/providers/${providerID}`, {
+            method: "DELETE",
+          })
+          const removeBody = (await removeResponse.json()) as JsonEnvelope<{ providerID: string; selection: { model?: string } }>
+
+          expect(removeResponse.status).toBe(200)
+          expect(removeBody.data?.providerID).toBe(providerID)
+          expect(removeBody.data?.selection.model).toBeUndefined()
+        },
+      )
+    } finally {
+      await app.request(`http://localhost/api/providers/${providerID}`, {
+        method: "DELETE",
+      })
       restoreFetch()
       await rm(repositoryRoot, { recursive: true, force: true })
     }

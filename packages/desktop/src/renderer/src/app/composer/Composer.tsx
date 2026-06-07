@@ -349,6 +349,25 @@ function buildComposerModelProviderGroups(
   return groups
 }
 
+function readComposerModelOptionID(option: ComposerModelOption) {
+  const separatorIndex = option.value.indexOf("/")
+  return separatorIndex >= 0 ? option.value.slice(separatorIndex + 1) : option.value
+}
+
+function resolveComposerSelectedModelOption(
+  modelOptions: ComposerModelOption[],
+  selectedModel: string | null,
+) {
+  if (!selectedModel) return null
+
+  const exactMatch = modelOptions.find((option) => option.value === selectedModel)
+  if (exactMatch) return exactMatch
+  if (selectedModel.includes("/")) return null
+
+  const modelIDMatches = modelOptions.filter((option) => readComposerModelOptionID(option) === selectedModel)
+  return modelIDMatches.length === 1 ? modelIDMatches[0] : null
+}
+
 function getComposerSendButtonDescription({
   attachmentError,
   canSend,
@@ -981,6 +1000,8 @@ export function Composer({
   const editorRef = useRef<LexicalEditor | null>(null)
   const contentEditableRef = useRef<HTMLDivElement | null>(null)
   const footerRef = useRef<HTMLElement | null>(null)
+  const activeModelProviderOptionRef = useRef<HTMLButtonElement | null>(null)
+  const selectedModelOptionRef = useRef<HTMLButtonElement | null>(null)
   const isComposingRef = useRef(false)
   const fileSearchRequestRef = useRef(0)
   const pendingMcpDiffRef = useRef<{
@@ -1331,8 +1352,13 @@ export function Composer({
     setModelSearchQuery("")
   }, [modelSearchQuery, openMenu])
 
+  const resolvedSelectedModelOption = useMemo(
+    () => resolveComposerSelectedModelOption(modelOptions, selectedModel),
+    [modelOptions, selectedModel],
+  )
+  const selectedModelValue = resolvedSelectedModelOption?.value ?? selectedModel
   const selectedModelProviderID =
-    modelOptions.find((option) => option.value === selectedModel)?.providerID ?? selectedModel?.split("/")[0] ?? null
+    resolvedSelectedModelOption?.providerID ?? (selectedModel?.includes("/") ? selectedModel.split("/")[0] : null)
   const allModelProviderGroups = useMemo(() => buildComposerModelProviderGroups(modelOptions, ""), [modelOptions])
   const allModelProviderIDsKey = allModelProviderGroups.map((group) => group.providerID).join("\n")
   const visibleModelProviderGroups = useMemo(
@@ -1365,13 +1391,27 @@ export function Composer({
     if (openMenu !== "model") return
     if (activeModelProviderID && visibleModelProviderGroups.some((group) => group.providerID === activeModelProviderID)) return
 
-    setActiveModelProviderID(visibleModelProviderGroups[0]?.providerID ?? null)
-  }, [activeModelProviderID, openMenu, visibleModelProviderGroups])
+    const fallbackProviderID =
+      selectedModelProviderID && visibleModelProviderGroups.some((group) => group.providerID === selectedModelProviderID)
+        ? selectedModelProviderID
+        : (visibleModelProviderGroups[0]?.providerID ?? null)
+    setActiveModelProviderID(fallbackProviderID)
+  }, [activeModelProviderID, openMenu, selectedModelProviderID, visibleModelProviderGroups])
 
   useEffect(() => {
     if (openMenu === "model" || activeModelProviderID === null) return
     setActiveModelProviderID(null)
   }, [activeModelProviderID, openMenu])
+
+  useEffect(() => {
+    if (openMenu !== "model") return
+    activeModelProviderOptionRef.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" })
+  }, [activeModelProviderGroup?.providerID, openMenu])
+
+  useEffect(() => {
+    if (openMenu !== "model") return
+    selectedModelOptionRef.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" })
+  }, [activeModelProviderGroup?.providerID, openMenu, selectedModelValue])
 
   useEffect(() => {
     if (!commandMenuState) {
@@ -1993,6 +2033,7 @@ export function Composer({
                           return (
                             <button
                               key={group.providerID}
+                              ref={isActive ? activeModelProviderOptionRef : undefined}
                               type="button"
                               role="option"
                               aria-selected={isActive}
@@ -2015,21 +2056,26 @@ export function Composer({
 
                       <div className="composer-menu-options composer-model-menu-options" role="listbox" aria-label="Model selection">
                         {activeModelProviderGroup && activeModelProviderGroup.matchingOptions.length > 0 ? (
-                          activeModelProviderGroup.matchingOptions.map((option) => (
-                            <button
-                              key={option.value}
-                              aria-label={`${option.label} ${option.providerLabel}`}
-                              aria-selected={selectedModel === option.value}
-                              className={selectedModel === option.value ? "composer-menu-option is-selected" : "composer-menu-option"}
-                              onClick={() => handleModelSelect(option.value)}
-                              role="option"
-                              type="button"
-                            >
-                              <span className="composer-menu-option-copy">
-                                <strong>{option.label}</strong>
-                              </span>
-                            </button>
-                          ))
+                          activeModelProviderGroup.matchingOptions.map((option) => {
+                            const isSelected = selectedModelValue === option.value
+
+                            return (
+                              <button
+                                key={option.value}
+                                ref={isSelected ? selectedModelOptionRef : undefined}
+                                aria-label={`${option.label} ${option.providerLabel}`}
+                                aria-selected={isSelected}
+                                className={isSelected ? "composer-menu-option is-selected" : "composer-menu-option"}
+                                onClick={() => handleModelSelect(option.value)}
+                                role="option"
+                                type="button"
+                              >
+                                <span className="composer-menu-option-copy">
+                                  <strong>{option.label}</strong>
+                                </span>
+                              </button>
+                            )
+                          })
                         ) : (
                           <p className="composer-menu-empty">No models found.</p>
                         )}

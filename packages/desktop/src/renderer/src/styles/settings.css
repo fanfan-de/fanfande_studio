@@ -1136,7 +1136,7 @@ body.is-dragging-settings-page {
 
 .settings-provider-search-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: stretch;
   gap: 8px;
 }
@@ -1144,6 +1144,26 @@ body.is-dragging-settings-page {
 .settings-provider-search-row .secondary-button {
   min-width: 86px;
   white-space: nowrap;
+}
+
+.settings-provider-search-row .secondary-button.settings-provider-add-button {
+  width: 38px;
+  min-width: 38px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-provider-search-row .settings-provider-add-button svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.8;
+}
+
+.settings-provider-search-row .secondary-button.settings-provider-refresh-button {
+  min-width: 62px;
+  padding: 0 12px;
 }
 
 .settings-about-panel {
@@ -2725,6 +2745,60 @@ body.is-dragging-settings-page {
     border-color 160ms ease,
     background 160ms ease,
     color 160ms ease;
+}
+
+.provider-detail-heading {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.provider-detail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.provider-detail-icon-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a8a8a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.provider-detail-icon-button:hover,
+.provider-detail-icon-button:focus-visible {
+  border-color: rgba(107, 89, 204, 0.22);
+  background: rgba(107, 89, 204, 0.08);
+  color: #5f4dd2;
+}
+
+.provider-detail-icon-button.is-danger:hover,
+.provider-detail-icon-button.is-danger:focus-visible {
+  border-color: rgba(166, 75, 60, 0.22);
+  background: #fff4f2;
+  color: var(--seg-danger);
+}
+
+.provider-detail-icon-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.provider-detail-icon-button svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.8;
 }
 
 .settings-service-item:hover {

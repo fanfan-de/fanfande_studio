@@ -5,6 +5,7 @@ import type {
   BuiltinToolSummary,
   ConnectorDefinition,
   ConnectorStatus,
+  CustomProviderDraftState,
   InstalledPlugin,
   LoadedSessionSnapshot,
   McpAllowedTools,
@@ -62,6 +63,13 @@ type ProviderMutationPayload = {
   options?: {
     baseURL?: string
   }
+}
+
+const defaultCustomProviderDraft: CustomProviderDraftState = {
+  apiBaseURL: "",
+  apiKey: "",
+  defaultModel: "",
+  chatEndpoint: "/chat/completions",
 }
 
 function normalizeSelection(selection?: {
@@ -240,6 +248,7 @@ function normalizeProviderCatalogItem(item: ProviderCatalogItem): ProviderCatalo
 
   return {
     ...item,
+    isCustomProvider: partial.isCustomProvider ?? (partial.source === "custom" || partial.id?.startsWith("custom-") === true),
     authCapabilities,
     authState: {
       providerID: partial.id ?? item.id,
@@ -533,6 +542,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [savedSelection, setSavedSelection] = useState<ProjectModelSelection>(EMPTY_PROJECT_MODEL_SELECTION)
   const [selectionDraft, setSelectionDraft] = useState<ProjectModelSelection>(EMPTY_PROJECT_MODEL_SELECTION)
   const [providerDrafts, setProviderDrafts] = useState<Record<string, ProviderDraftState>>({})
+  const [customProviderDraft, setCustomProviderDraft] =
+    useState<CustomProviderDraftState>(defaultCustomProviderDraft)
   const [mcpServers, setMcpServers] = useState<McpServerSummary[]>([])
   const [mcpDiagnostics, setMcpDiagnostics] = useState<Record<string, McpServerDiagnostic>>({})
   const [activeMcpServerID, setActiveMcpServerID] = useState<string | null>(null)
@@ -1663,6 +1674,17 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }))
   }
 
+  function setCustomProviderDraftValue(field: keyof CustomProviderDraftState, value: string) {
+    setCustomProviderDraft((current) => ({
+      ...current,
+      [field]: value,
+    }))
+  }
+
+  function resetCustomProviderDraft(nextDraft: CustomProviderDraftState = defaultCustomProviderDraft) {
+    setCustomProviderDraft(nextDraft)
+  }
+
   function setProviderAuthMethod(providerID: string, method: string) {
     setProviderDrafts((current) => ({
       ...current,
@@ -2403,6 +2425,39 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
+  async function saveCustomProvider(providerID?: string) {
+    const upsertCustomProvider = window.desktop?.upsertCustomProvider
+    if (!upsertCustomProvider) return false
+
+    setSavingProviderID("custom")
+
+    try {
+      await upsertCustomProvider({
+        providerID,
+        apiBaseURL: customProviderDraft.apiBaseURL.trim(),
+        apiKey: customProviderDraft.apiKey.trim(),
+        defaultModel: customProviderDraft.defaultModel.trim(),
+        chatEndpoint: customProviderDraft.chatEndpoint.trim(),
+      })
+      resetCustomProviderDraft()
+      await loadSettingsData({ silent: true })
+      await notifyProviderModelsUpdated()
+      showMessage({
+        tone: "success",
+        text: "Custom provider saved.",
+      })
+      return true
+    } catch (error) {
+      showMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingProviderID(null)
+    }
+  }
+
   async function pollProviderAuthFlow(providerID: string, flowID: string) {
     if (!window.desktop?.getGlobalProviderAuthFlow) return
 
@@ -2623,6 +2678,35 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       })
       await loadSettingsData({ silent: true, preserveProviderDrafts: true })
       await notifyProviderModelsUpdated()
+      showMessage({
+        tone: result.ok ? "success" : "error",
+        text: result.message,
+      })
+      return result.ok
+    } catch (error) {
+      showMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setTestingProviderID(null)
+    }
+  }
+
+  async function testCustomProviderConnection(providerID?: string) {
+    if (!window.desktop?.testCustomProviderConnection) return false
+
+    setTestingProviderID("custom")
+
+    try {
+      const result = await window.desktop.testCustomProviderConnection({
+        providerID,
+        apiBaseURL: customProviderDraft.apiBaseURL.trim(),
+        apiKey: customProviderDraft.apiKey.trim(),
+        defaultModel: customProviderDraft.defaultModel.trim(),
+        chatEndpoint: customProviderDraft.chatEndpoint.trim(),
+      })
       showMessage({
         tone: result.ok ? "success" : "error",
         text: result.message,
@@ -3400,6 +3484,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     promptUrlInstallPreview,
     promptUrlInstallSource,
     providerDrafts,
+    customProviderDraft,
     createPromptPreset,
     deletePromptPreset,
     closePromptUrlInstallDialog,
@@ -3423,6 +3508,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     savingPromptPresetSelectionField,
     saveProviderApiKey,
     saveProvider,
+    saveCustomProvider,
     saveSelection,
     savingMcpServerID,
     savingConnectorID,
@@ -3430,6 +3516,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     savingPromptPresetID,
     savingProviderID,
     testProviderConnection,
+    testCustomProviderConnection,
     testingProviderID,
     translatePromptPreset,
     selectedPromptPreset,
@@ -3453,6 +3540,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setPluginDraftConfigValue,
     setPromptDraftValue,
     setProviderDraftValue,
+    setCustomProviderDraftValue,
+    resetCustomProviderDraft,
     setSelectionDraftValue,
     togglePromptUrlInstallPrompt,
     setBuiltinToolEnabled,

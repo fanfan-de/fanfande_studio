@@ -214,9 +214,12 @@ export const PublicProvider = z
     source: z.enum(["env", "config", "custom", "api"]),
     env: z.array(z.string()),
     configured: z.boolean(),
+    isCustomProvider: z.boolean(),
     available: z.boolean(),
     apiKeyConfigured: z.boolean(),
     baseURL: z.string().optional(),
+    customChatEndpoint: z.string().optional(),
+    customDefaultModel: z.string().optional(),
     modelCount: z.number(),
     authCapabilities: z.array(ProviderAuth.ProviderAuthCapability),
     authState: ProviderAuth.ProviderAuthState,
@@ -238,9 +241,12 @@ export const ProviderCatalogItem = z
     source: z.enum(["env", "config", "custom", "api"]),
     env: z.array(z.string()),
     configured: z.boolean(),
+    isCustomProvider: z.boolean(),
     available: z.boolean(),
     apiKeyConfigured: z.boolean(),
     baseURL: z.string().optional(),
+    customChatEndpoint: z.string().optional(),
+    customDefaultModel: z.string().optional(),
     modelCount: z.number(),
     authCapabilities: z.array(ProviderAuth.ProviderAuthCapability),
     authState: ProviderAuth.ProviderAuthState,
@@ -558,9 +564,33 @@ function hasApiKeyCredential(provider: ProviderInfo) {
   return false
 }
 
+function isCustomProvider(provider: ProviderInfo) {
+  return provider.options.customProvider === true
+}
+
+function getCustomProviderChatEndpoint(provider: ProviderInfo) {
+  if (!isCustomProvider(provider)) return undefined
+  return readCustomProviderChatEndpoint(provider)
+}
+
+function getCustomProviderDefaultModel(provider: ProviderInfo) {
+  if (!isCustomProvider(provider)) return undefined
+  const value = provider.options.customDefaultModel
+  if (typeof value === "string" && value.trim()) return value.trim()
+  return Object.values(provider.models)[0]?.id
+}
+
+function isCustomProviderConfig(provider: Config.Provider | undefined) {
+  return provider?.options?.customProvider === true
+}
+
 function isAvailable(provider: ProviderInfo) {
   if (provider.id === ANYBOX_PROVIDER_ID) {
     return provider.authState?.status === "connected" && hasRuntimeCredential(provider)
+  }
+
+  if (isCustomProvider(provider)) {
+    return hasRuntimeCredential(provider)
   }
 
   if (provider.authState && provider.env.length > 0) {
@@ -1319,6 +1349,12 @@ async function resolveProjectProviders(configID = resolveConfigID()) {
   const catalog = await catalogMap()
   // 读取当前项目配置，里面可能会覆盖 provider 名称、模型、开关等。
   const config = await providerRuntimeDependencies.getConfig(configID)
+  const globalConfig = configID === Config.GLOBAL_CONFIG_ID
+    ? config
+    : await providerRuntimeDependencies.getConfig(Config.GLOBAL_CONFIG_ID)
+  const inheritedCustomProviderConfigs = Object.fromEntries(
+    Object.entries(globalConfig.provider ?? {}).filter(([, providerConfig]) => isCustomProviderConfig(providerConfig)),
+  )
   // 读取当前实例环境变量，用于补全 API Key 等运行时字段。
   const env = providerRuntimeDependencies.getEnvAll()
 
@@ -1329,6 +1365,7 @@ async function resolveProjectProviders(configID = resolveConfigID()) {
   // 用 Set 合并是为了去重，避免同一个 provider 被重复处理。
   const providerIDs = new Set<string>([
     ...Object.keys(catalog),
+    ...Object.keys(inheritedCustomProviderConfigs),
     ...Object.keys(config.provider ?? {}),
   ])
 
@@ -1341,7 +1378,9 @@ async function resolveProjectProviders(configID = resolveConfigID()) {
 
     // 只有配置里显式声明了该 provider，才读取它的项目级配置；
     // 否则保持 undefined，让后面的合并逻辑只依赖 catalog 和 env。
-    const providerConfig = hasProviderConfig(config, providerID) ? config.provider?.[providerID] : undefined
+    const providerConfig = hasProviderConfig(config, providerID)
+      ? Config.mergeProviderConfig(inheritedCustomProviderConfigs[providerID], config.provider![providerID]!)
+      : inheritedCustomProviderConfigs[providerID]
 
     // 按优先级合并基础 catalog、项目配置和环境变量：
     // - catalog 提供默认骨架
@@ -1497,9 +1536,12 @@ function toPublicProvider(provider: ProviderInfo): PublicProvider {
     source: provider.source,
     env: provider.env,
     configured: true,
+    isCustomProvider: isCustomProvider(provider),
     available: isAvailable(provider),
     apiKeyConfigured: hasApiKeyCredential(provider),
     baseURL: modelBaseURL(provider),
+    customChatEndpoint: getCustomProviderChatEndpoint(provider),
+    customDefaultModel: getCustomProviderDefaultModel(provider),
     modelCount: models.length,
     authCapabilities: provider.authCapabilities ?? getCapabilitiesFallback(provider.id),
     authState: provider.authState ?? createFallbackAuthState(provider.id),
@@ -1516,12 +1558,14 @@ function toCatalogItem(
   configuredProvider: ProviderInfo | undefined,
   authState: ProviderAuth.ProviderAuthState,
 ): ProviderCatalogItem {
+  const provider = configuredProvider ?? baseProvider
   return {
     id: baseProvider.id,
     name: configuredProvider?.name ?? baseProvider.name,
     source: configuredProvider?.source ?? baseProvider.source,
     env: configuredProvider?.env ?? baseProvider.env,
     configured: Boolean(configuredProvider),
+    isCustomProvider: isCustomProvider(configuredProvider ?? baseProvider),
     available: configuredProvider
       ? isAvailable(configuredProvider)
       : baseProvider.id === ANYBOX_PROVIDER_ID
@@ -1529,7 +1573,9 @@ function toCatalogItem(
         : baseProvider.env.length === 0,
     apiKeyConfigured: configuredProvider ? hasApiKeyCredential(configuredProvider) : false,
     baseURL: configuredProvider ? modelBaseURL(configuredProvider) : modelBaseURL(baseProvider),
-    modelCount: Object.keys((configuredProvider ?? baseProvider).models).length,
+    customChatEndpoint: getCustomProviderChatEndpoint(provider),
+    customDefaultModel: getCustomProviderDefaultModel(provider),
+    modelCount: Object.keys(provider.models).length,
     authCapabilities: configuredProvider?.authCapabilities ?? authState.capabilities,
     authState,
     authScope: "global",
@@ -1553,6 +1599,9 @@ function runtimeKey(provider: ProviderInfo, model: Model) {
       ...provider.runtimeHeaders,
       ...model.headers,
     },
+    customProvider: provider.options.customProvider === true,
+    customAuthHeaderName: provider.options.customAuthHeaderName ?? "",
+    customChatEndpoint: provider.options.customChatEndpoint ?? "",
   })
 }
 
@@ -1567,8 +1616,16 @@ async function requireRuntimeProvider(providerID: string, configID = resolveConf
 
 export async function catalog(configID = resolveConfigID()) {
   const state = await resolveProjectProviders(configID)
+  const providerIDs = new Set([
+    ...Object.keys(state.catalog),
+    ...Object.keys(state.providers),
+  ])
   const items = await Promise.all(
-    Object.values(state.catalog).map(async (provider) => {
+    [...providerIDs].map(async (providerID) => {
+      const provider = state.catalog[providerID] ?? state.providers[providerID]
+      if (!provider) {
+        throw new Error(`Provider '${providerID}' could not be resolved from catalog or configured providers`)
+      }
       const configuredProvider = state.providers[provider.id]
       const authState =
         configuredProvider?.authState ??
@@ -1932,6 +1989,74 @@ function createAnyboxRuntimeFetch(provider: ProviderInfo) {
   }
 }
 
+function readCustomProviderHeaderName(provider: ProviderInfo) {
+  const value = provider.options.customAuthHeaderName
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function readCustomProviderChatEndpoint(provider: ProviderInfo) {
+  const value = provider.options.customChatEndpoint
+  if (typeof value !== "string") return undefined
+  const trimmed = value.trim()
+  return trimmed.startsWith("/") ? trimmed : undefined
+}
+
+function resolveRuntimeFetchURL(input: RuntimeFetchInput) {
+  return new URL(runtimeFetchInputURL(input))
+}
+
+function replaceRuntimeFetchURL(input: RuntimeFetchInput, url: URL): RuntimeFetchInput {
+  if (input instanceof Request) {
+    return new Request(url.toString(), input)
+  }
+  if (input instanceof URL) {
+    return url
+  }
+  if (typeof input === "string") {
+    return url.toString()
+  }
+  return new Request(url.toString(), input)
+}
+
+function buildCustomRuntimeChatURL(baseURL: string | undefined, chatEndpoint: string | undefined) {
+  if (!baseURL || !chatEndpoint) return undefined
+  const url = new URL(baseURL)
+  const basePath = url.pathname.replace(/\/+$/, "")
+  url.pathname = `${basePath}${chatEndpoint}`.replace(/\/{2,}/g, "/")
+  return url
+}
+
+function createCustomProviderRuntimeFetch(provider: ProviderInfo, baseURL: string | undefined) {
+  const headerName = readCustomProviderHeaderName(provider)
+  const chatURL = buildCustomRuntimeChatURL(baseURL, readCustomProviderChatEndpoint(provider))
+
+  return async (input: RuntimeFetchInput, init?: RuntimeFetchInit) => {
+    let nextInput = input
+
+    if (chatURL) {
+      const requestURL = resolveRuntimeFetchURL(input)
+      if (requestURL.pathname.endsWith("/chat/completions")) {
+        const nextURL = new URL(chatURL.toString())
+        nextURL.search = requestURL.search
+        nextInput = replaceRuntimeFetchURL(input, nextURL)
+      }
+    }
+
+    const headers = new Headers(init?.headers ?? (nextInput instanceof Request ? nextInput.headers : input instanceof Request ? input.headers : undefined))
+    if (headerName && provider.key) {
+      headers.set(headerName, provider.key)
+      if (headerName.toLowerCase() !== "authorization") {
+        headers.delete("authorization")
+      }
+    }
+
+    return fetch(nextInput, {
+      ...init,
+      headers,
+    })
+  }
+}
+
 async function getSDK(model: Model, configID = resolveConfigID()) {
   // SDK Provider 比 LanguageModel 更底层，先保证它存在，再由上层取 languageModel。
   const provider = await requireRuntimeProvider(model.providerID, configID)
@@ -1947,6 +2072,17 @@ async function getSDK(model: Model, configID = resolveConfigID()) {
     )
   }
 
+  if (isCustomProvider(provider) && !provider.key) {
+    throw new InitError(
+      {
+        providerID: model.providerID,
+      },
+      {
+        cause: new Error(`Provider '${model.providerID}' is missing a custom authentication header value`),
+      },
+    )
+  }
+
   const key = runtimeKey(provider, model)
   const cache = getSDKState(configID)
   const cached = cache.get(key)
@@ -1958,7 +2094,11 @@ async function getSDK(model: Model, configID = resolveConfigID()) {
     ...model.headers,
   }
   const headers = Object.keys(combinedHeaders).length > 0 ? combinedHeaders : undefined
-  const runtimeFetch = provider.id === ANYBOX_PROVIDER_ID ? createAnyboxRuntimeFetch(provider) : undefined
+  const runtimeFetch = provider.id === ANYBOX_PROVIDER_ID
+    ? createAnyboxRuntimeFetch(provider)
+    : isCustomProvider(provider)
+      ? createCustomProviderRuntimeFetch(provider, baseURL)
+      : undefined
   const sdkPackage = model.api.npm
   const loaded = await loadSDKFactory(sdkPackage)
   log.info("initializing sdk provider", {
@@ -1973,7 +2113,7 @@ async function getSDK(model: Model, configID = resolveConfigID()) {
   const sdk = loaded.adapter.create(
     {
       provider,
-      apiKey: provider.key,
+      apiKey: isCustomProvider(provider) ? "custom-provider-key" : provider.key,
       baseURL,
       headers,
       fetch: runtimeFetch,

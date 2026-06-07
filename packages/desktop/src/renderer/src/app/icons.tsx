@@ -49,6 +49,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Paperclip,
+  Pencil,
   Pause,
   Pin,
   Play,
@@ -127,6 +128,7 @@ export const ConnectedStatusIcon = createIcon(CircleCheck)
 export const DisconnectedStatusIcon = createIcon(CircleX)
 export const EyeIcon = createIcon(Eye)
 export const EyeOffIcon = createIcon(EyeOff)
+export const EditIcon = createIcon(Pencil)
 export const DeleteIcon = createIcon(Trash2)
 export const MoreIcon = createIcon(MoreHorizontal)
 export const ArchiveIcon = createIcon(Archive)

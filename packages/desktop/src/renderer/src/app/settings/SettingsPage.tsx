@@ -24,6 +24,8 @@ import {
   ConnectedStatusIcon,
   DisconnectedStatusIcon,
   ChevronDownIcon,
+  DeleteIcon,
+  EditIcon,
   EyeIcon,
   EyeOffIcon,
   FileTextIcon,
@@ -47,6 +49,7 @@ import type {
   AssistantTraceVisibilityKey,
   BrandTheme,
   ColorMode,
+  CustomProviderDraftState,
   InstalledPlugin,
   McpServerDiagnostic,
   McpServerDraftState,
@@ -1112,6 +1115,7 @@ interface SettingsPageProps {
   models: ProviderModel[]
   pluginCatalog?: PluginCatalogItem[]
   providerDrafts: Record<string, ProviderDraftState>
+  customProviderDraft: CustomProviderDraftState
   restoringArchivedSessionID: string | null
   savingMcpServerID: string | null
   savingProviderID: string | null
@@ -1145,6 +1149,8 @@ interface SettingsPageProps {
     field: "apiKey" | "baseURL",
     value: string,
   ) => void
+  onCustomProviderDraftChange: (field: keyof CustomProviderDraftState, value: string) => void
+  onCustomProviderDraftReset: (draft?: CustomProviderDraftState) => void
   onRefreshProviderCatalog: () => boolean | Promise<boolean>
   onLoadArchivedSessions: () => void | Promise<void>
   onOpenUpdateCenter: () => void
@@ -1152,6 +1158,7 @@ interface SettingsPageProps {
   onSaveMcpServer: () => boolean | Promise<boolean>
   onSaveProviderApiKey: (providerID: string, apiKey?: string | null) => boolean | Promise<boolean>
   onSaveProvider: (providerID: string) => boolean | Promise<boolean>
+  onSaveCustomProvider: (providerID?: string) => boolean | Promise<boolean>
   onSelectionChange: <K extends keyof ProjectModelSelection>(field: K, value: ProjectModelSelection[K]) => void
   onTestProviderConnection: (
     providerID: string,
@@ -1162,6 +1169,7 @@ interface SettingsPageProps {
       baseURL?: string | null
     },
   ) => boolean | Promise<boolean>
+  onTestCustomProviderConnection: (providerID?: string) => boolean | Promise<boolean>
   onStartProviderAuthFlow: (
     providerID: string,
     options?: { prompt?: DesktopProviderAuthPrompt },
@@ -1209,6 +1217,7 @@ export function SettingsPage({
   models,
   pluginCatalog = [],
   providerDrafts,
+  customProviderDraft,
   restoringArchivedSessionID,
   savingMcpServerID,
   savingProviderID,
@@ -1238,6 +1247,8 @@ export function SettingsPage({
   onMcpServerSelect,
   onProviderAuthMethodChange,
   onProviderDraftChange,
+  onCustomProviderDraftChange,
+  onCustomProviderDraftReset,
   onRefreshProviderCatalog,
   onLoadArchivedSessions,
   onOpenUpdateCenter,
@@ -1245,8 +1256,10 @@ export function SettingsPage({
   onSaveMcpServer,
   onSaveProviderApiKey,
   onSaveProvider,
+  onSaveCustomProvider,
   onSelectionChange,
   onTestProviderConnection,
+  onTestCustomProviderConnection,
   onStartProviderAuthFlow,
   onStartNewMcpServer,
   onCancelProviderAuthFlow,
@@ -1259,6 +1272,8 @@ export function SettingsPage({
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
     const [archivedSessionSearchQuery, setArchivedSessionSearchQuery] = useState("")
     const [providerSearch, setProviderSearch] = useState("")
+    const [isCustomProviderDialogOpen, setIsCustomProviderDialogOpen] = useState(false)
+    const [editingCustomProviderID, setEditingCustomProviderID] = useState<string | null>(null)
     const [mcpServerSearchQuery, setMcpServerSearchQuery] = useState("")
     const [providerApiKeyModes, setProviderApiKeyModes] = useState<Record<string, ProviderApiKeyMode>>({})
     const [visibleProviderApiKeys, setVisibleProviderApiKeys] = useState<Record<string, boolean>>({})
@@ -1297,6 +1312,13 @@ export function SettingsPage({
       doesArchivedSessionMatchSearch(session, normalizedArchivedSessionSearchQuery),
     )
     const activeProvider = selectedProviderID ? catalog.find((item) => item.id === selectedProviderID) ?? null : null
+    const isEditingCustomProvider = editingCustomProviderID !== null
+    const customProviderBusy = savingProviderID === "custom" || testingProviderID === "custom"
+    const customProviderCanSubmit =
+      customProviderDraft.apiBaseURL.trim().length > 0 &&
+      (customProviderDraft.apiKey.trim().length > 0 || isEditingCustomProvider) &&
+      customProviderDraft.defaultModel.trim().length > 0 &&
+      customProviderDraft.chatEndpoint.trim().length > 0
     const activeProviderDraft = activeProvider
       ? (providerDrafts[activeProvider.id] ?? {
           apiKey: "",
@@ -1795,6 +1817,53 @@ export function SettingsPage({
             : undefined,
         baseURL: activeProviderDraft.baseURL.trim() || undefined,
       })
+    }
+
+    function getCustomProviderEditDraft(provider: ProviderCatalogItem): CustomProviderDraftState {
+      return {
+        apiBaseURL: provider.baseURL ?? "",
+        apiKey: "",
+        defaultModel: provider.customDefaultModel ?? modelGroups[provider.id]?.[0]?.id ?? "",
+        chatEndpoint: provider.customChatEndpoint ?? "/chat/completions",
+      }
+    }
+
+    function openNewCustomProviderDialog() {
+      setEditingCustomProviderID(null)
+      onCustomProviderDraftReset()
+      setIsCustomProviderDialogOpen(true)
+    }
+
+    function openEditCustomProviderDialog(provider: ProviderCatalogItem) {
+      setEditingCustomProviderID(provider.id)
+      onCustomProviderDraftReset(getCustomProviderEditDraft(provider))
+      setIsCustomProviderDialogOpen(true)
+    }
+
+    function handleCustomProviderCancel() {
+      if (customProviderBusy) return
+      setIsCustomProviderDialogOpen(false)
+      setEditingCustomProviderID(null)
+      onCustomProviderDraftReset()
+    }
+
+    function handleCustomProviderOverlayClick(event: MouseEvent<HTMLDivElement>) {
+      if (event.target !== event.currentTarget) return
+      handleCustomProviderCancel()
+    }
+
+    async function handleCustomProviderSave() {
+      if (!customProviderCanSubmit || customProviderBusy) return
+      const didSave = await onSaveCustomProvider(editingCustomProviderID ?? undefined)
+      if (!didSave) return
+      setIsCustomProviderDialogOpen(false)
+      setEditingCustomProviderID(null)
+      onCustomProviderDraftReset()
+    }
+
+    function handleCustomProviderTest() {
+      if (!customProviderCanSubmit || customProviderBusy) return
+      void onTestCustomProviderConnection(editingCustomProviderID ?? undefined)
     }
 
     const brandThemeOptions = [
@@ -2714,7 +2783,16 @@ export function SettingsPage({
                           />
                         </div>
                         <button
-                          className="secondary-button"
+                          className="secondary-button settings-provider-add-button"
+                          aria-label="Add custom provider"
+                          title="Add custom provider"
+                          type="button"
+                          onClick={openNewCustomProviderDialog}
+                        >
+                          <PlusIcon />
+                        </button>
+                        <button
+                          className="secondary-button settings-provider-refresh-button"
                           aria-label="Refresh provider catalog"
                           type="button"
                           disabled={isRefreshingProviderCatalog}
@@ -2778,7 +2856,7 @@ export function SettingsPage({
                           <div className="settings-panel provider-detail-card">
                             <div className="provider-detail-header">
                               <ProviderLogo provider={activeProvider} className="is-large" />
-                              <div>
+                              <div className="provider-detail-heading">
                                 <h3>{activeProvider.name}</h3>
                                 <p>
                                   <span
@@ -2792,6 +2870,30 @@ export function SettingsPage({
                                   {getProviderHeaderSummary(activeProvider, t)}
                                 </p>
                               </div>
+                              {activeProvider.isCustomProvider === true ? (
+                                <div className="provider-detail-actions">
+                                  <button
+                                    className="provider-detail-icon-button"
+                                    aria-label={`Edit ${activeProvider.name}`}
+                                    title="Edit"
+                                    type="button"
+                                    disabled={activeProviderBusy}
+                                    onClick={() => openEditCustomProviderDialog(activeProvider)}
+                                  >
+                                    <EditIcon />
+                                  </button>
+                                  <button
+                                    className="provider-detail-icon-button is-danger"
+                                    aria-label={`${t("app.delete")} ${activeProvider.name}`}
+                                    title={t("app.delete")}
+                                    type="button"
+                                    disabled={activeProviderBusy}
+                                    onClick={() => void onDeleteProvider(activeProvider.id)}
+                                  >
+                                    <DeleteIcon />
+                                  </button>
+                                </div>
+                              ) : null}
                             </div>
 
                             <div className="provider-detail-divider" />
@@ -3626,6 +3728,92 @@ export function SettingsPage({
                     </section>
                   </div>
                 )
+              ) : null}
+              {isCustomProviderDialogOpen ? (
+                <div className="provider-connect-overlay" role="presentation" onClick={handleCustomProviderOverlayClick}>
+                  <article className="provider-connect-modal" role="dialog" aria-modal="true" aria-labelledby="custom-provider-title">
+                    <header className="provider-connect-header">
+                      <div>
+                        <span className="label">Custom</span>
+                        <h3 id="custom-provider-title">{isEditingCustomProvider ? "Edit Custom Provider" : "Custom Provider"}</h3>
+                      </div>
+
+                      <button className="secondary-button" aria-label="Close custom provider dialog" onClick={handleCustomProviderCancel}>
+                        Close
+                      </button>
+                    </header>
+
+                    <div className="provider-connect-body">
+                      <label className="settings-field">
+                        <span className="settings-field-label">API Base URL</span>
+                        <input
+                          aria-label="Custom provider API Base URL"
+                          autoFocus
+                          type="text"
+                          value={customProviderDraft.apiBaseURL}
+                          placeholder="https://ai.zkmjnic.tech/v1"
+                          onChange={(event) => onCustomProviderDraftChange("apiBaseURL", event.target.value)}
+                        />
+                      </label>
+
+                      <label className="settings-field">
+                        <span className="settings-field-label">API key</span>
+                        <input
+                          aria-label="Custom provider API key"
+                          type="password"
+                          value={customProviderDraft.apiKey}
+                          placeholder={isEditingCustomProvider ? "Leave blank to keep saved key" : "sk-..."}
+                          onChange={(event) => onCustomProviderDraftChange("apiKey", event.target.value)}
+                        />
+                      </label>
+
+                      <label className="settings-field">
+                        <span className="settings-field-label">Default model</span>
+                        <input
+                          aria-label="Custom provider default model"
+                          type="text"
+                          value={customProviderDraft.defaultModel}
+                          placeholder="deepseek-chat"
+                          onChange={(event) => onCustomProviderDraftChange("defaultModel", event.target.value)}
+                        />
+                      </label>
+
+                      <label className="settings-field">
+                        <span className="settings-field-label">Chat endpoint</span>
+                        <input
+                          aria-label="Custom provider chat endpoint"
+                          type="text"
+                          value={customProviderDraft.chatEndpoint}
+                          placeholder="/chat/completions"
+                          onChange={(event) => onCustomProviderDraftChange("chatEndpoint", event.target.value)}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="settings-actions-row">
+                      <div className="settings-inline-actions">
+                        <button className="secondary-button" disabled={customProviderBusy} onClick={handleCustomProviderCancel}>
+                          Cancel
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={customProviderBusy || !customProviderCanSubmit}
+                          onClick={handleCustomProviderTest}
+                        >
+                          {testingProviderID === "custom" ? "Testing..." : "Test"}
+                        </button>
+                        <button
+                          className="primary-button"
+                          aria-label="Save custom provider"
+                          disabled={customProviderBusy || !customProviderCanSubmit}
+                          onClick={() => void handleCustomProviderSave()}
+                        >
+                          {savingProviderID === "custom" ? "Saving..." : "Save"}
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                </div>
               ) : null}
               </div>
             </div>

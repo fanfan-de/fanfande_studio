@@ -1152,9 +1152,12 @@ export interface ProviderCatalogItem {
   source: "env" | "config" | "custom" | "api"
   env: string[]
   configured: boolean
+  isCustomProvider?: boolean
   available: boolean
   apiKeyConfigured: boolean
   baseURL?: string
+  customChatEndpoint?: string
+  customDefaultModel?: string
   modelCount: number
   authCapabilities: ProviderAuthCapability[]
   authState: ProviderAuthState
@@ -1566,6 +1569,13 @@ export interface ProviderDraftState {
   baseURL: string
   selectedAuthMethod: string | null
   activeFlow?: ProviderAuthFlow | null
+}
+
+export interface CustomProviderDraftState {
+  apiBaseURL: string
+  apiKey: string
+  defaultModel: string
+  chatEndpoint: string
 }
 
 export interface SkillInfo {
