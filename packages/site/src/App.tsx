@@ -223,9 +223,15 @@ export function App() {
             >
               macOS 下载
             </InstallerDownloadButton>
+            <InstallerDownloadButton
+              className="button button-secondary"
+              platform="mobile"
+            >
+              Android 下载
+            </InstallerDownloadButton>
           </div>
           <p className="hero-platform-note">
-            当前提供 Windows x64 与 macOS Apple Silicon；Linux 版本开发中
+            当前提供 Windows x64、macOS Apple Silicon 与 Android；Linux 版本开发中
           </p>
         </div>
       </section>

@@ -1737,12 +1737,19 @@ a.commit-row:focus-visible {
 
 @media (max-width: 980px) {
   .docs-header {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 14px;
+    padding-top: 12px;
+    padding-bottom: 12px;
   }
 
   .docs-header-nav {
     display: inline-flex;
-    gap: 16px;
+    justify-self: start;
+    flex-wrap: wrap;
+    gap: 12px;
+    width: 100%;
   }
 
   .docs-layout {
@@ -1780,18 +1787,7 @@ a.commit-row:focus-visible {
 
 @media (max-width: 640px) {
   .docs-header {
-    grid-template-columns: 1fr;
-    align-items: start;
-    gap: 14px;
-    padding-top: 12px;
-    padding-bottom: 12px;
-  }
-
-  .docs-header-nav {
-    justify-self: start;
-    flex-wrap: wrap;
-    gap: 12px;
-    width: 100%;
+    min-height: 64px;
   }
 
   .docs-download-button {

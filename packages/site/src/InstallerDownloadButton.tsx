@@ -16,13 +16,13 @@ async function downloadLatestInstaller(
   await navigateToLatestInstaller(platform)
 }
 
-function useLatestReleaseVersion() {
+function useLatestReleaseVersion(platform: InstallerPlatform) {
   const [releaseVersion, setReleaseVersion] = useState(currentProductVersion)
 
   useEffect(() => {
     let ignoreResult = false
 
-    resolveLatestReleaseVersion()
+    resolveLatestReleaseVersion(platform)
       .then((version) => {
         if (!ignoreResult) setReleaseVersion(version)
       })
@@ -31,7 +31,7 @@ function useLatestReleaseVersion() {
     return () => {
       ignoreResult = true
     }
-  }, [])
+  }, [platform])
 
   return releaseVersion
 }
@@ -45,7 +45,7 @@ export function InstallerDownloadButton({
   className: string
   platform: InstallerPlatform
 }) {
-  const releaseVersion = useLatestReleaseVersion()
+  const releaseVersion = useLatestReleaseVersion(platform)
 
   return (
     <a

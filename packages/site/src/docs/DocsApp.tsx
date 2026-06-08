@@ -133,6 +133,12 @@ function DocsHeader() {
         >
           macOS 下载
         </InstallerDownloadButton>
+        <InstallerDownloadButton
+          className="button button-secondary docs-download-button"
+          platform="mobile"
+        >
+          Android 下载
+        </InstallerDownloadButton>
       </nav>
     </header>
   )

@@ -1,15 +1,16 @@
 import productPackage from "../../../package.json"
 
-export type InstallerPlatform = "windows" | "mac"
+export type InstallerPlatform = "windows" | "mac" | "mobile"
 
 export const repositoryUrl = "https://github.com/fanfan-de/fanfande_studio"
 
-const latestReleaseApiUrl =
-  "https://api.github.com/repos/fanfan-de/fanfande_studio/releases/latest"
+const releasesApiUrl =
+  "https://api.github.com/repos/fanfan-de/fanfande_studio/releases?per_page=100"
 
 export const installerFallbackUrls: Record<InstallerPlatform, string> = {
-  windows: `${repositoryUrl}/releases/latest`,
-  mac: `${repositoryUrl}/releases/latest`,
+  windows: `${repositoryUrl}/releases`,
+  mac: `${repositoryUrl}/releases`,
+  mobile: `${repositoryUrl}/releases`,
 }
 
 type GitHubReleaseAsset = {
@@ -22,16 +23,22 @@ type GitHubRelease = {
   tag_name?: unknown
 }
 
-let latestReleasePromise: Promise<GitHubRelease> | undefined
+let releasesPromise: Promise<GitHubRelease[]> | undefined
 
 function normalizeVersionLabel(version: string) {
   const normalizedVersion = version.trim()
 
   if (!normalizedVersion) return undefined
 
-  return normalizedVersion.startsWith("v")
-    ? normalizedVersion
-    : `v${normalizedVersion}`
+  const versionMatch = normalizedVersion.match(
+    /(?:^|-)v?(\d+(?:\.\d+){1,3}(?:[-+][0-9a-z.-]+)?)$/i,
+  )
+
+  if (versionMatch?.[1]) {
+    return `v${versionMatch[1]}`
+  }
+
+  return normalizedVersion
 }
 
 export const currentProductVersion =
@@ -49,12 +56,14 @@ const installerMatchers: Record<
     normalizedName.endsWith(".dmg") &&
     normalizedName.includes("anybox") &&
     normalizedName.includes("arm64"),
+  mobile: (normalizedName) =>
+    normalizedName.endsWith(".apk") && normalizedName.includes("anybox"),
 }
 
-function getInstallerUrl(release: GitHubRelease, platform: InstallerPlatform) {
+function getInstallerAsset(release: GitHubRelease, platform: InstallerPlatform) {
   if (!Array.isArray(release.assets)) return undefined
 
-  const installer = release.assets.find((asset): asset is GitHubReleaseAsset => {
+  return release.assets.find((asset): asset is GitHubReleaseAsset => {
     if (!asset || typeof asset !== "object") return false
 
     const { browser_download_url: downloadUrl, name } =
@@ -66,15 +75,19 @@ function getInstallerUrl(release: GitHubRelease, platform: InstallerPlatform) {
 
     return installerMatchers[platform](name.toLowerCase())
   })
+}
+
+function getInstallerUrl(release: GitHubRelease, platform: InstallerPlatform) {
+  const installer = getInstallerAsset(release, platform)
 
   return typeof installer?.browser_download_url === "string"
     ? installer.browser_download_url
     : undefined
 }
 
-function fetchLatestRelease() {
-  if (!latestReleasePromise) {
-    latestReleasePromise = fetch(latestReleaseApiUrl, {
+function fetchReleases() {
+  if (!releasesPromise) {
+    releasesPromise = fetch(releasesApiUrl, {
       cache: "no-store",
       headers: {
         Accept: "application/vnd.github+json",
@@ -82,24 +95,29 @@ function fetchLatestRelease() {
     })
       .then((response) => {
         if (!response.ok) {
-          throw new Error(`GitHub release request failed: ${response.status}`)
+          throw new Error(`GitHub releases request failed: ${response.status}`)
         }
 
-        return response.json() as Promise<GitHubRelease>
+        return response.json() as Promise<GitHubRelease[]>
       })
       .catch((error: unknown) => {
-        latestReleasePromise = undefined
+        releasesPromise = undefined
         throw error
       })
   }
 
-  return latestReleasePromise
+  return releasesPromise
 }
 
-export async function resolveLatestReleaseVersion() {
-  const release = await fetchLatestRelease()
+async function resolveLatestReleaseForPlatform(platform: InstallerPlatform) {
+  const releases = await fetchReleases()
+  return releases.find((release) => getInstallerAsset(release, platform))
+}
+
+export async function resolveLatestReleaseVersion(platform: InstallerPlatform) {
+  const release = await resolveLatestReleaseForPlatform(platform)
   const tagName =
-    typeof release.tag_name === "string"
+    typeof release?.tag_name === "string"
       ? normalizeVersionLabel(release.tag_name)
       : undefined
 
@@ -107,7 +125,12 @@ export async function resolveLatestReleaseVersion() {
 }
 
 async function resolveLatestInstallerUrl(platform: InstallerPlatform) {
-  const release = await fetchLatestRelease()
+  const release = await resolveLatestReleaseForPlatform(platform)
+
+  if (!release) {
+    throw new Error(`No ${platform} installer release found`)
+  }
+
   const downloadUrl = getInstallerUrl(
     release,
     platform,
