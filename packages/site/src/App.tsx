@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react"
-import { navigationItems, proofPoints } from "./content"
+import { AtmosphereBackground } from "./AtmosphereBackground"
+import { navigationItems, proofPoints, scenarioCards } from "./content"
 import { GitActivitySection } from "./GitActivity"
 import { InstallerDownloadButton } from "./InstallerDownloadButton"
 import { repositoryUrl } from "./releaseDownloads"
 
 const brandLogoBlack = "/brand-logo-black.svg"
+const mobileProductShot = "/anybox-mobile-product-shot.png"
 const wechatCommunityQrImage = "/wechat-community-qr-20260602.png"
 
 function getGitHubRepoApiUrl(href: string) {
@@ -115,12 +117,8 @@ function BrandLockup() {
 
 function ProductPreview() {
   return (
-    <figure className="product-preview" aria-label="Anybox 产品界面预览">
-      <div className="preview-toolbar">
-        <span>workspace/anybox</span>
-        <span>Agent connected</span>
-      </div>
-      <img src="/product-preview.png" alt="Anybox 桌面工作台界面" />
+    <figure className="product-preview" aria-label="Anybox 移动端产品界面预览">
+      <img src={mobileProductShot} alt="Anybox 移动端深色界面的手机截图" />
     </figure>
   )
 }
@@ -135,10 +133,63 @@ function ProofList() {
   )
 }
 
+function ScenarioSection() {
+  return (
+    <section className="scenario-section" aria-labelledby="scenario-heading">
+      <div className="scenario-heading">
+        <h2 id="scenario-heading">全场景智能体工作搭子</h2>
+        <p>从代码到办公，再到创造，把 Anybox 放进你的真实工作现场。</p>
+      </div>
+
+      <div className="scenario-grid">
+        {scenarioCards.map((card) => (
+          <article className="scenario-card" key={card.title}>
+            <figure className="scenario-card-media">
+              <div className="scenario-card-frame">
+                <img src={card.image} alt={card.imageAlt} />
+              </div>
+            </figure>
+            <div className="scenario-card-copy">
+              <h3>{card.title}</h3>
+              <p>
+                <strong>推荐用户：</strong>
+                {card.audience}
+              </p>
+              <p>
+                <strong>能力描述：</strong>
+                {card.capability}
+              </p>
+              <div>
+                <strong>典型任务：</strong>
+                <ul>
+                  {card.tasks.map((task) => (
+                    <li key={task}>{task}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function ProductCommunityQr() {
   return (
-    <section className="community-qr-section" id="product">
+    <div className="community-qr-block">
       <img className="community-qr-image" src={wechatCommunityQrImage} alt="" />
+    </div>
+  )
+}
+
+function CommunityBottomSection() {
+  return (
+    <section className="community-section" id="product">
+      <div className="community-layout">
+        <GitActivitySection />
+        <ProductCommunityQr />
+      </div>
     </section>
   )
 }
@@ -146,6 +197,7 @@ function ProductCommunityQr() {
 export function App() {
   return (
     <main className="page-shell" id="top">
+      <AtmosphereBackground />
       <header className="site-header">
         <BrandLockup />
         <nav className="site-nav" aria-label="页面导航">
@@ -186,12 +238,12 @@ export function App() {
           </div>
         </div>
         <div className="hero-visual-grid">
-          <GitActivitySection />
           <ProductPreview />
         </div>
         <ProofList />
       </section>
-      <ProductCommunityQr />
+      <ScenarioSection />
+      <CommunityBottomSection />
     </main>
   )
 }

@@ -20,6 +20,10 @@ import {
   resolveBrowserNativeMessagingRuntimeConfigPath,
 } from "./browser-native-messaging"
 
+function toWindowsSeparators(value: string) {
+  return value.replaceAll("/", "\\")
+}
+
 describe("browser native messaging registration helpers", () => {
   it("builds a Chrome native messaging manifest", () => {
     const manifest = browserNativeMessagingManifest({
@@ -53,7 +57,7 @@ describe("browser native messaging registration helpers", () => {
   })
 
   it("stores the runtime config next to the native messaging manifest", () => {
-    expect(resolveBrowserNativeMessagingRuntimeConfigPath()).toBe(
+    expect(toWindowsSeparators(resolveBrowserNativeMessagingRuntimeConfigPath())).toBe(
       `C:\\Users\\tester\\AppData\\Roaming\\Anybox\\native-messaging\\${BROWSER_NATIVE_RUNTIME_CONFIG_FILENAME}`,
     )
   })

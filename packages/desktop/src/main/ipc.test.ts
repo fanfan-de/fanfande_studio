@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const requestAgentJSONMock = vi.hoisted(() => vi.fn())
 
+function toWindowsSeparators(value: unknown) {
+  return String(value).replaceAll("/", "\\")
+}
+
 vi.mock("electron-updater", () => {
   const autoUpdater = {
     autoDownload: false,
@@ -457,31 +461,34 @@ describe("ipc session trace export helpers", () => {
 
     expect(result).toEqual({
       canceled: false,
-      path: "C:\\Exports\\anybox-trace-session-1-20260522-090807",
+      path: expect.any(String),
       fileCount: 11,
       recordCount: 1,
     })
+    expect(toWindowsSeparators(result.path)).toBe("C:\\Exports\\anybox-trace-session-1-20260522-090807")
     expect(showOpenDialog).toHaveBeenCalledWith(expect.objectContaining({
       buttonLabel: "Export Here",
       defaultPath: "C:\\Downloads",
       properties: ["openDirectory", "createDirectory"],
       title: "Select folder for split session trace",
     }))
-    expect(makeDirectory).toHaveBeenCalledWith(
+    expect(toWindowsSeparators(makeDirectory.mock.calls[0]?.[0])).toBe(
       "C:\\Exports\\anybox-trace-session-1-20260522-090807",
+    )
+    expect(makeDirectory.mock.calls[0]?.[1]).toEqual(
       { recursive: true },
     )
 
     const writtenPaths = writeTraceFile.mock.calls.map((call) => call[0])
-    expect(writtenPaths.some((filePath) => String(filePath).endsWith("\\manifest.json"))).toBe(true)
-    expect(writtenPaths.some((filePath) => String(filePath).endsWith("\\records\\index.json"))).toBe(true)
-    expect(writtenPaths.some((filePath) => String(filePath).includes("\\records\\000001-tool.call.completed-1-event-1.json"))).toBe(true)
-    expect(writtenPaths.some((filePath) => String(filePath).endsWith("\\runtime\\status.json"))).toBe(true)
+    expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).endsWith("\\manifest.json"))).toBe(true)
+    expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).endsWith("\\records\\index.json"))).toBe(true)
+    expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).includes("\\records\\000001-tool.call.completed-1-event-1.json"))).toBe(true)
+    expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).endsWith("\\runtime\\status.json"))).toBe(true)
 
-    const manifestCall = writeTraceFile.mock.calls.find((call) => String(call[0]).endsWith("\\manifest.json"))
+    const manifestCall = writeTraceFile.mock.calls.find((call) => toWindowsSeparators(call[0]).endsWith("\\manifest.json"))
     expect(manifestCall?.[1]).toContain('"exportFormat": "anybox-session-trace-directory"')
     const recordCall = writeTraceFile.mock.calls.find((call) =>
-      String(call[0]).includes("\\records\\000001-tool.call.completed-1-event-1.json"))
+      toWindowsSeparators(call[0]).includes("\\records\\000001-tool.call.completed-1-event-1.json"))
     expect(recordCall?.[1]).toContain('"relatedToolCallFiles"')
     expect(recordCall?.[1]).toContain('"tool-calls/000001-grep-toolcall-1.json"')
   })
@@ -509,14 +516,19 @@ describe("ipc session trace export helpers", () => {
 
     expect(result).toEqual(expect.objectContaining({
       canceled: false,
-      path: "C:\\Users\\Demo\\AppData\\Roaming\\Anybox\\session-traces\\project-1\\anybox-trace-session-1-20260522-090807",
+      path: expect.any(String),
       recordCount: 0,
     }))
-    expect(makeDirectory).toHaveBeenCalledWith(
+    expect(toWindowsSeparators(result.path)).toBe(
       "C:\\Users\\Demo\\AppData\\Roaming\\Anybox\\session-traces\\project-1\\anybox-trace-session-1-20260522-090807",
+    )
+    expect(toWindowsSeparators(makeDirectory.mock.calls[0]?.[0])).toBe(
+      "C:\\Users\\Demo\\AppData\\Roaming\\Anybox\\session-traces\\project-1\\anybox-trace-session-1-20260522-090807",
+    )
+    expect(makeDirectory.mock.calls[0]?.[1]).toEqual(
       { recursive: true },
     )
-    expect(writeTraceFile.mock.calls.some((call) => String(call[0]).endsWith("\\manifest.json"))).toBe(true)
+    expect(writeTraceFile.mock.calls.some((call) => toWindowsSeparators(call[0]).endsWith("\\manifest.json"))).toBe(true)
   })
 
   it("saves a split session trace directory when runtime arrays are missing", async () => {
@@ -578,7 +590,7 @@ describe("ipc session trace export helpers", () => {
       recordCount: 1,
     }))
 
-    const turnIndexCall = writeTraceFile.mock.calls.find((call) => String(call[0]).endsWith("\\runtime\\turns\\index.json"))
+    const turnIndexCall = writeTraceFile.mock.calls.find((call) => toWindowsSeparators(call[0]).endsWith("\\runtime\\turns\\index.json"))
     expect(turnIndexCall?.[1]).toContain('"toolCount": 0')
     expect(turnIndexCall?.[1]).toContain('"llmCallCount": 0')
     expect(turnIndexCall?.[1]).toContain('"recentEventCount": 0')

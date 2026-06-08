@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { marked, Renderer } from "marked"
+import { AtmosphereBackground } from "../AtmosphereBackground"
 import {
   docsArticles,
   docsSections,
@@ -245,6 +246,7 @@ export function DocsApp() {
 
   return (
     <main className="docs-page-shell" id="top">
+      <AtmosphereBackground />
       <DocsHeader />
       <div className="docs-layout">
         <DocsSidebar

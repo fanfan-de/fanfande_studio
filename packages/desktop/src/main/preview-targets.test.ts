@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -55,6 +55,7 @@ describe("preview target resolver", () => {
       value: "agent://artifact/report-1",
       workspaceRoot,
     })
+    const resolvedWorkspaceRoot = await realpath(workspaceRoot)
 
     expect(resolved).toMatchObject({
       artifactID: "report-1",
@@ -63,9 +64,9 @@ describe("preview target resolver", () => {
       renderer: "markdown-preview",
       textReadable: true,
       title: "Report",
-      workspaceRoot,
+      workspaceRoot: resolvedWorkspaceRoot,
     })
-    await expect(readPreviewText({ path: resolved.entry!, workspaceRoot })).resolves.toMatchObject({
+    await expect(readPreviewText({ path: resolved.entry!, workspaceRoot: resolvedWorkspaceRoot })).resolves.toMatchObject({
       content: "# Report\n\nBody",
       path: resolved.entry,
     })
