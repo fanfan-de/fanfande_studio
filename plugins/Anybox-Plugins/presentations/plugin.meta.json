@@ -1,0 +1,55 @@
+{
+  "id": "presentations",
+  "name": "presentations",
+  "version": "0.1.0",
+  "description": "Create, render, verify, and export editable PowerPoint PPTX decks locally in Anybox.",
+  "author": {
+    "name": "Anybox"
+  },
+  "homepage": "https://github.com/fanfan-de/Anybox-Plugins",
+  "repository": "https://github.com/fanfan-de/Anybox-Plugins",
+  "license": "MIT",
+  "keywords": [
+    "presentation",
+    "presentations",
+    "powerpoint",
+    "ppt",
+    "pptx",
+    "slides",
+    "deck"
+  ],
+  "interface": {
+    "displayName": "Presentations",
+    "shortDescription": "Create editable PowerPoint decks",
+    "longDescription": "Create, render, inspect, verify, and export editable PowerPoint PPTX decks locally with code-first slide modules, PNG previews, layout JSON, and QA checks.",
+    "developerName": "Anybox",
+    "category": "Docs",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/fanfan-de/Anybox-Plugins",
+    "defaultPrompt": [
+      "Create an editable PowerPoint deck from this outline",
+      "Turn these notes into a polished slide deck",
+      "Build a presentation and verify every slide visually"
+    ],
+    "logo": "PR",
+    "brandColor": "#6D5EF5",
+    "screenshots": []
+  },
+  "skills": "skills",
+  "skillPreviews": [
+    {
+      "name": "Presentations",
+      "description": "Create editable PowerPoint `.pptx` decks locally with code-first slide modules, PNG previews, layout JSON, and strict layout QA. Use when the user wants a durable presentation, slide deck, PPT, PPTX, or PowerPoint artifact.",
+      "directory": "presentations"
+    }
+  ],
+  "package": {
+    "type": "zip",
+    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/presentations/presentations-0.1.0.zip",
+    "sha256": "e7a81cf3443ad0e81074d6fe7ba47d9adfb139dcef1b46caa36ea6668793c721",
+    "size": 9687466
+  }
+}
