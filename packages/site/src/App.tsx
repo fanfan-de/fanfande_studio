@@ -6,7 +6,6 @@ import { InstallerDownloadButton } from "./InstallerDownloadButton"
 import { repositoryUrl } from "./releaseDownloads"
 
 const brandLogoBlack = "/brand-logo-black.svg"
-const mobileProductShot = "/anybox-mobile-product-shot.png"
 const wechatCommunityQrImage = "/wechat-community-qr-20260602.png"
 
 function getGitHubRepoApiUrl(href: string) {
@@ -115,14 +114,6 @@ function BrandLockup() {
   )
 }
 
-function ProductPreview() {
-  return (
-    <figure className="product-preview" aria-label="Anybox 移动端产品界面预览">
-      <img src={mobileProductShot} alt="Anybox 移动端深色界面的手机截图" />
-    </figure>
-  )
-}
-
 function ProofList() {
   return (
     <ul className="proof-list" aria-label="产品关键信号">
@@ -137,7 +128,7 @@ function ScenarioSection() {
   return (
     <section className="scenario-section" aria-labelledby="scenario-heading">
       <div className="scenario-heading">
-        <h2 id="scenario-heading">全场景智能体工作搭子</h2>
+        <h2 id="scenario-heading">AnyBox for anything。</h2>
         <p>从代码到办公，再到创造，把 Anybox 放进你的真实工作现场。</p>
       </div>
 
@@ -212,11 +203,11 @@ export function App() {
         </nav>
       </header>
 
-      <section className="hero-section">
+      <section className="hero-section" aria-labelledby="hero-title">
         <div className="hero-copy">
           <div className="hero-brand">
             <img className="hero-mark" src={brandLogoBlack} alt="" />
-            <h1>Anybox</h1>
+            <h1 id="hero-title">Anybox</h1>
           </div>
           <p>开源，灵活的通用agent</p>
           <div className="hero-actions">
@@ -232,16 +223,17 @@ export function App() {
             >
               macOS 下载
             </InstallerDownloadButton>
-            <p className="hero-platform-note">
-              当前提供 Windows x64 与 macOS Apple Silicon；Linux 版本开发中
-            </p>
           </div>
+          <p className="hero-platform-note">
+            当前提供 Windows x64 与 macOS Apple Silicon；Linux 版本开发中
+          </p>
         </div>
-        <div className="hero-visual-grid">
-          <ProductPreview />
-        </div>
+      </section>
+
+      <section className="proof-section" aria-label="Anybox 产品能力">
         <ProofList />
       </section>
+
       <ScenarioSection />
       <CommunityBottomSection />
     </main>

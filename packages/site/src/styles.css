@@ -214,42 +214,49 @@ a {
 }
 
 .hero-section {
-  padding: 54px 48px 34px;
-  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: clamp(520px, calc(100svh - 72px), 660px);
+  padding: 78px 48px 60px;
+  text-align: center;
 }
 
 .hero-copy {
-  max-width: 1120px;
+  display: grid;
+  justify-items: center;
+  width: min(820px, 100%);
   margin: 0 auto;
 }
 
 .hero-brand {
-  display: flex;
-  align-items: center;
-  gap: 30px;
+  display: grid;
+  justify-items: center;
+  gap: 26px;
 }
 
 .hero-mark {
-  width: 112px;
-  height: 112px;
+  width: 128px;
+  height: 128px;
   flex: 0 0 auto;
   object-fit: contain;
+  filter: drop-shadow(0 18px 36px rgba(13, 20, 32, 0.16));
 }
 
 .hero-copy h1 {
   margin: 0;
-  max-width: 9ch;
   font-family: var(--font-display);
-  font-size: 7.35rem;
+  font-size: clamp(4rem, 7vw, 5.9rem);
   font-weight: 760;
-  line-height: 0.9;
+  line-height: 0.95;
 }
 
 .hero-copy p {
-  max-width: 720px;
-  margin: 22px 0 0;
+  width: 100%;
+  max-width: 680px;
+  margin: 24px 0 0;
   color: var(--muted-strong);
-  font-size: 1.42rem;
+  font-size: 1.18rem;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -257,17 +264,23 @@ a {
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 12px;
-  margin-top: 24px;
+  margin-top: 34px;
 }
 
-.hero-actions .hero-platform-note {
-  display: inline-flex;
-  align-items: center;
-  min-height: 48px;
-  margin: 0;
+.hero-actions .button {
+  min-height: 42px;
+  min-width: 0;
+  padding: 0 22px;
+  border-radius: 999px;
+}
+
+.hero-platform-note {
+  width: min(100%, 680px);
+  margin: 32px 0 0;
   color: var(--muted);
-  font-size: 0.96rem;
+  font-size: 0.95rem;
   font-weight: 650;
   line-height: 1.5;
 }
@@ -325,41 +338,16 @@ a {
   border-color: var(--text);
 }
 
-.hero-visual-grid {
-  display: flex;
-  justify-content: center;
-  width: min(760px, 100%);
-  margin: 36px auto 0;
-}
-
-.product-preview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  margin: 0;
-}
-
-.product-preview img {
-  width: auto;
-  max-width: 100%;
-  height: clamp(560px, 52vw, 760px);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
-  object-fit: contain;
-}
-
-.hero-visual-grid .product-preview {
-  width: 100%;
-  margin: 0;
+.proof-section {
+  padding: 0 48px 76px;
 }
 
 .proof-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
-  width: min(1120px, 100%);
-  margin: 16px auto 0;
+  width: min(860px, 100%);
+  margin: 0 auto;
   padding: 0;
   list-style: none;
 }
@@ -1212,14 +1200,6 @@ a.commit-row:focus-visible {
 }
 
 @media (max-width: 1180px) {
-  .hero-visual-grid {
-    width: min(760px, 100%);
-  }
-
-  .hero-visual-grid .product-preview img {
-    height: clamp(520px, 68vw, 720px);
-  }
-
   .scenario-grid {
     gap: 18px;
   }
@@ -1248,6 +1228,7 @@ a.commit-row:focus-visible {
   }
 
   .hero-section,
+  .proof-section,
   .scenario-section,
   .community-section,
   .intro-section,
@@ -1260,12 +1241,12 @@ a.commit-row:focus-visible {
   }
 
   .hero-copy h1 {
-    font-size: 5.35rem;
+    font-size: 5.15rem;
   }
 
   .hero-mark {
-    width: 92px;
-    height: 92px;
+    width: 112px;
+    height: 112px;
   }
 
   .hero-copy p {
@@ -1305,10 +1286,6 @@ a.commit-row:focus-visible {
     text-align: left;
   }
 
-  .product-preview img,
-  .hero-visual-grid .product-preview img {
-    height: clamp(460px, 82vw, 640px);
-  }
 }
 
 @media (max-width: 640px) {
@@ -1330,7 +1307,9 @@ a.commit-row:focus-visible {
   }
 
   .hero-section {
-    padding-top: 40px;
+    min-height: auto;
+    padding-top: 58px;
+    padding-bottom: 52px;
   }
 
   .hero-copy h1 {
@@ -1338,12 +1317,12 @@ a.commit-row:focus-visible {
   }
 
   .hero-brand {
-    gap: 14px;
+    gap: 18px;
   }
 
   .hero-mark {
-    width: 62px;
-    height: 62px;
+    width: 88px;
+    height: 88px;
   }
 
   .hero-copy p {
@@ -1352,18 +1331,20 @@ a.commit-row:focus-visible {
 
   .hero-actions {
     flex-direction: column;
+    width: min(100%, 340px);
+    margin-top: 28px;
   }
 
   .button {
     width: 100%;
   }
 
-  .product-preview img,
-  .hero-visual-grid .product-preview img {
-    width: min(100%, 420px);
-    height: auto;
+  .hero-platform-note {
+    margin-top: 24px;
+    font-size: 0.9rem;
   }
 
+  .proof-section,
   .scenario-section,
   .community-section,
   .intro-section,
