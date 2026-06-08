@@ -540,10 +540,15 @@ function resolveInstalledPluginStoragePath(installed: InstalledPlugin, installed
 }
 
 function canOpenInstalledPluginLocalFiles(installed: InstalledPlugin) {
+  if (installed.missingPackage) return false
   return Boolean(window.desktop?.openPath && (getInstalledPluginDirectPath(installed) || window.desktop.getStoragePaths))
 }
 
 async function openInstalledPluginLocalFiles(installed: InstalledPlugin) {
+  if (installed.missingPackage) {
+    throw new Error("Installed plugin package is missing.")
+  }
+
   const openPath = window.desktop?.openPath
   if (!openPath) {
     throw new Error("Opening local plugin files is unavailable in this desktop shell.")

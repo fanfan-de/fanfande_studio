@@ -353,7 +353,7 @@ describe("PluginsPage", () => {
   })
 
   it("opens installed plugin package roots when the agent reports the real package path", async () => {
-    const packageRoot = "C:\\Projects\\fanfande_studio\\plugins\\Anybox-Plugins\\presentations\\0.1.1"
+    const packageRoot = "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed\\presentations\\0.1.1"
     const getStoragePaths = vi.fn().mockResolvedValue({
       installedPlugins: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed",
     })
@@ -389,6 +389,42 @@ describe("PluginsPage", () => {
     await waitFor(() => {
       expect(openPath).toHaveBeenCalledWith({ targetPath: packageRoot })
     })
+    expect(getStoragePaths).not.toHaveBeenCalled()
+  })
+
+  it("does not open local files for installed plugins with missing packages", () => {
+    const getStoragePaths = vi.fn().mockResolvedValue({
+      installedPlugins: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed",
+    })
+    const openPath = vi.fn().mockResolvedValue({
+      ok: true,
+      targetPath: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed\\filesystem",
+    })
+    window.desktop = {
+      getStoragePaths,
+      openPath,
+    } as unknown as Window["desktop"]
+
+    render(
+      <PluginsPage
+        {...createProps({
+          installedPlugins: [
+            createInstalledPlugin({
+              missingPackage: true,
+            }),
+          ],
+        })}
+      />,
+    )
+
+    const installedSidebar = screen.getByRole("complementary", { name: "Installed plugins" })
+    fireEvent.contextMenu(within(installedSidebar).getByRole("button", { name: "Filesystem package missing" }), {
+      clientX: 48,
+      clientY: 64,
+    })
+
+    expect(screen.getByRole("menuitem", { name: "Open local files" })).toBeDisabled()
+    expect(openPath).not.toHaveBeenCalled()
     expect(getStoragePaths).not.toHaveBeenCalled()
   })
 

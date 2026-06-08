@@ -1101,9 +1101,11 @@ async function listManifestSourcesFresh() {
   )
 }
 
-function getPackageManifestSource(pluginID: string) {
+function getPackageManifestSource(pluginID: string, options: { managedInstallOnly?: boolean } = {}) {
   const normalizedPluginID = normalizePluginID(pluginID)
-  return listPackageManifestSources().find((entry) => normalizeManifestID(entry.manifest.name) === normalizedPluginID)
+  return listPackageManifestSources()
+    .filter((entry) => !options.managedInstallOnly || entry.managedInstall)
+    .find((entry) => normalizeManifestID(entry.manifest.name) === normalizedPluginID)
 }
 
 async function getRegistryManifestSource(pluginID: string) {
@@ -1445,7 +1447,7 @@ async function getPluginConnectorRecord(pluginID: string, appID: string) {
 
 function normalizeInstalledRecord(record: z.infer<typeof InstalledPlugin> | null | undefined): InstalledPlugin | null {
   if (!record) return null
-  const packageSource = getPackageManifestSource(record.pluginID)
+  const packageSource = getPackageManifestSource(record.pluginID, { managedInstallOnly: true })
   const mcpServerIDs = uniqueStrings([...(record.mcpServerIDs ?? []), record.mcpServerID])
   const skillIDs = uniqueStrings(record.skillIDs ?? [])
   const connectorIDs = uniqueStrings(record.connectorIDs ?? [])
@@ -1547,10 +1549,9 @@ function replaceUnknownRecordPlaceholders(record: Record<string, unknown> | unde
 }
 
 function runtimeConfigForPlugin(plugin: PluginCatalogItem, installed: InstalledPlugin) {
-  const source = getPackageManifestSource(plugin.id)
   return {
     ...normalizeConfig(plugin, installed.config),
-    PLUGIN_ROOT: source?.packageRoot ?? "",
+    PLUGIN_ROOT: installed.packageRoot ?? "",
   }
 }
 
@@ -1967,7 +1968,7 @@ async function ensurePluginPackageAvailable(pluginID: string) {
     if (existing.managedInstall) return existing
 
     await copyPluginPackageToInstalled(existing)
-    const installedSource = getPackageManifestSource(pluginID)
+    const installedSource = getPackageManifestSource(pluginID, { managedInstallOnly: true })
     if (!installedSource?.managedInstall) {
       throw new PluginError(
         "PLUGIN_PACKAGE_INVALID",
@@ -1988,7 +1989,7 @@ async function ensurePluginPackageAvailable(pluginID: string) {
   }
 
   await downloadPluginPackage(registrySource)
-  const installedSource = getPackageManifestSource(pluginID)
+  const installedSource = getPackageManifestSource(pluginID, { managedInstallOnly: true })
   if (!installedSource) {
     throw new PluginError("PLUGIN_PACKAGE_INVALID", `Plugin '${pluginID}' was downloaded but could not be loaded.`)
   }
@@ -2407,7 +2408,7 @@ export async function resolveConnectorRuntime(connectorID: string): Promise<Reso
   }
 
   if (app.runtime.transport === "stdio") {
-    const packageRoot = getPackageManifestSource(plugin.id)?.packageRoot
+    const packageRoot = installed.packageRoot
     if (!packageRoot) {
       throw new PluginError("PLUGIN_PACKAGE_UNAVAILABLE", `Plugin '${plugin.id}' package is unavailable.`)
     }
@@ -2500,14 +2501,15 @@ export function listInstalledPluginSkillRoots(
       .map((plugin) => [plugin.pluginID, plugin]),
   )
 
-  return listPackageManifestSources().flatMap((source) => {
-    const pluginID = normalizeManifestID(source.manifest.name)
-    const installed = installedByID.get(pluginID)
-    if (!installed || !source.packageRoot) return []
-    const pluginName = source.manifest.interface?.displayName ?? source.manifest.name
+  return [...installedByID.values()].flatMap((installed) => {
+    if (!installed.packageRoot) return []
+    const manifest = safeReadPluginManifest(installed.packageRoot)
+    if (!manifest) return []
+    const pluginID = normalizeManifestID(manifest.name)
+    const pluginName = manifest.interface?.displayName ?? manifest.name
 
-    return skillDirectoryDeclarations(source.manifest)
-      .map((directory) => resolvePackageRelativePath(source.packageRoot!, directory))
+    return skillDirectoryDeclarations(manifest)
+      .map((directory) => resolvePackageRelativePath(installed.packageRoot!, directory))
       .filter((root): root is string => Boolean(root && existsSync(root)))
       .map((root) => ({
         pluginID,

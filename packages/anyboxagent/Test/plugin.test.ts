@@ -153,6 +153,7 @@ type InstalledPluginEnvelope = JsonEnvelope<{
   connectorRequirementIDs: string[]
   config: Record<string, string>
   packageRoot?: string
+  missingPackage?: boolean
 }>
 
 type ConnectorCatalogEnvelope = JsonEnvelope<
@@ -222,6 +223,7 @@ type InstalledPluginsEnvelope = JsonEnvelope<
     mcpServerID: string
     mcpServerIDs: string[]
     packageRoot?: string
+    missingPackage?: boolean
   }>
 >
 
@@ -339,10 +341,9 @@ function pluginLocalRoot() {
   return process.env.ANYBOX_PLUGIN_LOCAL_DIR ?? join(activeRoot, "local-plugins")
 }
 
-async function writeManifestPluginPackage() {
+async function writeManifestPluginPackage(packageSourceRoot = pluginInstallRoot()) {
   if (!activeRoot) throw new Error("Temp root has not been initialized.")
 
-  const packageSourceRoot = pluginInstallRoot()
   const packageRoot = join(packageSourceRoot, "manifest-lab")
   const versionRoot = join(packageRoot, "0.1.0")
   const manifestRoot = join(versionRoot, ".anybox-plugin")
@@ -1354,6 +1355,38 @@ describe("plugin marketplace API", () => {
       "plugin.manifest-lab.connector.docs",
     ])
     expect(await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, "plugin.manifest-lab.notes")).toBeUndefined()
+  })
+
+  test("does not report local source packages as installed package roots", async () => {
+    await useTempDatabase()
+    await writeManifestPluginPackage(pluginLocalRoot())
+    const expectedPackageRoot = join(pluginInstallRoot(), "manifest-lab", "0.1.0")
+    const app = createServerApp()
+
+    const installResponse = await app.request("/api/plugins/installed/manifest-lab", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        enabled: true,
+      }),
+    })
+    const installBody = (await installResponse.json()) as InstalledPluginEnvelope
+
+    expect(installResponse.status).toBe(200)
+    expect(installBody.data?.packageRoot).toBe(expectedPackageRoot)
+    expect(existsSync(expectedPackageRoot)).toBe(true)
+
+    await rm(expectedPackageRoot, { recursive: true, force: true })
+
+    const listResponse = await app.request("/api/plugins/installed")
+    const listBody = (await listResponse.json()) as InstalledPluginsEnvelope
+    const installed = listBody.data?.find((plugin) => plugin.pluginID === "manifest-lab")
+
+    expect(installed?.missingPackage).toBe(true)
+    expect(installed?.packageRoot).toBeUndefined()
+    expect(Plugin.listInstalledPluginSkillRoots(["manifest-lab"])).toEqual([])
   })
 
   test("rejects installs that omit required plugin configuration", async () => {
