@@ -1,7 +1,0 @@
-*
-!.gitignore
-!sample-basic/
-!sample-basic/assets/
-!sample-basic/assets/.gitkeep
-!sample-basic/slides/
-!sample-basic/slides/*.mjs

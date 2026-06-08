@@ -1,7 +1,7 @@
 {
   "id": "presentations",
   "name": "presentations",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Create, render, verify, and export editable PowerPoint PPTX decks locally in Anybox.",
   "author": {
     "name": "Anybox"
@@ -48,8 +48,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/presentations/presentations-0.1.0.zip",
-    "sha256": "5aa664c1c1197262e1fa2798a08fb16e197f4a0a012b50bf4d5946efae397e8a",
-    "size": 9688052
+    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/presentations/presentations-0.1.1.zip",
+    "sha256": "cf50d50de558482e0d274292286dd44b82c752cd63da6ecb3ff0864be3d9c627",
+    "size": 9688053
   }
 }

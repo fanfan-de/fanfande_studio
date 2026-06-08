@@ -1,0 +1,8 @@
+node_modules/
+workspaces/*
+!workspaces/.gitignore
+!workspaces/sample-basic/
+!workspaces/sample-basic/assets/
+!workspaces/sample-basic/assets/.gitkeep
+!workspaces/sample-basic/slides/
+!workspaces/sample-basic/slides/*.mjs

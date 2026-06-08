@@ -1,0 +1,27 @@
+{
+  "name": "@anybox/presentation-runtime",
+  "version": "0.1.1",
+  "description": "Code-first editable PowerPoint generation runtime and QA harness for Anybox Presentation plugin.",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./runtime/index.mjs",
+    "./jsx-runtime": "./runtime/presentation-jsx/jsx-runtime.mjs"
+  },
+  "scripts": {
+    "render:sample": "node scripts/render_slide.mjs --workspace workspaces/sample-basic --slide slides/slide-01.mjs",
+    "build:sample": "node scripts/build_deck.mjs --workspace workspaces/sample-basic",
+    "qa:sample": "node scripts/check_layout_quality.mjs --workspace workspaces/sample-basic",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "pptxgenjs": "^4.0.1",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
