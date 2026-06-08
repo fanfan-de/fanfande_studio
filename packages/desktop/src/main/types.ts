@@ -1701,6 +1701,7 @@ export interface AgentInstalledPlugin {
   updatedAt: number
   lastDiagnostic?: AgentMcpServerDiagnostic
   lastConnectorDiagnostics?: Record<string, AgentMcpServerDiagnostic>
+  packageRoot?: string
   missingPackage?: boolean
 }
 

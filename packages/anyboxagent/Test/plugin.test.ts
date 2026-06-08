@@ -152,6 +152,7 @@ type InstalledPluginEnvelope = JsonEnvelope<{
   connectorIDs: string[]
   connectorRequirementIDs: string[]
   config: Record<string, string>
+  packageRoot?: string
 }>
 
 type ConnectorCatalogEnvelope = JsonEnvelope<
@@ -220,6 +221,7 @@ type InstalledPluginsEnvelope = JsonEnvelope<
     enabled: boolean
     mcpServerID: string
     mcpServerIDs: string[]
+    packageRoot?: string
   }>
 >
 
@@ -1278,7 +1280,8 @@ describe("plugin marketplace API", () => {
 
   test("installs, disables, diagnoses, and removes a plugin-backed MCP server", async () => {
     await useTempDatabase()
-    await writeManifestPluginPackage()
+    const packageSourceRoot = await writeManifestPluginPackage()
+    const expectedPackageRoot = join(packageSourceRoot, "manifest-lab", "0.1.0")
     const app = createServerApp()
 
     const installResponse = await app.request("/api/plugins/installed/manifest-lab", {
@@ -1295,6 +1298,7 @@ describe("plugin marketplace API", () => {
     expect(installResponse.status).toBe(200)
     expect(installBody.success).toBe(true)
     expect(installBody.data?.pluginID).toBe("manifest-lab")
+    expect(installBody.data?.packageRoot).toBe(expectedPackageRoot)
     expect(installBody.data?.mcpServerID).toBe("plugin.manifest-lab.notes")
     expect(installBody.data?.mcpServerIDs).toEqual([
       "plugin.manifest-lab.notes",
@@ -1336,6 +1340,7 @@ describe("plugin marketplace API", () => {
     const listResponse = await app.request("/api/plugins/installed")
     const listBody = (await listResponse.json()) as InstalledPluginsEnvelope
     expect(listBody.data?.some((plugin) => plugin.pluginID === "manifest-lab")).toBe(true)
+    expect(listBody.data?.find((plugin) => plugin.pluginID === "manifest-lab")?.packageRoot).toBe(expectedPackageRoot)
 
     const deleteResponse = await app.request("/api/plugins/installed/manifest-lab", {
       method: "DELETE",

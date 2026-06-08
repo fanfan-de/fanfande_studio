@@ -469,6 +469,7 @@ type InstalledPluginContextMenuState = {
 const INSTALLED_PLUGIN_CONTEXT_MENU_WIDTH = 184
 const INSTALLED_PLUGIN_CONTEXT_MENU_HEIGHT = 48
 const INSTALLED_PLUGIN_DIRECT_PATH_KEYS = [
+  "packageRoot",
   "localPath",
   "packagePath",
   "installPath",

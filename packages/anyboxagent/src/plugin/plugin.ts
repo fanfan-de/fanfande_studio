@@ -518,6 +518,7 @@ export const InstalledPlugin = z
     updatedAt: z.number().int().positive(),
     lastDiagnostic: PluginDiagnostic.optional(),
     lastConnectorDiagnostics: z.record(z.string(), PluginDiagnostic).optional(),
+    packageRoot: z.string().min(1).optional(),
     missingPackage: z.boolean().optional(),
   })
   .strict()
@@ -1444,6 +1445,7 @@ async function getPluginConnectorRecord(pluginID: string, appID: string) {
 
 function normalizeInstalledRecord(record: z.infer<typeof InstalledPlugin> | null | undefined): InstalledPlugin | null {
   if (!record) return null
+  const packageSource = getPackageManifestSource(record.pluginID)
   const mcpServerIDs = uniqueStrings([...(record.mcpServerIDs ?? []), record.mcpServerID])
   const skillIDs = uniqueStrings(record.skillIDs ?? [])
   const connectorIDs = uniqueStrings(record.connectorIDs ?? [])
@@ -1457,7 +1459,8 @@ function normalizeInstalledRecord(record: z.infer<typeof InstalledPlugin> | null
     connectorIDs,
     connectorRequirementIDs,
     lastConnectorDiagnostics: record.lastConnectorDiagnostics ?? {},
-    missingPackage: !getPackageManifestSource(record.pluginID),
+    packageRoot: packageSource?.packageRoot,
+    missingPackage: !packageSource,
   }
 }
 

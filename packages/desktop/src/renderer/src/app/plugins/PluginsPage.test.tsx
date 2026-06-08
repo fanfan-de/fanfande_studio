@@ -183,6 +183,7 @@ function createInstalledPlugin(overrides: Partial<InstalledPlugin> = {}): Instal
     updatedAt: overrides.updatedAt ?? 2,
     lastDiagnostic: overrides.lastDiagnostic,
     lastConnectorDiagnostics: overrides.lastConnectorDiagnostics,
+    packageRoot: overrides.packageRoot,
     missingPackage: overrides.missingPackage,
   }
 }
@@ -349,6 +350,46 @@ describe("PluginsPage", () => {
       })
     })
     expect(getStoragePaths).toHaveBeenCalledTimes(1)
+  })
+
+  it("opens installed plugin package roots when the agent reports the real package path", async () => {
+    const packageRoot = "C:\\Projects\\fanfande_studio\\plugins\\Anybox-Plugins\\presentations\\0.1.1"
+    const getStoragePaths = vi.fn().mockResolvedValue({
+      installedPlugins: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed",
+    })
+    const openPath = vi.fn().mockResolvedValue({
+      ok: true,
+      targetPath: packageRoot,
+    })
+    window.desktop = {
+      getStoragePaths,
+      openPath,
+    } as unknown as Window["desktop"]
+
+    render(
+      <PluginsPage
+        {...createProps({
+          installedPlugins: [
+            createInstalledPlugin({
+              pluginID: "presentations",
+              packageRoot,
+            }),
+          ],
+        })}
+      />,
+    )
+
+    const installedSidebar = screen.getByRole("complementary", { name: "Installed plugins" })
+    fireEvent.contextMenu(within(installedSidebar).getByRole("button", { name: "Presentations installed enabled" }), {
+      clientX: 48,
+      clientY: 64,
+    })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open local files" }))
+
+    await waitFor(() => {
+      expect(openPath).toHaveBeenCalledWith({ targetPath: packageRoot })
+    })
+    expect(getStoragePaths).not.toHaveBeenCalled()
   })
 
   it("shows installed plugins even when catalog metadata is missing", () => {

@@ -2041,6 +2041,7 @@ export interface InstalledPlugin {
   updatedAt: number
   lastDiagnostic?: McpServerDiagnostic
   lastConnectorDiagnostics?: Record<string, McpServerDiagnostic>
+  packageRoot?: string
   missingPackage?: boolean
 }
 
