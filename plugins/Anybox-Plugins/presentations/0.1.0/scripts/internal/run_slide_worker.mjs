@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { Buffer } from "node:buffer";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -121,8 +122,8 @@ async function buildDeck(request) {
 async function makeContext(request) {
   const pluginRoot = path.resolve(required(request.pluginRoot, "pluginRoot"));
   const workspaceDir = path.resolve(required(request.workspaceDir, "workspaceDir"));
-  const workspacesRoot = path.resolve(pluginRoot, "workspaces");
-  assertInside(workspaceDir, workspacesRoot, "workspace must be inside plugin workspaces/");
+  const workspacesRoot = path.resolve(required(request.workspacesRoot, "workspacesRoot"));
+  assertInside(workspaceDir, workspacesRoot, "workspace must be inside project workspaces/");
   const slidesDir = path.resolve(workspaceDir, "slides");
   const assetsDir = path.resolve(workspaceDir, "assets");
   const previewDir = path.resolve(workspaceDir, "preview");
@@ -137,6 +138,7 @@ async function makeContext(request) {
   await fs.mkdir(outputDir, { recursive: true });
   return {
     pluginRoot,
+    workspacesRoot,
     workspaceDir,
     slidesDir,
     assetsDir,
@@ -168,9 +170,9 @@ function resolveSlidePath(context, slidePath) {
 }
 
 async function executeSlideModule(modulePath, exportName, presentation, context) {
-  await validateSlideModuleSource(modulePath);
+  const source = await validateSlideModuleSource(modulePath);
   const before = presentation.slides.length;
-  const moduleUrl = `${pathToFileURL(modulePath).href}?v=${Date.now()}-${Math.random()}`;
+  const moduleUrl = slideModuleDataUrl(modulePath, source, context);
   const module = await import(moduleUrl);
   const fn = module[exportName];
   if (typeof fn !== "function") {
@@ -204,6 +206,32 @@ async function validateSlideModuleSource(modulePath) {
       fail(`Import not allowed in slide module: ${specifier}. Use @anybox/presentation-runtime only.`);
     }
   }
+  return source;
+}
+
+function slideModuleDataUrl(modulePath, source, context) {
+  const runtimeUrl = pathToFileURL(path.resolve(context.pluginRoot, "runtime/index.mjs")).href;
+  const rewritten = rewriteRuntimeImports(source, runtimeUrl);
+  const nonce = `${Date.now()}-${Math.random()}`;
+  const annotated = [
+    rewritten,
+    `//# sourceURL=${pathToFileURL(modulePath).href}`,
+    `// anybox-presentation-cache-bust=${nonce}`,
+    "",
+  ].join("\n");
+  return `data:text/javascript;base64,${Buffer.from(annotated, "utf8").toString("base64")}`;
+}
+
+function rewriteRuntimeImports(source, runtimeUrl) {
+  return source
+    .replace(
+      /\b(import\s+(?:[^'"]*?\s+from\s*)?)(["'])@anybox\/presentation-runtime\2/g,
+      (_, prefix) => `${prefix}${JSON.stringify(runtimeUrl)}`,
+    )
+    .replace(
+      /\b(export\s+[^'"]*?\s+from\s*)(["'])@anybox\/presentation-runtime\2/g,
+      (_, prefix) => `${prefix}${JSON.stringify(runtimeUrl)}`,
+    );
 }
 
 function exportNameFor(modulePath) {

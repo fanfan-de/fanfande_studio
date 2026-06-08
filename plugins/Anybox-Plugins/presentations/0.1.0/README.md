@@ -4,6 +4,8 @@ Code-first Anybox plugin for creating editable PowerPoint `.pptx` decks from exe
 
 ## Workflow
 
+Install dependencies in this plugin package first. For installed Anybox sessions, run the render, QA, and build scripts from the project directory that should receive the generated `workspaces/<task-id>` artifacts, using the installed script paths when needed.
+
 ```bash
 npm install
 node scripts/render_slide.mjs --workspace workspaces/sample-basic --slide slides/slide-01.mjs

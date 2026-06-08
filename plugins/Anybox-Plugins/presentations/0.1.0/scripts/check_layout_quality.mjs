@@ -1,20 +1,18 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parseArgs, pluginRootFrom, printJson, requireArg } from "./lib/cli.mjs";
+import { parseArgs, printJson, requireArg, resolveProjectPath } from "./lib/cli.mjs";
 import { checkLayoutQuality, summarizeQuality } from "./lib/quality.mjs";
-
-const pluginRoot = pluginRootFrom(import.meta.url);
 
 try {
   const args = parseArgs();
   let layoutPath;
   let workspaceDir = null;
   if (args.layout) {
-    layoutPath = path.resolve(String(args.layout));
-    workspaceDir = args.workspace ? path.resolve(pluginRoot, String(args.workspace)) : path.dirname(path.dirname(layoutPath));
+    layoutPath = resolveProjectPath(String(args.layout));
+    workspaceDir = args.workspace ? resolveProjectPath(String(args.workspace)) : path.dirname(path.dirname(layoutPath));
   } else {
-    workspaceDir = path.resolve(pluginRoot, requireArg(args, "workspace"));
+    workspaceDir = resolveProjectPath(requireArg(args, "workspace"));
     layoutPath = await findWorkspaceLayout(workspaceDir);
   }
 

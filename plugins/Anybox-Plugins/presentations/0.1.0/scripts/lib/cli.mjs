@@ -6,6 +6,14 @@ export function pluginRootFrom(importMetaUrl) {
   return path.resolve(path.dirname(file), "..");
 }
 
+export function resolveProjectPath(value, baseDir = process.cwd()) {
+  return path.resolve(baseDir, String(value));
+}
+
+export function projectWorkspacesRoot(baseDir = process.cwd()) {
+  return path.resolve(baseDir, "workspaces");
+}
+
 export function parseArgs(argv = process.argv.slice(2)) {
   const args = {};
   for (let index = 0; index < argv.length; index += 1) {

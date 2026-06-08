@@ -20,25 +20,26 @@ Use this skill when the durable output should be an editable PowerPoint `.pptx` 
 ## Required Workflow
 
 1. Draft or update slide modules in `workspaces/<task-id>/slides/`.
-2. Render each changed slide:
+2. Run plugin scripts from the active project directory. If the script files are not present in the project, call the installed plugin script with an absolute path; `--workspace workspaces/<task-id>` is resolved relative to the current project directory.
+3. Render each changed slide:
 
 ```bash
 node scripts/render_slide.mjs --workspace workspaces/<task-id> --slide slides/slide-01.mjs
 ```
 
-3. Run layout QA:
+4. Run layout QA:
 
 ```bash
 node scripts/check_layout_quality.mjs --workspace workspaces/<task-id>
 ```
 
-4. Build the deck only after previews and QA pass:
+5. Build the deck only after previews and QA pass:
 
 ```bash
 node scripts/build_deck.mjs --workspace workspaces/<task-id>
 ```
 
-5. Deliver only `workspaces/<task-id>/output/final.pptx` unless the user explicitly asks for previews or QA artifacts.
+6. Deliver only `workspaces/<task-id>/output/final.pptx` unless the user explicitly asks for previews or QA artifacts.
 
 ## Sandbox Notes
 
