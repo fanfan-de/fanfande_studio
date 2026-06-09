@@ -73,6 +73,7 @@ const ConnectorsPage = lazy(() => import("./app/connectors/ConnectorsPage").then
 const PluginsPage = lazy(() => import("./app/plugins/PluginsPage").then((module) => ({ default: module.PluginsPage })))
 const PromptPresetsPage = lazy(() => import("./app/prompts/PromptPresetsPage").then((module) => ({ default: module.PromptPresetsPage })))
 const AutomationsPage = lazy(() => import("./app/automations/AutomationsPage").then((module) => ({ default: module.AutomationsPage })))
+const CalendarPage = lazy(() => import("./app/calendar/CalendarPage").then((module) => ({ default: module.CalendarPage })))
 
 function importSettingsPage() {
   return import("./app/settings/SettingsPage").then((module) => ({ default: module.SettingsPage }))
@@ -1969,10 +1970,11 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
   const isPromptEditorView = leftSidebarView === "prompts"
   const isGlobalSkillsView = leftSidebarView === "skills"
   const isAutomationsView = leftSidebarView === "automations"
+  const isCalendarView = leftSidebarView === "calendar"
   const isConnectionsView = leftSidebarView === "connections"
   const isBuiltinToolsView = leftSidebarView === "tools"
   const isShellSidebarManagedView = isPromptEditorView || isGlobalSkillsView || isBuiltinToolsView
-  const isFullSurfaceView = isConnectionsView || isAutomationsView
+  const isFullSurfaceView = isConnectionsView || isAutomationsView || isCalendarView
   const windowControls = useMemo(
     () => (
       isMacOS
@@ -2242,6 +2244,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
               onRenameGlobalSkillDraftStart={handleRenameGlobalSkillDraftStart}
                 onSave={handleSaveGlobalSkillFile}
               />
+            </Suspense>
+          ) : isCalendarView ? (
+            <Suspense fallback={null}>
+              <CalendarPage windowControls={windowControls} />
             </Suspense>
           ) : isAutomationsView ? (
             <Suspense fallback={null}>

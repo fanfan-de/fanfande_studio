@@ -3,6 +3,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   AutomationIcon,
+  CalendarIcon,
   ConnectedStatusIcon,
   FileTextIcon,
   LayoutSidebarLeftIcon,
@@ -26,6 +27,7 @@ interface ActivityRailProps {
 
 const primaryLeftRailViews = [
   { view: "workspace" as const, label: "Open workspace", Icon: LayoutSidebarLeftIcon },
+  { view: "calendar" as const, label: "Open calendar", Icon: CalendarIcon },
   { view: "automations" as const, label: "Open automations", Icon: AutomationIcon },
 ]
 

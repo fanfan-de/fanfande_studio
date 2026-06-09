@@ -5,6 +5,7 @@ import { cors } from "hono/cors"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { AutomationEventRoutes } from "#server/routes/automation-events.ts"
 import { AutomationRoutes, AutomationRunRoutes } from "#server/routes/automations.ts"
+import { CalendarRoutes } from "#server/routes/calendar.ts"
 import { ProjectRoutes } from "#server/routes/projects.ts"
 import { PermissionsRoutes } from "#server/routes/permissions.ts"
 import { PtyRoutes } from "#server/routes/pty.ts"
@@ -130,6 +131,7 @@ export function createServerRuntime(options: Pick<ServerOptions, "corsWhitelist"
   app.route("/api/automation-events", AutomationEventRoutes())
   app.route("/api/automations", AutomationRoutes())
   app.route("/api/automation-runs", AutomationRunRoutes())
+  app.route("/api/calendar", CalendarRoutes())
   app.route("/api/projects", ProjectRoutes({ ptyRegistry }))
   app.route("/api/sessions", SessionRoutes({ ptyRegistry }))
 
