@@ -39,8 +39,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/linear/linear-0.0.0.zip",
-    "sha256": "09decaf8729d82ab0a019a4475e8138e0103851d46c075e544e0fb6d40d8bbee",
-    "size": 306196
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/linear/linear-0.0.0.zip",
+    "sha256": "6734bd0f9c27ca0440bb76bdf9af9a529b61f9668b139414a4a5253204d465e0",
+    "size": 306308
   }
 }

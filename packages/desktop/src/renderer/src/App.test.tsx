@@ -1,4 +1,4 @@
-﻿import { act, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import type { DockviewApi } from "dockview-react"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
@@ -312,7 +312,7 @@ function createPermissionRequest(overrides: PermissionRequestPromptOverrides = {
       detailsAvailable: true,
       details: {
         paths: ["README.md"],
-        workdir: "C:\\Projects\\anybox_studio",
+        workdir: "C:\\Projects\\anybox",
       },
       allowedDecisions: ["deny", "allow"],
       recommendedDecision: "allow",
@@ -792,7 +792,7 @@ describe("App", () => {
       })),
       getAgentConfig: vi.fn().mockResolvedValue({
         baseURL: "http://127.0.0.1:4096",
-        defaultDirectory: "C:\\Projects\\anybox_studio",
+        defaultDirectory: "C:\\Projects\\anybox",
       }),
       getToolPermissionMode: vi.fn().mockResolvedValue({
         mode: "default",
@@ -808,7 +808,7 @@ describe("App", () => {
         id: "pty-1",
         sessionID: "session-chat-1",
         title: "Terminal 1",
-        cwd: "C:\\Projects\\anybox_studio",
+        cwd: "C:\\Projects\\anybox",
         shell: "powershell.exe",
         rows: 24,
         cols: 80,
@@ -822,7 +822,7 @@ describe("App", () => {
         id: "pty-1",
         sessionID: "session-chat-1",
         title: "Terminal 1",
-        cwd: "C:\\Projects\\anybox_studio",
+        cwd: "C:\\Projects\\anybox",
         shell: "powershell.exe",
         rows: 24,
         cols: 80,
@@ -838,7 +838,7 @@ describe("App", () => {
         id: "pty-1",
         sessionID: "session-chat-1",
         title: "Terminal 1",
-        cwd: "C:\\Projects\\anybox_studio",
+        cwd: "C:\\Projects\\anybox",
         shell: "powershell.exe",
         rows: 24,
         cols: 80,
@@ -1168,7 +1168,7 @@ describe("App", () => {
         session: {
           id: "session-backend",
           projectID: "project-backend",
-          directory: "C:\\Projects\\anybox_studio",
+          directory: "C:\\Projects\\anybox",
           title: "Backend session",
           created: 1,
           updated: 1,
@@ -2177,7 +2177,7 @@ describe("App", () => {
     const userAgentSpy = vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(
       "Mozilla/5.0 Electron/39.0.0",
     )
-    window.desktop!.previewGuestPreloadPath = "file:///C:/Projects/anybox_studio/packages/desktop/out/preload/preview-webview.mjs"
+    window.desktop!.previewGuestPreloadPath = "file:///C:/Projects/anybox/packages/desktop/out/preload/preview-webview.mjs"
 
     render(<App />)
 
@@ -12269,7 +12269,7 @@ describe("App", () => {
           id: "pty-1",
           sessionID: "session-chat-1",
           title: "Terminal 1",
-          cwd: "C:\\Projects\\anybox_studio",
+          cwd: "C:\\Projects\\anybox",
           shell: "powershell.exe",
           rows: 24,
           cols: 80,
@@ -12322,7 +12322,7 @@ describe("App", () => {
         id: "pty-1",
         sessionID: "session-chat-1",
         title: "Terminal 1",
-        cwd: "C:\\Projects\\anybox_studio",
+        cwd: "C:\\Projects\\anybox",
         shell: "powershell.exe",
         rows: 24,
         cols: 80,
@@ -12336,7 +12336,7 @@ describe("App", () => {
         id: "pty-2",
         sessionID: "session-chat-1",
         title: "Terminal 2",
-        cwd: "C:\\Projects\\anybox_studio",
+        cwd: "C:\\Projects\\anybox",
         shell: "powershell.exe",
         rows: 24,
         cols: 80,
@@ -12350,7 +12350,7 @@ describe("App", () => {
       id,
       sessionID: "session-chat-1",
       title: id === "pty-1" ? "Terminal 1" : "Terminal 2",
-      cwd: "C:\\Projects\\anybox_studio",
+      cwd: "C:\\Projects\\anybox",
       shell: "powershell.exe",
       rows: 24,
       cols: 80,
@@ -12380,7 +12380,7 @@ describe("App", () => {
           id: "pty-1",
           sessionID: "session-chat-1",
           title: "Terminal 1",
-          cwd: "C:\\Projects\\anybox_studio",
+          cwd: "C:\\Projects\\anybox",
           shell: "powershell.exe",
           rows: 24,
           cols: 80,

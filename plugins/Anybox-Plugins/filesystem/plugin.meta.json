@@ -81,8 +81,8 @@
   "skillPreviews": [],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/filesystem/filesystem-1.0.0.zip",
-    "sha256": "5d3b5ecce545568086b5503cb92eb52a74a8054c1dc868fd32a1d0480cfecc20",
-    "size": 1534
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/filesystem/filesystem-1.0.0.zip",
+    "sha256": "2bcb04dd786dd22288c43bac146f5d035a00aa2a72259c3316714c107b0ea2fe",
+    "size": 944
   }
 }

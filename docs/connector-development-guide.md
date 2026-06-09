@@ -1,6 +1,6 @@
 # Anybox Connector 开发指南
 
-本文档说明如何在当前 `fanfande_studio` 项目里新增、维护和发布 Connector。这里的 Connector 指 Anybox 平台级或插件级的外部系统连接能力，例如 Gmail、飞书、Slack、GitHub、数据库、浏览器、本地文件等。
+本文档说明如何在当前 `anybox` 项目里新增、维护和发布 Connector。这里的 Connector 指 Anybox 平台级或插件级的外部系统连接能力，例如 Gmail、飞书、Slack、GitHub、数据库、浏览器、本地文件等。
 
 ## 设计原则
 
@@ -155,7 +155,7 @@ credential: {
 
 ```text
 packages/anyboxagent/plugins/builtin/<id>/0.1.0/
-  .fanfande-plugin/
+  .anybox-plugin/
     plugin.json
   connectors/
     <id>/
@@ -433,7 +433,7 @@ packages/desktop/build/agent-runtime/connectors/<id>/server.js
 Agent 侧：
 
 ```powershell
-cd C:\Projects\fanfande_studio\packages\anyboxagent
+cd C:\Projects\anybox\packages\anyboxagent
 bun test Test/plugin.test.ts
 bunx tsc --noEmit -p tsconfig.json
 ```
@@ -441,7 +441,7 @@ bunx tsc --noEmit -p tsconfig.json
 Desktop 侧：
 
 ```powershell
-cd C:\Projects\fanfande_studio\packages\desktop
+cd C:\Projects\anybox\packages\desktop
 npm run typecheck
 npx vitest run src/renderer/src/app/connectors/ConnectorsPage.test.tsx src/main/managed-agent.test.ts
 npm run build:agent-runtime
@@ -465,7 +465,7 @@ npm run verify:agent-runtime
 2. 明确最小 scope 和初版工具列表。
 3. 在 `connector.ts` 添加平台定义。
 4. 如果需要本地 wrapper，新增 `plugins/builtin/<id>/0.1.0/connectors/<id>/server.js`。
-5. 如果需要插件依赖，新增或更新 `.fanfande-plugin/plugin.json` 的 `connectorRequirements`。
+5. 如果需要插件依赖，新增或更新 `.anybox-plugin/plugin.json` 的 `connectorRequirements`。
 6. 如果需要 skill，新增 `skills/<id>/SKILL.md`。
 7. 更新 `prepare-agent-runtime.mjs` 和 `verify-agent-runtime.mjs`。
 8. 如果新增 schema 字段，同步 main/preload/renderer/shared 类型。

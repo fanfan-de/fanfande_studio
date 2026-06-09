@@ -52,8 +52,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/temporal/temporal-0.2.0.zip",
-    "sha256": "2e1b358f931b6c17a5022b651153d4127e9928768d06c15c535ad51862e15855",
-    "size": 142472
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/temporal/temporal-0.2.0.zip",
+    "sha256": "b0773d7e4ef79d91c6be1b10114078cab7ef1395125960a22d56f7f739f8f775",
+    "size": 142768
   }
 }

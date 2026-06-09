@@ -330,8 +330,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/twilio-developer-kit/twilio-developer-kit-0.2.0.zip",
-    "sha256": "dba1ba6025bc104815ebadc4d27f73a6d17e22714bedede8a56c78a1a2ec3581",
-    "size": 271802
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/twilio-developer-kit/twilio-developer-kit-0.2.0.zip",
+    "sha256": "b3f14ed3b082172f15d11fed21054997f9b10a969c6b9c5cfe1478753120dffc",
+    "size": 271798
   }
 }

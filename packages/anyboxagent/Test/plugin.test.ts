@@ -807,7 +807,7 @@ async function writeBrowserConnectorRequirementPluginPackage() {
 
   const packageSourceRoot = pluginInstallRoot()
   const packageRoot = join(packageSourceRoot, "browser", "0.1.0")
-  const manifestRoot = join(packageRoot, ".fanfande-plugin")
+  const manifestRoot = join(packageRoot, ".anybox-plugin")
   const skillRoot = join(packageRoot, "skills", "browser")
   await mkdir(manifestRoot, { recursive: true })
   await mkdir(skillRoot, { recursive: true })
@@ -829,12 +829,12 @@ async function writeBrowserConnectorRequirementPluginPackage() {
     version: "0.1.0",
     description: "Control Chrome through the Anybox browser extension and browser MCP connector.",
     author: {
-      name: "Fanfande",
+      name: "Anybox",
     },
     interface: {
       displayName: "Browser",
       shortDescription: "Use Chrome tabs through the Anybox browser extension.",
-      developerName: "Fanfande",
+      developerName: "Anybox",
       category: "Browser",
       logo: "BR",
     },

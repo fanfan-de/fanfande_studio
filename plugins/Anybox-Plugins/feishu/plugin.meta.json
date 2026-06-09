@@ -7,7 +7,7 @@
     "name": "Anybox"
   },
   "homepage": "https://open.feishu.cn/",
-  "repository": "https://github.com/fanfan-de/Anybox-Plugins",
+  "repository": "https://github.com/fanfan-de/anybox/tree/master/plugins/Anybox-Plugins/feishu",
   "license": "MIT",
   "keywords": [
     "feishu",
@@ -155,8 +155,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/feishu/feishu-0.1.0.zip",
-    "sha256": "126efa220f6bfc422c1998f345a3bfb3c26998208715640734daa6998082d575",
-    "size": 7367
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/feishu/feishu-0.1.0.zip",
+    "sha256": "1aae14ec93379a2a1211ddd987bc26141ca57e8766d9114ce37d23a4bdd57bf6",
+    "size": 6091
   }
 }

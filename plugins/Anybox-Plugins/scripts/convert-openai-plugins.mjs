@@ -28,7 +28,7 @@ if (!sourceArg) {
 const sourceRoot = resolve(sourceArg)
 const pluginsRoot = existsSync(join(sourceRoot, "plugins")) ? join(sourceRoot, "plugins") : sourceRoot
 const overwriteExisting = Boolean(args["overwrite-existing"])
-const stagingRoot = resolve(process.env.TEMP ?? process.env.TMP ?? repoRoot, "fanfande-openai-plugin-conversion")
+const stagingRoot = resolve(process.env.TEMP ?? process.env.TMP ?? repoRoot, "anybox-openai-plugin-conversion")
 
 const converted = []
 const skipped = []
@@ -58,7 +58,7 @@ try {
     const skillPreviews = await discoverSkillPreviews(pluginRoot, skillRoots, sourceManifest.name)
     const mcpServers = await convertMcpServers(pluginRoot, sourceManifest.mcpServers, sourceManifest.description)
     if (skillPreviews.length === 0 && mcpServers.length === 0) {
-      skipped.push({ name: pluginName, reason: "app-only connector metadata has no Fanfande-installable local skill or MCP server" })
+      skipped.push({ name: pluginName, reason: "app-only connector metadata has no Anybox-installable local skill or MCP server" })
       continue
     }
 
@@ -78,15 +78,15 @@ try {
       filter: (source) => !source.split(/[\\/]/).includes(".codex-plugin"),
     })
 
-    const fanfandeManifest = await buildFanfandeManifest(sourceManifest, pluginRoot, skillRoots, mcpServers, {
+    const anyboxManifest = await buildAnyboxManifest(sourceManifest, pluginRoot, skillRoots, mcpServers, {
       embedAssets: false,
     })
-    const registryManifest = await buildFanfandeManifest(sourceManifest, pluginRoot, skillRoots, mcpServers, {
+    const registryManifest = await buildAnyboxManifest(sourceManifest, pluginRoot, skillRoots, mcpServers, {
       embedAssets: true,
       maxAssetBytes: 64 * 1024,
     })
-    await mkdir(join(packageRoot, ".fanfande-plugin"), { recursive: true })
-    await writeJson(join(packageRoot, ".fanfande-plugin", "plugin.json"), fanfandeManifest)
+    await mkdir(join(packageRoot, ".anybox-plugin"), { recursive: true })
+    await writeJson(join(packageRoot, ".anybox-plugin", "plugin.json"), anyboxManifest)
 
     await mkdir(outputDir, { recursive: true })
     const zipName = `${pluginID}-${version}.zip`
@@ -101,7 +101,7 @@ try {
       skillPreviews: skillPreviews.map(({ id: _id, ...preview }) => preview),
       package: {
         type: "zip",
-        url: `https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/${pluginID}/${zipName}`,
+        url: `https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/${pluginID}/${zipName}`,
         sha256: createHash("sha256").update(zipBytes).digest("hex"),
         size: zipBytes.byteLength,
       },
@@ -256,7 +256,7 @@ function titleFromID(value) {
     .join(" ")
 }
 
-async function buildFanfandeManifest(sourceManifest, pluginRoot, skillRoots, mcpServers, assetOptions) {
+async function buildAnyboxManifest(sourceManifest, pluginRoot, skillRoots, mcpServers, assetOptions) {
   const manifest = {}
   for (const key of ["name", "version", "description", "author", "homepage", "repository", "license", "keywords"]) {
     if (sourceManifest[key] !== undefined) manifest[key] = sourceManifest[key]
@@ -349,6 +349,6 @@ async function updateIndex() {
     .map((entry) => entry.name)
     .filter((name) => existsSync(join(repoRoot, name, "plugin.meta.json")))
     .sort((left, right) => left.localeCompare(right))
-  const urls = dirs.map((name) => `https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/${name}`)
+  const urls = dirs.map((name) => `https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/${name}`)
   await writeJson(join(repoRoot, "index.json"), urls)
 }

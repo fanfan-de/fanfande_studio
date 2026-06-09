@@ -73,8 +73,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/hyperframes/hyperframes-0.1.0.zip",
-    "sha256": "a9bb29645d2bab6d91b57960c1431ae61a4996f15138b994f5444850e0fb5202",
-    "size": 210051
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/hyperframes/hyperframes-0.1.0.zip",
+    "sha256": "c25077b267d8962c4f1e6c628c1067151344f2e8be871fa4d90ea1c87ed9f5f9",
+    "size": 210173
   }
 }

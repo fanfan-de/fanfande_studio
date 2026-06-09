@@ -2322,7 +2322,7 @@ describe("ThreadView assistant response markdown", () => {
             kind: "text",
             timestamp: 1,
             label: "Assistant",
-            text: "[ThreadView.tsx](C:/Projects/anybox_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx:42)",
+            text: "[ThreadView.tsx](C:/Projects/anybox/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx:42)",
             status: "completed",
           },
         ],
@@ -2339,7 +2339,7 @@ describe("ThreadView assistant response markdown", () => {
         startLineNumber: 42,
         endLineNumber: 42,
       },
-      path: "C:/Projects/anybox_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
+      path: "C:/Projects/anybox/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
     })
   })
 

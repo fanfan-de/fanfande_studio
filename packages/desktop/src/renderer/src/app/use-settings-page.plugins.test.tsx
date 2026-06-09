@@ -11,7 +11,7 @@ function createPlugin(id: string, name: string): PluginCatalogItem {
     name,
     description: `${name} plugin`,
     version: "1.0.0",
-    publisher: "Fanfande",
+    publisher: "Anybox",
     category: "Code",
     screenshots: [],
     tags: [],

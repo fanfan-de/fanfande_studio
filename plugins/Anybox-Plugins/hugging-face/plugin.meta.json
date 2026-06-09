@@ -99,8 +99,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/hugging-face/hugging-face-1.0.0.zip",
-    "sha256": "7d7793095fa744e67de01819d2c24897e67bfb34272d4e5394906d587bcd4fd2",
-    "size": 349699
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/hugging-face/hugging-face-1.0.0.zip",
+    "sha256": "e3640c4bba92aa5cfec5433d4bb3eb28cc6bc07ad0b424c0807ec91603a7390e",
+    "size": 349823
   }
 }

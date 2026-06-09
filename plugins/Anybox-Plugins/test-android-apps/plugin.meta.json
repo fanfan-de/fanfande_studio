@@ -61,8 +61,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/test-android-apps/test-android-apps-0.1.0.zip",
-    "sha256": "da55d90bf4bb9aa56b68c9c3f16baf6c8da52fe6c9cb026bead8ed771d54a66f",
-    "size": 99597
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/test-android-apps/test-android-apps-0.1.0.zip",
+    "sha256": "77ba91aaf119e0b87cf6ca52598f92474ae33be1ab934e161dd56a0fdd91cc5a",
+    "size": 99731
   }
 }

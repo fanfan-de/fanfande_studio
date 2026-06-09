@@ -52,8 +52,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/gmail/gmail-0.1.0.zip",
-    "sha256": "9b9dc855e46b119ef5fd83842b4ba9017eae63150794ae5b91385aed0e22480b",
-    "size": 66305
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/gmail/gmail-0.1.0.zip",
+    "sha256": "c18c309c506fc0da82497c158831ab01bfe58b76336ae57ee309c429029fa2ac",
+    "size": 66415
   }
 }

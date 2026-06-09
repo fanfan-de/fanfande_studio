@@ -28,7 +28,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>anybox-mobile</string>
-				<string>studio.fanfande.anybox.mobile</string>
+				<string>com.anybox.mobile</string>
 			</array>
 		</dict>
 	</array>

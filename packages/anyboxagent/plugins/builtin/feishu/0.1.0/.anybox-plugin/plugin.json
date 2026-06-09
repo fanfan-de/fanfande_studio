@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Read Feishu profile, search Drive files, and inspect Docx content through the Anybox Feishu connector.",
   "author": {
-    "name": "Fanfande"
+    "name": "Anybox"
   },
   "homepage": "https://open.feishu.cn/document/home/index",
   "keywords": ["feishu", "lark", "docs", "oauth"],
@@ -11,7 +11,7 @@
     "displayName": "Feishu",
     "shortDescription": "Connect a Feishu custom app and expose user-authorized document tools.",
     "longDescription": "A built-in plugin that uses the Anybox Feishu connector for custom-app OAuth, a local stdio MCP wrapper, and runtime token injection.",
-    "developerName": "Fanfande",
+    "developerName": "Anybox",
     "category": "Automation",
     "capabilities": ["docs", "oauth", "mcp"],
     "logo": "FS",

@@ -63,8 +63,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/circleci/circleci-1.0.0.zip",
-    "sha256": "3b0e88660ffca641b29730b01f924fb34c77a703ceb70e3337ae5790cbfdcbf3",
-    "size": 21540
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/circleci/circleci-1.0.0.zip",
+    "sha256": "e069fe0062f76325d3d98e61b84e0ab7464bd55185e19797aba2871c10b26866",
+    "size": 21656
   }
 }

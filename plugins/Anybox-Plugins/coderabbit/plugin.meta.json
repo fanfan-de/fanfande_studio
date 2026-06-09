@@ -48,8 +48,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/coderabbit/coderabbit-1.1.1.zip",
-    "sha256": "f14911ea0238950a071fb09d0a4c01317aa6af77e5ee13e827ac3e50feb0f797",
-    "size": 8861
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/coderabbit/coderabbit-1.1.1.zip",
+    "sha256": "db50088272cb58bc73b8ca61ec20aa967c9dd0699d5ceeff02d07edf33bc0a63",
+    "size": 8981
   }
 }

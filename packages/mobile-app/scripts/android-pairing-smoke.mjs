@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url"
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const defaultApkPath = path.join(packageRoot, "build", "anybox-mobile-debug.apk")
 const defaultScreenshotPath = path.join(packageRoot, "build", "anybox-mobile-pairing.png")
-const defaultPackageName = "studio.fanfande.anybox.mobile"
+const defaultPackageName = "com.anybox.mobile"
 const remoteScreenshotPath = "/sdcard/anybox-mobile-pairing-smoke.png"
 const remoteWindowPath = "/sdcard/anybox-mobile-pairing-window.xml"
 const mockPairingCode = "smoke-code"

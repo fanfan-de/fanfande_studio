@@ -11,7 +11,7 @@
   "interface": {
     "displayName": "测试插件",
     "shortDescription": "一个简单的测试插件，演示插件基本结构。",
-    "longDescription": "这是一个测试版插件，包含一个 hello-world skill，用于验证 Fanfande Studio 插件系统的创建、加载和运行流程。",
+    "longDescription": "这是一个测试版插件，包含一个 hello-world skill，用于验证 Anybox 插件系统的创建、加载和运行流程。",
     "developerName": "Test Developer",
     "category": "Docs",
     "capabilities": ["Read"],

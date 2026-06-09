@@ -47,8 +47,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/sentry/sentry-0.1.0.zip",
-    "sha256": "f9438b23d0da9650a4568b5644cfbc14537c093db93591e4b0b307b7c9823d4b",
-    "size": 14885
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/sentry/sentry-0.1.0.zip",
+    "sha256": "8ffdec9c62223ec2119b2f1ac8a55871ab0492c063680d1de874eda693078ca8",
+    "size": 14997
   }
 }

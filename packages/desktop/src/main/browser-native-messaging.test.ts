@@ -5,7 +5,7 @@ vi.mock("electron", () => ({
     get isPackaged() {
       return false
     },
-    getAppPath: vi.fn(() => "C:\\Projects\\fanfande_studio\\packages\\desktop"),
+    getAppPath: vi.fn(() => "C:\\Projects\\anybox\\packages\\desktop"),
     getPath: vi.fn(() => "C:\\Users\\tester\\AppData\\Roaming\\Anybox"),
   },
 }))

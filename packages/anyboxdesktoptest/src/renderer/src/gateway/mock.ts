@@ -19,8 +19,8 @@ export class MockGateway implements AgentGateway {
       {
         id: "project_mock_001",
         name: "Mock Workspace",
-        worktree: "C:/Projects/anybox_studio",
-        sandboxes: ["C:/Projects/anybox_studio"],
+        worktree: "C:/Projects/anybox",
+        sandboxes: ["C:/Projects/anybox"],
         created: Date.now() - 5_000,
         updated: Date.now(),
       },

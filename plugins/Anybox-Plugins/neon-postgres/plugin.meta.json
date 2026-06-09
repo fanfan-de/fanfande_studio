@@ -55,8 +55,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/neon-postgres/neon-postgres-1.0.0.zip",
-    "sha256": "d0516b2e5e27560f4e6fe23ec6cfcb2f558a74c0d78a6bac2f7a057ed39cd8e2",
-    "size": 17715
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/neon-postgres/neon-postgres-1.0.0.zip",
+    "sha256": "4ec9f8f976efb37704d0ff52200d96f20639dc5e15f7bd23e0094630e36a6ecd",
+    "size": 17841
   }
 }

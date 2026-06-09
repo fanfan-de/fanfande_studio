@@ -15,7 +15,7 @@
   "interface": {
     "displayName": "测试插件",
     "shortDescription": "一个简单的测试插件，演示插件基本结构。",
-    "longDescription": "这是一个测试版插件，包含一个 hello-world skill，用于验证 Fanfande Studio 插件系统的创建、加载和运行流程。",
+    "longDescription": "这是一个测试版插件，包含一个 hello-world skill，用于验证 Anybox 插件系统的创建、加载和运行流程。",
     "developerName": "Test Developer",
     "category": "Docs",
     "capabilities": [
@@ -36,8 +36,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/test-plugin/test-plugin-1.0.0.zip",
-    "sha256": "16e079980561e07bcf299196ce04c271119d9125e3224dcd8f80f4c938da7f37",
-    "size": 1272
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/test-plugin/test-plugin-1.0.0.zip",
+    "sha256": "ea19ac7cea4a85057727e7f4c7512407bf98c56768128f3f1b87193ee4a2b286",
+    "size": 816
   }
 }

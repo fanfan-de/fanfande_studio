@@ -22,9 +22,6 @@ const getPipUrl = "https://bootstrap.pypa.io/get-pip.py"
 function readEnv(key) {
   const value = process.env[key]?.trim()
   if (value) return value
-  if (key.startsWith("ANYBOX_")) {
-    return process.env[`FANFANDE_${key.slice("ANYBOX_".length)}`]?.trim()
-  }
   return undefined
 }
 

@@ -46,7 +46,7 @@ iOS uses the same `anybox-mobile://` deep link scheme and the same Provider/rela
 On Windows, use a short pnpm virtual store path before local APK builds. Native CMake paths can otherwise exceed Windows path limits:
 
 ```powershell
-corepack pnpm install --frozen-lockfile --force --virtual-store-dir C:\p\fanfande-pnpm
+corepack pnpm install --frozen-lockfile --force --virtual-store-dir C:\p\anybox-pnpm
 ```
 
 Scan the QR code with Expo Go first. For a custom Android build:
@@ -210,7 +210,7 @@ corepack pnpm mobile:update:preview -- --message "Fix mobile workspace refresh"
 corepack pnpm mobile:update:production -- --message "Fix mobile workspace refresh"
 ```
 
-For full app updates, the default setup reads GitHub Releases from `fanfan-de/fanfande_studio`, filters tags that start with `mobile-v`, and ignores desktop releases. A mobile release should use a tag like `mobile-v0.2.0` and include these assets:
+For full app updates, the default setup reads GitHub Releases from `fanfan-de/anybox`, filters tags that start with `mobile-v`, and ignores desktop releases. A mobile release should use a tag like `mobile-v0.2.0` and include these assets:
 
 ```text
 anybox-mobile.apk

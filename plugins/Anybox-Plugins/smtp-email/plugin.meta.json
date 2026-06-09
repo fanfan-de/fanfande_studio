@@ -7,7 +7,7 @@
     "name": "Anybox"
   },
   "homepage": "https://en.wikipedia.org/wiki/Simple_Mail_Transfer_Protocol",
-  "repository": "https://github.com/fanfan-de/Anybox-Plugins",
+  "repository": "https://github.com/fanfan-de/anybox/tree/master/plugins/Anybox-Plugins/smtp-email",
   "license": "MIT",
   "keywords": [
     "邮箱",
@@ -158,8 +158,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/smtp-email/smtp-email-0.1.0.zip",
-    "sha256": "91599b945f0c7c17aa0fa5f7a3c1868e3ca215250cb62736d37fb333afb1eada",
-    "size": 10135
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/smtp-email/smtp-email-0.1.0.zip",
+    "sha256": "f44b5c92c7fa4b840ce3fff6d2e738c46e22c0beb1dbbdcdaecd739a49cba2ee",
+    "size": 7653
   }
 }

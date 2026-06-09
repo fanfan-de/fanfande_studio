@@ -289,22 +289,6 @@ importers:
         specifier: ^4.0.8
         version: 4.1.4(@opentelemetry/api@1.9.0)(@types/node@24.12.2)(jsdom@27.4.0)(vite@7.3.1(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(terser@5.48.0)(yaml@2.8.3))
 
-  packages/fanfandeagent:
-    dependencies:
-      ai:
-        specifier: ^6.0.39
-        version: 6.0.157(zod@4.3.6)
-      typescript:
-        specifier: ^5
-        version: 5.9.3
-      zod:
-        specifier: ^4.3.5
-        version: 4.3.6
-    devDependencies:
-      '@types/bun':
-        specifier: latest
-        version: 1.3.14
-
   packages/mobile-app:
     dependencies:
       '@expo/metro-runtime':
@@ -2708,9 +2692,6 @@ packages:
   '@types/bun@1.3.11':
     resolution: {integrity: sha512-5vPne5QvtpjGpsGYXiFyycfpDF2ECyPcTSsFBMa0fraoxiQyMJ3SmuQIGhzPg2WJuWxVBoxWJ2kClYTcw/4fAg==}
 
-  '@types/bun@1.3.14':
-    resolution: {integrity: sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw==}
-
   '@types/bunyan@1.8.11':
     resolution: {integrity: sha512-758fRH7umIMk5qt5ELmRMff4mLDlN+xyYzC+dkPTdKwbSkJFvz6xwyScrytPU0QIBbRRwbiE8/BIg8bpajerNQ==}
 
@@ -3273,9 +3254,6 @@ packages:
 
   bun-types@1.3.11:
     resolution: {integrity: sha512-1KGPpoxQWl9f6wcZh57LvrPIInQMn2TQ7jsgxqpRzg+l0QPOFvJVH7HmvHo/AiPgwXy+/Thf6Ov3EdVn1vOabg==}
-
-  bun-types@1.3.14:
-    resolution: {integrity: sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ==}
 
   bun-webgpu-darwin-arm64@0.1.6:
     resolution: {integrity: sha512-lIsDkPzJzPl6yrB5CUOINJFPnTRv6fF/Q8J1mAr43ogSp86WZEg9XZKaT6f3EUJ+9ETogGoMnoj1q0AwHUTbAQ==}
@@ -10287,10 +10265,6 @@ snapshots:
     dependencies:
       bun-types: 1.3.11
 
-  '@types/bun@1.3.14':
-    dependencies:
-      bun-types: 1.3.14
-
   '@types/bunyan@1.8.11':
     dependencies:
       '@types/node': 25.6.0
@@ -11048,10 +11022,6 @@ snapshots:
       typescript: 6.0.2
 
   bun-types@1.3.11:
-    dependencies:
-      '@types/node': 25.6.0
-
-  bun-types@1.3.14:
     dependencies:
       '@types/node': 25.6.0
 

@@ -85,8 +85,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/build-web-apps/build-web-apps-0.1.0.zip",
-    "sha256": "85452539fbd38881d27838e0529e357f0674d31070c14205e227989220ccfd8b",
-    "size": 211804
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/build-web-apps/build-web-apps-0.1.0.zip",
+    "sha256": "761dacc145d3477e362921511c144a8b3a4b949d095c6f44ed7c51d15f6c0011",
+    "size": 195656
   }
 }

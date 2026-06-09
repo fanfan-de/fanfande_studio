@@ -90,7 +90,7 @@ export function App() {
 
   const [platform, setPlatform] = useState("unknown")
   const [projects, setProjects] = useState<ProjectInfo[]>([])
-  const [directory, setDirectory] = useState("C:/Projects/anybox_studio")
+  const [directory, setDirectory] = useState("C:/Projects/anybox")
   const [sessionID, setSessionID] = useState("")
   const [prompt, setPrompt] = useState("Analyze the current workspace and propose a focused first milestone for this AI agent UI.")
   const [assistantText, setAssistantText] = useState("")

@@ -337,8 +337,8 @@ POST /api/mobile/approvals/:approvalID/deny
 `app.json` 配置了：
 
 - scheme：`anybox-mobile`
-- Android package：`studio.fanfande.anybox.mobile`
-- iOS bundle identifier：`studio.fanfande.anybox.mobile`
+- Android package：`com.anybox.mobile`
+- iOS bundle identifier：`com.anybox.mobile`
 - runtimeVersion policy：`appVersion`
 - Android 权限：`INTERNET`、`CAMERA`
 - iOS 本地网络与相机说明
@@ -353,7 +353,7 @@ POST /api/mobile/approvals/:approvalID/deny
 - OTA：通过 `expo-updates` 检查、下载并 reload。
 - 原生包：通过自定义 manifest 或 GitHub Releases 检查新 APK/IPA/TestFlight/App Store 链接。
 
-Android 默认读取 GitHub 仓库 `fanfan-de/fanfande_studio`，只接受 `mobile-v*` tag，并寻找：
+Android 默认读取 GitHub 仓库 `fanfan-de/anybox`，只接受 `mobile-v*` tag，并寻找：
 
 ```text
 anybox-mobile.apk

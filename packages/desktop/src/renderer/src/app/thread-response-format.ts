@@ -7,12 +7,10 @@ export interface ParsedAssistantResponseFormat {
 }
 
 const FORMAT_MARKER_PATTERN =
-  /^([ \t]*<!--[ \t]*(?:anybox|fanfande)-response-format:[ \t]*(html|markdown)[ \t]*-->[ \t]*)(?:(\r\n|\n|\r)|$)/
+  /^([ \t]*<!--[ \t]*anybox-response-format:[ \t]*(html|markdown)[ \t]*-->[ \t]*)(?:(\r\n|\n|\r)|$)/
 const STREAMING_MARKER_PREFIXES = [
   "<!-- anybox-response-format: html -->",
   "<!-- anybox-response-format: markdown -->",
-  "<!-- fanfande-response-format: html -->",
-  "<!-- fanfande-response-format: markdown -->",
 ]
 
 export function parseAssistantResponseFormat(text: string): ParsedAssistantResponseFormat {

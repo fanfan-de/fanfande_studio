@@ -104,8 +104,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/build-macos-apps/build-macos-apps-0.1.2.zip",
-    "sha256": "89704de1b331175846201fd26dce5b04affb9e8463b20a1a54417156a6282588",
-    "size": 53738
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/build-macos-apps/build-macos-apps-0.1.2.zip",
+    "sha256": "d4d993128e7a5291020ac9424ec85b155f78e0cfacfeacceabd935ad28a63725",
+    "size": 53870
   }
 }

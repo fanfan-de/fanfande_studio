@@ -55,8 +55,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/zotero/zotero-0.1.0.zip",
-    "sha256": "f4bca957aae3fe45e813071a012d9b66d1e159814ad5ab2bc70c21525f85306a",
-    "size": 31477
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/zotero/zotero-0.1.0.zip",
+    "sha256": "76da307fd50af110d5bbadf774a2caaa38f1fd930e87683d66564a1ba769197e",
+    "size": 31589
   }
 }

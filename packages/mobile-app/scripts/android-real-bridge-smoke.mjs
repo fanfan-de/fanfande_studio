@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const defaultApkPath = path.join(packageRoot, "build", "anybox-mobile-debug.apk")
 const defaultScreenshotPath = path.join(packageRoot, "build", "anybox-mobile-real-bridge.png")
-const defaultPackageName = "studio.fanfande.anybox.mobile"
+const defaultPackageName = "com.anybox.mobile"
 const defaultDesktopHandoffPath = path.join(process.env.APPDATA ?? "", "anybox-desktop-agent", "mobile-bridge-handoff.json")
 const remoteScreenshotPath = "/sdcard/anybox-mobile-real-bridge-smoke.png"
 const remoteWindowPath = "/sdcard/anybox-mobile-real-bridge-window.xml"

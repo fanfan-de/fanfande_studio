@@ -103,9 +103,9 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/github/github-1.0.0.zip",
-    "sha256": "1dad01fb6c4c270249e647f1bc2462c03ae7ed58e34b8e173caa0801cc6acb06",
-    "size": 70366
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/github/github-1.0.0.zip",
+    "sha256": "cb27b004f86994cf550046e7eb8615bbbc523e9a063741c6647866cc75bbdfb6",
+    "size": 70478
   },
   "skills": "./skills/"
 }

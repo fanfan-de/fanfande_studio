@@ -2,7 +2,7 @@
 
 ## 目标
 
-在 Anybox/Fanfande Studio 中加入类似 Codex App Automations 的后台自动化能力：用户可以创建定时或持续跟进任务，让 agent 在指定项目、会话或多个项目上自动运行，并把有价值的结果收敛到一个可 triage 的收件箱中。
+在 Anybox 中加入类似 Codex App Automations 的后台自动化能力：用户可以创建定时或持续跟进任务，让 agent 在指定项目、会话或多个项目上自动运行，并把有价值的结果收敛到一个可 triage 的收件箱中。
 
 官方 Codex 自动化的关键行为包括：后台运行重复任务；项目自动化需要 App 运行且项目目录可用；Git 项目可选择本地目录或独立 worktree；结果进入 Triage；自动化沿用默认沙箱和权限策略；自动化可复用 skills/plugins；线程自动化用于保留当前线程上下文的心跳式跟进。Anybox 应复用这些产品原则，但实现上应贴合当前仓库架构。
 

@@ -60,8 +60,8 @@
   "skillPreviews": [],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/context7/context7-1.0.0.zip",
-    "sha256": "a641d2f2a5cfe1ec095bb7923dbee36819db46409b799e5fffeb2fbd074caa05",
-    "size": 1364
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/context7/context7-1.0.0.zip",
+    "sha256": "86d9c558c090096f863fd159d9d8ae71d1ef357293d9cab41546a7597b737266",
+    "size": 782
   }
 }

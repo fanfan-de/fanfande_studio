@@ -72,8 +72,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/outlook-email/outlook-email-0.1.0.zip",
-    "sha256": "36d1f4f02115a1226e415530e1dee5f27f4d9a6c0dd9edda103d192fa7243f22",
-    "size": 412010
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/outlook-email/outlook-email-0.1.0.zip",
+    "sha256": "09784a6fea1e3466964f032cbbf412ab7d390e870792abf2c7826bf5923021b2",
+    "size": 412136
   }
 }

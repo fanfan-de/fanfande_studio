@@ -69,8 +69,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/google-drive/google-drive-0.1.0.zip",
-    "sha256": "6369e98ef72f6cd252149a040b2a396016a07d56e7d4e53c5521553142c30b1a",
-    "size": 268611
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/google-drive/google-drive-0.1.0.zip",
+    "sha256": "587635f1db7e02077635fc6dca799c5d4c92f7f7ff188149fc6564306a4db83a",
+    "size": 268911
   }
 }

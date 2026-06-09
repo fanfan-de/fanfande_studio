@@ -77,8 +77,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/teams/teams-0.1.0.zip",
-    "sha256": "01834aff74de620bb5a9ea03d64758ce7c2c44f5cbeccc1ac93c19cc024af3df",
-    "size": 332525
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/teams/teams-0.1.0.zip",
+    "sha256": "4a9cceb8dcb080936557f713430dbf5a1c004bb15c88324aa8510dbcd41da072",
+    "size": 332635
   }
 }

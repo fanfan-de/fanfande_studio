@@ -145,7 +145,7 @@ describe("ThreadHtml", () => {
     const onLocalFileLinkOpen = vi.fn()
     const { container } = render(
       <ThreadHtml
-        text='<a href="C:/Projects/anybox_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx:42">ThreadView.tsx</a>'
+        text='<a href="C:/Projects/anybox/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx:42">ThreadView.tsx</a>'
         onLocalFileLinkOpen={onLocalFileLinkOpen}
       />,
     )
@@ -158,7 +158,7 @@ describe("ThreadHtml", () => {
         startLineNumber: 42,
         endLineNumber: 42,
       },
-      path: "C:/Projects/anybox_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
+      path: "C:/Projects/anybox/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
     })
     expect(window.desktop?.openExternalUrl).not.toHaveBeenCalled()
   })

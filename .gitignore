@@ -23,7 +23,13 @@ packages/site/artifacts/
 packages/*/.codex/
 TODO/
 daily/
-fanfande_studio_vault/
+anybox_vault/*
+!anybox_vault/.obsidian/
+anybox_vault/.obsidian/*
+!anybox_vault/.obsidian/workspace.json
+!anybox_vault/Agent Client Protocol (ACP).md
+!anybox_vault/数据结构.md
+!anybox_vault/项目文档.md
 运营&宣发/
 bug/
 提示词/

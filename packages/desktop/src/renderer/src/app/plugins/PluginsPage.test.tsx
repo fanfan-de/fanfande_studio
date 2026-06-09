@@ -316,11 +316,11 @@ describe("PluginsPage", () => {
 
   it("opens installed plugin local files from the sidebar context menu", async () => {
     const getStoragePaths = vi.fn().mockResolvedValue({
-      installedPlugins: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed",
+      installedPlugins: "C:\\Users\\tester\\AppData\\Roaming\\Anybox\\agent\\data\\plugins\\installed",
     })
     const openPath = vi.fn().mockResolvedValue({
       ok: true,
-      targetPath: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed\\filesystem",
+      targetPath: "C:\\Users\\tester\\AppData\\Roaming\\Anybox\\agent\\data\\plugins\\installed\\filesystem",
     })
     window.desktop = {
       getStoragePaths,
@@ -346,16 +346,16 @@ describe("PluginsPage", () => {
 
     await waitFor(() => {
       expect(openPath).toHaveBeenCalledWith({
-        targetPath: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed\\filesystem",
+        targetPath: "C:\\Users\\tester\\AppData\\Roaming\\Anybox\\agent\\data\\plugins\\installed\\filesystem",
       })
     })
     expect(getStoragePaths).toHaveBeenCalledTimes(1)
   })
 
   it("opens installed plugin package roots when the agent reports the real package path", async () => {
-    const packageRoot = "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed\\presentations\\0.1.1"
+    const packageRoot = "C:\\Users\\tester\\AppData\\Roaming\\Anybox\\agent\\data\\plugins\\installed\\presentations\\0.1.1"
     const getStoragePaths = vi.fn().mockResolvedValue({
-      installedPlugins: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed",
+      installedPlugins: "C:\\Users\\tester\\AppData\\Roaming\\Anybox\\agent\\data\\plugins\\installed",
     })
     const openPath = vi.fn().mockResolvedValue({
       ok: true,
@@ -394,11 +394,11 @@ describe("PluginsPage", () => {
 
   it("does not open local files for installed plugins with missing packages", () => {
     const getStoragePaths = vi.fn().mockResolvedValue({
-      installedPlugins: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed",
+      installedPlugins: "C:\\Users\\tester\\AppData\\Roaming\\Anybox\\agent\\data\\plugins\\installed",
     })
     const openPath = vi.fn().mockResolvedValue({
       ok: true,
-      targetPath: "C:\\Users\\tester\\AppData\\Roaming\\Fanfande\\agent\\data\\plugins\\installed\\filesystem",
+      targetPath: "C:\\Users\\tester\\AppData\\Roaming\\Anybox\\agent\\data\\plugins\\installed\\filesystem",
     })
     window.desktop = {
       getStoragePaths,

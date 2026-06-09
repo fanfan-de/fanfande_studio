@@ -1,0 +1,4 @@
+interface:
+  display_name: "Start Anybox Dev"
+  short_description: "Launch the Anybox server and desktop client."
+  default_prompt: "Use $anybox-start-dev to launch the Anybox server and desktop client for local testing."

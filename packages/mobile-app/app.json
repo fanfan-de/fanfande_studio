@@ -21,7 +21,7 @@
     },
     "newArchEnabled": false,
     "android": {
-      "package": "studio.fanfande.anybox.mobile",
+      "package": "com.anybox.mobile",
       "versionCode": 5,
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
@@ -34,7 +34,7 @@
       ]
     },
     "ios": {
-      "bundleIdentifier": "studio.fanfande.anybox.mobile",
+      "bundleIdentifier": "com.anybox.mobile",
       "buildNumber": "5",
       "supportsTablet": true,
       "infoPlist": {
@@ -60,7 +60,7 @@
     },
     "extra": {
       "anyboxMobileReleaseUrl": "",
-      "anyboxMobileGitHubRepository": "fanfan-de/fanfande_studio",
+      "anyboxMobileGitHubRepository": "fanfan-de/anybox",
       "anyboxMobileGitHubReleaseTagPrefix": "mobile-v",
       "anyboxMobileGitHubApkAssetName": "anybox-mobile.apk",
       "anyboxMobileGitHubManifestAssetName": "anybox-mobile-release.json",

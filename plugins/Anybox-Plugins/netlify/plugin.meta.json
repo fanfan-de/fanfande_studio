@@ -103,8 +103,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/netlify/netlify-1.1.0.zip",
-    "sha256": "21dc235e2602dcfd204bd101f0c718d5d14ec99dc3327792011c8d8a3965cbfc",
-    "size": 150080
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/netlify/netlify-1.1.0.zip",
+    "sha256": "e07adc07441edeeeed8aaa557078fe41e6e5627785f4cb16932fb9ad523fbdd3",
+    "size": 150194
   }
 }
