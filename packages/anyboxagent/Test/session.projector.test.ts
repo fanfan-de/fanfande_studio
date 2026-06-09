@@ -351,7 +351,7 @@ test("appendAndProject is idempotent and publishes only committed events", async
   })
 })
 
-test("stream text runtime events publish immediately without event-store persistence", async () => {
+test("stream delta runtime events publish immediately without event-store persistence", async () => {
   await Instance.provide({
     directory: process.cwd(),
     async fn() {
@@ -387,6 +387,78 @@ test("stream text runtime events publish immediately without event-store persist
       } finally {
         subscription.close()
       }
+    },
+  })
+})
+
+test("stream boundary runtime events persist for trace replay", async () => {
+  await Instance.provide({
+    directory: process.cwd(),
+    async fn() {
+      const sessionID = Identifier.ascending("session")
+      const turnID = Identifier.ascending("turn")
+      const messageID = Identifier.ascending("message")
+      const textPartID = Identifier.ascending("part")
+      const reasoningPartID = Identifier.ascending("part")
+      const factory = RuntimeEvent.createRuntimeEventFactory({
+        sessionID,
+        turnID,
+      })
+      const events = [
+        factory.next("text.part.started", {
+          messageID,
+          partID: textPartID,
+          kind: "text",
+          text: "",
+        }),
+        factory.next("text.part.completed", {
+          part: Message.TextPart.parse({
+            id: textPartID,
+            sessionID,
+            messageID,
+            type: "text",
+            text: "hello",
+            time: {
+              start: 1,
+              end: 2,
+            },
+          }),
+        }),
+        factory.next("reasoning.part.started", {
+          messageID,
+          partID: reasoningPartID,
+          kind: "reasoning",
+          text: "",
+        }),
+        factory.next("reasoning.part.completed", {
+          part: Message.ReasoningPart.parse({
+            id: reasoningPartID,
+            sessionID,
+            messageID,
+            type: "reasoning",
+            text: "why",
+            time: {
+              start: 3,
+              end: 4,
+            },
+          }),
+        }),
+      ]
+
+      for (const event of events) {
+        EventStore.appendAndProject(event)
+      }
+
+      const replayed = EventStore.listTurnEvents({
+        sessionID,
+        turnID,
+      })
+      expect(replayed.map((event) => event.type)).toEqual([
+        "text.part.started",
+        "text.part.completed",
+        "reasoning.part.started",
+        "reasoning.part.completed",
+      ])
     },
   })
 })

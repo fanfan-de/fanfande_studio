@@ -47,6 +47,7 @@
     "#command/*": "./src/command/*",
     "#config/*": "./src/config/*",
     "#database/*": "./src/database/*",
+    "#eval/*": "./src/eval/*",
     "#flag/*": "./src/flag/*",
     "#global/*": "./src/global/*",
     "#id/*": "./src/id/*",
@@ -69,6 +70,7 @@
   "scripts": {
     "dev:server": "bun run src/server/start.ts",
     "docs": "typedoc",
+    "eval": "bun run src/eval/cli.ts",
     "test:bun": "bun test Test/bun.runtime.test.ts",
     "test:provider": "bun test Test/provider.openai-compatible.test.ts && bun test Test/provider.deepseek-runtime-adapter.test.ts && bun test Test/provider.openrouter-provider.test.ts && bun test Test/provider.modelsdev-sdk-adapter.test.ts && bun test Test/provider.anybox-provider.test.ts && bun test Test/bun.runtime.test.ts",
     "test:prompt": "bun test Test/prompt.e2e.test.ts",

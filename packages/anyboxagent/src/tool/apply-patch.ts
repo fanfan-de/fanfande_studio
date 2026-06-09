@@ -41,27 +41,19 @@ type SplitContent = {
 }
 
 const APPLY_PATCH_FORMAT = [
-  "Patch must exactly follow this grammar-like format:",
+  "Patch must exactly follow this grammar-like format.",
+  "Each tool call accepts exactly one *** Begin Patch / *** End Patch wrapper. Put all file directives inside that single wrapper:",
   "*** Begin Patch",
   "*** Add File: path/to/file",
   "+new file line",
   "+",
   "+another line",
-  "*** End Patch",
-  "",
-  "*** Begin Patch",
   "*** Update File: path/to/file",
   "@@ optional context label",
   " unchanged context",
   "-old line",
   "+new line",
-  "*** End Patch",
-  "",
-  "*** Begin Patch",
   "*** Delete File: path/to/file",
-  "*** End Patch",
-  "",
-  "*** Begin Patch",
   "*** Update File: old/path",
   "*** Move to: new/path",
   "@@",
@@ -69,7 +61,8 @@ const APPLY_PATCH_FORMAT = [
   "+new line",
   "*** End Patch",
   "",
-  "Rules: first non-empty line must be *** Begin Patch; final line must be *** End Patch.",
+  "Rules: first non-empty line must be *** Begin Patch; final non-empty line must be *** End Patch.",
+  "Do not output more than one *** Begin Patch block in a single tool call.",
   "For Add File, every file-content line MUST start with +, including blank lines as +.",
   "For Update File, every changed line MUST start with space, -, or +.",
   "Use *** End of File after the final change line when the new file should not end with a newline.",
@@ -353,7 +346,10 @@ function parseBeginPatch(patch: string): FilePatch[] {
 
   for (; index < lines.length; index += 1) {
     if (lines[index]!.trim()) {
-      throw new Error("Patch contains content after *** End Patch.")
+      if (lines[index]!.trim() === "*** Begin Patch") {
+        throw new Error("apply_patch accepts exactly one *** Begin Patch / *** End Patch wrapper per call. Put multiple file directives inside one wrapper, or call apply_patch again.")
+      }
+      throw new Error("Patch contains content after *** End Patch. apply_patch accepts exactly one wrapper per call.")
     }
   }
 

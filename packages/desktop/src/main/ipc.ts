@@ -708,6 +708,29 @@ function readTraceExportStringArray(value: unknown) {
   return readTraceExportArray(value).filter((item): item is string => typeof item === "string")
 }
 
+type TraceFlowToolDiagnostic = {
+  code: string
+  message?: string
+  severity: string
+}
+
+function summarizeTraceExportToolDiagnostics(value: unknown): TraceFlowToolDiagnostic[] {
+  return readTraceExportArray(value).map((item): TraceFlowToolDiagnostic | undefined => {
+    const record = readTraceExportRecord(item)
+    const severity = readTraceExportString(record?.severity)
+    const code = readTraceExportString(record?.code)
+    const message = readTraceExportString(record?.message)
+    if (!severity || !code) return undefined
+
+    const diagnostic: TraceFlowToolDiagnostic = {
+      severity,
+      code,
+    }
+    if (message) diagnostic.message = message
+    return diagnostic
+  }).filter((item): item is TraceFlowToolDiagnostic => item !== undefined)
+}
+
 function traceExportRelativePath(...parts: string[]) {
   return parts.join("/")
 }
@@ -730,20 +753,28 @@ function formatTraceExportRecordFileName(index: number, fallback: string, ...par
 function summarizeTraceExportMessage(message: unknown, index: number, file: string) {
   const record = readTraceExportRecord(message)
   const info = readTraceExportRecord(record?.info)
-  const pathInfo = readTraceExportRecord(record?.path)
+  const pathInfo = readTraceExportRecord(record?.path) ?? readTraceExportRecord(info?.path)
 
   return {
     index: index + 1,
     file,
-    messageID: readTraceExportString(record?.id) ?? readTraceExportString(record?.messageID),
-    role: readTraceExportString(record?.role),
+    messageID:
+      readTraceExportString(record?.id) ??
+      readTraceExportString(record?.messageID) ??
+      readTraceExportString(info?.id) ??
+      readTraceExportString(info?.messageID),
+    role: readTraceExportString(record?.role) ?? readTraceExportString(info?.role),
     turnID: readTraceExportString(record?.turnID) ?? readTraceExportString(info?.turnID),
-    parentMessageID: readTraceExportString(record?.parentMessageID) ?? readTraceExportString(record?.parentID),
-    created: readTraceExportNumber(record?.created),
-    completed: readTraceExportNumber(record?.completed),
-    providerID: readTraceExportString(record?.providerID),
-    modelID: readTraceExportString(record?.modelID),
-    agent: readTraceExportString(record?.agent),
+    parentMessageID:
+      readTraceExportString(record?.parentMessageID) ??
+      readTraceExportString(record?.parentID) ??
+      readTraceExportString(info?.parentMessageID) ??
+      readTraceExportString(info?.parentID),
+    created: readTraceExportNumber(record?.created) ?? readTraceExportNumber(info?.created),
+    completed: readTraceExportNumber(record?.completed) ?? readTraceExportNumber(info?.completed),
+    providerID: readTraceExportString(record?.providerID) ?? readTraceExportString(info?.providerID),
+    modelID: readTraceExportString(record?.modelID) ?? readTraceExportString(info?.modelID),
+    agent: readTraceExportString(record?.agent) ?? readTraceExportString(info?.agent),
     cwd: readTraceExportString(pathInfo?.cwd),
   }
 }
@@ -793,7 +824,873 @@ function summarizeTraceExportToolCall(
     endedAt: readTraceExportNumber(record?.endedAt),
     durationMs: readTraceExportNumber(record?.durationMs),
     eventIDs: readTraceExportStringArray(record?.eventIDs),
+    diagnosticStatus: readTraceExportString(record?.diagnosticStatus),
+    diagnostics: summarizeTraceExportToolDiagnostics(record?.diagnostics),
   }
+}
+
+const TRACE_FLOW_INLINE_VALUE_MAX_CHARS = 420
+const TRACE_FLOW_PAYLOAD_REF_MIN_CHARS = 900
+const TRACE_FLOW_PAYLOAD_PREVIEW_HEAD_CHARS = 280
+const TRACE_FLOW_PAYLOAD_PREVIEW_TAIL_CHARS = 180
+
+type TraceFlowPayloadIndexEntry = {
+  id: string
+  path: string
+  source: "message-part" | "tool-call"
+  callID?: string
+  partID?: string
+  tool?: string
+  turnID?: string
+  messageID?: string
+  fieldPath: string
+  chars: number
+  sha256: string
+  previewHead: string
+  previewTail?: string
+}
+
+type TraceFlowPayloadFile = {
+  content: string
+  entry: TraceFlowPayloadIndexEntry
+}
+
+type TraceFlowPayloadContext = {
+  files: TraceFlowPayloadFile[]
+  index: TraceFlowPayloadIndexEntry[]
+}
+
+type TraceFlowToolPayloadRefs = {
+  input?: string
+  modelOutput?: string
+  output?: string
+  rawInput?: string
+}
+
+function stringifyTraceFlowPayload(value: unknown) {
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function compactTraceFlowText(value: string, maxChars: number) {
+  const normalized = value
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\n/g, "\\n")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (normalized.length <= maxChars) return normalized
+  if (maxChars <= 3) return normalized.slice(0, maxChars)
+  return `${normalized.slice(0, maxChars - 3)}...`
+}
+
+function formatTraceFlowInline(value: unknown, maxChars = TRACE_FLOW_INLINE_VALUE_MAX_CHARS) {
+  const text = compactTraceFlowText(stringifyTraceFlowPayload(value), maxChars).replace(/`/g, "'")
+  return `\`${text || "-"}\``
+}
+
+function escapeTraceFlowMarkdownCell(value: unknown) {
+  return String(value ?? "-")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\n/g, "<br>")
+    .replace(/\|/g, "\\|")
+}
+
+function formatTraceFlowTimestamp(timestamp: number | undefined) {
+  if (timestamp === undefined) return "-"
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return String(timestamp)
+  return date.toISOString()
+}
+
+function formatTraceFlowToolDiagnostics(input: {
+  diagnosticStatus?: string
+  diagnostics?: TraceFlowToolDiagnostic[]
+}) {
+  if (!input.diagnosticStatus || input.diagnosticStatus === "ok") return "-"
+  const diagnostics = input.diagnostics ?? []
+  if (diagnostics.length === 0) return input.diagnosticStatus
+
+  return diagnostics.map((diagnostic) => [
+    diagnostic.severity,
+    diagnostic.code,
+    diagnostic.message ? `(${diagnostic.message})` : "",
+  ].filter(Boolean).join(":")).join("; ")
+}
+
+function formatTraceFlowElapsed(timestamp: number | undefined, firstTimestamp: number | undefined) {
+  if (timestamp === undefined || firstTimestamp === undefined) return "-"
+  return `+${Math.max(0, timestamp - firstTimestamp)}ms`
+}
+
+function createTraceFlowPayloadReference(
+  context: TraceFlowPayloadContext,
+  input: {
+    callID?: string
+    fieldPath: string
+    messageID?: string
+    partID?: string
+    source?: TraceFlowPayloadIndexEntry["source"]
+    tool?: string
+    turnID?: string
+    value: unknown
+  },
+) {
+  if (input.value === undefined || input.value === null) return undefined
+
+  const content = stringifyTraceFlowPayload(input.value)
+  if (!content || content.length <= TRACE_FLOW_PAYLOAD_REF_MIN_CHARS) return undefined
+
+  const ordinal = context.index.length + 1
+  const id = `payload-${String(ordinal).padStart(6, "0")}`
+  const extension = typeof input.value === "string" ? "txt" : "json"
+  const slug = [
+    id,
+    sanitizeSessionTraceFileNamePart(input.tool),
+    sanitizeSessionTraceFileNamePart(input.callID),
+    sanitizeSessionTraceFileNamePart(input.partID),
+    sanitizeSessionTraceFileNamePart(input.fieldPath),
+  ].filter(Boolean).join("-")
+  const file = traceExportRelativePath("payloads", `${slug || id}.${extension}`)
+  const sha256 = createHash("sha256").update(content).digest("hex")
+  const previewHead = compactTraceFlowText(content.slice(0, TRACE_FLOW_PAYLOAD_PREVIEW_HEAD_CHARS), TRACE_FLOW_PAYLOAD_PREVIEW_HEAD_CHARS)
+  const tailSource = content.length > TRACE_FLOW_PAYLOAD_PREVIEW_HEAD_CHARS
+    ? content.slice(Math.max(0, content.length - TRACE_FLOW_PAYLOAD_PREVIEW_TAIL_CHARS))
+    : ""
+  const previewTail = tailSource
+    ? compactTraceFlowText(tailSource, TRACE_FLOW_PAYLOAD_PREVIEW_TAIL_CHARS)
+    : undefined
+  const entry: TraceFlowPayloadIndexEntry = {
+    id,
+    path: file,
+    source: input.source ?? "tool-call",
+    callID: input.callID,
+    partID: input.partID,
+    tool: input.tool,
+    turnID: input.turnID,
+    messageID: input.messageID,
+    fieldPath: input.fieldPath,
+    chars: content.length,
+    sha256,
+    previewHead,
+    previewTail,
+  }
+
+  context.index.push(entry)
+  context.files.push({
+    content,
+    entry,
+  })
+
+  return `[ref:${file} chars=${content.length} sha=${sha256.slice(0, 12)} head=${formatTraceFlowInline(previewHead, 140)}${previewTail ? ` tail=${formatTraceFlowInline(previewTail, 100)}` : ""}]`
+}
+
+function buildTraceFlowToolPayloadRefs(
+  toolCalls: unknown[],
+  context: TraceFlowPayloadContext,
+) {
+  const refsByCallID = new Map<string, TraceFlowToolPayloadRefs>()
+  const fields: Array<keyof TraceFlowToolPayloadRefs> = ["rawInput", "input", "output", "modelOutput"]
+
+  for (const toolCall of toolCalls) {
+    const record = readTraceExportRecord(toolCall)
+    const callID = readTraceExportString(record?.callID)
+    if (!callID) continue
+
+    const refs: TraceFlowToolPayloadRefs = {}
+    for (const field of fields) {
+      const ref = createTraceFlowPayloadReference(context, {
+        callID,
+        fieldPath: field,
+        messageID: readTraceExportString(record?.messageID),
+        tool: readTraceExportString(record?.tool),
+        turnID: readTraceExportString(record?.turnID),
+        value: record?.[field],
+      })
+      if (ref) refs[field] = ref
+    }
+
+    if (Object.keys(refs).length > 0) {
+      refsByCallID.set(callID, refs)
+    }
+  }
+
+  return refsByCallID
+}
+
+function readTraceFlowToolCallID(payload: Record<string, unknown> | null) {
+  const part = readTraceExportRecord(payload?.part)
+  const request = readTraceExportRecord(payload?.request)
+
+  return (
+    readTraceExportString(part?.callID) ??
+    readTraceExportString(part?.toolCallID) ??
+    readTraceExportString(payload?.toolCallID) ??
+    readTraceExportString(request?.toolCallID)
+  )
+}
+
+function summarizeTraceFlowEventFacts(
+  event: unknown,
+  recordFile: string,
+  toolPayloadRefsByCallID: Map<string, TraceFlowToolPayloadRefs>,
+) {
+  const record = readTraceExportRecord(event)
+  const payload = readTraceExportRecord(record?.payload)
+  const part = readTraceExportRecord(payload?.part)
+  const state = readTraceExportRecord(part?.state)
+  const request = readTraceExportRecord(payload?.request)
+  const message = readTraceExportRecord(payload?.message)
+  const facts: string[] = []
+  const eventID = readTraceExportString(record?.eventID)
+  const callID = readTraceFlowToolCallID(payload)
+  const tool = readTraceExportString(part?.tool) ?? readTraceExportString(payload?.tool) ?? readTraceExportString(request?.tool)
+  const status = readTraceExportString(state?.status) ?? readTraceExportString(part?.status) ?? readTraceExportString(payload?.status)
+  const messageID = readTraceExportString(message?.id) ?? readTraceExportString(payload?.messageID) ?? readTraceExportString(part?.messageID)
+  const role = readTraceExportString(message?.role) ?? readTraceExportString(payload?.role)
+  const text = readTraceExportString(message?.text) ?? readTraceExportString(payload?.text)
+  const parts = readTraceExportArray(message?.parts)
+
+  if (eventID) facts.push(`eventID=${formatTraceFlowInline(eventID, 80)}`)
+  if (messageID) facts.push(`messageID=${formatTraceFlowInline(messageID, 80)}`)
+  if (role) facts.push(`role=${formatTraceFlowInline(role, 40)}`)
+  if (parts.length > 0) facts.push(`parts=${parts.length}`)
+  if (text) facts.push(`text=${formatTraceFlowInline(text, 180)}`)
+  if (tool) facts.push(`tool=${formatTraceFlowInline(tool, 80)}`)
+  if (callID) facts.push(`callID=${formatTraceFlowInline(callID, 80)}`)
+  if (status) facts.push(`status=${formatTraceFlowInline(status, 60)}`)
+
+  if (callID) {
+    const refs = toolPayloadRefsByCallID.get(callID)
+    if (refs?.rawInput) facts.push(`rawInput=${refs.rawInput}`)
+    if (refs?.input) facts.push(`input=${refs.input}`)
+    if (refs?.output) facts.push(`output=${refs.output}`)
+    if (refs?.modelOutput) facts.push(`modelOutput=${refs.modelOutput}`)
+  }
+
+  if (facts.length <= 1 && payload) {
+    const payloadText = stringifyTraceFlowPayload(payload)
+    if (payloadText.length <= TRACE_FLOW_INLINE_VALUE_MAX_CHARS) {
+      facts.push(`payload=${formatTraceFlowInline(payload)}`)
+    } else {
+      facts.push(`payload=see ${formatTraceFlowInline(recordFile, 120)}`)
+    }
+  }
+
+  return facts.length > 0 ? facts.join("; ") : "-"
+}
+
+function buildSessionTraceEventFlowMarkdown(input: {
+  events: unknown[]
+  messageIndex: Array<ReturnType<typeof summarizeTraceExportMessage>>
+  payloadIndex: TraceFlowPayloadIndexEntry[]
+  recordIndex: Array<{
+    eventID?: string
+    file: string
+    index: number
+    seq?: number
+    timestamp?: number
+    turnID?: string
+    type?: string
+  }>
+  runtimeTurnIndex: Array<ReturnType<typeof summarizeTraceExportTurn>>
+  toolCallIndex: Array<ReturnType<typeof summarizeTraceExportToolCall>>
+  toolPayloadRefsByCallID: Map<string, TraceFlowToolPayloadRefs>
+  trace: AgentSessionTraceExport
+}) {
+  const firstTimestamp = input.recordIndex
+    .map((record) => record.timestamp)
+    .filter((timestamp): timestamp is number => timestamp !== undefined)
+    .sort((left, right) => left - right)[0]
+  const session = readTraceExportRecord(input.trace.session)
+  const sessionID = readTraceExportString(session?.sessionID) ?? readTraceExportString(session?.id) ?? "-"
+  const lines: string[] = [
+    "# Anybox Agent Event Flow",
+    "",
+    "## Manifest",
+    `- sessionID: ${formatTraceFlowInline(sessionID, 120)}`,
+    `- generatedAt: ${formatTraceFlowTimestamp(input.trace.generatedAt)}`,
+    `- eventCount: ${input.events.length}`,
+    `- messageCount: ${input.messageIndex.length}`,
+    `- turnCount: ${input.runtimeTurnIndex.length}`,
+    `- toolCallCount: ${input.toolCallIndex.length}`,
+    `- payloadRefCount: ${input.payloadIndex.length}`,
+    `- fullEventIndex: ${formatTraceFlowInline("records/index.json", 120)}`,
+    `- payloadIndex: ${formatTraceFlowInline("payload-index.json", 120)}`,
+    "",
+    "## How To Read",
+    "- Every row in Event Flow corresponds to one exported event, in exported order.",
+    "- The `record` column points to the complete per-event JSON. Large tool inputs and outputs are represented as refs and listed in Payload References.",
+    "- Tool-call `status` is lifecycle status. Use `diagnostics` to spot command-level failures such as non-zero exit codes, timeouts, or stderr output.",
+    "- Use `records/index.json`, `tool-calls/index.json`, and `payload-index.json` as machine-readable indexes.",
+    "",
+    "## Turn Index",
+  ]
+
+  if (input.runtimeTurnIndex.length === 0) {
+    lines.push("- No runtime turns exported.")
+  } else {
+    lines.push("| # | turnID | status | phase | started | ended | durationMs | tools | llmCalls | file |")
+    lines.push("|---:|---|---|---|---|---|---:|---:|---:|---|")
+    for (const turn of input.runtimeTurnIndex) {
+      lines.push([
+        turn.index,
+        turn.turnID ?? "-",
+        turn.status ?? "-",
+        turn.phase ?? "-",
+        formatTraceFlowTimestamp(turn.startedAt),
+        formatTraceFlowTimestamp(turn.endedAt),
+        turn.durationMs ?? "-",
+        turn.toolCount,
+        turn.llmCallCount,
+        turn.file,
+      ].map(escapeTraceFlowMarkdownCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+    }
+  }
+
+  lines.push("", "## Tool Call Index")
+  if (input.toolCallIndex.length === 0) {
+    lines.push("- No tool calls exported.")
+  } else {
+    lines.push("| # | callID | tool | status | diagnostics | turnID | durationMs | payloadRefs | file |")
+    lines.push("|---:|---|---|---|---|---|---:|---|---|")
+    for (const toolCall of input.toolCallIndex) {
+      const refs = toolCall.callID ? input.toolPayloadRefsByCallID.get(toolCall.callID) : undefined
+      const payloadRefs = refs
+        ? Object.entries(refs).map(([field, ref]) => `${field}=${ref}`).join("; ")
+        : "-"
+      const diagnostics = formatTraceFlowToolDiagnostics(toolCall)
+      lines.push([
+        toolCall.index,
+        toolCall.callID ?? "-",
+        toolCall.tool ?? "-",
+        toolCall.status ?? "-",
+        diagnostics,
+        toolCall.turnID ?? "-",
+        toolCall.durationMs ?? "-",
+        payloadRefs,
+        toolCall.file,
+      ].map(escapeTraceFlowMarkdownCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+    }
+  }
+
+  lines.push("", "## Event Flow")
+  if (input.recordIndex.length === 0) {
+    lines.push("- No events exported.")
+  } else {
+    lines.push("| # | elapsed | timestamp | seq | turnID | type | facts | record |")
+    lines.push("|---:|---:|---|---:|---|---|---|---|")
+    for (const record of input.recordIndex) {
+      const event = input.events[record.index - 1]
+      lines.push([
+        record.index,
+        formatTraceFlowElapsed(record.timestamp, firstTimestamp),
+        formatTraceFlowTimestamp(record.timestamp),
+        record.seq ?? "-",
+        record.turnID ?? "-",
+        record.type ?? "-",
+        summarizeTraceFlowEventFacts(event, record.file, input.toolPayloadRefsByCallID),
+        record.file,
+      ].map(escapeTraceFlowMarkdownCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+    }
+  }
+
+  lines.push("", "## Payload References")
+  if (input.payloadIndex.length === 0) {
+    lines.push("- No tool payload exceeded the reference threshold.")
+  } else {
+    lines.push("| id | source | field | chars | sha256 | preview | path |")
+    lines.push("|---|---|---|---:|---|---|---|")
+    for (const payload of input.payloadIndex) {
+      const source = [payload.tool, payload.callID].filter(Boolean).join("/") || payload.source
+      lines.push([
+        payload.id,
+        source,
+        payload.fieldPath,
+        payload.chars,
+        payload.sha256.slice(0, 12),
+        payload.previewHead,
+        payload.path,
+      ].map(escapeTraceFlowMarkdownCell).join(" | ").replace(/^/, "| ").replace(/$/, " |"))
+    }
+  }
+
+  lines.push("")
+  return lines.join("\n")
+}
+
+type TraceFlowSourceRecord = {
+  eventID?: string
+  timestamp?: number
+  turnID?: string
+}
+
+type TraceFlowSourceIndexes = {
+  byCallID: Map<string, TraceFlowSourceRecord[]>
+  byMessageID: Map<string, TraceFlowSourceRecord[]>
+  byPartID: Map<string, TraceFlowSourceRecord[]>
+}
+
+type TraceFlowSemanticRow = {
+  detailIndex: string
+  facts: string
+  kind: string
+  order: number
+  sourceEvents: string
+  subject: string
+  timestamp?: number
+  turnID?: string
+}
+
+function pushTraceFlowSourceRecord(
+  map: Map<string, TraceFlowSourceRecord[]>,
+  key: string | undefined,
+  record: TraceFlowSourceRecord,
+) {
+  if (!key) return
+  const records = map.get(key) ?? []
+  records.push(record)
+  map.set(key, records)
+}
+
+function readTraceFlowPartID(payload: Record<string, unknown> | null) {
+  const part = readTraceExportRecord(payload?.part)
+  return readTraceExportString(part?.id) ?? readTraceExportString(payload?.partID)
+}
+
+function readTraceFlowMessageID(payload: Record<string, unknown> | null) {
+  const message = readTraceExportRecord(payload?.message)
+  const part = readTraceExportRecord(payload?.part)
+  return (
+    readTraceExportString(message?.id) ??
+    readTraceExportString(payload?.messageID) ??
+    readTraceExportString(part?.messageID)
+  )
+}
+
+function buildTraceFlowSourceIndexes(events: unknown[], recordIndex: Array<TraceFlowSourceRecord>) {
+  const indexes: TraceFlowSourceIndexes = {
+    byCallID: new Map(),
+    byMessageID: new Map(),
+    byPartID: new Map(),
+  }
+
+  for (const [index, event] of events.entries()) {
+    const record = readTraceExportRecord(event)
+    const payload = readTraceExportRecord(record?.payload)
+    const sourceRecord = recordIndex[index]
+    const source = {
+      eventID: readTraceExportString(record?.eventID),
+      timestamp: readTraceExportNumber(record?.timestamp),
+      turnID: readTraceExportString(record?.turnID),
+      ...(sourceRecord ?? {}),
+    }
+
+    pushTraceFlowSourceRecord(indexes.byCallID, readTraceFlowToolCallID(payload), source)
+    pushTraceFlowSourceRecord(indexes.byMessageID, readTraceFlowMessageID(payload), source)
+    pushTraceFlowSourceRecord(indexes.byPartID, readTraceFlowPartID(payload), source)
+  }
+
+  return indexes
+}
+
+function summarizeTraceFlowSourceEvents(records: TraceFlowSourceRecord[] | undefined) {
+  const eventIDs = (records ?? []).map((record) => record.eventID).filter((eventID): eventID is string => Boolean(eventID))
+  if (eventIDs.length === 0) return "-"
+  const preview = eventIDs.slice(0, 6).map((eventID) => formatTraceFlowInline(eventID, 80)).join(", ")
+  const suffix = eventIDs.length > 6 ? `, +${eventIDs.length - 6} more` : ""
+  return `count=${eventIDs.length}; ids=${preview}${suffix}; index=${formatTraceFlowInline("records/index.json", 120)}`
+}
+
+function firstTraceFlowSourceTimestamp(records: TraceFlowSourceRecord[] | undefined) {
+  return (records ?? [])
+    .map((record) => record.timestamp)
+    .filter((timestamp): timestamp is number => timestamp !== undefined)
+    .sort((left, right) => left - right)[0]
+}
+
+function buildTraceFlowMessageFileByID(messageIndex: Array<ReturnType<typeof summarizeTraceExportMessage>>) {
+  const filesByID = new Map<string, string>()
+  for (const message of messageIndex) {
+    if (message.messageID) filesByID.set(message.messageID, message.file)
+  }
+  return filesByID
+}
+
+function readTraceFlowPartTimestamp(part: Record<string, unknown>, fallback: number | undefined) {
+  const time = readTraceExportRecord(part.time)
+  return readTraceExportNumber(time?.start) ?? readTraceExportNumber(time?.end) ?? fallback
+}
+
+function summarizeTraceFlowPartFacts(input: {
+  context: TraceFlowPayloadContext
+  kind: string
+  messageID?: string
+  part: Record<string, unknown>
+  turnID?: string
+}) {
+  const facts: string[] = []
+  const partID = readTraceExportString(input.part.id)
+  const text = readTraceExportString(input.part.text)
+  const type = readTraceExportString(input.part.type)
+  const title = readTraceExportString(input.part.title)
+  const filename = readTraceExportString(input.part.filename)
+  const mime = readTraceExportString(input.part.mime)
+  const url = readTraceExportString(input.part.url)
+  const sourceID = readTraceExportString(input.part.sourceID)
+  const files = readTraceExportStringArray(input.part.files)
+  const summary = readTraceExportRecord(input.part.summary)
+  const additions = readTraceExportNumber(summary?.additions)
+  const deletions = readTraceExportNumber(summary?.deletions)
+  const hash = readTraceExportString(input.part.hash)
+
+  if (partID) facts.push(`partID=${formatTraceFlowInline(partID, 80)}`)
+  if (text !== undefined) {
+    facts.push(`chars=${text.length}`)
+    const ref = createTraceFlowPayloadReference(input.context, {
+      fieldPath: `${input.kind}.text`,
+      messageID: input.messageID,
+      partID,
+      source: "message-part",
+      turnID: input.turnID,
+      value: text,
+    })
+    facts.push(`text=${ref ?? formatTraceFlowInline(text, 220)}`)
+  }
+  if (title) facts.push(`title=${formatTraceFlowInline(title, 120)}`)
+  if (filename) facts.push(`filename=${formatTraceFlowInline(filename, 120)}`)
+  if (mime) facts.push(`mime=${formatTraceFlowInline(mime, 80)}`)
+  if (url && type === "source-url") facts.push(`url=${formatTraceFlowInline(url, 160)}`)
+  if (sourceID) facts.push(`sourceID=${formatTraceFlowInline(sourceID, 80)}`)
+  if (files.length > 0) facts.push(`files=${files.length}`)
+  if (additions !== undefined || deletions !== undefined) {
+    facts.push(`diff=+${additions ?? 0}/-${deletions ?? 0}`)
+  }
+  if (hash) facts.push(`hash=${formatTraceFlowInline(hash, 80)}`)
+
+  return facts.join("; ") || "-"
+}
+
+function traceFlowSemanticKindForPart(type: string | undefined, role: string | undefined) {
+  switch (type) {
+    case "reasoning":
+      return "reasoning"
+    case "text":
+      return role === "assistant" ? "response" : "message"
+    case "source-document":
+    case "source-url":
+      return "source"
+    case "file":
+    case "image":
+      return "artifact"
+    case "patch":
+      return "patch"
+    case "snapshot":
+      return "snapshot"
+    case "permission":
+      return "approval"
+    case "subtask":
+      return "subtask"
+    case "retry":
+      return "retry"
+    case "agent":
+      return "agent"
+    case "compaction":
+      return "compaction"
+    default:
+      return type ? `part:${type}` : "part"
+  }
+}
+
+function shouldSkipTraceFlowSemanticPart(type: string | undefined) {
+  return type === "tool" || type === "step-start" || type === "step-finish"
+}
+
+function buildTraceFlowSemanticRows(input: {
+  context: TraceFlowPayloadContext
+  events: unknown[]
+  messageIndex: Array<ReturnType<typeof summarizeTraceExportMessage>>
+  messages: unknown[]
+  recordIndex: Array<TraceFlowSourceRecord>
+  toolCallIndex: Array<ReturnType<typeof summarizeTraceExportToolCall>>
+  toolCalls: unknown[]
+  toolPayloadRefsByCallID: Map<string, TraceFlowToolPayloadRefs>
+}) {
+  const sourceIndexes = buildTraceFlowSourceIndexes(input.events, input.recordIndex)
+  const messageFileByID = buildTraceFlowMessageFileByID(input.messageIndex)
+  const rows: TraceFlowSemanticRow[] = []
+  let order = 0
+
+  for (const message of input.messages) {
+    const record = readTraceExportRecord(message)
+    const info = readTraceExportRecord(record?.info) ?? record
+    const parts = readTraceExportArray(record?.parts)
+    const messageID = readTraceExportString(info?.id) ?? readTraceExportString(record?.id)
+    const role = readTraceExportString(info?.role)
+    const turnID = readTraceExportString(info?.turnID) ?? readTraceExportString(record?.turnID)
+    const created = readTraceExportNumber(info?.created) ?? readTraceExportNumber(record?.created)
+    const messageFile = messageID ? messageFileByID.get(messageID) : undefined
+
+    if (parts.length === 0) {
+      order += 1
+      rows.push({
+        detailIndex: messageFile ?? "messages/index.json",
+        facts: [
+          messageID ? `messageID=${formatTraceFlowInline(messageID, 80)}` : "",
+          role ? `role=${formatTraceFlowInline(role, 40)}` : "",
+        ].filter(Boolean).join("; ") || "-",
+        kind: role === "assistant" ? "response" : "message",
+        order,
+        sourceEvents: summarizeTraceFlowSourceEvents(messageID ? sourceIndexes.byMessageID.get(messageID) : undefined),
+        subject: role ? `${role} message` : "message",
+        timestamp: created,
+        turnID,
+      })
+      continue
+    }
+
+    for (const partValue of parts) {
+      const part = readTraceExportRecord(partValue)
+      const type = readTraceExportString(part?.type)
+      if (!part || shouldSkipTraceFlowSemanticPart(type)) continue
+
+      const partID = readTraceExportString(part.id)
+      const kind = traceFlowSemanticKindForPart(type, role)
+      const subject = [
+        kind,
+        readTraceExportString(part.tool),
+        readTraceExportString(part.filename),
+        readTraceExportString(part.title),
+        partID,
+      ].filter(Boolean).join(" / ")
+      const sourceRecords =
+        (partID ? sourceIndexes.byPartID.get(partID) : undefined) ??
+        (messageID ? sourceIndexes.byMessageID.get(messageID) : undefined)
+
+      order += 1
+      rows.push({
+        detailIndex: messageFile ?? "messages/index.json",
+        facts: summarizeTraceFlowPartFacts({
+          context: input.context,
+          kind,
+          messageID,
+          part,
+          turnID,
+        }),
+        kind,
+        order,
+        sourceEvents: summarizeTraceFlowSourceEvents(sourceRecords),
+        subject: subject || kind,
+        timestamp: firstTraceFlowSourceTimestamp(sourceRecords) ?? readTraceFlowPartTimestamp(part, created),
+        turnID,
+      })
+    }
+  }
+
+  for (const [index, toolCall] of input.toolCalls.entries()) {
+    const record = readTraceExportRecord(toolCall)
+    const summary = input.toolCallIndex[index]
+    const callID = readTraceExportString(record?.callID) ?? summary?.callID
+    if (!callID) continue
+
+    const refs = input.toolPayloadRefsByCallID.get(callID)
+    const diagnostics = summary ? formatTraceFlowToolDiagnostics(summary) : "-"
+    const facts = [
+      `callID=${formatTraceFlowInline(callID, 80)}`,
+      summary?.status ? `status=${formatTraceFlowInline(summary.status, 60)}` : "",
+      diagnostics !== "-" ? `diagnostics=${formatTraceFlowInline(diagnostics, 220)}` : "",
+      summary?.durationMs !== undefined ? `durationMs=${summary.durationMs}` : "",
+      summary?.title ? `title=${formatTraceFlowInline(summary.title, 140)}` : "",
+      summary?.eventIDs.length ? `sourceEventCount=${summary.eventIDs.length}` : "",
+      refs?.rawInput ? `rawInput=${refs.rawInput}` : record?.rawInput !== undefined ? `rawInput=${formatTraceFlowInline(record.rawInput, 160)}` : "",
+      refs?.input ? `input=${refs.input}` : record?.input !== undefined ? `input=${formatTraceFlowInline(record.input, 180)}` : "",
+      refs?.output ? `output=${refs.output}` : record?.output !== undefined ? `output=${formatTraceFlowInline(record.output, 180)}` : "",
+      refs?.modelOutput ? `modelOutput=${refs.modelOutput}` : record?.modelOutput !== undefined ? `modelOutput=${formatTraceFlowInline(record.modelOutput, 180)}` : "",
+      summary?.eventIDs.length ? `rawIndex=${formatTraceFlowInline("records/index.json", 120)}` : "",
+    ].filter(Boolean)
+    const sourceRecords = sourceIndexes.byCallID.get(callID)
+
+    order += 1
+    rows.push({
+      detailIndex: summary?.file ?? "tool-calls/index.json",
+      facts: facts.join("; ") || "-",
+      kind: "tool",
+      order,
+      sourceEvents: summarizeTraceFlowSourceEvents(sourceRecords),
+      subject: summary?.tool ?? readTraceExportString(record?.tool) ?? "tool",
+      timestamp: summary?.startedAt ?? firstTraceFlowSourceTimestamp(sourceRecords),
+      turnID: summary?.turnID ?? readTraceExportString(record?.turnID),
+    })
+  }
+
+  return rows.sort((left, right) => {
+    const leftTime = left.timestamp ?? Number.MAX_SAFE_INTEGER
+    const rightTime = right.timestamp ?? Number.MAX_SAFE_INTEGER
+    if (leftTime !== rightTime) return leftTime - rightTime
+    return left.order - right.order
+  })
+}
+
+function formatTraceFlowSemanticBlockHeading(row: TraceFlowSemanticRow, index: number) {
+  const subject = compactTraceFlowText(row.subject, 140)
+  return subject && subject !== row.kind
+    ? `### ${index}. ${row.kind} - ${subject}`
+    : `### ${index}. ${row.kind}`
+}
+
+function formatTraceFlowSemanticBlockFieldValue(value: unknown) {
+  if (value === undefined || value === null || value === "") return "-"
+  return String(value)
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\n/g, "\\n")
+}
+
+function pushTraceFlowSemanticBlockField(lines: string[], label: string, value: unknown) {
+  lines.push(`- ${label}: ${formatTraceFlowSemanticBlockFieldValue(value)}`)
+}
+
+function buildSessionTraceSemanticFlowMarkdown(input: {
+  context: TraceFlowPayloadContext
+  events: unknown[]
+  messageIndex: Array<ReturnType<typeof summarizeTraceExportMessage>>
+  messages: unknown[]
+  recordIndex: Array<TraceFlowSourceRecord>
+  runtimeTurnIndex: Array<ReturnType<typeof summarizeTraceExportTurn>>
+  toolCallIndex: Array<ReturnType<typeof summarizeTraceExportToolCall>>
+  toolCalls: unknown[]
+  toolPayloadRefsByCallID: Map<string, TraceFlowToolPayloadRefs>
+  trace: AgentSessionTraceExport
+}) {
+  const rows = buildTraceFlowSemanticRows(input)
+  const firstTimestamp = rows
+    .map((row) => row.timestamp)
+    .filter((timestamp): timestamp is number => timestamp !== undefined)
+    .sort((left, right) => left - right)[0]
+  const session = readTraceExportRecord(input.trace.session)
+  const sessionID = readTraceExportString(session?.sessionID) ?? readTraceExportString(session?.id) ?? "-"
+  const lines: string[] = [
+    "# Anybox Agent Semantic Flow",
+    "",
+    "## Manifest",
+    `- sessionID: ${formatTraceFlowInline(sessionID, 120)}`,
+    `- generatedAt: ${formatTraceFlowTimestamp(input.trace.generatedAt)}`,
+    `- semanticEventCount: ${rows.length}`,
+    `- rawEventCount: ${input.events.length}`,
+    `- turnCount: ${input.runtimeTurnIndex.length}`,
+    `- payloadRefCount: ${input.context.index.length}`,
+    `- rawEventFlow: ${formatTraceFlowInline("event-flow.md", 120)}`,
+    `- rawEventIndex: ${formatTraceFlowInline("records/index.json", 120)}`,
+    `- payloadIndex: ${formatTraceFlowInline("payload-index.json", 120)}`,
+    "",
+    "## How To Read",
+    "- This file is a high-level semantic flow. Reasoning text, assistant responses, tool calls, artifacts, approvals, and patches are the minimum units.",
+    "- Lifecycle details such as started/completed/delta are intentionally not rows here. Use the source event IDs with records/index.json or open event-flow.md when raw runtime detail is needed.",
+    "- Tool facts include `diagnostics` when a completed tool call still has command-level warnings or errors.",
+    "- Each semantic event is an individual Markdown block so language models can analyze the flow chunk by chunk without parsing a wide table.",
+    "- Large semantic content is represented by refs into payloads/ and indexed by payload-index.json.",
+    "",
+    "## Semantic Flow",
+  ]
+
+  if (rows.length === 0) {
+    lines.push("- No semantic events exported.")
+  } else {
+    for (const [index, row] of rows.entries()) {
+      if (index > 0) lines.push("")
+      lines.push(formatTraceFlowSemanticBlockHeading(row, index + 1))
+      pushTraceFlowSemanticBlockField(lines, "elapsed", formatTraceFlowElapsed(row.timestamp, firstTimestamp))
+      pushTraceFlowSemanticBlockField(lines, "timestamp", formatTraceFlowTimestamp(row.timestamp))
+      pushTraceFlowSemanticBlockField(lines, "turnID", row.turnID)
+      pushTraceFlowSemanticBlockField(lines, "kind", row.kind)
+      pushTraceFlowSemanticBlockField(lines, "subject", row.subject)
+      pushTraceFlowSemanticBlockField(lines, "facts", row.facts)
+      pushTraceFlowSemanticBlockField(lines, "sourceEvents", row.sourceEvents)
+      pushTraceFlowSemanticBlockField(lines, "detailIndex", row.detailIndex)
+    }
+  }
+
+  lines.push("", "## Index Map")
+  lines.push("- `messages/index.json`: locate full message files by messageID.")
+  lines.push("- `tool-calls/index.json`: locate full tool call files by callID.")
+  lines.push("- `records/index.json`: locate raw runtime event files by source event ID.")
+  lines.push("- `payload-index.json`: locate large text/tool payload files by payload ref.")
+  lines.push("")
+
+  return lines.join("\n")
+}
+
+function buildSessionTraceReadmeMarkdown(input: {
+  eventCount: number
+  messageCount: number
+  payloadCount: number
+  sessionID: string
+  toolCallCount: number
+  trace: AgentSessionTraceExport
+  turnCount: number
+}) {
+  const lines = [
+    "# README FIRST: Anybox Session Trace",
+    "",
+    "This directory is a machine-readable debug archive for one Anybox agent session. Start here before opening individual JSON records.",
+    "",
+    "## Session",
+    `- sessionID: ${formatTraceFlowInline(input.sessionID, 120)}`,
+    `- generatedAt: ${formatTraceFlowTimestamp(input.trace.generatedAt)}`,
+    `- schemaVersion: ${input.trace.schemaVersion}`,
+    `- mode: ${formatTraceFlowInline(input.trace.mode, 40)}`,
+    `- messages: ${input.messageCount}`,
+    `- rawEvents: ${input.eventCount}`,
+    `- turns: ${input.turnCount}`,
+    `- toolCalls: ${input.toolCallCount}`,
+    `- payloadRefs: ${input.payloadCount}`,
+    "",
+    "## Start Here",
+    "- For a compact human/agent timeline, read `semantic-flow.md` first. It groups reasoning, responses, tools, patches, artifacts, approvals, and snapshots into semantic blocks.",
+    "- For the raw chronological event stream, read `event-flow.md`. It keeps low-level runtime events and points to exact record files.",
+    "- For exact JSON records, use an `index.json` file first, then open the referenced per-record file.",
+    "- For large text, tool input, tool output, or patch content, follow `[ref:payloads/...]` links and verify them with `payload-index.json`.",
+    "- Tool-call `status` is lifecycle status; use `diagnosticStatus` and `diagnostics` to find shell failures, stderr warnings, timeouts, and truncated output.",
+    "",
+    "## Directory Map",
+    "- `manifest.json`: export metadata, counts, redaction settings, and the canonical layout map.",
+    "- `semantic-flow.md`: high-level semantic timeline. Each block includes `sourceEvents` and `detailIndex` so you can jump back to raw records.",
+    "- `event-flow.md`: raw event timeline table, useful when debugging runtime order, event seq, or state transitions.",
+    "- `messages/index.json`: searchable message index with `messageID`, `role`, `parentMessageID`, `created`, `completed`, `providerID`, `modelID`, `agent`, `cwd`, and `turnID` when available.",
+    "- `messages/`: full message records. Open these when you need original message `info` and `parts`.",
+    "- `records/index.json`: searchable raw event index by event ID, timestamp, seq, type, turn ID, and related tool-call files.",
+    "- `records/`: full raw runtime event records. Use these to prove exactly what happened at a specific event.",
+    "- `tool-calls/index.json`: searchable tool-call index by call ID, tool name, status, message ID, turn ID, timing, and related event IDs.",
+    "- `tool-calls/`: full tool-call records. Use these for exact raw input/output/status fields.",
+    "- `payload-index.json`: index for large payload files. `chars` and `sha256` describe the exact bytes written to `payloads/`.",
+    "- `payloads/`: large payload bodies split out from flow files. These files are written exactly as hashed and may not end with a newline.",
+    "- `runtime/status.json`: compact runtime state plus pointers to recent events and turn index.",
+    "- `runtime/recent-events.json`: recent runtime events captured from runtime state.",
+    "- `runtime/turns/index.json`: searchable turn index with `turnID`, status, tool count, LLM call count, and timing.",
+    "- `runtime/turns/`: full runtime turn records. Use these to inspect tool/LLM call arrays and final turn state.",
+    "",
+    "## Lookup Recipes",
+    "- Need to understand the session quickly: read `semantic-flow.md`, then follow `detailIndex` and `sourceEvents` only for suspicious blocks.",
+    "- Need to debug event ordering: read `records/index.json`, sort or filter by `timestamp`/`seq`, then open the referenced files in `records/`.",
+    "- Need to inspect a model answer: find the assistant row in `messages/index.json`, then open its file in `messages/`.",
+    "- Need to inspect a tool call: find the call in `tool-calls/index.json`, then open its full file and related raw events.",
+    "- Need exact large content: locate the `[ref:payloads/...]` path, open that payload, then compare against `payload-index.json`.",
+    "- Need final turn state: read `runtime/status.json`, then open `runtime/turns/index.json` and the referenced turn file.",
+    "",
+    "## Data Notes",
+    "- All paths in indexes are relative to this directory.",
+    "- JSON and Markdown files are UTF-8.",
+    "- Sensitive keys matching the redaction pattern in `manifest.json` may be replaced with `[REDACTED]`.",
+    "- This export keeps `schemaVersion: 1`; optional files such as this README are discoverability aids, not required wire fields.",
+    "",
+  ]
+
+  return lines.join("\n")
 }
 
 async function writeSplitSessionTraceExportDirectory(
@@ -810,6 +1707,7 @@ async function writeSplitSessionTraceExportDirectory(
     traceExportDiskPath(directory, "records"),
     traceExportDiskPath(directory, "messages"),
     traceExportDiskPath(directory, "tool-calls"),
+    traceExportDiskPath(directory, "payloads"),
     traceExportDiskPath(directory, "runtime"),
     traceExportDiskPath(directory, "runtime/turns"),
   ]
@@ -821,6 +1719,16 @@ async function writeSplitSessionTraceExportDirectory(
 
   async function writeJSON(relativePath: string, value: unknown) {
     await writeTraceFile(traceExportDiskPath(directory, relativePath), `${JSON.stringify(value, null, 2)}\n`, "utf8")
+    fileCount += 1
+  }
+
+  async function writeText(relativePath: string, value: string) {
+    await writeTraceFile(traceExportDiskPath(directory, relativePath), value.endsWith("\n") ? value : `${value}\n`, "utf8")
+    fileCount += 1
+  }
+
+  async function writeExactText(relativePath: string, value: string) {
+    await writeTraceFile(traceExportDiskPath(directory, relativePath), value, "utf8")
     fileCount += 1
   }
 
@@ -887,6 +1795,33 @@ async function writeSplitSessionTraceExportDirectory(
       relatedToolCallFiles: eventID ? toolCallFilesByEventID.get(eventID) ?? [] : [],
     }
   })
+  const payloadContext: TraceFlowPayloadContext = {
+    files: [],
+    index: [],
+  }
+  const toolPayloadRefsByCallID = buildTraceFlowToolPayloadRefs(toolCalls, payloadContext)
+  const semanticFlowMarkdown = buildSessionTraceSemanticFlowMarkdown({
+    context: payloadContext,
+    events,
+    messageIndex,
+    messages,
+    recordIndex,
+    runtimeTurnIndex,
+    toolCallIndex,
+    toolCalls,
+    toolPayloadRefsByCallID,
+    trace,
+  })
+  const eventFlowMarkdown = buildSessionTraceEventFlowMarkdown({
+    events,
+    messageIndex,
+    payloadIndex: payloadContext.index,
+    recordIndex,
+    runtimeTurnIndex,
+    toolCallIndex,
+    toolPayloadRefsByCallID,
+    trace,
+  })
   const latestTurn = trace.runtime?.latestTurn ?? null
   const runtimeStatus: Partial<AgentSessionTraceExport["runtime"]> = trace.runtime ? { ...trace.runtime } : {}
   delete runtimeStatus.turns
@@ -897,6 +1832,17 @@ async function writeSplitSessionTraceExportDirectory(
   const latestTurnIndex = latestTurnID
     ? runtimeTurns.findIndex((turn) => readTraceExportString(readTraceExportRecord(turn)?.turnID) === latestTurnID)
     : -1
+  const session = readTraceExportRecord(trace.session)
+  const sessionID = readTraceExportString(session?.sessionID) ?? readTraceExportString(session?.id) ?? "-"
+  const readmeMarkdown = buildSessionTraceReadmeMarkdown({
+    eventCount: events.length,
+    messageCount: messages.length,
+    payloadCount: payloadContext.index.length,
+    sessionID,
+    toolCallCount: toolCalls.length,
+    trace,
+    turnCount: runtimeTurns.length,
+  })
 
   await writeJSON("manifest.json", {
     schemaVersion: 1,
@@ -907,14 +1853,27 @@ async function writeSplitSessionTraceExportDirectory(
     stats: trace.stats,
     redaction: trace.redaction,
     layout: {
+      readme: "README_FIRST.md",
+      eventFlow: "event-flow.md",
+      semanticFlow: "semantic-flow.md",
       records: "records/index.json",
       messages: "messages/index.json",
       toolCalls: "tool-calls/index.json",
+      payloadIndex: "payload-index.json",
+      payloads: "payloads/",
       runtimeStatus: "runtime/status.json",
       runtimeRecentEvents: "runtime/recent-events.json",
       runtimeTurns: "runtime/turns/index.json",
     },
   })
+  await writeText("README_FIRST.md", readmeMarkdown)
+  await writeText("event-flow.md", eventFlowMarkdown)
+  await writeText("semantic-flow.md", semanticFlowMarkdown)
+  await writeJSON("payload-index.json", payloadContext.index)
+  for (const payload of payloadContext.files) {
+    await writeExactText(payload.entry.path, payload.content)
+  }
+
   await writeJSON("records/index.json", recordIndex)
   for (const [index, event] of events.entries()) {
     await writeJSON(recordIndex[index].file, {

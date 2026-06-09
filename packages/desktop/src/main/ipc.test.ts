@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { createHash } from "node:crypto"
 
 const requestAgentJSONMock = vi.hoisted(() => vi.fn())
 
@@ -366,11 +367,30 @@ describe("ipc session trace export helpers", () => {
   })
 
   it("saves a split session trace directory with per-record files", async () => {
+    const largeToolOutput = {
+      matches: Array.from({ length: 30 }, (_, index) => ({
+        file: `src/file-${index}.ts`,
+        line: index + 1,
+        text: `const value${index} = "${"x".repeat(48)}";`,
+      })),
+    }
     const turn = {
       turnID: "turn-1",
       status: "completed" as const,
       resume: false,
-      llmCalls: [],
+      llmCalls: [
+        {
+          id: "llm-1",
+          messageID: "message-1",
+          providerID: "provider-1",
+          modelID: "model-1",
+          status: "completed" as const,
+          startedAt: 20,
+          endedAt: 21,
+          durationMs: 1,
+          messageCount: 1,
+        },
+      ],
       tools: [
         {
           callID: "toolcall-1",
@@ -385,16 +405,40 @@ describe("ipc session trace export helpers", () => {
       stats: {
         ...traceExport.stats,
         messageCount: 1,
-        eventCount: 1,
+        eventCount: 2,
         turnCount: 1,
         toolCallCount: 1,
       },
       messages: [
         {
-          id: "message-1",
-          role: "assistant",
-          turnID: "turn-1",
-          created: 1,
+          info: {
+            id: "message-1",
+            role: "assistant",
+            turnID: "turn-1",
+            parentMessageID: "user-message-1",
+            created: 1,
+            completed: 40,
+            providerID: "provider-1",
+            modelID: "model-1",
+            agent: "default",
+            path: {
+              cwd: "C:\\Projects\\Demo",
+              root: "C:\\Projects\\Demo",
+            },
+          },
+          parts: [
+            {
+              id: "patch-1",
+              messageID: "message-1",
+              type: "patch",
+              files: ["src/file.ts"],
+              summary: {
+                additions: 1,
+                deletions: 0,
+              },
+              hash: "patch-hash",
+            },
+          ],
         },
       ],
       events: [
@@ -408,6 +452,27 @@ describe("ipc session trace export helpers", () => {
           payload: {
             part: {
               callID: "toolcall-1",
+            },
+          },
+        },
+        {
+          eventID: "event-2",
+          sessionID: "session-1",
+          turnID: "turn-1",
+          seq: 2,
+          timestamp: 30,
+          type: "patch.generated",
+          payload: {
+            part: {
+              id: "patch-1",
+              messageID: "message-1",
+              type: "patch",
+              files: ["src/file.ts"],
+              summary: {
+                additions: 1,
+                deletions: 0,
+              },
+              hash: "patch-hash",
             },
           },
         },
@@ -432,8 +497,25 @@ describe("ipc session trace export helpers", () => {
           callID: "toolcall-1",
           tool: "grep",
           status: "completed",
+          diagnosticStatus: "error",
+          diagnostics: [
+            {
+              severity: "error",
+              code: "shell.exit_nonzero",
+              message: "Shell command exited with code 1.",
+            },
+            {
+              severity: "warning",
+              code: "shell.stderr",
+              message: "Shell command wrote to stderr.",
+            },
+          ],
           turnID: "turn-1",
           messageID: "message-1",
+          startedAt: 20,
+          endedAt: 21,
+          durationMs: 1,
+          output: largeToolOutput,
           eventIDs: ["event-1"],
         },
       ],
@@ -462,8 +544,8 @@ describe("ipc session trace export helpers", () => {
     expect(result).toEqual({
       canceled: false,
       path: expect.any(String),
-      fileCount: 11,
-      recordCount: 1,
+      fileCount: 17,
+      recordCount: 2,
     })
     expect(toWindowsSeparators(result.path)).toBe("C:\\Exports\\anybox-trace-session-1-20260522-090807")
     expect(showOpenDialog).toHaveBeenCalledWith(expect.objectContaining({
@@ -481,12 +563,121 @@ describe("ipc session trace export helpers", () => {
 
     const writtenPaths = writeTraceFile.mock.calls.map((call) => call[0])
     expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).endsWith("\\manifest.json"))).toBe(true)
+    expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).endsWith("\\README_FIRST.md"))).toBe(true)
+    expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).endsWith("\\event-flow.md"))).toBe(true)
+    expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).endsWith("\\semantic-flow.md"))).toBe(true)
+    expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).endsWith("\\payload-index.json"))).toBe(true)
+    expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).includes("\\payloads\\payload-000001-grep-toolcall-1-output.json"))).toBe(true)
     expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).endsWith("\\records\\index.json"))).toBe(true)
     expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).includes("\\records\\000001-tool.call.completed-1-event-1.json"))).toBe(true)
     expect(writtenPaths.some((filePath) => toWindowsSeparators(filePath).endsWith("\\runtime\\status.json"))).toBe(true)
 
     const manifestCall = writeTraceFile.mock.calls.find((call) => toWindowsSeparators(call[0]).endsWith("\\manifest.json"))
     expect(manifestCall?.[1]).toContain('"exportFormat": "anybox-session-trace-directory"')
+    expect(manifestCall?.[1]).toContain('"readme": "README_FIRST.md"')
+    expect(manifestCall?.[1]).toContain('"eventFlow": "event-flow.md"')
+    expect(manifestCall?.[1]).toContain('"semanticFlow": "semantic-flow.md"')
+    expect(manifestCall?.[1]).toContain('"payloadIndex": "payload-index.json"')
+    const readmeCall = writeTraceFile.mock.calls.find((call) => toWindowsSeparators(call[0]).endsWith("\\README_FIRST.md"))
+    expect(readmeCall?.[1]).toContain("# README FIRST: Anybox Session Trace")
+    expect(readmeCall?.[1]).toContain("read `semantic-flow.md` first")
+    expect(readmeCall?.[1]).toContain("`messages/index.json`: searchable message index")
+    expect(readmeCall?.[1]).toContain("`payload-index.json`: index for large payload files")
+    expect(readmeCall?.[1]).toContain("payloadRefs: 1")
+    const eventFlowCall = writeTraceFile.mock.calls.find((call) => toWindowsSeparators(call[0]).endsWith("\\event-flow.md"))
+    expect(eventFlowCall?.[1]).toContain("# Anybox Agent Event Flow")
+    expect(eventFlowCall?.[1]).toContain("tool.call.completed")
+    expect(eventFlowCall?.[1]).toContain("shell.exit_nonzero")
+    expect(eventFlowCall?.[1]).toContain("Shell command exited with code 1.")
+    expect(eventFlowCall?.[1]).toContain("output=[ref:payloads/payload-000001-grep-toolcall-1-output.json")
+    const semanticFlowCall = writeTraceFile.mock.calls.find((call) => toWindowsSeparators(call[0]).endsWith("\\semantic-flow.md"))
+    expect(semanticFlowCall?.[1]).toContain("# Anybox Agent Semantic Flow")
+    expect(semanticFlowCall?.[1]).toContain("### 1. tool - grep")
+    expect(semanticFlowCall?.[1]).toContain("### 2. patch - patch / patch-1")
+    expect(String(semanticFlowCall?.[1]).indexOf("### 1. tool - grep")).toBeLessThan(
+      String(semanticFlowCall?.[1]).indexOf("### 2. patch - patch / patch-1"),
+    )
+    expect(semanticFlowCall?.[1]).toContain("tool")
+    expect(semanticFlowCall?.[1]).toContain("grep")
+    expect(semanticFlowCall?.[1]).toContain("diagnostics=`error:shell.exit_nonzero")
+    expect(semanticFlowCall?.[1]).toContain("- sourceEvents:")
+    expect(semanticFlowCall?.[1]).toContain("output=[ref:payloads/payload-000001-grep-toolcall-1-output.json")
+    expect(semanticFlowCall?.[1]).not.toContain("| # | elapsed")
+    expect(semanticFlowCall?.[1]).not.toContain("tool.call.completed")
+    const payloadIndexCall = writeTraceFile.mock.calls.find((call) => toWindowsSeparators(call[0]).endsWith("\\payload-index.json"))
+    expect(payloadIndexCall?.[1]).toContain('"fieldPath": "output"')
+    expect(payloadIndexCall?.[1]).toContain('"path": "payloads/payload-000001-grep-toolcall-1-output.json"')
+    const payloadIndex = JSON.parse(String(payloadIndexCall?.[1])) as Array<{
+      chars: number
+      path: string
+      sha256: string
+    }>
+    expect(payloadIndex).toHaveLength(1)
+    const payloadEntry = payloadIndex[0]!
+    const payloadCall = writeTraceFile.mock.calls.find((call) =>
+      toWindowsSeparators(call[0]).endsWith(toWindowsSeparators(payloadEntry.path)))
+    const payloadContent = String(payloadCall?.[1])
+    expect(payloadContent.length).toBe(payloadEntry.chars)
+    expect(createHash("sha256").update(payloadContent).digest("hex")).toBe(payloadEntry.sha256)
+    const toolCallIndexCall = writeTraceFile.mock.calls.find((call) => toWindowsSeparators(call[0]).endsWith("\\tool-calls\\index.json"))
+    const toolCallIndex = JSON.parse(String(toolCallIndexCall?.[1])) as Array<{
+      diagnosticStatus?: string
+      diagnostics?: Array<{ code: string; severity: string }>
+    }>
+    expect(toolCallIndex[0]!).toMatchObject({
+      diagnosticStatus: "error",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          code: "shell.exit_nonzero",
+        }),
+      ]),
+    })
+    const messageIndexCall = writeTraceFile.mock.calls.find((call) => toWindowsSeparators(call[0]).endsWith("\\messages\\index.json"))
+    const messageIndex = JSON.parse(String(messageIndexCall?.[1])) as Array<{
+      agent?: string
+      created?: number
+      cwd?: string
+      messageID?: string
+      modelID?: string
+      providerID?: string
+      role?: string
+      turnID?: string
+    }>
+    expect(messageIndex[0]!).toMatchObject({
+      agent: "default",
+      created: 1,
+      cwd: "C:\\Projects\\Demo",
+      messageID: "message-1",
+      modelID: "model-1",
+      providerID: "provider-1",
+      role: "assistant",
+      turnID: "turn-1",
+    })
+    const turnIndexCall = writeTraceFile.mock.calls.find((call) => toWindowsSeparators(call[0]).endsWith("\\runtime\\turns\\index.json"))
+    const turnIndex = JSON.parse(String(turnIndexCall?.[1])) as Array<{
+      file: string
+      llmCallCount: number
+      status?: string
+      toolCount: number
+      turnID?: string
+    }>
+    expect(turnIndex[0]!).toMatchObject({
+      llmCallCount: 1,
+      status: "completed",
+      toolCount: 1,
+      turnID: "turn-1",
+    })
+    const turnRecordCall = writeTraceFile.mock.calls.find((call) =>
+      toWindowsSeparators(call[0]).endsWith(toWindowsSeparators(turnIndex[0]!.file)))
+    const turnRecord = JSON.parse(String(turnRecordCall?.[1])) as {
+      turn: unknown
+    }
+    expect(turnRecord.turn).not.toBe("[CIRCULAR]")
+    expect(turnRecord.turn).toMatchObject({
+      status: "completed",
+      turnID: "turn-1",
+    })
     const recordCall = writeTraceFile.mock.calls.find((call) =>
       toWindowsSeparators(call[0]).includes("\\records\\000001-tool.call.completed-1-event-1.json"))
     expect(recordCall?.[1]).toContain('"relatedToolCallFiles"')

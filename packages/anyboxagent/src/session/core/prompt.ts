@@ -799,7 +799,8 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 throw error;
             }
 
-            await persistMessageRecord(assistantMessage, turn);
+            // Processor already persists the finalized assistant message through lifecyclePersistence.
+            // await persistMessageRecord(assistantMessage, turn);
             const modelCallEndSnapshot = await persistModelCallPatchPart({
                 sessionID,
                 assistantMessageID: assistantMessage.id,

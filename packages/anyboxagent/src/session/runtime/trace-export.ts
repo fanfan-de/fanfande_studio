@@ -16,6 +16,16 @@ export interface TraceExportRedactionStats {
   truncatedCount: number
 }
 
+export type TraceToolDiagnosticSeverity = "warning" | "error"
+
+export interface TraceToolDiagnostic {
+  severity: TraceToolDiagnosticSeverity
+  code: string
+  message: string
+}
+
+export type TraceToolDiagnosticStatus = "ok" | TraceToolDiagnosticSeverity
+
 export interface AgentSessionTraceExport {
   schemaVersion: 1
   generatedAt: number
@@ -57,6 +67,8 @@ export interface AgentSessionTraceExport {
     output?: unknown
     modelOutput?: unknown
     error?: string
+    diagnosticStatus: TraceToolDiagnosticStatus
+    diagnostics: TraceToolDiagnostic[]
     approvalID?: string
     startedAt?: number
     endedAt?: number
@@ -72,6 +84,137 @@ function readRecord(value: unknown): Record<string, unknown> | null {
 
 function readString(value: unknown) {
   return typeof value === "string" ? value : ""
+}
+
+function readOptionalString(value: unknown) {
+  return typeof value === "string" ? value : undefined
+}
+
+function readNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+function readBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : undefined
+}
+
+function readToolModelOutputValue(modelOutput: unknown) {
+  const record = readRecord(modelOutput)
+  if (!record) return null
+
+  const jsonValue = readRecord(record.value)
+  if (record.type === "json" && jsonValue) return jsonValue
+
+  return record
+}
+
+function readToolOutputMetadata(output: unknown) {
+  return readRecord(readRecord(output)?.metadata)
+}
+
+function firstDefined<T>(values: Array<T | undefined>): T | undefined {
+  return values.find((value) => value !== undefined)
+}
+
+function buildTraceToolDiagnostics(input: {
+  error?: string
+  modelOutput?: unknown
+  output?: unknown
+  status?: string
+}): TraceToolDiagnostic[] {
+  const diagnostics: TraceToolDiagnostic[] = []
+  const seen = new Set<string>()
+  const addDiagnostic = (diagnostic: TraceToolDiagnostic) => {
+    if (seen.has(diagnostic.code)) return
+    seen.add(diagnostic.code)
+    diagnostics.push(diagnostic)
+  }
+  const metadataRecords = [
+    readToolModelOutputValue(input.modelOutput),
+    readToolOutputMetadata(input.output),
+  ].filter((record): record is Record<string, unknown> => record !== null)
+  const metadataValue = <T>(reader: (value: unknown) => T | undefined, key: string) =>
+    firstDefined(metadataRecords.map((record) => reader(record[key])))
+
+  if (input.status === "error") {
+    addDiagnostic({
+      severity: "error",
+      code: "tool.lifecycle_error",
+      message: input.error ? `Tool lifecycle error: ${input.error}` : "Tool lifecycle ended with error status.",
+    })
+  } else if (input.error) {
+    addDiagnostic({
+      severity: "error",
+      code: "tool.error",
+      message: `Tool reported an error: ${input.error}`,
+    })
+  }
+
+  const exitCode = metadataValue(readNumber, "exitCode")
+  const status = metadataValue(readOptionalString, "status")
+  const stderr = metadataValue(readOptionalString, "stderr")?.trim()
+  const timedOut = metadataValue(readBoolean, "timedOut") ?? status === "timed_out"
+  const aborted = metadataValue(readBoolean, "aborted") ?? status === "aborted"
+  const stdoutTruncated = metadataValue(readBoolean, "stdoutTruncated") ?? false
+  const stderrTruncated = metadataValue(readBoolean, "stderrTruncated") ?? false
+
+  if (timedOut) {
+    addDiagnostic({
+      severity: "error",
+      code: "shell.timed_out",
+      message: "Shell command timed out.",
+    })
+  }
+
+  if (exitCode !== undefined && exitCode !== 0) {
+    addDiagnostic({
+      severity: "error",
+      code: "shell.exit_nonzero",
+      message: `Shell command exited with code ${exitCode}.`,
+    })
+  } else if (status === "failed") {
+    addDiagnostic({
+      severity: "error",
+      code: "shell.failed",
+      message: "Shell command reported failed status.",
+    })
+  }
+
+  if (aborted) {
+    addDiagnostic({
+      severity: "warning",
+      code: "shell.aborted",
+      message: "Shell command was aborted.",
+    })
+  }
+
+  if (stderr) {
+    addDiagnostic({
+      severity: "warning",
+      code: "shell.stderr",
+      message: "Shell command wrote to stderr.",
+    })
+  }
+
+  if (stdoutTruncated || stderrTruncated) {
+    const streams = [
+      stdoutTruncated ? "stdout" : "",
+      stderrTruncated ? "stderr" : "",
+    ].filter(Boolean).join(" and ")
+    addDiagnostic({
+      severity: "warning",
+      code: "shell.output_truncated",
+      message: `Shell command ${streams} output was truncated.`,
+    })
+  }
+
+  return diagnostics
+}
+
+function getTraceToolDiagnosticStatus(diagnostics: TraceToolDiagnostic[]): TraceToolDiagnosticStatus {
+  if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) return "error"
+  if (diagnostics.some((diagnostic) => diagnostic.severity === "warning")) return "warning"
+  return "ok"
 }
 
 function sanitizeString(value: string, stats: TraceExportRedactionStats) {
@@ -106,7 +249,7 @@ export function sanitizeTraceExportValue(
   value: unknown,
   stats: TraceExportRedactionStats,
   key = "",
-  seen = new WeakSet<object>(),
+  ancestors = new WeakSet<object>(),
 ): unknown {
   if (key && SENSITIVE_KEY_PATTERN.test(key)) {
     stats.redactedCount += 1
@@ -126,22 +269,26 @@ export function sanitizeTraceExportValue(
     return value
   }
 
-  if (seen.has(value)) {
+  if (ancestors.has(value)) {
     stats.redactedCount += 1
     return "[CIRCULAR]"
   }
-  seen.add(value)
+  ancestors.add(value)
 
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeTraceExportValue(item, stats, "", seen))
+  try {
+    if (Array.isArray(value)) {
+      return value.map((item) => sanitizeTraceExportValue(item, stats, "", ancestors))
+    }
+
+    return Object.fromEntries(
+      Object.entries(value).map(([entryKey, entryValue]) => [
+        entryKey,
+        sanitizeTraceExportValue(entryValue, stats, entryKey, ancestors),
+      ]),
+    )
+  } finally {
+    ancestors.delete(value)
   }
-
-  return Object.fromEntries(
-    Object.entries(value).map(([entryKey, entryValue]) => [
-      entryKey,
-      sanitizeTraceExportValue(entryValue, stats, entryKey, seen),
-    ]),
-  )
 }
 
 function readToolEventCallID(event: RuntimeEvent.RuntimeEvent) {
@@ -202,7 +349,7 @@ function buildToolCalls(input: {
       const time = "time" in state ? state.time : undefined
       const endedAt = time && "end" in time && typeof time.end === "number" ? time.end : runtimeTool?.endedAt
       const status = state.status
-      const toolCall: AgentSessionTraceExport["toolCalls"][number] = {
+      const toolCallWithoutDiagnostics = {
         callID: part.callID,
         tool: part.tool,
         status,
@@ -219,6 +366,12 @@ function buildToolCalls(input: {
         endedAt,
         durationMs: runtimeTool?.durationMs,
         eventIDs: eventIDsByCallID.get(part.callID) ?? [],
+      }
+      const diagnostics = buildTraceToolDiagnostics(toolCallWithoutDiagnostics)
+      const toolCall: AgentSessionTraceExport["toolCalls"][number] = {
+        ...toolCallWithoutDiagnostics,
+        diagnosticStatus: getTraceToolDiagnosticStatus(diagnostics),
+        diagnostics,
       }
 
       toolCalls.set(part.callID, toolCall)

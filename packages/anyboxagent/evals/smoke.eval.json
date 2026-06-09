@@ -1,0 +1,32 @@
+{
+  "id": "anybox-agent-smoke",
+  "name": "Anybox Agent Smoke",
+  "description": "Small live regression suite for validating basic agent response quality.",
+  "defaultThreshold": 1,
+  "concurrency": 1,
+  "repetitions": 1,
+  "cases": [
+    {
+      "id": "basic-answer",
+      "name": "Basic answer",
+      "tags": ["smoke", "text"],
+      "input": {
+        "prompt": "Answer in one short sentence: what is Anybox?"
+      },
+      "assertions": [
+        {
+          "type": "status",
+          "value": "completed"
+        },
+        {
+          "type": "output_min_length",
+          "min": 20
+        },
+        {
+          "type": "output_not_contains",
+          "value": "I cannot"
+        }
+      ]
+    }
+  ]
+}

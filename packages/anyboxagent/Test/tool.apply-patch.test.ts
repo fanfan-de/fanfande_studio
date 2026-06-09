@@ -208,6 +208,21 @@ describe("apply_patch Begin Patch format", () => {
     })
   })
 
+  it("rejects multiple Begin Patch wrappers with an actionable message", async () => {
+    await withApplyPatchTool(async ({ executePatch }) => {
+      await expect(executePatch([
+        "*** Begin Patch",
+        "*** Add File: one.txt",
+        "+one",
+        "*** End Patch",
+        "*** Begin Patch",
+        "*** Add File: two.txt",
+        "+two",
+        "*** End Patch",
+      ].join("\n"))).rejects.toThrow("accepts exactly one *** Begin Patch / *** End Patch wrapper per call")
+    })
+  })
+
   it("rejects add-only update hunks", async () => {
     await withApplyPatchTool(async ({ root, executePatch }) => {
       await writeFile(path.join(root, "notes.txt"), "alpha\n", "utf8")
