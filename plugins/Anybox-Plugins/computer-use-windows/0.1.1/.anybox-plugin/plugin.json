@@ -3,14 +3,14 @@
   "version": "0.1.1",
   "description": "Controlled Windows desktop automation through guarded window snapshots and input actions.",
   "author": {
-    "name": "Fanfande"
+    "name": "Anybox"
   },
   "keywords": ["windows", "computer-use", "desktop", "automation", "mcp"],
   "interface": {
     "displayName": "Computer Use Windows",
     "shortDescription": "Observe and control selected Windows app windows with approval gates.",
     "longDescription": "A local high-risk Computer Use plugin for Windows. It exposes read-only window discovery and snapshot tools plus approval-gated input actions through a local stdio MCP server.",
-    "developerName": "Fanfande",
+    "developerName": "Anybox",
     "category": "Automation",
     "capabilities": ["desktop", "windows", "screenshots", "input"],
     "logo": "CU",

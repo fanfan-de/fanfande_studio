@@ -2,10 +2,10 @@ import productPackage from "../../../package.json"
 
 export type InstallerPlatform = "windows" | "mac"
 
-export const repositoryUrl = "https://github.com/fanfan-de/fanfande_studio"
+export const repositoryUrl = "https://github.com/fanfan-de/anybox"
 
 const latestReleaseApiUrl =
-  "https://api.github.com/repos/fanfan-de/fanfande_studio/releases/latest"
+  "https://api.github.com/repos/fanfan-de/anybox/releases/latest"
 
 export const installerFallbackUrls: Record<InstallerPlatform, string> = {
   windows: `${repositoryUrl}/releases/latest`,

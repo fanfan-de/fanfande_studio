@@ -6,8 +6,8 @@
   "author": {
     "name": "Anybox"
   },
-  "homepage": "https://github.com/fanfan-de/Anybox-Plugins",
-  "repository": "https://github.com/fanfan-de/Anybox-Plugins",
+  "homepage": "https://github.com/fanfan-de/anybox/tree/master/plugins/Anybox-Plugins/presentations",
+  "repository": "https://github.com/fanfan-de/anybox/tree/master/plugins/Anybox-Plugins/presentations",
   "license": "MIT",
   "keywords": [
     "presentation",
@@ -28,7 +28,7 @@
       "Interactive",
       "Write"
     ],
-    "websiteURL": "https://github.com/fanfan-de/Anybox-Plugins",
+    "websiteURL": "https://github.com/fanfan-de/anybox/tree/master/plugins/Anybox-Plugins/presentations",
     "defaultPrompt": [
       "Create an editable PowerPoint deck from this outline",
       "Turn these notes into a polished slide deck",
@@ -48,8 +48,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/presentations/presentations-0.1.1.zip",
-    "sha256": "cf50d50de558482e0d274292286dd44b82c752cd63da6ecb3ff0864be3d9c627",
-    "size": 9688053
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/presentations/presentations-0.1.1.zip",
+    "sha256": "d9f7c0b61bfd052213998809b70178f85d20be6487d5e75629c6142f6424a43d",
+    "size": 41872
   }
 }

@@ -96,8 +96,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/game-studio/game-studio-0.1.0.zip",
-    "sha256": "9a7c65cc1c2b294f5c17e56eea2502a41b92388334c37f5c0b6f017dc5886913",
-    "size": 61071
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/game-studio/game-studio-0.1.0.zip",
+    "sha256": "c71ef5b2a5d2fc25bca240006a4c7458c200c4ff76c6d77810d87b2b345f1758",
+    "size": 53175
   }
 }

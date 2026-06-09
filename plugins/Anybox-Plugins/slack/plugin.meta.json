@@ -72,8 +72,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/slack/slack-0.1.0.zip",
-    "sha256": "a0b98e79ca6c077b52e2df9fbadb3172b47f6962a3360d9c7f6fed885873f575",
-    "size": 84903
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/slack/slack-0.1.0.zip",
+    "sha256": "4b990f9340ff7c73abedb4b4e39f957e97aaaef4e82c750abb2ff3857461c65c",
+    "size": 85013
   }
 }

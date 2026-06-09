@@ -4,7 +4,7 @@ set -euo pipefail
 SSH_USER="ubuntu"
 SSH_HOST="129.211.1.144"
 SSH_PORT="22"
-SSH_KEY="/Users/fanfande/Downloads/Macmini.pem"
+SSH_KEY="${HOME}/Downloads/Macmini.pem"
 
 ssh \
   -i "$SSH_KEY" \

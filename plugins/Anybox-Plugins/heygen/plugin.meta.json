@@ -58,8 +58,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/heygen/heygen-2.2.0.zip",
-    "sha256": "bf11533f4e21f40870004f610f7dabd7f078732d18dfdca5e6b72e3c108d0df8",
-    "size": 225875
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/heygen/heygen-2.2.0.zip",
+    "sha256": "ef67782f24da74559c4922a31708b3b2c7212fe7c59eeaf53a1b9f676b6c0bb0",
+    "size": 225987
   }
 }

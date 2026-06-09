@@ -18,14 +18,6 @@ describe("assistant response format markers", () => {
     })
   })
 
-  it("parses legacy response markers from stored conversations", () => {
-    expect(parseAssistantResponseFormat("<!-- fanfande-response-format: html -->\n<p>Hello</p>")).toEqual({
-      format: "html",
-      marker: "<!-- fanfande-response-format: html -->",
-      text: "<p>Hello</p>",
-    })
-  })
-
   it("defaults to Markdown when no marker is present", () => {
     const text = "## Hello\n\nPlain Markdown."
 
@@ -68,7 +60,6 @@ describe("assistant response format markers", () => {
     )
     expect(stripStreamingResponseFormatMarker("<")).toBe("")
     expect(stripStreamingResponseFormatMarker("<!-- anybox-response-format: h")).toBe("")
-    expect(stripStreamingResponseFormatMarker("<!-- fanfande-response-format: h")).toBe("")
     expect(stripStreamingResponseFormatMarker("   <!-- anybox-response-format: markdown")).toBe("")
   })
 

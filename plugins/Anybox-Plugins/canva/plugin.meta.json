@@ -49,8 +49,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/canva/canva-1.0.0.zip",
-    "sha256": "d00ea06c8415bae02625fb20b1d3db470a79f6b79a4a0d5bd7eb1346d512a6b4",
-    "size": 1100930
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/canva/canva-1.0.0.zip",
+    "sha256": "d1c3a8266b626da1d8cad84c1aa6809307880097da9f9ebe71c38692d948a655",
+    "size": 1101040
   }
 }

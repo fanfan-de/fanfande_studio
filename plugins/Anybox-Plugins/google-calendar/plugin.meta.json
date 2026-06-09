@@ -70,8 +70,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/google-calendar/google-calendar-1.2.0.zip",
-    "sha256": "f995df8f1203de3234e1f42eab955f58d26d41a8c73189361940a93509ebed26",
-    "size": 154166
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/google-calendar/google-calendar-1.2.0.zip",
+    "sha256": "ee42f8c0d0dfe2accf288980005c344d03b82a785895cbd6b183edef9c2135ec",
+    "size": 154296
   }
 }

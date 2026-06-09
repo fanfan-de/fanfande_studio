@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Anybox 插件开发指南，帮助创建、审查和验证第三方插件包。",
   "author": {
-    "name": "Fanfande"
+    "name": "Anybox"
   },
   "license": "MIT",
   "keywords": [
@@ -17,9 +17,9 @@
   "skills": "skills",
   "interface": {
     "displayName": "Anybox 插件开发",
-    "shortDescription": "创建和验证 Anybox/Fanfande 插件包。",
+    "shortDescription": "创建和验证 Anybox 插件包。",
     "longDescription": "将 Anybox 第三方插件开发指南打包为可安装插件，提供插件包结构、plugin.json、bundled skill、MCP server、connector、registry metadata 和验证流程的操作说明。",
-    "developerName": "Fanfande",
+    "developerName": "Anybox",
     "category": "Code",
     "capabilities": [
       "plugin-development",

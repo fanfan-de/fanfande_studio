@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Control Chrome through the Anybox browser extension and browser MCP connector.",
   "author": {
-    "name": "Fanfande"
+    "name": "Anybox"
   },
   "keywords": [
     "browser",
@@ -16,7 +16,7 @@
     "displayName": "Browser",
     "shortDescription": "Use Chrome tabs through the Anybox browser extension.",
     "longDescription": "A plugin that enables browser MCP tools through the shared Anybox browser connector and Chrome extension bridge.",
-    "developerName": "Fanfande",
+    "developerName": "Anybox",
     "category": "Browser",
     "capabilities": [
       "browser",
@@ -79,8 +79,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/browser/browser-0.1.0.zip",
-    "sha256": "8c014ff0d470cdc14fbb2b08caacc559aa335d51000acf69e65fd9c4c543af05",
-    "size": 2503
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/browser/browser-0.1.0.zip",
+    "sha256": "0668b57967518c882f2f99572cf2f96f8d64d3cb57e73c5df133b1a0077a6d90",
+    "size": 1056
   }
 }

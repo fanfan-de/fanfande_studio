@@ -55,8 +55,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/remotion/remotion-1.0.0.zip",
-    "sha256": "106854a212612f304e165b6bf79451ec987078573b685de4d45e791f6109775e",
-    "size": 116000
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/remotion/remotion-1.0.0.zip",
+    "sha256": "f99243f2c9c24cd1ec4f79347512530a959c8d3a92d9d0a6bcc62337b1225651",
+    "size": 116116
   }
 }

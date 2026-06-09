@@ -2,7 +2,7 @@
 
 本文面向第一次接触 Anybox 插件系统的第三方开发者。你不需要了解 Anybox 内部实现，也不需要修改 Anybox 源码；你只需要准备一个符合约定的插件包，Anybox Agent 就可以发现、安装、连接并调用你的插件能力。
 
-当前代码库里仍沿用部分 `Anybox` 命名，例如环境变量 `ANYBOX_PLUGIN_LOCAL_DIR` 和 `ANYBOX_PLUGIN_INSTALL_DIR`。本文中的 Anybox 插件系统指的就是当前桌面端 Agent 使用的这套插件运行时。
+当前代码库统一使用 `Anybox` 命名，环境变量以 `ANYBOX_` 开头，例如 `ANYBOX_PLUGIN_LOCAL_DIR` 和 `ANYBOX_PLUGIN_INSTALL_DIR`。本文中的 Anybox 插件系统指的就是当前桌面端 Agent 使用的这套插件运行时。
 
 ## 插件是什么
 
@@ -406,10 +406,10 @@ $env:ANYBOX_PLUGIN_LOCAL_DIR = "C:\Projects\anybox-plugin-examples"
 $env:ANYBOX_PLUGIN_REGISTRY_INDEX_URL = "off"
 ```
 
-然后在 Anybox/Anybox Agent 源码仓库里运行 catalog 检查：
+然后在 Anybox Agent 源码仓库里运行 catalog 检查：
 
 ```powershell
-cd C:\Projects\anybox_studio\packages\anyboxagent
+cd C:\Projects\anybox\packages\anyboxagent
 bun -e "import * as Plugin from './src/plugin/plugin.ts'; console.log(JSON.stringify(await Plugin.listCatalog(), null, 2))"
 ```
 

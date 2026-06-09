@@ -44,8 +44,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/stripe/stripe-1.0.0.zip",
-    "sha256": "1fbe96c1106a6a3a9b3681f50eda15b7b1f11fca2542642098374475293378c0",
-    "size": 22419
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/stripe/stripe-1.0.0.zip",
+    "sha256": "23e0bd27c98c2fd5b5690bbcd8c3cf97e0bb85a0b61ba637587aeeabae9a1637",
+    "size": 22531
   }
 }

@@ -157,6 +157,32 @@ describe("managed agent workspace dependencies", () => {
       },
     )
   })
+
+  it("does not pass plugin install directory overrides to the managed agent", async () => {
+    const runtimeDir = await createTempDirectory("anybox-managed-agent-runtime-")
+    const agentDataDir = path.join(runtimeDir, "agent-data")
+
+    await withProcessEnv(
+      {
+        ANYBOX_PLUGIN_INSTALL_DIR: String.raw`C:\wrong-plugin-root`,
+      },
+      () => {
+        const env = managedAgentInternals.buildManagedAgentStartEnv(
+          {
+            label: "test runtime",
+            command: "bun",
+            args: ["agent-server.js"],
+            sourceRuntime: false,
+          },
+          4096,
+          agentDataDir,
+        )
+
+        expect(env.ANYBOX_PLUGIN_INSTALL_DIR).toBeUndefined()
+        expect(env[managedAgentInternals.env.agentDataDir]).toBe(agentDataDir)
+      },
+    )
+  })
 })
 
 describe("managed agent proxy environment", () => {

@@ -61,8 +61,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/latex/latex-0.2.0.zip",
-    "sha256": "b23556983c1f621ce15b89c8b8c83fffb0dd6949c10360917f7cad0ca67a2e1d",
-    "size": 19204553
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/latex/latex-0.2.0.zip",
+    "sha256": "a86086ed8850bfd359a016e7db03a421594451bcaf063ae92fef1b2c0dea6a21",
+    "size": 19203908
   }
 }

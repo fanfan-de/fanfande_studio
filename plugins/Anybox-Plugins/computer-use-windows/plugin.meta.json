@@ -4,7 +4,7 @@
   "version": "0.1.1",
   "description": "Controlled Windows desktop automation through guarded window snapshots and input actions.",
   "author": {
-    "name": "Fanfande"
+    "name": "Anybox"
   },
   "keywords": [
     "windows",
@@ -17,7 +17,7 @@
     "displayName": "Computer Use Windows",
     "shortDescription": "Observe and control selected Windows app windows with approval gates.",
     "longDescription": "A local high-risk Computer Use plugin for Windows. It exposes read-only window discovery and snapshot tools plus approval-gated input actions through a local stdio MCP server.",
-    "developerName": "Fanfande",
+    "developerName": "Anybox",
     "category": "Automation",
     "capabilities": [
       "desktop",
@@ -169,8 +169,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/computer-use-windows/computer-use-windows-0.1.1.zip",
-    "sha256": "efca3155e098656a091979016706377e7a52de4e0e8f5abdb735d120e66bac08",
-    "size": 44864683
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/computer-use-windows/computer-use-windows-0.1.1.zip",
+    "sha256": "6ceb708a8b3868438e48378206eb116994b426c971cfb5da7b4fb9f3ea7330fe",
+    "size": 44870885
   }
 }

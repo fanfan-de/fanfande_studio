@@ -64,8 +64,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/notion/notion-0.1.0.zip",
-    "sha256": "9ee934d1e163e0b85b5f975e5323b1d83862df7b028ca847831af100a32f3a51",
-    "size": 229169
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/notion/notion-0.1.0.zip",
+    "sha256": "813f8db927eac6d9aff747338ad2ec60f29fd0c356204f6ec8c48b38899ea0ca",
+    "size": 229281
   }
 }

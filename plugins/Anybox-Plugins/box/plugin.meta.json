@@ -39,8 +39,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/box/box-0.0.0.zip",
-    "sha256": "1480492fb4ef2e8f258097450b091b279e9572511f00e0120b49adb55e648989",
-    "size": 43245
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/box/box-0.0.0.zip",
+    "sha256": "0c2c964ea03ea769b7a057ffcfc0d97dfef9858f1e264c60adaf13ee4f6a330b",
+    "size": 43351
   }
 }

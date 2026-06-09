@@ -7,7 +7,7 @@
     "name": "Anybox"
   },
   "homepage": "https://obsidian.md/help/cli",
-  "repository": "https://github.com/fanfan-de/Anybox-Plugins",
+  "repository": "https://github.com/fanfan-de/anybox/tree/master/plugins/Anybox-Plugins/obsidian-cli",
   "license": "MIT",
   "keywords": [
     "obsidian",
@@ -73,8 +73,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/obsidian-cli/obsidian-cli-0.1.0.zip",
-    "sha256": "cd55d55b326df16547996f5f4031befcf3d6e3e84e784b1ddda3f6d01025958e",
-    "size": 153715
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/obsidian-cli/obsidian-cli-0.1.0.zip",
+    "sha256": "374b525afbaea9f01a424e64c77a962de8dfee573c7547fa61b16ee7ba21e5b7",
+    "size": 153238
   }
 }

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Anybox 插件开发指南，帮助创建、审查和验证第三方插件包。",
   "author": {
-    "name": "Fanfande"
+    "name": "Anybox"
   },
   "license": "MIT",
   "keywords": [
@@ -18,9 +18,9 @@
   "skills": "skills",
   "interface": {
     "displayName": "Anybox 插件开发",
-    "shortDescription": "创建和验证 Anybox/Fanfande 插件包。",
+    "shortDescription": "创建和验证 Anybox 插件包。",
     "longDescription": "将 Anybox 第三方插件开发指南打包为可安装插件，提供插件包结构、plugin.json、bundled skill、MCP server、connector、registry metadata 和验证流程的操作说明。",
-    "developerName": "Fanfande",
+    "developerName": "Anybox",
     "category": "Code",
     "capabilities": [
       "plugin-development",
@@ -38,14 +38,14 @@
   "skillPreviews": [
     {
       "name": "anybox-plugin-development",
-      "description": "创建、审查或验证 Anybox/Fanfande 第三方插件包。Use when the user asks to make a plugin, convert an API/SaaS/local tool into an installable plugin, write plugin.json, add plugin MCP servers, add bundled plugin skills, define plugin-owned connectors with API key or OAuth credentials, package plugin metadata, or debug plugin catalog/install/diagnostic failures.",
+      "description": "创建、审查或验证 Anybox 第三方插件包。Use when the user asks to make a plugin, convert an API/SaaS/local tool into an installable plugin, write plugin.json, add plugin MCP servers, add bundled plugin skills, define plugin-owned connectors with API key or OAuth credentials, package plugin metadata, or debug plugin catalog/install/diagnostic failures.",
       "directory": "anybox-plugin-development"
     }
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/anybox-plugin-development/anybox-plugin-development-0.1.0.zip",
-    "sha256": "0aa5db844ddd2798d1a15b725078a24516ab72ab409caf4ad7dfdbecb2403a51",
-    "size": 13193
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/anybox-plugin-development/anybox-plugin-development-0.1.0.zip",
+    "sha256": "f04e27beefef65f1edfeac8fd7c2a2089a8cd3895f2a0c125988292825f6b858",
+    "size": 13139
   }
 }

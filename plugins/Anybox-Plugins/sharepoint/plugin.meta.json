@@ -77,8 +77,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/sharepoint/sharepoint-0.1.0.zip",
-    "sha256": "851eff42edb599aac9b75acb48653d30bea9387c8832c1fd4e95d1563260364f",
-    "size": 381304
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/sharepoint/sharepoint-0.1.0.zip",
+    "sha256": "bead7706c37a95e2fd94842a512df7e94948f8fdfcbc1e7fd665fb4dfb0ecabd",
+    "size": 381424
   }
 }

@@ -205,10 +205,10 @@ function main() {
     fail(failures, "deep link scheme", "expected expo.scheme to be anybox-mobile")
   }
 
-  if (appConfig.expo?.android?.package === "studio.fanfande.anybox.mobile") {
-    pass("Android package", "studio.fanfande.anybox.mobile")
+  if (appConfig.expo?.android?.package === "com.anybox.mobile") {
+    pass("Android package", "com.anybox.mobile")
   } else {
-    fail(failures, "Android package", "expected studio.fanfande.anybox.mobile")
+    fail(failures, "Android package", "expected com.anybox.mobile")
   }
 
   if (appConfig.expo?.android?.usesCleartextTraffic === true) {

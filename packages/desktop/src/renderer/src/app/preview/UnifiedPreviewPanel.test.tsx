@@ -194,7 +194,7 @@ describe("UnifiedPreviewPanel", () => {
 
   it("uses the Electron webview preload for HTML targets when available", () => {
     vi.spyOn(globalThis.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 Electron/39")
-    window.desktop!.previewGuestPreloadPath = "file:///C:/Projects/fanfande_studio/packages/desktop/out/preload/preview-webview.mjs"
+    window.desktop!.previewGuestPreloadPath = "file:///C:/Projects/anybox/packages/desktop/out/preload/preview-webview.mjs"
 
     const { container } = renderUnifiedPreviewPanel({
       state: createPreviewState({

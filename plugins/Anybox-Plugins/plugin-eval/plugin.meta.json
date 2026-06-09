@@ -73,8 +73,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/plugin-eval/plugin-eval-0.1.0.zip",
-    "sha256": "75fc90f4930d0b58ee909f198c97f2e821bf5299e6d718ba8ece8ce82283d9bf",
-    "size": 95750
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/plugin-eval/plugin-eval-0.1.0.zip",
+    "sha256": "4500f1cb3722062c1a60ea235a6bd810656de03e3f2b168f623660d743bc479e",
+    "size": 96850
   }
 }

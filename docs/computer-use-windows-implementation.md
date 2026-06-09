@@ -1,6 +1,6 @@
 # Computer Use Windows 插件实现说明
 
-本文介绍仓库当前的 `computer-use-windows@0.1.1` 插件是如何工作的。它不是一个独立的“超级自动化引擎”，而是把现有 Anybox/Fanfande 的插件、MCP、权限审批、Skill 和桌面端会话流串起来，让 Agent 可以在受控条件下观察和操作 Windows 桌面窗口。
+本文介绍仓库当前的 `computer-use-windows@0.1.1` 插件是如何工作的。它不是一个独立的“超级自动化引擎”，而是把现有 Anybox 的插件、MCP、权限审批、Skill 和桌面端会话流串起来，让 Agent 可以在受控条件下观察和操作 Windows 桌面窗口。
 
 一句话概括：它给 Agent 提供“看窗口截图”和“发鼠标键盘输入”的能力，同时在插件 manifest、MCP server、Windows helper、桌面遮罩和会话取消这几层都加了闸门。
 
@@ -10,7 +10,6 @@
 
 - `plugins/Anybox-Plugins/computer-use-windows/plugin.meta.json`：远程/市场 catalog 元数据，包含下载包信息、展示文案、工具预览和权限说明。
 - `plugins/Anybox-Plugins/computer-use-windows/0.1.1/.anybox-plugin/plugin.json`：真正安装时读取的插件 manifest。
-- `plugins/Anybox-Plugins/computer-use-windows/0.1.1/.fanfande-plugin/plugin.json`：兼容旧入口的 manifest。
 - `plugins/Anybox-Plugins/computer-use-windows/0.1.1/skills/computer-use/SKILL.md`：给 Agent 的使用规则。
 - `plugins/Anybox-Plugins/computer-use-windows/0.1.1/scripts/server.js`：本地 stdio MCP server，负责暴露工具、校验参数、管理窗口引用和调用 helper。
 - `plugins/Anybox-Plugins/computer-use-windows/0.1.1/helper/ComputerUse.Helper/Program.cs`：Windows helper 源码，真正调用 Win32 API 截图和输入。
@@ -55,7 +54,7 @@ flowchart LR
 - 内置插件目录：`packages/anyboxagent/plugins/builtin`
 - 仓库 workspace 插件目录：`plugins/Anybox-Plugins`
 - 用户安装目录：`ANYBOX_PLUGIN_INSTALL_DIR`，默认落在 Agent 数据目录下的 `plugins/installed`
-- 远程 registry：默认 index 是 `https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/index.json`
+- 远程 registry：默认 index 是 `https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/index.json`
 
 `computer-use-windows` 出现在 `plugins/Anybox-Plugins/index.json` 里，并且本地也有完整包：
 
@@ -64,7 +63,6 @@ plugins/Anybox-Plugins/computer-use-windows/
   plugin.meta.json
   0.1.1/
     .anybox-plugin/plugin.json
-    .fanfande-plugin/plugin.json
     skills/computer-use/SKILL.md
     scripts/server.js
     helper/win32-x64/computer-use-helper.exe
@@ -73,7 +71,7 @@ plugins/Anybox-Plugins/computer-use-windows/
 
 安装时，插件系统主要做这些事：
 
-- 读取并校验 manifest。当前支持 `.anybox-plugin/plugin.json`，同时兼容 `.fanfande-plugin/plugin.json`。
+- 读取并校验 manifest。当前只支持 `.anybox-plugin/plugin.json`。
 - 归一化插件 ID。这里的插件 ID 是 `computer-use-windows`。
 - 生成 MCP server ID。manifest 中 server id 是 `windows`，因此最终全局 MCP server ID 是：
 
@@ -646,14 +644,14 @@ coordinate is outside the latest snapshot bounds.
 修改插件系统时：
 
 ```powershell
-cd C:\Projects\fanfande_studio\packages\anyboxagent
+cd C:\Projects\anybox\packages\anyboxagent
 bun test Test/plugin.test.ts
 ```
 
 修改桌面遮罩时：
 
 ```powershell
-cd C:\Projects\fanfande_studio\packages\desktop
+cd C:\Projects\anybox\packages\desktop
 corepack pnpm test src/main/computer-use-overlay.test.ts
 ```
 

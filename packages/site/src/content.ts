@@ -4,12 +4,12 @@ export const navigationItems = [
     label: "文档",
   },
   {
-    href: "https://github.com/fanfan-de/fanfande_studio",
+    href: "https://github.com/fanfan-de/anybox",
     label: "GitHub",
     external: true,
   },
   {
-    href: "https://github.com/fanfan-de/fanfande_studio/releases/latest",
+    href: "https://github.com/fanfan-de/anybox/releases/latest",
     label: "Releases",
     external: true,
   },

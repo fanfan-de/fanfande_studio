@@ -364,7 +364,7 @@
         const sx = x + 30;
         let top = y + 118;
         fillRound(sx, top, 300, 122, 8, c.surfaceRaised, c.line);
-        text("Fanfande Desktop", sx + 16, top + 15, 18, 840, c.text);
+        text("Anybox Desktop", sx + 16, top + 15, 18, 840, c.text);
         text("0.2.2 - paired device - 7 capabilities", sx + 16, top + 44, 12, 560, c.muted);
         dot(sx + 18, top + 84, c.success, 5);
         text("Live updates connected", sx + 31, top + 78, 12, 760, c.success);
@@ -376,7 +376,7 @@
         top += 88;
         sectionTitle("Workspaces", "4", sx, top);
         top += 30;
-        listRow("fanfande_studio", "C:/Projects/fanfande_studio", "8 chats", sx, top, 300);
+        listRow("anybox", "C:/Projects/anybox", "8 chats", sx, top, 300);
         top += 78;
         listRow("anyboxProvider", "C:/Projects/anyboxProvider", "3 chats", sx, top, 300);
         top += 96;
@@ -386,7 +386,7 @@
         top += 86;
         sectionTitle("Recent", "12", sx, top);
         top += 30;
-        listRow("Mobile release smoke", "fanfande_studio", "4m", sx, top, 300);
+        listRow("Mobile release smoke", "anybox", "4m", sx, top, 300);
         bottomNav(x, y, "Home");
       }
 
@@ -416,7 +416,7 @@
         fillRound(sx + 14, top + 99, 272, 78, 8, darkPreview ? "#111210" : "#151515");
         paragraph(["npm run android:delivery-check", "-- --profile preview"], sx + 28, top + 115, 12, 18, darkPreview ? "#f5f5ef" : "#f7f7f4", 650);
         text("Workdir", sx + 14, top + 195, 11, 820, c.muted);
-        clippedText("C:/Projects/fanfande_studio/packages/mobile-app", sx + 14, top + 215, 272, 12, 520, c.text);
+        clippedText("C:/Projects/anybox/packages/mobile-app", sx + 14, top + 215, 272, 12, 520, c.text);
         text("Requested 2m ago", sx + 14, top + 242, 12, 650, c.muted);
         button("Deny", sx + 14, top + 258, 128, "danger");
         button("Allow", sx + 158, top + 258, 128, "primary");
@@ -429,7 +429,7 @@
 
       function drawChat(x, y) {
         const c = colors();
-        phoneShell(x, y, "Mobile release smoke", "Session in fanfande_studio");
+        phoneShell(x, y, "Mobile release smoke", "Session in anybox");
         const sx = x + 30;
         let top = y + 118;
         stateCard("Prompt is running", "Messages refresh while the desktop agent works.", sx, top, 300, "live");

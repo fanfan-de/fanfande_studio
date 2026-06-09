@@ -119,8 +119,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/superpowers/superpowers-5.1.0.zip",
-    "sha256": "3c47b7318dbd6f8ce45c2a7b8b41f22262799c03bc6bec0ddb46e719888a5dc1",
-    "size": 170600
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/superpowers/superpowers-5.1.0.zip",
+    "sha256": "5c733fcea5a5dcf47ea0ed84a44948dfeeec55cbd1f6991986552dd62368a8a8",
+    "size": 170722
   }
 }

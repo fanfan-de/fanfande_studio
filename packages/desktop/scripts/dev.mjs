@@ -19,7 +19,6 @@ appendNodePath(path.join(packageRoot, "node_modules"), path.join(repoRoot, "node
 
 function writeAgentLogLevel(level) {
   process.env.ANYBOX_LOG_LEVEL = level
-  delete process.env.FANFANDE_LOG_LEVEL
 }
 
 function printHelp() {

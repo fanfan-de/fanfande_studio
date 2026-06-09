@@ -17,7 +17,7 @@ The repository is a `pnpm` workspace. The core product is split between the Elec
 
 Installers are published from GitHub Releases:
 
-- [Latest release](https://github.com/fanfan-de/fanfande_studio/releases/latest)
+- [Latest release](https://github.com/fanfan-de/anybox/releases/latest)
 - Windows x64 and macOS Apple Silicon are the current primary targets.
 
 ## Quick Start

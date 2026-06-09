@@ -7,7 +7,7 @@
     "name": "Anybox"
   },
   "homepage": "https://github.com/larksuite/cli",
-  "repository": "https://github.com/fanfan-de/Anybox-Plugins",
+  "repository": "https://github.com/fanfan-de/anybox/tree/master/plugins/Anybox-Plugins/feishu-cli",
   "license": "MIT",
   "keywords": [
     "feishu",
@@ -175,8 +175,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/feishu-cli/feishu-cli-0.1.0.zip",
-    "sha256": "61aa6c4e4ffa8355d5ae8f65cdbde23ae20e0178787341a5ac2fcd683f84b6b7",
-    "size": 1090261
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/feishu-cli/feishu-cli-0.1.0.zip",
+    "sha256": "28101594d9170ae39761e14b3dd4f44c490ceb5030b195f2bec34ce2c05613c5",
+    "size": 1095307
   }
 }

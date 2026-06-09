@@ -70,7 +70,6 @@ export function readRuntimeConfigAgentBaseURL(env: Environment = process.env) {
 
 export function agentBaseURL(env: Environment = process.env) {
   return normalizeAgentBaseURL(env.ANYBOX_AGENT_BASE_URL) ||
-    normalizeAgentBaseURL(env.FANFANDE_AGENT_BASE_URL) ||
     readRuntimeConfigAgentBaseURL(env) ||
     DEFAULT_AGENT_BASE_URL
 }

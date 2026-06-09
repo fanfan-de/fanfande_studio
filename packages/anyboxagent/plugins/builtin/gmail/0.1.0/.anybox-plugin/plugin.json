@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Read Gmail profile, search messages, and inspect message metadata through the Anybox Gmail connector.",
   "author": {
-    "name": "Fanfande"
+    "name": "Anybox"
   },
   "homepage": "https://developers.google.com/gmail/api",
   "keywords": ["gmail", "google", "email", "oauth"],
@@ -11,7 +11,7 @@
     "displayName": "Gmail",
     "shortDescription": "Connect Gmail with Google OAuth and expose read-only mail tools.",
     "longDescription": "A built-in plugin that uses the Anybox-managed Gmail connector for Google OAuth, a local stdio MCP wrapper, and runtime token injection.",
-    "developerName": "Fanfande",
+    "developerName": "Anybox",
     "category": "Automation",
     "capabilities": ["email", "oauth", "mcp"],
     "logo": "GM",

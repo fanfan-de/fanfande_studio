@@ -4,7 +4,7 @@ const readline = require("node:readline")
 
 const DEFAULT_AGENT_BASE_URL = "http://127.0.0.1:4096"
 const AGENT_BASE_URL = normalizeBaseURL(
-  process.env.ANYBOX_AGENT_BASE_URL || process.env.FANFANDE_AGENT_BASE_URL || DEFAULT_AGENT_BASE_URL,
+  process.env.ANYBOX_AGENT_BASE_URL || DEFAULT_AGENT_BASE_URL,
 )
 
 const tabId = {

@@ -106,7 +106,7 @@ describe("ThreadMarkdown", () => {
     const onLocalFileLinkOpen = vi.fn()
     render(
       <ThreadMarkdown
-        text="[ThreadView.tsx](C:/Projects/anybox_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx)"
+        text="[ThreadView.tsx](C:/Projects/anybox/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx)"
         onLocalFileLinkOpen={onLocalFileLinkOpen}
       />,
     )
@@ -115,7 +115,7 @@ describe("ThreadMarkdown", () => {
 
     expect(onLocalFileLinkOpen).toHaveBeenCalledWith({
       lineRange: null,
-      path: "C:/Projects/anybox_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
+      path: "C:/Projects/anybox/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
     })
     expect(window.desktop?.openExternalUrl).not.toHaveBeenCalled()
   })

@@ -12,7 +12,7 @@
 <plugin-id>/<version>/.anybox-plugin/plugin.json
 ```
 
-兼容旧入口：
+非版本化入口：
 
 ```text
 <plugin-id>/.anybox-plugin/plugin.json

@@ -18,7 +18,6 @@ import { getProcessEnvValue } from "#env/compat.ts"
 
 const INSTALLED_PLUGINS_TABLE = "installed_plugins"
 const PLUGIN_MANIFEST_PATH = join(".anybox-plugin", "plugin.json")
-const LEGACY_PLUGIN_MANIFEST_PATH = join(".fanfande-plugin", "plugin.json")
 const PLUGIN_APP_COMPAT_PATH = ".app.json"
 const BUILTIN_PLUGIN_PACKAGE_PATH = join("plugins", "builtin")
 const WORKSPACE_PLUGIN_PACKAGE_PATH = join("plugins", "Anybox-Plugins")
@@ -33,7 +32,7 @@ const PLUGIN_INSTALL_DIR_ENV = "ANYBOX_PLUGIN_INSTALL_DIR"
 const PLUGIN_REGISTRY_FILES_ENV = "ANYBOX_PLUGIN_REGISTRY_FILES"
 const PLUGIN_REGISTRY_INDEX_URL_ENV = "ANYBOX_PLUGIN_REGISTRY_INDEX_URL"
 const PLUGIN_REGISTRY_CACHE_DIR_ENV = "ANYBOX_PLUGIN_REGISTRY_CACHE_DIR"
-const DEFAULT_PLUGIN_REGISTRY_INDEX_URL = "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/index.json"
+const DEFAULT_PLUGIN_REGISTRY_INDEX_URL = "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/index.json"
 const MAX_PLUGIN_PACKAGE_BYTES = 100 * 1024 * 1024
 const MAX_PLUGIN_REGISTRY_INDEX_BYTES = 256 * 1024
 const MAX_PLUGIN_META_BYTES = 1024 * 1024
@@ -756,10 +755,8 @@ function normalizePluginConnectors(manifest: PluginManifest): PluginAppConnector
 }
 
 function safeReadPluginManifest(packageRoot: string) {
-  const manifestPath = [PLUGIN_MANIFEST_PATH, LEGACY_PLUGIN_MANIFEST_PATH]
-    .map((candidate) => join(packageRoot, candidate))
-    .find((candidate) => existsSync(candidate))
-  if (!manifestPath) return undefined
+  const manifestPath = join(packageRoot, PLUGIN_MANIFEST_PATH)
+  if (!existsSync(manifestPath)) return undefined
 
   try {
     const raw = readFileSync(manifestPath, "utf8")

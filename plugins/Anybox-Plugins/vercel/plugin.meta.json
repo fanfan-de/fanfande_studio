@@ -289,8 +289,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/vercel/vercel-0.21.0.zip",
-    "sha256": "6d70a93b51c44d40ba5a99146e4ae773329c16ca24cc5ee4fbe36a298e5cb2da",
-    "size": 337871
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/vercel/vercel-0.21.0.zip",
+    "sha256": "c9acf2fb964ab4d6a9adc8e76ecc273105d4e4d695cba7b06e01bb997847a6e9",
+    "size": 338039
   }
 }

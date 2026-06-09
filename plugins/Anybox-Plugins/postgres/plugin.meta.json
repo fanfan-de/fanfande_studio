@@ -74,8 +74,8 @@
   "skillPreviews": [],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/postgres/postgres-1.0.0.zip",
-    "sha256": "5dfd96da310ccbac3f8f663a64b81fb5df53b83999a58e36b1ea81bc5dca21b9",
-    "size": 1564
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/postgres/postgres-1.0.0.zip",
+    "sha256": "05426dc6a41249bb1c01d1c11449f1cb149a403ffea8ebbf10ebb8b2d2384aa4",
+    "size": 982
   }
 }

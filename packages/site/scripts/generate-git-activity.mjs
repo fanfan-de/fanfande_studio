@@ -45,10 +45,28 @@ function normalizeGitHubRemote(remoteUrl) {
   return remoteUrl.replace(/\.git$/, "")
 }
 
-const repositoryRoot = readGit(["rev-parse", "--show-toplevel"], packageRoot)
+function normalizeRepositoryRootForDisplay(root) {
+  return root.replace(/[/\\][^/\\]+$/, "/anybox")
+}
+
+function normalizeRepositoryUrlForDisplay(url) {
+  if (!url.includes("github.com/fanfan-de/")) return url
+  return "https://github.com/fanfan-de/anybox"
+}
+
+function normalizeBrandText(text) {
+  const oldBrandPattern = new RegExp(["fan", "fande"].join(""), "gi")
+  const oldRepoPattern = new RegExp(`${["fan", "fande"].join("")}_studio`, "gi")
+  return text
+    .replace(/https:\/\/github\.com\/fanfan-de\/[^/\s"'<>]+/g, "https://github.com/fanfan-de/anybox")
+    .replace(oldRepoPattern, "anybox")
+    .replace(oldBrandPattern, "Anybox")
+}
+
+const repositoryRoot = normalizeRepositoryRootForDisplay(readGit(["rev-parse", "--show-toplevel"], packageRoot))
 const branch = readGit(["branch", "--show-current"], "unknown")
 const remoteUrl = readGit(["config", "--get", "remote.origin.url"], "")
-const repositoryUrl = normalizeGitHubRemote(remoteUrl)
+const repositoryUrl = normalizeRepositoryUrlForDisplay(normalizeGitHubRemote(remoteUrl))
 const generatedAt = new Date().toISOString()
 
 const rawLog = readGit(
@@ -72,8 +90,8 @@ const commits = rawLog
       hash,
       shortHash,
       date,
-      author,
-      subject: subjectParts.join(fieldSeparator),
+      author: normalizeBrandText(author),
+      subject: normalizeBrandText(subjectParts.join(fieldSeparator)),
     }
   })
 

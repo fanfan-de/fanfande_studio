@@ -64,8 +64,8 @@
   ],
   "package": {
     "type": "zip",
-    "url": "https://raw.githubusercontent.com/fanfan-de/fanfande_studio/master/plugins/Anybox-Plugins/atlassian-rovo/atlassian-rovo-1.0.0.zip",
-    "sha256": "a353868cbb7717986c3c5d6fe5ee981ff981353351f6ba4fe43330f32186834d",
-    "size": 88166
+    "url": "https://raw.githubusercontent.com/fanfan-de/anybox/master/plugins/Anybox-Plugins/atlassian-rovo/atlassian-rovo-1.0.0.zip",
+    "sha256": "aa8d7d5faf261ef3f61071dfa9919ab015bba0c93f81c8998a3260322cdd5a58",
+    "size": 88294
   }
 }
