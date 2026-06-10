@@ -43,9 +43,30 @@ interface CalendarListStructuredContent extends Record<string, unknown> {
 
 const repoPluginRoot = resolve(import.meta.dir, "..", "..", "..", "plugins", "Anybox-Plugins")
 const calendarMcpServerID = "plugin.calendar.calendar"
-const createTodoToolID = "mcp__plugin_calendar_calendar__calendar_create_todo"
-const createEventToolID = "mcp__plugin_calendar_calendar__calendar_create_event"
-const listItemsToolID = "mcp__plugin_calendar_calendar__calendar_list_items"
+const calendarToolNames = [
+  "calendar_list_sources",
+  "calendar_update_source",
+  "calendar_create_todo",
+  "calendar_create_event",
+  "calendar_list_items",
+  "calendar_get_item",
+  "calendar_list_todos",
+  "calendar_update_todo",
+  "calendar_schedule_todo",
+  "calendar_complete_todo",
+  "calendar_delete_todo",
+  "calendar_update_event",
+  "calendar_cancel_event",
+  "calendar_delete_event",
+  "calendar_find_free_time",
+]
+const createTodoToolID = calendarToolID("calendar_create_todo")
+const createEventToolID = calendarToolID("calendar_create_event")
+const listItemsToolID = calendarToolID("calendar_list_items")
+
+function calendarToolID(name: string) {
+  return `mcp__plugin_calendar_calendar__${name}`
+}
 
 let activeRoot: string | null = null
 let previousDatabaseFile: string | undefined
@@ -179,12 +200,9 @@ describe("calendar plugin tools", () => {
     expect(calendarPlugin?.mcpServers).toHaveLength(1)
     expect(calendarPlugin?.mcpServers[0]?.id).toBe("calendar")
     expect(calendarPlugin?.mcpServers[0]?.runtime.transport).toBe("stdio")
-    expect(calendarPlugin?.mcpServers[0]?.tools.map((tool) => tool.name)).toEqual([
-      "calendar_create_todo",
-      "calendar_create_event",
-      "calendar_list_items",
-    ])
+    expect(calendarPlugin?.mcpServers[0]?.tools.map((tool) => tool.name)).toEqual(calendarToolNames)
     expect(calendarPlugin?.mcpServers[0]?.tools.find((tool) => tool.name === "calendar_list_items")?.readOnly).toBe(true)
+    expect(calendarPlugin?.mcpServers[0]?.tools.find((tool) => tool.name === "calendar_delete_event")?.destructive).toBe(true)
 
     const installed = await installCalendarPlugin()
     const server = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, calendarMcpServerID)
@@ -196,9 +214,21 @@ describe("calendar plugin tools", () => {
     expect(normalizePath(server?.transport === "stdio" ? server.args?.[0] : undefined)).toContain("/calendar/0.1.0/scripts/server.js")
     expect(server?.transport === "stdio" ? server.env?.ANYBOX_CALENDAR_AGENT_BASE_URL : undefined).toBe("http://127.0.0.1:4096")
     expect(server?.toolPolicies).toEqual({
+      calendar_list_sources: { policy: "auto" },
+      calendar_update_source: { policy: "ask" },
       calendar_create_todo: { policy: "ask" },
       calendar_create_event: { policy: "ask" },
       calendar_list_items: { policy: "auto" },
+      calendar_get_item: { policy: "auto" },
+      calendar_list_todos: { policy: "auto" },
+      calendar_update_todo: { policy: "ask" },
+      calendar_schedule_todo: { policy: "ask" },
+      calendar_complete_todo: { policy: "ask" },
+      calendar_delete_todo: { policy: "ask" },
+      calendar_update_event: { policy: "ask" },
+      calendar_cancel_event: { policy: "ask" },
+      calendar_delete_event: { policy: "ask" },
+      calendar_find_free_time: { policy: "auto" },
     })
   })
 
@@ -218,12 +248,10 @@ describe("calendar plugin tools", () => {
           const tools = await ToolRegistry.tools()
           const ids = tools.map((tool) => tool.id)
 
-          expect(ids).not.toContain("calendar_create_todo")
-          expect(ids).not.toContain("calendar_create_event")
-          expect(ids).not.toContain("calendar_list_items")
-          expect(ids).toContain(createTodoToolID)
-          expect(ids).toContain(createEventToolID)
-          expect(ids).toContain(listItemsToolID)
+          for (const toolName of calendarToolNames) {
+            expect(ids).not.toContain(toolName)
+            expect(ids).toContain(calendarToolID(toolName))
+          }
 
           const modelNames = new Map<string, string>()
           for (const tool of tools) {
@@ -239,13 +267,32 @@ describe("calendar plugin tools", () => {
           const createTodoTool = await ToolRegistry.get(createTodoToolID)
           const createEventTool = await ToolRegistry.get(createEventToolID)
           const listItemsTool = await ToolRegistry.get(listItemsToolID)
+          const listSourcesTool = await ToolRegistry.get(calendarToolID("calendar_list_sources"))
+          const listTodosTool = await ToolRegistry.get(calendarToolID("calendar_list_todos"))
+          const updateTodoTool = await ToolRegistry.get(calendarToolID("calendar_update_todo"))
+          const scheduleTodoTool = await ToolRegistry.get(calendarToolID("calendar_schedule_todo"))
+          const completeTodoTool = await ToolRegistry.get(calendarToolID("calendar_complete_todo"))
+          const updateEventTool = await ToolRegistry.get(calendarToolID("calendar_update_event"))
+          const cancelEventTool = await ToolRegistry.get(calendarToolID("calendar_cancel_event"))
+          const findFreeTimeTool = await ToolRegistry.get(calendarToolID("calendar_find_free_time"))
           expect(createTodoTool?.capabilities?.readOnly).toBe(false)
           expect(createEventTool?.capabilities?.readOnly).toBe(false)
           expect(listItemsTool?.capabilities?.readOnly).toBe(true)
+          expect(listSourcesTool?.capabilities?.readOnly).toBe(true)
+          expect(listTodosTool?.capabilities?.readOnly).toBe(true)
+          expect(findFreeTimeTool?.capabilities?.readOnly).toBe(true)
 
           const createTodo = await createTodoTool!.init()
           const createEvent = await createEventTool!.init()
           const listItems = await listItemsTool!.init()
+          const listSources = await listSourcesTool!.init()
+          const listTodos = await listTodosTool!.init()
+          const updateTodo = await updateTodoTool!.init()
+          const scheduleTodo = await scheduleTodoTool!.init()
+          const completeTodo = await completeTodoTool!.init()
+          const updateEvent = await updateEventTool!.init()
+          const cancelEvent = await cancelEventTool!.init()
+          const findFreeTime = await findFreeTimeTool!.init()
           const ctx = {
             sessionID: "session_calendar_plugin",
             messageID: "message_calendar_plugin",
@@ -255,20 +302,42 @@ describe("calendar plugin tools", () => {
           const rangeStart = Date.UTC(2026, 5, 11, 0, 0, 0)
           const scheduledStart = Date.UTC(2026, 5, 11, 13, 0, 0)
           const scheduledEnd = Date.UTC(2026, 5, 11, 14, 0, 0)
+          const rescheduledStart = Date.UTC(2026, 5, 11, 14, 0, 0)
+          const rescheduledEnd = Date.UTC(2026, 5, 11, 15, 0, 0)
           const eventStart = Date.UTC(2026, 5, 11, 16, 0, 0)
           const eventEnd = Date.UTC(2026, 5, 11, 17, 0, 0)
           const rangeEnd = Date.UTC(2026, 5, 11, 23, 59, 59)
 
+          const sources = await listSources.execute({}, ctx)
+          expect(mcpOutputData(sources).structuredContent).toMatchObject({
+            kind: "calendar_list_sources_result",
+            sourceCount: 1,
+          })
+
           const unscheduled = await createTodo.execute({
             title: "Capture plugin migration notes",
           }, ctx)
+          const unscheduledData = mcpOutputData(unscheduled).structuredContent as { id: string }
           expect(mcpOutputData(unscheduled).structuredContent).toMatchObject({
             kind: "calendar_create_todo_result",
             created: true,
             type: "todo",
             title: "Capture plugin migration notes",
           })
+          expect(unscheduledData.id).toStartWith("tsk_")
           expect(Calendar.listTasks().some((task) => task.title === "Capture plugin migration notes")).toBe(true)
+
+          const todos = await listTodos.execute({}, ctx)
+          expect(mcpOutputData(todos).structuredContent).toMatchObject({
+            kind: "calendar_list_todos_result",
+            todoCount: 1,
+            todos: [
+              expect.objectContaining({
+                id: unscheduledData.id,
+                title: "Capture plugin migration notes",
+              }),
+            ],
+          })
 
           const unscheduledItems = await listItems.execute({ startAt: rangeStart, endAt: rangeEnd }, ctx)
           expect(mcpOutputData(unscheduledItems).structuredContent).toMatchObject({
@@ -282,12 +351,53 @@ describe("calendar plugin tools", () => {
             scheduledStartAt: scheduledStart,
             scheduledEndAt: scheduledEnd,
           }, ctx)
+          const scheduledData = mcpOutputData(scheduled).structuredContent as { id: string }
           expect(mcpOutputData(scheduled).structuredContent).toMatchObject({
             created: true,
             type: "todo",
             title: "Review scheduled plugin todo",
             scheduledStartAt: scheduledStart,
             scheduledEndAt: scheduledEnd,
+          })
+
+          const updatedTodo = await updateTodo.execute({
+            todoId: scheduledData.id,
+            priority: "high",
+            reminderAt: new Date(scheduledStart - 15 * 60 * 1000).toISOString(),
+          }, ctx)
+          expect(mcpOutputData(updatedTodo).structuredContent).toMatchObject({
+            kind: "calendar_update_todo_result",
+            updated: true,
+            todo: {
+              id: scheduledData.id,
+              priority: "high",
+              reminderAt: scheduledStart - 15 * 60 * 1000,
+            },
+          })
+
+          const rescheduled = await scheduleTodo.execute({
+            todoId: scheduledData.id,
+            scheduledStartAt: new Date(rescheduledStart).toISOString(),
+            scheduledEndAt: new Date(rescheduledEnd).toISOString(),
+          }, ctx)
+          expect(mcpOutputData(rescheduled).structuredContent).toMatchObject({
+            kind: "calendar_schedule_todo_result",
+            scheduled: true,
+            todo: {
+              id: scheduledData.id,
+              scheduledStartAt: rescheduledStart,
+              scheduledEndAt: rescheduledEnd,
+            },
+          })
+
+          const completed = await completeTodo.execute({ todoId: scheduledData.id }, ctx)
+          expect(mcpOutputData(completed).structuredContent).toMatchObject({
+            kind: "calendar_complete_todo_result",
+            completed: true,
+            todo: {
+              id: scheduledData.id,
+              status: "done",
+            },
           })
 
           const scheduledItems = await listItems.execute({ startAt: rangeStart, endAt: rangeEnd }, ctx)
@@ -305,6 +415,7 @@ describe("calendar plugin tools", () => {
             startAt: eventStart,
             endAt: eventEnd,
           }, ctx)
+          const eventData = mcpOutputData(event).structuredContent as { id: string }
           expect(mcpOutputData(event).structuredContent).toMatchObject({
             kind: "calendar_create_event_result",
             created: true,
@@ -313,6 +424,21 @@ describe("calendar plugin tools", () => {
             sourceId: "work",
             startAt: eventStart,
             endAt: eventEnd,
+          })
+
+          const updatedEvent = await updateEvent.execute({
+            eventId: eventData.id,
+            location: "Updated Smoke Test Room",
+            meetingUrl: "https://example.test/calendar-plugin",
+          }, ctx)
+          expect(mcpOutputData(updatedEvent).structuredContent).toMatchObject({
+            kind: "calendar_update_event_result",
+            updated: true,
+            event: {
+              id: eventData.id,
+              location: "Updated Smoke Test Room",
+              meetingUrl: "https://example.test/calendar-plugin",
+            },
           })
 
           const eventItems = await listItems.execute({ startAt: rangeStart, endAt: rangeEnd, sourceIds: ["work"] }, ctx)
@@ -324,6 +450,27 @@ describe("calendar plugin tools", () => {
                 title: "Calendar plugin smoke event",
               }),
             ]))
+
+          const canceledEvent = await cancelEvent.execute({ eventId: eventData.id }, ctx)
+          expect(mcpOutputData(canceledEvent).structuredContent).toMatchObject({
+            kind: "calendar_cancel_event_result",
+            canceled: true,
+            event: {
+              id: eventData.id,
+              status: "canceled",
+            },
+          })
+
+          const freeTime = await findFreeTime.execute({
+            startAt: new Date(rangeStart).toISOString(),
+            endAt: new Date(rangeEnd).toISOString(),
+            minimumDurationMinutes: 60,
+          }, ctx)
+          expect(mcpOutputData(freeTime).structuredContent).toMatchObject({
+            kind: "calendar_find_free_time_result",
+            windowCount: 1,
+            busyCount: 0,
+          })
 
           const invalidEvent = await createEvent.execute({
             title: "Invalid plugin event",

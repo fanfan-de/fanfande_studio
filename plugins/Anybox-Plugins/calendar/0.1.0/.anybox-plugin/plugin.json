@@ -1,15 +1,15 @@
 {
   "name": "calendar",
   "version": "0.1.0",
-  "description": "Create and inspect Anybox Calendar todos and events through a local MCP server.",
+  "description": "Create, inspect, update, schedule, and clean up Anybox Calendar todos and events through a local MCP server.",
   "author": {
     "name": "Anybox"
   },
   "keywords": ["calendar", "todo", "event", "mcp", "planning"],
   "interface": {
     "displayName": "Calendar",
-    "shortDescription": "Create and inspect Anybox Calendar items.",
-    "longDescription": "A local Anybox Calendar plugin that lets the agent create todos and events, then read projected Calendar items for verification.",
+    "shortDescription": "Manage Anybox Calendar items.",
+    "longDescription": "A local Anybox Calendar plugin that lets the agent create, inspect, update, schedule, complete, cancel, delete, and search local Calendar todos and events.",
     "developerName": "Anybox",
     "category": "Automation",
     "capabilities": ["calendar", "todos", "events", "planning"],
@@ -20,13 +20,28 @@
     {
       "id": "calendar",
       "name": "Calendar",
-      "description": "Create Anybox Calendar todos/events and list Calendar items.",
+      "description": "Manage Anybox Calendar todos/events and list Calendar items.",
       "risk": "medium",
       "permissions": [
         "Reads Calendar items from the local Anybox Agent API.",
-        "Creates Calendar todos and events in the local Anybox data store after approval."
+        "Creates and updates Calendar todos and events in the local Anybox data store after approval.",
+        "Can delete Calendar todos and events after approval."
       ],
       "tools": [
+        {
+          "name": "calendar_list_sources",
+          "title": "List Calendar Sources",
+          "description": "List local Calendar sources.",
+          "readOnly": true,
+          "destructive": false
+        },
+        {
+          "name": "calendar_update_source",
+          "title": "Update Calendar Source",
+          "description": "Update a Calendar source's name, color, subtitle, or enabled state.",
+          "readOnly": false,
+          "destructive": false
+        },
         {
           "name": "calendar_create_todo",
           "title": "Create Calendar Todo",
@@ -47,6 +62,76 @@
           "description": "List projected Anybox Calendar items in an optional time range.",
           "readOnly": true,
           "destructive": false
+        },
+        {
+          "name": "calendar_get_item",
+          "title": "Get Calendar Item",
+          "description": "Find a Calendar item by item id, event id, or todo/task entity id.",
+          "readOnly": true,
+          "destructive": false
+        },
+        {
+          "name": "calendar_list_todos",
+          "title": "List Calendar Todos",
+          "description": "List raw Calendar todos, including unscheduled todos.",
+          "readOnly": true,
+          "destructive": false
+        },
+        {
+          "name": "calendar_update_todo",
+          "title": "Update Calendar Todo",
+          "description": "Update a Calendar todo.",
+          "readOnly": false,
+          "destructive": false
+        },
+        {
+          "name": "calendar_schedule_todo",
+          "title": "Schedule Calendar Todo",
+          "description": "Schedule, reschedule, or unschedule a Calendar todo.",
+          "readOnly": false,
+          "destructive": false
+        },
+        {
+          "name": "calendar_complete_todo",
+          "title": "Complete Calendar Todo",
+          "description": "Mark a Calendar todo as done.",
+          "readOnly": false,
+          "destructive": false
+        },
+        {
+          "name": "calendar_delete_todo",
+          "title": "Delete Calendar Todo",
+          "description": "Delete a Calendar todo.",
+          "readOnly": false,
+          "destructive": true
+        },
+        {
+          "name": "calendar_update_event",
+          "title": "Update Calendar Event",
+          "description": "Update a Calendar event.",
+          "readOnly": false,
+          "destructive": false
+        },
+        {
+          "name": "calendar_cancel_event",
+          "title": "Cancel Calendar Event",
+          "description": "Mark a Calendar event as canceled without deleting it.",
+          "readOnly": false,
+          "destructive": false
+        },
+        {
+          "name": "calendar_delete_event",
+          "title": "Delete Calendar Event",
+          "description": "Delete a Calendar event.",
+          "readOnly": false,
+          "destructive": true
+        },
+        {
+          "name": "calendar_find_free_time",
+          "title": "Find Calendar Free Time",
+          "description": "Find free windows inside a time range.",
+          "readOnly": true,
+          "destructive": false
         }
       ],
       "runtime": {
@@ -59,15 +144,27 @@
         },
         "timeoutMs": 30000,
         "toolPolicies": {
+          "calendar_list_sources": { "policy": "auto" },
+          "calendar_update_source": { "policy": "ask" },
           "calendar_create_todo": { "policy": "ask" },
           "calendar_create_event": { "policy": "ask" },
-          "calendar_list_items": { "policy": "auto" }
+          "calendar_list_items": { "policy": "auto" },
+          "calendar_get_item": { "policy": "auto" },
+          "calendar_list_todos": { "policy": "auto" },
+          "calendar_update_todo": { "policy": "ask" },
+          "calendar_schedule_todo": { "policy": "ask" },
+          "calendar_complete_todo": { "policy": "ask" },
+          "calendar_delete_todo": { "policy": "ask" },
+          "calendar_update_event": { "policy": "ask" },
+          "calendar_cancel_event": { "policy": "ask" },
+          "calendar_delete_event": { "policy": "ask" },
+          "calendar_find_free_time": { "policy": "auto" }
         }
       },
       "installReview": [
         "Runs a local Node.js MCP server bundled with Anybox.",
         "Uses the local Anybox Agent Calendar API.",
-        "Create actions are configured to ask before execution."
+        "Create, update, complete, cancel, schedule, and delete actions are configured to ask before execution."
       ]
     }
   ]
