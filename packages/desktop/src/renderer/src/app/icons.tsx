@@ -6,6 +6,7 @@ import {
   ArrowUp,
   ArrowUpRight,
   BrainCircuit,
+  CalendarDays,
   Camera,
   Check,
   ChevronDown,
@@ -140,6 +141,7 @@ export const CloseIcon = createIcon(X)
 export const TerminalIcon = createIcon(Terminal)
 export const ToolsIcon = createIcon(Wrench)
 export const AutomationIcon = createIcon(Clock)
+export const CalendarIcon = createIcon(CalendarDays)
 export const ArrowUpIcon = createIcon(ArrowUp)
 export const StopIcon = createIcon(Square, { fill: "currentColor", strokeWidth: 0 })
 export const PaletteIcon = createIcon(Palette)

@@ -67,11 +67,14 @@ test("测试存储part 文件",()=>{
 
   Sqlite.isZodDiscriminatedUnion(Message.Part)
 
-    const a = Session.SessionInfo
-    const part:Message.Part = testobject.reasoningPart
+  const a = Session.SessionInfo
+  const part:Message.Part = testobject.reasoningPart
 
+  if (!Sqlite.tableExists("parts")) {
+    Sqlite.createTableByZodDiscriminatedUnion("parts", Message.Part)
+  }
 
-    Sqlite.insertOneWithSchema("parts", part,Message.Part)
+  Sqlite.insertOneWithSchema("parts", part,Message.Part)
 })
 
 // test("fromSQLiteRecord restores objects correctly", () => {

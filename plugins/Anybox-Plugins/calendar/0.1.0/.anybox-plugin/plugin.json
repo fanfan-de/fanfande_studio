@@ -1,0 +1,74 @@
+{
+  "name": "calendar",
+  "version": "0.1.0",
+  "description": "Create and inspect Anybox Calendar todos and events through a local MCP server.",
+  "author": {
+    "name": "Anybox"
+  },
+  "keywords": ["calendar", "todo", "event", "mcp", "planning"],
+  "interface": {
+    "displayName": "Calendar",
+    "shortDescription": "Create and inspect Anybox Calendar items.",
+    "longDescription": "A local Anybox Calendar plugin that lets the agent create todos and events, then read projected Calendar items for verification.",
+    "developerName": "Anybox",
+    "category": "Automation",
+    "capabilities": ["calendar", "todos", "events", "planning"],
+    "logo": "CA",
+    "brandColor": "#0F766E"
+  },
+  "mcpServers": [
+    {
+      "id": "calendar",
+      "name": "Calendar",
+      "description": "Create Anybox Calendar todos/events and list Calendar items.",
+      "risk": "medium",
+      "permissions": [
+        "Reads Calendar items from the local Anybox Agent API.",
+        "Creates Calendar todos and events in the local Anybox data store after approval."
+      ],
+      "tools": [
+        {
+          "name": "calendar_create_todo",
+          "title": "Create Calendar Todo",
+          "description": "Create an Anybox Calendar todo.",
+          "readOnly": false,
+          "destructive": false
+        },
+        {
+          "name": "calendar_create_event",
+          "title": "Create Calendar Event",
+          "description": "Create an Anybox Calendar event.",
+          "readOnly": false,
+          "destructive": false
+        },
+        {
+          "name": "calendar_list_items",
+          "title": "List Calendar Items",
+          "description": "List projected Anybox Calendar items in an optional time range.",
+          "readOnly": true,
+          "destructive": false
+        }
+      ],
+      "runtime": {
+        "transport": "stdio",
+        "command": "node",
+        "args": ["${PLUGIN_ROOT}/scripts/server.js"],
+        "cwd": "${PLUGIN_ROOT}",
+        "env": {
+          "ANYBOX_CALENDAR_AGENT_BASE_URL": "http://127.0.0.1:4096"
+        },
+        "timeoutMs": 30000,
+        "toolPolicies": {
+          "calendar_create_todo": { "policy": "ask" },
+          "calendar_create_event": { "policy": "ask" },
+          "calendar_list_items": { "policy": "auto" }
+        }
+      },
+      "installReview": [
+        "Runs a local Node.js MCP server bundled with Anybox.",
+        "Uses the local Anybox Agent Calendar API.",
+        "Create actions are configured to ask before execution."
+      ]
+    }
+  ]
+}

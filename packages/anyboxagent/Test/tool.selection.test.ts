@@ -57,6 +57,9 @@ describe("global built-in tool selection", () => {
         const shellToolIDs = activeOneTimeShellToolIDs()
         expect(toolNames).toContain("read_file")
         expect(toolNames).toContain("multi_tool_use_parallel")
+        expect(toolNames).not.toContain("calendar_create_todo")
+        expect(toolNames).not.toContain("calendar_create_event")
+        expect(toolNames).not.toContain("calendar_list_items")
         for (const shellToolID of shellToolIDs) {
           expect(toolNames).toContain(shellToolID)
         }
