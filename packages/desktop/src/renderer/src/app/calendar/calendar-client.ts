@@ -102,30 +102,50 @@ export function deleteCalendarEvent(input: { eventId: string }) {
 }
 
 export function listCalendarTasks() {
-  return requestAgentJSON<PlannerTaskRecord[]>("/api/calendar/tasks")
+  return listCalendarTodos()
+}
+
+export function listCalendarTodos() {
+  return requestAgentJSON<PlannerTaskRecord[]>("/api/calendar/todos")
+}
+
+export function createCalendarTodo(input: CreateCalendarTaskInput) {
+  return requestAgentJSON<PlannerTaskRecord>("/api/calendar/todos", jsonRequestInit("POST", input))
 }
 
 export function createCalendarTask(input: CreateCalendarTaskInput) {
-  return requestAgentJSON<PlannerTaskRecord>("/api/calendar/tasks", jsonRequestInit("POST", input))
+  return createCalendarTodo(input)
 }
 
-export function updateCalendarTask(input: { taskId: string; update: UpdateCalendarTaskInput }) {
+export function updateCalendarTodo(input: { todoId: string; update: UpdateCalendarTaskInput }) {
   return requestAgentJSON<PlannerTaskRecord>(
-    `/api/calendar/tasks/${encodeURIComponent(input.taskId)}`,
+    `/api/calendar/todos/${encodeURIComponent(input.todoId)}`,
     jsonRequestInit("PATCH", input.update),
   )
 }
 
-export function scheduleCalendarTask(input: { taskId: string; schedule: ScheduleCalendarTaskInput }) {
+export function updateCalendarTask(input: { taskId: string; update: UpdateCalendarTaskInput }) {
+  return updateCalendarTodo({ todoId: input.taskId, update: input.update })
+}
+
+export function scheduleCalendarTodo(input: { todoId: string; schedule: ScheduleCalendarTaskInput }) {
   return requestAgentJSON<PlannerTaskRecord>(
-    `/api/calendar/tasks/${encodeURIComponent(input.taskId)}/schedule`,
+    `/api/calendar/todos/${encodeURIComponent(input.todoId)}/schedule`,
     jsonRequestInit("PATCH", input.schedule),
   )
 }
 
-export function deleteCalendarTask(input: { taskId: string }) {
-  return requestAgentJSON<{ taskID: string; deleted: boolean }>(
-    `/api/calendar/tasks/${encodeURIComponent(input.taskId)}`,
+export function scheduleCalendarTask(input: { taskId: string; schedule: ScheduleCalendarTaskInput }) {
+  return scheduleCalendarTodo({ todoId: input.taskId, schedule: input.schedule })
+}
+
+export function deleteCalendarTodo(input: { todoId: string }) {
+  return requestAgentJSON<{ taskID: string; todoID?: string; deleted: boolean }>(
+    `/api/calendar/todos/${encodeURIComponent(input.todoId)}`,
     { method: "DELETE" },
   )
+}
+
+export function deleteCalendarTask(input: { taskId: string }) {
+  return deleteCalendarTodo({ todoId: input.taskId })
 }

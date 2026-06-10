@@ -12,6 +12,10 @@ const TimestampInput = z
   .pipe(z.number().int().nonnegative())
 
 const NullableTimestampInput = z.union([TimestampInput, z.null()])
+const PropertiesInput = z.record(z.string(), z.unknown())
+const PlannerTaskStatusInput = z
+  .enum(["todo", "doing", "done", "canceled"])
+  .transform((status): Calendar.PlannerTaskStatus => (status === "done" ? "done" : "todo"))
 
 function splitSourceIds(value: string | undefined) {
   return value
@@ -37,6 +41,7 @@ export const CreateCalendarEventBody = z.object({
   sourceId: TrimmedString,
   title: TrimmedString,
   description: OptionalTrimmedString,
+  status: Calendar.CalendarEventStatus.optional().default("scheduled"),
   startAt: TimestampInput,
   endAt: TimestampInput,
   allDay: z.boolean().optional().default(false),
@@ -52,6 +57,7 @@ export const UpdateCalendarEventBody = z.object({
   sourceId: TrimmedString.optional(),
   title: TrimmedString.optional(),
   description: OptionalTrimmedString,
+  status: Calendar.CalendarEventStatus.optional(),
   startAt: TimestampInput.optional(),
   endAt: TimestampInput.optional(),
   allDay: z.boolean().optional(),
@@ -66,31 +72,41 @@ export const UpdateCalendarEventBody = z.object({
 export const CreateCalendarTaskBody = z.object({
   title: TrimmedString,
   description: OptionalTrimmedString,
-  status: Calendar.PlannerTaskStatus.optional().default("todo"),
+  status: PlannerTaskStatusInput.optional().default("todo"),
   priority: Calendar.PlannerTaskPriority.optional().default("medium"),
   dueAt: TimestampInput.optional(),
+  reminderAt: TimestampInput.optional(),
   scheduledStartAt: TimestampInput.optional(),
   scheduledEndAt: TimestampInput.optional(),
   estimateMinutes: z.number().int().positive().optional().default(60),
   workspaceId: OptionalTrimmedString,
+  properties: PropertiesInput.optional(),
+  timezone: OptionalTrimmedString,
 })
 
 export const UpdateCalendarTaskBody = z.object({
   title: TrimmedString.optional(),
   description: OptionalTrimmedString.or(z.null()).optional(),
-  status: Calendar.PlannerTaskStatus.optional(),
+  status: PlannerTaskStatusInput.optional(),
   priority: Calendar.PlannerTaskPriority.optional(),
   dueAt: NullableTimestampInput.optional(),
+  reminderAt: NullableTimestampInput.optional(),
   scheduledStartAt: NullableTimestampInput.optional(),
   scheduledEndAt: NullableTimestampInput.optional(),
   estimateMinutes: z.number().int().positive().optional(),
   workspaceId: OptionalTrimmedString.or(z.null()).optional(),
+  properties: PropertiesInput.optional(),
+  timezone: OptionalTrimmedString.or(z.null()).optional(),
 })
 
 export const ScheduleCalendarTaskBody = z.object({
   scheduledStartAt: NullableTimestampInput.optional(),
   scheduledEndAt: NullableTimestampInput.optional(),
 })
+
+export const CreateCalendarTodoBody = CreateCalendarTaskBody
+export const UpdateCalendarTodoBody = UpdateCalendarTaskBody
+export const ScheduleCalendarTodoBody = ScheduleCalendarTaskBody
 
 type CreateCalendarEventInput = z.output<typeof CreateCalendarEventBody>
 type UpdateCalendarEventInput = z.output<typeof UpdateCalendarEventBody>
@@ -99,6 +115,16 @@ type CreateCalendarTaskInput = z.output<typeof CreateCalendarTaskBody>
 type UpdateCalendarTaskInput = z.output<typeof UpdateCalendarTaskBody>
 type ScheduleCalendarTaskInput = z.output<typeof ScheduleCalendarTaskBody>
 
+function toCalendarSourceOutput(source: Calendar.CalendarSource) {
+  return {
+    id: source.id,
+    name: source.name,
+    enabled: source.enabled,
+    color: source.color,
+    subtitle: source.subtitle,
+  }
+}
+
 function requireSource(id: string) {
   const source = Calendar.getSource(id)
   if (!source) throw new ApiError(404, "CALENDAR_SOURCE_NOT_FOUND", `Calendar source '${id}' not found`)
@@ -106,11 +132,7 @@ function requireSource(id: string) {
 }
 
 function requireEventSource(id: string) {
-  const source = requireSource(id)
-  if (source.kind !== "external_calendar") {
-    throw new ApiError(400, "INVALID_CALENDAR_EVENT_SOURCE", "Calendar events must use an external_calendar source")
-  }
-  return source
+  return requireSource(id)
 }
 
 function requireEvent(id: string) {
@@ -142,17 +164,18 @@ function validateTaskSchedule(input: { scheduledStartAt?: number; scheduledEndAt
 }
 
 export function listSources() {
-  return Calendar.listSources()
+  return Calendar.listSources().map(toCalendarSourceOutput)
 }
 
 export function updateSource(id: string, input: UpdateCalendarSourceInput) {
-  const existing = requireSource(id)
+  const existing = requireEventSource(id)
   const now = Date.now()
-  return Calendar.updateSourceRecord(Calendar.CalendarSource.parse({
+  const updated = Calendar.updateSourceRecord(Calendar.CalendarSource.parse({
     ...existing,
     ...input,
     updatedAt: now,
   }))
+  return toCalendarSourceOutput(updated)
 }
 
 export function listItems(input: z.output<typeof ListCalendarItemsQuery>) {
@@ -171,6 +194,7 @@ export function createEvent(input: CreateCalendarEventInput) {
     sourceId: input.sourceId,
     title: input.title,
     description: input.description || undefined,
+    status: input.status,
     startAt: input.startAt,
     endAt: input.endAt,
     allDay: input.allDay,
@@ -214,6 +238,10 @@ export function listTasks() {
   return Calendar.listTasks()
 }
 
+export function listTodos() {
+  return listTasks()
+}
+
 export function createTask(input: CreateCalendarTaskInput) {
   validateTaskSchedule(input)
   const now = Date.now()
@@ -224,13 +252,20 @@ export function createTask(input: CreateCalendarTaskInput) {
     status: input.status,
     priority: input.priority,
     dueAt: input.dueAt,
+    reminderAt: input.reminderAt,
     scheduledStartAt: input.scheduledStartAt,
     scheduledEndAt: input.scheduledEndAt,
     estimateMinutes: input.estimateMinutes,
     workspaceId: input.workspaceId || undefined,
+    properties: input.properties,
+    timezone: input.timezone || undefined,
     createdAt: now,
     updatedAt: now,
   }))
+}
+
+export function createTodo(input: CreateCalendarTaskInput) {
+  return createTask(input)
 }
 
 export function updateTask(id: string, input: UpdateCalendarTaskInput) {
@@ -242,6 +277,7 @@ export function updateTask(id: string, input: UpdateCalendarTaskInput) {
       ? undefined
       : input.description ?? existing.description,
     dueAt: input.dueAt === null ? undefined : input.dueAt ?? existing.dueAt,
+    reminderAt: input.reminderAt === null ? undefined : input.reminderAt ?? existing.reminderAt,
     scheduledStartAt: input.scheduledStartAt === null
       ? undefined
       : input.scheduledStartAt ?? existing.scheduledStartAt,
@@ -251,10 +287,18 @@ export function updateTask(id: string, input: UpdateCalendarTaskInput) {
     workspaceId: input.workspaceId === "" || input.workspaceId === null
       ? undefined
       : input.workspaceId ?? existing.workspaceId,
+    properties: input.properties ?? existing.properties,
+    timezone: input.timezone === "" || input.timezone === null
+      ? undefined
+      : input.timezone ?? existing.timezone,
     updatedAt: Date.now(),
   })
   validateTaskSchedule(next)
   return Calendar.updateTaskRecord(next)
+}
+
+export function updateTodo(id: string, input: UpdateCalendarTaskInput) {
+  return updateTask(id, input)
 }
 
 export function scheduleTask(id: string, input: ScheduleCalendarTaskInput) {
@@ -274,11 +318,20 @@ export function scheduleTask(id: string, input: ScheduleCalendarTaskInput) {
   return Calendar.updateTaskRecord(next)
 }
 
+export function scheduleTodo(id: string, input: ScheduleCalendarTaskInput) {
+  return scheduleTask(id, input)
+}
+
 export function deleteTask(id: string) {
   requireTask(id)
   Calendar.deleteTask(id)
   return {
     taskID: id,
+    todoID: id,
     deleted: true,
   }
+}
+
+export function deleteTodo(id: string) {
+  return deleteTask(id)
 }

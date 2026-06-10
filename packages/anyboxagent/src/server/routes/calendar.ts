@@ -49,6 +49,39 @@ export function CalendarRoutes() {
 
   app.delete("/events/:id", (c) => ok(c, CalendarUseCase.deleteEvent(c.req.param("id"))))
 
+  app.get("/todos", (c) => ok(c, CalendarUseCase.listTodos()))
+
+  app.post("/todos", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      CalendarUseCase.CreateCalendarTodoBody,
+      "Body must include a valid todo title",
+    )
+    return ok(c, CalendarUseCase.createTodo(payload), 201)
+  })
+
+  app.patch("/todos/:id", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      CalendarUseCase.UpdateCalendarTodoBody,
+      "Body must contain valid todo fields",
+      {},
+    )
+    return ok(c, CalendarUseCase.updateTodo(c.req.param("id"), payload))
+  })
+
+  app.patch("/todos/:id/schedule", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      CalendarUseCase.ScheduleCalendarTodoBody,
+      "Body must contain valid todo schedule fields",
+      {},
+    )
+    return ok(c, CalendarUseCase.scheduleTodo(c.req.param("id"), payload))
+  })
+
+  app.delete("/todos/:id", (c) => ok(c, CalendarUseCase.deleteTodo(c.req.param("id"))))
+
   app.get("/tasks", (c) => ok(c, CalendarUseCase.listTasks()))
 
   app.post("/tasks", async (c) => {

@@ -14,7 +14,19 @@ export type CalendarSourceKind = z.output<typeof CalendarSourceKind>
 export const CalendarEntityType = z.enum(["event", "task", "project", "reminder", "agent_suggestion"])
 export type CalendarEntityType = z.output<typeof CalendarEntityType>
 
-export const PlannerTaskStatus = z.enum(["todo", "doing", "done", "canceled"])
+export const CalendarDisplayKind = z.enum([
+  "external_event",
+  "scheduled_todo",
+  "deadline",
+  "reminder",
+  "agent_suggestion",
+])
+export type CalendarDisplayKind = z.output<typeof CalendarDisplayKind>
+
+export const CalendarEventStatus = z.enum(["scheduled", "canceled"])
+export type CalendarEventStatus = z.output<typeof CalendarEventStatus>
+
+export const PlannerTaskStatus = z.enum(["todo", "done"])
 export type PlannerTaskStatus = z.output<typeof PlannerTaskStatus>
 
 export const PlannerTaskPriority = z.enum(["low", "medium", "high"])
@@ -37,6 +49,7 @@ export const CalendarEvent = z.object({
   sourceId: z.string().trim().min(1),
   title: z.string().trim().min(1),
   description: z.string().optional(),
+  status: CalendarEventStatus.optional().default("scheduled"),
   startAt: z.number().int().nonnegative(),
   endAt: z.number().int().nonnegative(),
   allDay: z.boolean(),
@@ -58,10 +71,13 @@ export const PlannerTask = z.object({
   status: PlannerTaskStatus,
   priority: PlannerTaskPriority,
   dueAt: z.number().int().nonnegative().optional(),
+  reminderAt: z.number().int().nonnegative().optional(),
   scheduledStartAt: z.number().int().nonnegative().optional(),
   scheduledEndAt: z.number().int().nonnegative().optional(),
   estimateMinutes: z.number().int().positive().optional(),
   workspaceId: z.string().optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
+  timezone: z.string().optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 })
@@ -71,6 +87,7 @@ export const CalendarItem = z.object({
   id: z.string(),
   sourceId: z.string(),
   entityType: CalendarEntityType,
+  displayKind: CalendarDisplayKind,
   entityId: z.string(),
   title: z.string(),
   description: z.string().optional(),
@@ -83,6 +100,8 @@ export const CalendarItem = z.object({
   isReadOnly: z.boolean(),
   isSuggestion: z.boolean(),
   workspace: z.string().optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
+  timezone: z.string().optional(),
 })
 export type CalendarItem = z.output<typeof CalendarItem>
 
@@ -90,6 +109,9 @@ const CALENDAR_SOURCES_TABLE = "calendar_sources"
 const CALENDAR_EVENTS_TABLE = "calendar_events"
 const PLANNER_TASKS_TABLE = "planner_tasks"
 export const TASK_SOURCE_ID = "tasks"
+export const TODO_SOURCE_ID = "todos"
+export const DEADLINE_SOURCE_ID = "deadlines"
+export const REMINDER_SOURCE_ID = "reminders"
 let calendarTablesGeneration = -1
 
 const DEFAULT_SOURCES = [
@@ -99,22 +121,6 @@ const DEFAULT_SOURCES = [
     subtitle: "Local calendar",
     kind: "external_calendar",
     color: "#3f7af0",
-    enabled: true,
-  },
-  {
-    id: "personal",
-    name: "Personal",
-    subtitle: "Local calendar",
-    kind: "external_calendar",
-    color: "#2f9d7e",
-    enabled: true,
-  },
-  {
-    id: TASK_SOURCE_ID,
-    name: "My Tasks",
-    subtitle: "Anybox task source",
-    kind: "task_database",
-    color: "#8a5cf6",
     enabled: true,
   },
 ] satisfies Array<Omit<CalendarSource, "createdAt" | "updatedAt">>
@@ -143,9 +149,18 @@ function ensureCalendarTables() {
     CREATE INDEX IF NOT EXISTS "idx_planner_tasks_status"
     ON "planner_tasks" ("status", "updatedAt");
   `)
+  normalizeLegacyTaskStatuses()
 
   seedDefaultSources()
   calendarTablesGeneration = db.getDatabaseGeneration()
+}
+
+function normalizeLegacyTaskStatuses() {
+  db.db.run(`
+    UPDATE "${PLANNER_TASKS_TABLE}"
+    SET "status" = 'todo'
+    WHERE "status" IN ('doing', 'canceled');
+  `)
 }
 
 function seedDefaultSources() {
@@ -176,7 +191,7 @@ export function listSources() {
   ensureCalendarTables()
   return db.findManyWithSchema(CALENDAR_SOURCES_TABLE, CalendarSource, {
     orderBy: [{ column: "createdAt", direction: "ASC" }],
-  })
+  }).filter((source) => source.kind === "external_calendar")
 }
 
 export function getSource(id: string) {
@@ -272,27 +287,26 @@ export function listItems(input: {
   const sources = listSources()
   const enabledSourceIds = new Set(sources.filter((source) => source.enabled).map((source) => source.id))
   const sourceById = new Map(sources.map((source) => [source.id, source]))
-  const hasSourceFilter = input.sourceIds !== undefined && input.sourceIds.length > 0
-  const requestedSourceIds = input.sourceIds?.filter((sourceId) => enabledSourceIds.has(sourceId))
-  if (hasSourceFilter && requestedSourceIds?.length === 0) return []
-  const effectiveSourceIds = hasSourceFilter ? requestedSourceIds ?? [] : [...enabledSourceIds]
-  const events = listEvents({
-    startAt: input.startAt,
-    endAt: input.endAt,
-    sourceIds: effectiveSourceIds,
-  })
-  const taskSource = sourceById.get(TASK_SOURCE_ID)
-  const shouldIncludeTasks = effectiveSourceIds.includes(TASK_SOURCE_ID)
+  const sourceIdFilter = new Set(input.sourceIds?.filter(Boolean))
+  const hasSourceFilter = sourceIdFilter.size > 0
+  const effectiveEventSourceIds = hasSourceFilter
+    ? [...sourceIdFilter].filter((sourceId) => enabledSourceIds.has(sourceId))
+    : [...enabledSourceIds]
+  const events = effectiveEventSourceIds.length > 0
+    ? listEvents({
+        startAt: input.startAt,
+        endAt: input.endAt,
+        sourceIds: effectiveEventSourceIds,
+      })
+    : []
 
   const eventItems = events
     .filter((event) => enabledSourceIds.has(event.sourceId))
     .map((event) => toCalendarItem(event, sourceById.get(event.sourceId)))
 
-  const taskItems = shouldIncludeTasks && taskSource?.enabled
-    ? listTasks()
-        .filter((task) => taskMatchesRange(task, input))
-        .map((task) => toTaskCalendarItem(task, taskSource))
-    : []
+  const taskItems = listTasks()
+    .flatMap((task) => toTaskCalendarItems(task, input))
+    .filter((item) => !hasSourceFilter || sourceIdFilter.has(item.sourceId))
 
   return [...eventItems, ...taskItems]
 }
@@ -302,6 +316,7 @@ export function toCalendarItem(event: CalendarEvent, source?: CalendarSource): C
     id: event.id,
     sourceId: event.sourceId,
     entityType: "event",
+    displayKind: "external_event",
     entityId: event.id,
     title: event.title,
     description: event.description,
@@ -309,7 +324,7 @@ export function toCalendarItem(event: CalendarEvent, source?: CalendarSource): C
     endAt: event.endAt,
     allDay: event.allDay,
     color: source?.color ?? "#64748b",
-    status: "scheduled",
+    status: event.status,
     isReadOnly: false,
     isSuggestion: false,
     workspace: event.linkedWorkspaceId,
@@ -317,10 +332,13 @@ export function toCalendarItem(event: CalendarEvent, source?: CalendarSource): C
 }
 
 export function toTaskCalendarItem(task: PlannerTask, source?: CalendarSource): CalendarItem {
+  const item = toScheduledTodoCalendarItem(task, source)
+  if (item) return item
   return CalendarItem.parse({
     id: task.id,
-    sourceId: TASK_SOURCE_ID,
+    sourceId: TODO_SOURCE_ID,
     entityType: "task",
+    displayKind: "scheduled_todo",
     entityId: task.id,
     title: task.title,
     description: task.description,
@@ -333,12 +351,95 @@ export function toTaskCalendarItem(task: PlannerTask, source?: CalendarSource): 
     isReadOnly: false,
     isSuggestion: false,
     workspace: task.workspaceId,
+    properties: task.properties,
+    timezone: task.timezone,
   })
 }
 
-function taskMatchesRange(task: PlannerTask, input: { startAt?: number; endAt?: number }) {
-  if (task.scheduledStartAt === undefined || task.scheduledEndAt === undefined) return true
-  if (input.startAt !== undefined && task.scheduledEndAt < input.startAt) return false
-  if (input.endAt !== undefined && task.scheduledStartAt > input.endAt) return false
+export function toTaskCalendarItems(task: PlannerTask, input: { startAt?: number; endAt?: number } = {}) {
+  return [
+    toScheduledTodoCalendarItem(task),
+    toDeadlineCalendarItem(task),
+    toReminderCalendarItem(task),
+  ].filter((item): item is CalendarItem => Boolean(item && itemMatchesRange(item, input)))
+}
+
+function toScheduledTodoCalendarItem(task: PlannerTask, source?: CalendarSource) {
+  if (task.scheduledStartAt === undefined || task.scheduledEndAt === undefined) return null
+  return CalendarItem.parse({
+    id: `todo:${task.id}:scheduled`,
+    sourceId: TODO_SOURCE_ID,
+    entityType: "task",
+    displayKind: "scheduled_todo",
+    entityId: task.id,
+    title: task.title,
+    description: task.description,
+    startAt: task.scheduledStartAt,
+    endAt: task.scheduledEndAt,
+    allDay: false,
+    color: source?.color ?? "#8a5cf6",
+    estimateMinutes: task.estimateMinutes,
+    status: task.status,
+    isReadOnly: false,
+    isSuggestion: false,
+    workspace: task.workspaceId,
+    properties: task.properties,
+    timezone: task.timezone,
+  })
+}
+
+function toDeadlineCalendarItem(task: PlannerTask) {
+  if (task.dueAt === undefined) return null
+  return CalendarItem.parse({
+    id: `todo:${task.id}:deadline`,
+    sourceId: DEADLINE_SOURCE_ID,
+    entityType: "task",
+    displayKind: "deadline",
+    entityId: task.id,
+    title: task.title,
+    description: task.description,
+    startAt: task.dueAt,
+    endAt: task.dueAt,
+    allDay: true,
+    color: "#c47a2c",
+    estimateMinutes: task.estimateMinutes,
+    status: task.status,
+    isReadOnly: false,
+    isSuggestion: false,
+    workspace: task.workspaceId,
+    properties: task.properties,
+    timezone: task.timezone,
+  })
+}
+
+function toReminderCalendarItem(task: PlannerTask) {
+  if (task.reminderAt === undefined) return null
+  return CalendarItem.parse({
+    id: `todo:${task.id}:reminder`,
+    sourceId: REMINDER_SOURCE_ID,
+    entityType: "task",
+    displayKind: "reminder",
+    entityId: task.id,
+    title: task.title,
+    description: task.description,
+    startAt: task.reminderAt,
+    endAt: task.reminderAt + 15 * 60 * 1000,
+    allDay: false,
+    color: "#d94d64",
+    estimateMinutes: task.estimateMinutes,
+    status: task.status,
+    isReadOnly: false,
+    isSuggestion: false,
+    workspace: task.workspaceId,
+    properties: task.properties,
+    timezone: task.timezone,
+  })
+}
+
+function itemMatchesRange(item: CalendarItem, input: { startAt?: number; endAt?: number }) {
+  if (item.startAt === undefined) return false
+  const endAt = item.endAt ?? item.startAt
+  if (input.startAt !== undefined && endAt < input.startAt) return false
+  if (input.endAt !== undefined && item.startAt > input.endAt) return false
   return true
 }

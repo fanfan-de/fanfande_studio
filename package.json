@@ -48,7 +48,8 @@
     "mobile:typecheck": "corepack pnpm --filter anybox-mobile-app typecheck",
     "test": "corepack pnpm --filter anybox-desktop-agent test",
     "typecheck": "corepack pnpm --filter anybox-desktop-agent typecheck",
-    "verify:versions": "node ./scripts/verify-product-version.mjs"
+    "verify:versions": "node ./scripts/verify-product-version.mjs",
+    "watch:folder": "node ./scripts/watch-folder.mjs"
   },
   "keywords": [],
   "author": "",

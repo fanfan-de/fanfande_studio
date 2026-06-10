@@ -56,6 +56,7 @@ import {
 } from "./app/agent-workspace/workspace-derived-state"
 import type {
   AgentAutomationIPCEvent,
+  AgentProjectWorkspace,
   DesktopAppUpdateState,
   WorkbenchSharedState,
   WorkbenchWindowContext,
@@ -101,6 +102,31 @@ const EMPTY_SIDE_CHAT_ATTACHMENTS: ComposerAttachment[] = []
 const EMPTY_SIDE_CHAT_PERMISSION_REQUESTS: PermissionRequest[] = []
 const EMPTY_SIDE_CHAT_TURNS: Turn[] = []
 
+function getCalendarProjectFallbackName(directory: string | undefined, fallback: string) {
+  const trimmed = directory?.trim()
+  if (!trimmed) return fallback
+  const withoutTrailingSlash = trimmed.replace(/[\\/]+$/, "")
+  return withoutTrailingSlash.split(/[\\/]/).filter(Boolean).pop() || trimmed
+}
+
+function mapProjectWorkspaceToCalendarProject(project: AgentProjectWorkspace): CalendarProjectOption {
+  const directory = project.repositoryRoot ?? project.worktree
+  return {
+    directory,
+    id: project.id,
+    name: project.name?.trim() || getCalendarProjectFallbackName(directory, project.id),
+  }
+}
+
+function mapWorkspaceGroupToCalendarProject(workspace: WorkspaceGroup): CalendarProjectOption {
+  const directory = workspace.project.repositoryRoot ?? workspace.project.worktree ?? workspace.directory
+  return {
+    directory,
+    id: workspace.project.id,
+    name: workspace.project.name.trim() || workspace.name,
+  }
+}
+
 interface RightSidebarSideChatPanelState {
   activeProjectID: string | null
   activeTabID: string
@@ -118,6 +144,12 @@ interface RightSidebarSideChatPanelState {
   turns: Turn[]
   workspaceDirectory: string | null
   workspaceID: string | null
+}
+
+interface CalendarProjectOption {
+  directory?: string
+  id: string
+  name: string
 }
 
 function rightSidebarSideChatPanelStatesAreEqual(
@@ -1052,6 +1084,25 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     surfaceID,
     workbenchState: workbenchContext.state,
   })
+  const [loadedCalendarProjects, setLoadedCalendarProjects] = useState<CalendarProjectOption[]>([])
+  useEffect(() => {
+    const listProjectWorkspaces = window.desktop?.listProjectWorkspaces
+    if (!listProjectWorkspaces || !agentConnected) return
+
+    let cancelled = false
+    listProjectWorkspaces()
+      .then((projects) => {
+        if (cancelled) return
+        setLoadedCalendarProjects(projects.map(mapProjectWorkspaceToCalendarProject))
+      })
+      .catch((error) => {
+        console.error("[desktop] calendar project list failed:", error)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [agentConnected])
   const [isArchivingAllSessions, setIsArchivingAllSessions] = useState(false)
   const archivableSessionCount = useMemo(
     () => workspaces.reduce((count, workspace) => count + workspace.sessions.length, 0),
@@ -1983,6 +2034,28 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     ),
     [handleWindowAction, isMacOS, isWindowMaximized, windowControlsRef],
   )
+  const calendarProjects = useMemo(() => {
+    const projectsByID = new Map<string, CalendarProjectOption>()
+    for (const project of loadedCalendarProjects) {
+      const id = project.id.trim()
+      if (!id) continue
+      projectsByID.set(id, {
+        ...project,
+        id,
+        name: project.name.trim() || getCalendarProjectFallbackName(project.directory, id),
+      })
+    }
+    for (const workspace of workspaces) {
+      const project = mapWorkspaceGroupToCalendarProject(workspace)
+      const id = project.id.trim()
+      if (!id || projectsByID.has(id)) continue
+      projectsByID.set(id, { ...project, id })
+    }
+    return Array.from(projectsByID.values()).sort((left, right) => left.name.localeCompare(right.name))
+  }, [loadedCalendarProjects, workspaces])
+  const activeCalendarProjectID = selectedWorkspace?.project.id ?? (
+    activeSession ? findSession(workspaces, activeSession.id).workspace?.project.id ?? null : null
+  )
   const workbenchWindowControls = useMemo(
     () => (
       isMacOS
@@ -2247,7 +2320,11 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
             </Suspense>
           ) : isCalendarView ? (
             <Suspense fallback={null}>
-              <CalendarPage windowControls={windowControls} />
+              <CalendarPage
+                activeProjectID={activeCalendarProjectID}
+                projects={calendarProjects}
+                windowControls={windowControls}
+              />
             </Suspense>
           ) : isAutomationsView ? (
             <Suspense fallback={null}>
