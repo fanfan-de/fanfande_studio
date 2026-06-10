@@ -19,6 +19,8 @@ type PendingDeltaStreamEvent = PendingStreamEvent & {
   payload: RuntimeEvent.RuntimeEventPayloadByType[PendingDeltaStreamEventType]
 }
 
+export type ConcurrentInputDisposition = "steer" | "interrupt"
+
 function isPendingDeltaStreamEvent(event: PendingStreamEvent): event is PendingDeltaStreamEvent {
   return event.type === "text.part.delta" || event.type === "reasoning.part.delta" || event.type === "tool.input.delta"
 }
@@ -50,6 +52,21 @@ function coalescePendingStreamEvent(current: PendingDeltaStreamEvent, next: Pend
   } as PendingDeltaStreamEvent
 }
 
+function readToolCallID(
+  payload: RuntimeEvent.RuntimeEventPayloadByType[
+    | "tool.call.pending"
+    | "tool.call.started"
+    | "tool.call.waiting_approval"
+    | "tool.call.approved"
+    | "tool.call.denied"
+    | "tool.call.cancelled"
+    | "tool.call.completed"
+    | "tool.call.failed"
+  ],
+) {
+  return payload.part.callID
+}
+
 export interface TurnContext {
   readonly sessionID: string
   readonly turnID: string
@@ -64,6 +81,7 @@ export interface TurnContext {
   ): void
   flushStreamEvents(): void
   canAcceptSteer(): boolean
+  concurrentInputDisposition(): ConcurrentInputDisposition
   setAcceptingSteer(accepting: boolean): void
   close(): void
 }
@@ -80,6 +98,7 @@ class TurnRuntime implements TurnContext {
   private closed = false
   private terminalEvent: RuntimeEvent.RuntimeEvent | undefined
   private acceptingSteer = true
+  private readonly preparingToolCallIDs = new Set<string>()
 
   constructor(input: { sessionID: string; turnID: string; steerable: boolean }) {
     this.sessionID = input.sessionID
@@ -104,10 +123,12 @@ class TurnRuntime implements TurnContext {
     }
 
     this.flushStreamEvents()
+    this.applyConcurrentInputTransition(type, payload)
     const event = this.emitNow(type, payload)
 
     if (RuntimeEvent.isTerminalRuntimeEvent(event)) {
       this.acceptingSteer = false
+      this.preparingToolCallIDs.clear()
       this.terminalEvent = event
     }
 
@@ -120,6 +141,7 @@ class TurnRuntime implements TurnContext {
   ) {
     if (this.closed || this.terminalEvent) return
 
+    this.applyConcurrentInputTransition(type, payload)
     const next = { type, payload } as PendingStreamEvent
     const previous = this.pendingStreamEvents[this.pendingStreamEvents.length - 1]
     if (previous && canCoalescePendingStreamEvent(previous, next)) {
@@ -146,7 +168,17 @@ class TurnRuntime implements TurnContext {
   }
 
   canAcceptSteer() {
-    return this.steerable && this.acceptingSteer && !this.closed && !this.terminalEvent
+    return (
+      this.steerable &&
+      this.acceptingSteer &&
+      this.concurrentInputDisposition() === "steer" &&
+      !this.closed &&
+      !this.terminalEvent
+    )
+  }
+
+  concurrentInputDisposition(): ConcurrentInputDisposition {
+    return this.preparingToolCallIDs.size > 0 ? "interrupt" : "steer"
   }
 
   setAcceptingSteer(accepting: boolean) {
@@ -175,6 +207,45 @@ class TurnRuntime implements TurnContext {
     const event = this.factory.next(type, payload)
     EventStore.appendAndProject(event)
     return event
+  }
+
+  private applyConcurrentInputTransition<TType extends RuntimeEvent.RuntimeEventType>(
+    type: TType,
+    payload: RuntimeEvent.RuntimeEventPayloadByType[TType],
+  ) {
+    switch (type) {
+      case "tool.call.pending": {
+        const toolCallID = readToolCallID(payload as RuntimeEvent.RuntimeEventPayloadByType["tool.call.pending"])
+        if (toolCallID) this.preparingToolCallIDs.add(toolCallID)
+        return
+      }
+      case "tool.input.delta": {
+        const toolCallID = (payload as RuntimeEvent.RuntimeEventPayloadByType["tool.input.delta"]).toolCallID
+        if (toolCallID) this.preparingToolCallIDs.add(toolCallID)
+        return
+      }
+      case "tool.call.started":
+      case "tool.call.waiting_approval":
+      case "tool.call.approved":
+      case "tool.call.denied":
+      case "tool.call.cancelled":
+      case "tool.call.completed":
+      case "tool.call.failed": {
+        const toolCallID = readToolCallID(
+          payload as RuntimeEvent.RuntimeEventPayloadByType[
+            | "tool.call.started"
+            | "tool.call.waiting_approval"
+            | "tool.call.approved"
+            | "tool.call.denied"
+            | "tool.call.cancelled"
+            | "tool.call.completed"
+            | "tool.call.failed"
+          ],
+        )
+        if (toolCallID) this.preparingToolCallIDs.delete(toolCallID)
+        return
+      }
+    }
   }
 
   private scheduleStreamFlush() {

@@ -1552,6 +1552,79 @@ describe("stream trace reducer", () => {
     })
   })
 
+  it("marks streamed draft patch previews as cancelled when apply_patch is cancelled", () => {
+    const fullInput = JSON.stringify({
+      patch: [
+        "*** Begin Patch",
+        "*** Update File: src/app.ts",
+        "@@",
+        "-old",
+        "+new",
+        "*** End Patch",
+      ].join("\n"),
+    })
+    let turn = buildStreamingAssistantTurn("Cancel live patch input")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-patch-input",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-patch",
+          toolCallID: "call-live-patch",
+          toolName: "apply_patch",
+          delta: fullInput,
+          rawLength: fullInput.length,
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-patch-cancelled",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "tool.call.cancelled",
+        payload: {
+          part: {
+            id: "tool-input-patch",
+            type: "tool",
+            tool: "apply_patch",
+            callID: "call-live-patch",
+            state: {
+              status: "cancelled",
+              input: { patch: "..." },
+              raw: fullInput,
+              reason: "Prompt cancellation requested.",
+            },
+          },
+        },
+      },
+    })
+
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(turn.items.filter((item) => item.kind === "patch")).toHaveLength(0)
+    expect(toolItems[0]).toMatchObject({
+      sourceID: "tool-input-patch",
+      status: "cancelled",
+      isStreaming: false,
+      draftPatch: {
+        status: "cancelled",
+        isStreaming: false,
+      },
+    })
+  })
+
   it("marks unfinished streamed tool input as cancelled when the turn is interrupted", () => {
     let turn = buildStreamingAssistantTurn("Inspect live tool input")
 
@@ -1611,6 +1684,83 @@ describe("stream trace reducer", () => {
         }),
       ]),
     )
+  })
+
+  it("keeps cancelled streamed tool input when a late failed part arrives", () => {
+    let turn = buildStreamingAssistantTurn("Inspect live tool input")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-tool-input-1",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-part",
+          toolCallID: "call-live-input",
+          toolName: "replace-text",
+          delta: "{\"path\":\"game.ts\"",
+          rawLength: 17,
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-cancelled",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "turn.cancelled",
+        payload: {
+          reason: "user",
+          detail: "Prompt cancellation requested.",
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-late-failed",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 3,
+        timestamp: 102,
+        type: "tool.call.failed",
+        payload: {
+          part: {
+            id: "tool-input-part",
+            type: "tool",
+            tool: "replace-text",
+            callID: "call-live-input",
+            state: {
+              status: "error",
+              input: { path: "game.ts" },
+              error: "Late failure should not replace cancellation.",
+            },
+          },
+        },
+      },
+    })
+
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(turn.runtime.phase).toBe("cancelled")
+    expect(toolItems[0]).toMatchObject({
+      kind: "tool",
+      title: "replace-text",
+      status: "cancelled",
+      sourceID: "tool-input-part",
+      toolCallID: "call-live-input",
+      isStreaming: false,
+    })
   })
 
   it("keeps late batched tool input cancelled after a local interrupt marker", () => {

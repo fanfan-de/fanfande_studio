@@ -532,7 +532,7 @@ describe("Composer", () => {
     expect(onSend).not.toHaveBeenCalled()
   })
 
-  it("shows only the stop button while sending when the draft has text", () => {
+  it("switches the send button to guidance while sending when the draft has text", () => {
     const onCancelSend = vi.fn()
     const onSend = vi.fn()
 
@@ -543,14 +543,43 @@ describe("Composer", () => {
       onSend,
     })
 
-    const stopButton = screen.getByRole("button", { name: "Stop task" })
+    const sendButton = screen.getByRole("button", { name: "Send guidance" })
 
-    expect(stopButton).toBeEnabled()
-    expect(screen.queryByRole("button", { name: "Send task" })).not.toBeInTheDocument()
+    expect(sendButton).toBeEnabled()
+    expect(screen.queryByRole("button", { name: "Stop task" })).not.toBeInTheDocument()
 
-    fireEvent.click(stopButton)
-    expect(onCancelSend).toHaveBeenCalledTimes(1)
-    expect(onSend).not.toHaveBeenCalled()
+    fireEvent.click(sendButton)
+    expect(onSend).toHaveBeenCalledTimes(1)
+    expect(onCancelSend).not.toHaveBeenCalled()
+  })
+
+  it("switches from stop to guidance after text is typed during a running task", async () => {
+    const onCancelSend = vi.fn()
+    const onSend = vi.fn()
+    const { container } = renderComposer({
+      draftState: createComposerDraftStateFromPlainText(""),
+      isSending: true,
+      onCancelSend,
+      onSend,
+    })
+    const editor = container.querySelector(".composer-editor-input")
+
+    expect(editor).toBeInstanceOf(HTMLElement)
+    expect(screen.getByRole("button", { name: "Stop task" })).toBeEnabled()
+
+    fireEvent(
+      editor as HTMLElement,
+      new CustomEvent("desktop-composer-change", {
+        detail: { value: "Steer the current task" },
+      }),
+    )
+
+    const sendButton = await screen.findByRole("button", { name: "Send guidance" })
+    expect(sendButton).toBeEnabled()
+
+    fireEvent.click(sendButton)
+    expect(onSend).toHaveBeenCalledTimes(1)
+    expect(onCancelSend).not.toHaveBeenCalled()
   })
 
   it("keeps the stop button while sending with attachments but no draft text", () => {
@@ -590,7 +619,7 @@ describe("Composer", () => {
     expect(onSend).not.toHaveBeenCalled()
   })
 
-  it("uses Enter to stop while sending with draft text", () => {
+  it("uses Enter to submit guidance while sending with draft text", () => {
     const onCancelSend = vi.fn()
     const onSend = vi.fn()
     const { container } = renderComposer({
@@ -603,7 +632,7 @@ describe("Composer", () => {
 
     expect(editor).toBeInstanceOf(HTMLElement)
     fireEvent.keyDown(editor as HTMLElement, { key: "Enter", code: "Enter" })
-    expect(onCancelSend).toHaveBeenCalledTimes(1)
-    expect(onSend).not.toHaveBeenCalled()
+    expect(onSend).toHaveBeenCalledTimes(1)
+    expect(onCancelSend).not.toHaveBeenCalled()
   })
 })

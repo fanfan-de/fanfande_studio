@@ -141,6 +141,50 @@ describe("ipc session stream cleanup helpers", () => {
     expect(otherSession.signal.aborted).toBe(false)
     expect(otherWebContents.signal.aborted).toBe(false)
   })
+
+  it("sends interrupt to the backend without aborting the active local request first", async () => {
+    const requestBackendCancel = vi.fn(async () => ({
+      sessionID: "session-a",
+      cancelled: true,
+      activeCancelled: true,
+      queuedCancelled: 2,
+    }))
+
+    await expect(internal.interruptAgentSessionBackendFirst({
+      backendSessionID: " session-a ",
+      clientTurnID: " turn-a ",
+      webContentsID: 12,
+      requestBackendCancel,
+    })).resolves.toEqual({
+      backendSessionID: "session-a",
+      clientTurnID: "turn-a",
+      localRequestsAborted: 0,
+      backendCancelled: true,
+      activeCancelled: true,
+      queuedCancelled: 2,
+    })
+
+    expect(requestBackendCancel).toHaveBeenCalledWith("session-a")
+  })
+
+  it("reports backend interrupt failure without aborting the active local request", async () => {
+    const requestBackendCancel = vi.fn(async () => {
+      throw new Error("agent offline")
+    })
+
+    await expect(internal.interruptAgentSessionBackendFirst({
+      backendSessionID: " session-a ",
+      clientTurnID: " turn-a ",
+      webContentsID: 12,
+      requestBackendCancel,
+    })).resolves.toEqual({
+      backendSessionID: "session-a",
+      clientTurnID: "turn-a",
+      localRequestsAborted: 0,
+      backendCancelled: false,
+      backendCancelError: "agent offline",
+    })
+  })
 })
 
 describe("ipc tool permission mode helpers", () => {

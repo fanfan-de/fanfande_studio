@@ -970,7 +970,10 @@ export function create(input: {
             }
 
             try {
-            const failOpenToolCalls = async (reason: string) => {
+            const settleOpenToolCalls = async (
+                reason: string,
+                status: "error" | "cancelled" = "error",
+            ) => {
                 const end = Date.now()
 
                 for (const [toolCallID, original] of Object.entries(toolcalls)) {
@@ -978,6 +981,7 @@ export function create(input: {
                     if (
                         current.state.status === "completed" ||
                         current.state.status === "error" ||
+                        current.state.status === "cancelled" ||
                         current.state.status === "denied" ||
                         current.state.status === "waiting-approval"
                     ) {
@@ -989,31 +993,49 @@ export function create(input: {
                             ? current.state.time.start
                             : end
 
-                    const failed: Message.ToolPart = {
+                    const settled: Message.ToolPart = {
                         ...current,
-                        state: {
-                            status: "error",
-                            input: current.state.input,
-                            raw: readToolRaw(current.state),
-                            error: reason,
-                            metadata:
-                                current.state.status === "running"
-                                    ? current.state.metadata ?? {}
-                                    : current.metadata ?? {},
-                            time: {
-                                start,
-                                end,
+                        state: status === "cancelled"
+                            ? {
+                                status: "cancelled",
+                                input: current.state.input,
+                                raw: readToolRaw(current.state),
+                                reason,
+                                metadata:
+                                    current.state.status === "running"
+                                        ? current.state.metadata ?? {}
+                                        : current.metadata ?? {},
+                                time: {
+                                    start,
+                                    end,
+                                },
+                            }
+                            : {
+                                status: "error",
+                                input: current.state.input,
+                                raw: readToolRaw(current.state),
+                                error: reason,
+                                metadata:
+                                    current.state.status === "running"
+                                        ? current.state.metadata ?? {}
+                                        : current.metadata ?? {},
+                                time: {
+                                    start,
+                                    end,
+                                },
                             },
-                        },
                     }
 
-                    toolcalls[toolCallID] = failed
-                    emitRuntimeEvent?.("tool.call.failed", {
-                        part: failed,
+                    toolcalls[toolCallID] = settled
+                    emitRuntimeEvent?.(status === "cancelled" ? "tool.call.cancelled" : "tool.call.failed", {
+                        part: settled,
                     })
-                    await persistPart(failed)
+                    await persistPart(settled)
                 }
             }
+
+            const failOpenToolCalls = (reason: string) => settleOpenToolCalls(reason, "error")
+            const cancelOpenToolCalls = (reason: string) => settleOpenToolCalls(reason, "cancelled")
 
             const listActiveToolCalls = () =>
                 Object.keys(toolcalls)
@@ -1928,6 +1950,7 @@ export function create(input: {
                     }
 
                     if (isAbortSignalAborted(streamInput.abort ?? input.abort)) {
+                        await cancelOpenToolCalls("Prompt cancellation requested.")
                         throwIfAborted(streamInput.abort ?? input.abort)
                     } else {
                         await reconcileOpenToolCalls(stream)
@@ -1965,7 +1988,9 @@ export function create(input: {
                         })
                     }
                     await persistPartialDraftOnce?.(normalizeToolError(e))
-                    if (!aborted) {
+                    if (aborted) {
+                        await cancelOpenToolCalls("Prompt cancellation requested.")
+                    } else {
                         await failOpenToolCalls(normalizeToolError(e))
                     }
                     log.error("processor failure", { error: e.message, stack: e.stack })

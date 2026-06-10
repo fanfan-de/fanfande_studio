@@ -371,17 +371,17 @@ function resolveComposerSelectedModelOption(
 function getComposerSendButtonDescription({
   attachmentError,
   canSend,
+  hasRunningTask,
   hasPendingPermissionRequests,
   isCancelling,
-  isInterruptible,
-  isSending,
+  sendButtonActsAsStop,
 }: {
   attachmentError: string | null
   canSend: boolean
+  hasRunningTask: boolean
   hasPendingPermissionRequests: boolean
   isCancelling?: boolean
-  isInterruptible?: boolean
-  isSending: boolean
+  sendButtonActsAsStop: boolean
 }) {
   if (attachmentError) {
     return `${attachmentError} Press Shift+Enter for a newline.`
@@ -399,11 +399,19 @@ function getComposerSendButtonDescription({
     return "Cancellation has been requested. Press Shift+Enter for a newline."
   }
 
-  if (isSending || isInterruptible) {
+  if (sendButtonActsAsStop) {
     return "Stop the current assistant turn. Press Shift+Enter for a newline."
   }
 
+  if (hasRunningTask) {
+    return "Submit guidance to the current assistant turn without stopping it. Press Shift+Enter for a newline."
+  }
+
   return "Press Enter to send. Press Shift+Enter for a newline."
+}
+
+function hasComposerDraftText(draftState: ComposerDraftState) {
+  return draftState.plainText.trim().length > 0
 }
 
 function getComposerSelectionRect() {
@@ -1021,6 +1029,7 @@ export function Composer({
   const [commandMenuItems, setCommandMenuItems] = useState<ComposerCommandMenuItem[]>([])
   const [activeCommandIndex, setActiveCommandIndex] = useState(0)
   const [longTextEditorState, setLongTextEditorState] = useState<ComposerLongTextEditorState | null>(null)
+  const [hasDraftText, setHasDraftText] = useState(() => hasComposerDraftText(normalizedDraftState))
   const commandMenuStateRef = useRef<ComposerCommandMenuState | null>(commandMenuState)
   const commandMenuItemsRef = useRef<ComposerCommandMenuItem[]>(commandMenuItems)
   const activeCommandIndexRef = useRef(activeCommandIndex)
@@ -1047,6 +1056,7 @@ export function Composer({
     localEditorLexicalJSONRef.current = normalizedNextDraftState.lexicalJSON
     rememberLocalComposerDraftEcho(localDraftEchoesRef.current, normalizedNextDraftState.lexicalJSON)
     setCommandMenuStateWithRef(null)
+    setHasDraftText(hasComposerDraftText(normalizedNextDraftState))
 
     if (editor) {
       const nextEditorState = parseComposerDraftStateForEditor(editor, normalizedNextDraftState.lexicalJSON, {
@@ -1242,6 +1252,7 @@ export function Composer({
       normalizedDraftState.lexicalJSON === localEditorLexicalJSONRef.current ||
       localDraftEchoesRef.current.has(normalizedDraftState.lexicalJSON)
     ) {
+      setHasDraftText(hasComposerDraftText(normalizedDraftState))
       logComposerDebug("draft-ref-skip-local-prop", {
         draftPlainText: normalizedDraftState.plainText,
         echoCount: localDraftEchoesRef.current.size,
@@ -1254,6 +1265,7 @@ export function Composer({
       draftPlainText: normalizedDraftState.plainText,
     })
     draftStateRef.current = normalizedDraftState
+    setHasDraftText(hasComposerDraftText(normalizedDraftState))
   }, [normalizedDraftState])
 
   useEffect(() => {
@@ -1275,6 +1287,7 @@ export function Composer({
       localEditorLexicalJSONRef.current = nextDraftState.lexicalJSON
       rememberLocalComposerDraftEcho(localDraftEchoesRef.current, nextDraftState.lexicalJSON)
       setCommandMenuStateWithRef(null)
+      setHasDraftText(hasComposerDraftText(nextDraftState))
       logComposerDebug(
         "synthetic-setEditorState",
         {
@@ -1577,6 +1590,7 @@ export function Composer({
     draftStateRef.current = nextDraftState
     localEditorLexicalJSONRef.current = nextDraftState.lexicalJSON
     rememberLocalComposerDraftEcho(localDraftEchoesRef.current, nextDraftState.lexicalJSON)
+    setHasDraftText(hasComposerDraftText(nextDraftState))
     onDraftStateChange(nextDraftState)
   }
 
@@ -1714,7 +1728,7 @@ export function Composer({
     if (action.type === "send") {
       if (!isEditorEventTarget(event.target)) return
       if (isCancelling) return
-      if (isSending || isInterruptible) {
+      if ((isSending || isInterruptible) && !hasComposerDraftText(draftStateRef.current)) {
         void onCancelSend?.()
         return
       }
@@ -1761,7 +1775,7 @@ export function Composer({
 
   const unsupportedAttachmentPathSet = new Set(unsupportedAttachmentPaths)
   const hasRunningTask = isSending || isInterruptible
-  const canInterrupt = isCancelling || hasRunningTask
+  const canInterrupt = isCancelling || (hasRunningTask && !hasDraftText)
   const sendButtonActsAsStop = canInterrupt
   const stopButtonLabel = isCancelling ? "Cancelling task" : "Stop task"
   const stopButtonDisabled = isCancelling || !onCancelSend
@@ -1769,14 +1783,16 @@ export function Composer({
     ? stopButtonLabel
     : hasPendingPermissionRequests
       ? "Resolve approval first"
-      : "Send task"
+      : hasRunningTask
+        ? "Send guidance"
+        : "Send task"
   const sendButtonDescription = getComposerSendButtonDescription({
     attachmentError,
     canSend,
+    hasRunningTask,
     hasPendingPermissionRequests,
     isCancelling,
-    isInterruptible,
-    isSending,
+    sendButtonActsAsStop,
   })
   const sendButtonTitle = `${sendButtonLabel}. ${sendButtonDescription}`
   const sendShortcut = !sendButtonActsAsStop && canSend && !hasPendingPermissionRequests ? "Enter" : undefined
@@ -2135,7 +2151,7 @@ export function Composer({
             className="primary-button is-icon-only"
             disabled={sendButtonDisabled}
             onClick={() => {
-              if (sendButtonActsAsStop) {
+              if ((isSending || isInterruptible) && !hasComposerDraftText(draftStateRef.current)) {
                 void onCancelSend?.()
                 return
               }

@@ -1133,6 +1133,8 @@ export interface AgentSessionStreamIPCEvent extends AgentStreamEvent {
   sessionID: string
 }
 
+export type AgentSessionExecutionMode = "new-turn" | "queued" | "steer"
+
 export interface WorkspaceFileChangeIPCEvent {
   directory: string
   paths: string[]
@@ -1143,6 +1145,9 @@ export interface PendingAgentStream {
   backendSessionID?: string
   assistantTurnID: string
   backendTurnID?: string
+  requestedMode?: "new-turn" | "steer"
+  executionMode?: AgentSessionExecutionMode
+  createdAssistantTurnID?: string
   cancelRequested?: boolean
 }
 

@@ -12,6 +12,7 @@ import {
 } from "../stream"
 import type {
   AgentSessionStreamIPCEvent,
+  AgentSessionExecutionMode,
   AgentStreamIPCEvent,
   AssistantTraceItem,
   AssistantTurn,
@@ -73,12 +74,98 @@ type PendingStreamDeltaUpdate = {
   target: StreamEventUpdateTarget
 }
 
+type ExecutionModeEventPayload = {
+  sessionID: string
+  turnID: string
+  mode: AgentSessionExecutionMode
+}
+
+export type ExecutionModeRouteDecision = {
+  assistantTurnID: string
+  clearSteerUserTurn: boolean
+  createAssistantTurn: boolean
+  removeAssistantTurnID?: string
+}
+
+export function resolveExecutionModeRoute(input: {
+  mode: AgentSessionExecutionMode
+  requestedMode?: PendingAgentStream["requestedMode"]
+  currentAssistantTurnID: string
+  createdAssistantTurnID?: string
+  existingAssistantTurnID?: string
+  currentStreamingAssistantTurnID?: string
+}): ExecutionModeRouteDecision {
+  if (input.mode === "steer") {
+    const assistantTurnID =
+      input.existingAssistantTurnID ??
+      input.currentStreamingAssistantTurnID ??
+      input.currentAssistantTurnID
+    return {
+      assistantTurnID,
+      clearSteerUserTurn: false,
+      createAssistantTurn: false,
+      ...(input.createdAssistantTurnID && input.createdAssistantTurnID !== assistantTurnID
+        ? { removeAssistantTurnID: input.createdAssistantTurnID }
+        : {}),
+    }
+  }
+
+  if (input.requestedMode === "steer") {
+    if (input.existingAssistantTurnID) {
+      return {
+        assistantTurnID: input.existingAssistantTurnID,
+        clearSteerUserTurn: true,
+        createAssistantTurn: false,
+      }
+    }
+    if (input.createdAssistantTurnID) {
+      return {
+        assistantTurnID: input.createdAssistantTurnID,
+        clearSteerUserTurn: true,
+        createAssistantTurn: false,
+      }
+    }
+    return {
+      assistantTurnID: input.currentAssistantTurnID,
+      clearSteerUserTurn: true,
+      createAssistantTurn: true,
+    }
+  }
+
+  return {
+    assistantTurnID: input.currentAssistantTurnID,
+    clearSteerUserTurn: false,
+    createAssistantTurn: false,
+  }
+}
+
 function readRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
 }
 
 function readString(value: unknown) {
   return typeof value === "string" ? value : undefined
+}
+
+function isAgentSessionExecutionMode(value: unknown): value is AgentSessionExecutionMode {
+  return value === "new-turn" || value === "queued" || value === "steer"
+}
+
+function readExecutionModeEvent(streamEvent: { event: string; data: unknown }): ExecutionModeEventPayload | null {
+  if (streamEvent.event !== "execution.mode") return null
+  const data = readRecord(streamEvent.data)
+  if (!data) return null
+
+  const sessionID = readString(data.sessionID)
+  const turnID = readString(data.turnID)
+  const mode = data.mode
+  if (!sessionID || !turnID || !isAgentSessionExecutionMode(mode)) return null
+
+  return {
+    sessionID,
+    turnID,
+    mode,
+  }
 }
 
 function readRuntimeStreamEvent(value: unknown) {
@@ -345,7 +432,8 @@ function canIncomingTurnOverrideCancellation(turn: AssistantTurn) {
 }
 
 function shouldPreserveCancelledTurn(current: AssistantTurn, incoming: AssistantTurn) {
-  return current.runtime.phase === "cancelled" && !canIncomingTurnOverrideCancellation(incoming)
+  return current.runtime.phase === "cancelled" &&
+    (!canIncomingTurnOverrideCancellation(incoming) || isLateToolFailureForCancelledTurn(current, incoming))
 }
 
 function cancelInterruptedToolTraceItems(items: AssistantTraceItem[]) {
@@ -368,6 +456,25 @@ function getToolTraceIdentity(item: AssistantTraceItem) {
   if (item.messageID && item.toolCallID) return `tool:${item.messageID}:${item.toolCallID}`
   if (item.toolCallID) return `tool:${item.toolCallID}`
   return null
+}
+
+function isLateToolFailureForCancelledTurn(current: AssistantTurn, incoming: AssistantTurn) {
+  if (incoming.runtime.phase !== "failed") return false
+  if (incoming.items.some((item) => item.kind === "error")) return false
+
+  const cancelledToolIdentities = new Set(
+    current.items
+      .filter((item) => item.kind === "tool" && item.status === "cancelled")
+      .map(getToolTraceIdentity)
+      .filter((identity): identity is string => Boolean(identity)),
+  )
+  if (cancelledToolIdentities.size === 0) return false
+
+  return incoming.items.some((item) => {
+    if (item.kind !== "tool" || item.status !== "error") return false
+    const identity = getToolTraceIdentity(item)
+    return Boolean(identity && cancelledToolIdentities.has(identity))
+  })
 }
 
 function mergeTraceDebugEntries(
@@ -394,8 +501,13 @@ function mergeAssistantTraceItem(existing: AssistantTraceItem, nextItem: Assista
     nextItem.kind === "tool" &&
     isTerminalTraceStatus(existing.status) &&
     !isTerminalTraceStatus(nextItem.status)
+  const keepsCancelledToolState =
+    existing.kind === "tool" &&
+    nextItem.kind === "tool" &&
+    existing.status === "cancelled" &&
+    nextItem.status === "error"
 
-  if (keepsTerminalToolState) {
+  if (keepsTerminalToolState || keepsCancelledToolState) {
     return {
       ...existing,
       messageID: existing.messageID ?? nextItem.messageID,
@@ -1229,6 +1341,64 @@ export function useSessionStreamController({
     })
   }
 
+  function clearLatestSteerUserTurnForAssistant(sessionID: string, assistantTurnID: string) {
+    setConversations((prev) => {
+      const current = prev[sessionID] ?? []
+      let targetIndex = -1
+      for (let index = current.length - 1; index >= 0; index -= 1) {
+        const turn = current[index]
+        if (
+          turn?.kind === "user" &&
+          turn.submissionMode === "steer" &&
+          (!turn.streamInsertion || turn.streamInsertion.assistantTurnID === assistantTurnID)
+        ) {
+          targetIndex = index
+          break
+        }
+      }
+
+      if (targetIndex < 0) return prev
+
+      bumpConversationVersion(sessionID)
+      const nextTurns = current.map((turn, index): Turn => {
+        if (index !== targetIndex || turn.kind !== "user") return turn
+        const { submissionMode: _submissionMode, streamInsertion: _streamInsertion, ...regularTurn } = turn
+        return regularTurn
+      })
+      const reconciled = reconcileConversationTurns(nextTurns)
+      persistUserTurns(sessionID, reconciled)
+      return {
+        ...prev,
+        [sessionID]: reconciled,
+      }
+    })
+  }
+
+  function findCurrentStreamingAssistantTurnID(sessionID: string, excludeTurnID?: string) {
+    const turns = conversationStore.getSessionTurns(sessionID)
+    for (let index = turns.length - 1; index >= 0; index -= 1) {
+      const turn = turns[index]
+      if (turn.kind === "assistant" && turn.isStreaming && turn.id !== excludeTurnID) {
+        return turn.id
+      }
+    }
+    return undefined
+  }
+
+  function removeConversationTurn(sessionID: string, turnID: string) {
+    setConversations((prev) => {
+      const current = prev[sessionID] ?? []
+      if (!current.some((turn) => turn.id === turnID)) return prev
+      bumpConversationVersion(sessionID)
+      const reconciled = reconcileConversationTurns(current.filter((turn) => turn.id !== turnID))
+      persistUserTurns(sessionID, reconciled)
+      return {
+        ...prev,
+        [sessionID]: reconciled,
+      }
+    })
+  }
+
   function updateAssistantConversationTurn(
     sessionID: string,
     turnID: string,
@@ -1489,9 +1659,66 @@ export function useSessionStreamController({
     }
   }
 
+  function applyExecutionModeToPendingRequest(streamID: string, executionMode: ExecutionModeEventPayload) {
+    const target = pendingStreamsRef.current[streamID]
+    if (!target) return
+
+    const backendSessionID = executionMode.sessionID || target.backendSessionID || resolveBackendSessionID(target.sessionID)
+    const backendTurnID = executionMode.turnID
+    if (sessionEventRouterRef.current.hasBackendTurnSettled(backendSessionID, backendTurnID)) {
+      delete pendingStreamsRef.current[streamID]
+      cleanupTurnTarget(backendSessionID, backendTurnID)
+      return
+    }
+
+    const previousAssistantTurnID = target.assistantTurnID
+    target.backendSessionID = backendSessionID
+    target.backendTurnID = backendTurnID
+    target.executionMode = executionMode.mode
+
+    const existingTarget = sessionEventRouterRef.current.getTurnTarget(backendSessionID, backendTurnID)
+
+    const route = resolveExecutionModeRoute({
+      mode: executionMode.mode,
+      requestedMode: target.requestedMode,
+      currentAssistantTurnID: target.assistantTurnID,
+      createdAssistantTurnID: target.createdAssistantTurnID,
+      existingAssistantTurnID: existingTarget?.assistantTurnID,
+      currentStreamingAssistantTurnID: findCurrentStreamingAssistantTurnID(target.sessionID, target.createdAssistantTurnID),
+    })
+
+    if (route.createAssistantTurn) {
+      const streamingTurn = buildSessionStreamingAssistantTurn()
+      target.assistantTurnID = streamingTurn.id
+      target.createdAssistantTurnID = streamingTurn.id
+      appendConversationTurns(target.sessionID, [streamingTurn])
+    } else {
+      target.assistantTurnID = route.assistantTurnID
+    }
+
+    if (route.removeAssistantTurnID) {
+      removeConversationTurn(target.sessionID, route.removeAssistantTurnID)
+    }
+
+    if (route.clearSteerUserTurn) {
+      clearLatestSteerUserTurnForAssistant(target.sessionID, previousAssistantTurnID)
+    }
+
+    sessionEventRouterRef.current.setTurnTarget(backendSessionID, backendTurnID, {
+      sessionID: target.sessionID,
+      assistantTurnID: target.assistantTurnID,
+    })
+  }
+
   function handleRequestStreamEvent(streamEvent: AgentStreamIPCEvent) {
     const target = pendingStreamsRef.current[streamEvent.streamID]
     if (!target) return
+
+    const executionMode = readExecutionModeEvent(streamEvent)
+    if (executionMode) {
+      applyExecutionModeToPendingRequest(streamEvent.streamID, executionMode)
+      return
+    }
 
     const cursor = resolveStreamCursor(streamEvent)
     if (cursor && sessionEventRouterRef.current.rememberSeenCursor(target.sessionID, cursor)) {

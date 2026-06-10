@@ -983,8 +983,13 @@ function mergeTraceItem(existing: AssistantTraceItem, nextItem: AssistantTraceIt
     nextItem.kind === "tool" &&
     isTerminalTraceStatus(existing.status) &&
     !isTerminalTraceStatus(nextItem.status)
+  const keepsCancelledToolState =
+    existing.kind === "tool" &&
+    nextItem.kind === "tool" &&
+    existing.status === "cancelled" &&
+    nextItem.status === "error"
 
-  if (keepsTerminalToolState) {
+  if (keepsTerminalToolState || keepsCancelledToolState) {
     return {
       ...existing,
       messageID: existing.messageID ?? nextItem.messageID,

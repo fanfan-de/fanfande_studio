@@ -424,5 +424,101 @@ describe("processor fullStream consumption probe", () => {
     })).rejects.toThrow("Prompt aborted")
 
     expect(recorded.events.some((event) => event.type === "tool.call.started")).toBe(false)
+    expect(recorded.events.some((event) => event.type === "tool.call.failed")).toBe(false)
+    const cancelled = recorded.events.find((event) => event.type === "tool.call.cancelled")
+    expect(cancelled?.payload.part).toMatchObject({
+      type: "tool",
+      callID: "call_1",
+      tool: "write",
+      state: {
+        status: "cancelled",
+        raw: "{",
+        reason: "Prompt cancellation requested.",
+      },
+    })
+  })
+
+  it("marks running tool calls as cancelled after abort", async () => {
+    const controller = new AbortController()
+
+    restoreLLM = LLM.setRuntimeDependenciesForTesting({
+      getLanguage: async (model) => model as never,
+      streamText: (() => ({
+        fullStream: (async function* () {
+          yield { type: "start" }
+          yield { type: "tool-input-start", id: "call_1", toolName: "write" }
+          yield { type: "tool-input-delta", id: "call_1", delta: "{\"path\":\"README.md\"}" }
+          yield {
+            type: "tool-call",
+            toolCallId: "call_1",
+            toolName: "write",
+            input: { path: "README.md" },
+            title: "Write README.md",
+          }
+          controller.abort()
+          yield {
+            type: "tool-result",
+            toolCallId: "call_1",
+            toolName: "write",
+            input: { path: "README.md" },
+            output: "ok",
+          }
+        })(),
+      })) as never,
+    })
+
+    const Processor = await import("#session/core/processor.ts")
+    const sessionID = `session-running-tool-abort-${Date.now()}`
+    const assistantID = `assistant-running-tool-abort-${Date.now()}`
+    const recorded = createTurnRecorder(sessionID)
+    const processor = Processor.create({
+      Assistant: {
+        id: assistantID,
+        sessionID,
+        role: "assistant",
+        created: Date.now(),
+        parentID: "user-running-tool-abort",
+        modelID: "gpt-5.3-codex",
+        providerID: "openai",
+        agent: "plan",
+        path: {
+          cwd: ".",
+          root: ".",
+        },
+        cost: 0,
+        tokens: {
+          input: 0,
+          output: 0,
+          reasoning: 0,
+          cache: {
+            read: 0,
+            write: 0,
+          },
+        },
+      } as any,
+      abort: controller.signal,
+      turn: recorded.turn,
+    })
+
+    await expect(processor.process({
+      ...createStreamInput(),
+      abort: controller.signal,
+    })).rejects.toThrow("Prompt aborted")
+
+    expect(recorded.events.some((event) => event.type === "tool.call.started")).toBe(true)
+    expect(recorded.events.some((event) => event.type === "tool.call.completed")).toBe(false)
+    expect(recorded.events.some((event) => event.type === "tool.call.failed")).toBe(false)
+    const cancelled = recorded.events.find((event) => event.type === "tool.call.cancelled")
+    expect(cancelled?.payload.part).toMatchObject({
+      type: "tool",
+      callID: "call_1",
+      tool: "write",
+      state: {
+        status: "cancelled",
+        input: { path: "README.md" },
+        raw: "{\"path\":\"README.md\"}",
+        reason: "Prompt cancellation requested.",
+      },
+    })
   })
 })

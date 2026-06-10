@@ -314,14 +314,14 @@ describe("composer controller", () => {
     }
   })
 
-  it("interrupts a preparing tool input before sending new user input", async () => {
+  it("leaves preparing tool input interruption to the backend", async () => {
     const previousDesktop = window.desktop
     const sendTurn = vi.fn(async (input: { clientTurnID: string }) => ({
       clientTurnID: input.clientTurnID,
     }))
     const interrupt = vi.fn(async (input: { backendSessionID: string; clientTurnID?: string }) => ({
       ...input,
-      localRequestsAborted: 1,
+      localRequestsAborted: 0,
       backendCancelled: true,
       activeCancelled: true,
       queuedCancelled: 0,
@@ -365,33 +365,41 @@ describe("composer controller", () => {
         })
       })
 
-      expect(interrupt).toHaveBeenCalledWith({
-        backendSessionID: "backend-session-1",
-        clientTurnID: "stream-active",
-        reason: "user-interrupt",
-      })
+      expect(interrupt).not.toHaveBeenCalled()
       expect(sendTurn).toHaveBeenCalledWith(expect.objectContaining({
         backendSessionID: "backend-session-1",
         text: "Existing prompt",
       }))
-      expect(result.current.pendingStreamsRef.current["stream-active"]?.cancelRequested).toBe(true)
+      expect(result.current.pendingStreamsRef.current["stream-active"]?.cancelRequested).toBeUndefined()
       expect(result.current.turnsRef.current["session-1"]?.[0]).toMatchObject({
         kind: "assistant",
         runtime: {
-          phase: "cancelled",
+          phase: "tool_running",
         },
-        items: expect.arrayContaining([
+        isStreaming: true,
+        items: [
           expect.objectContaining({
             kind: "tool",
-            status: "cancelled",
+            status: "pending",
           }),
-        ]),
+        ],
       })
       expect(result.current.turnsRef.current["session-1"]?.[1]).toMatchObject({
         kind: "user",
         text: "Existing prompt",
+        submissionMode: "steer",
+        streamInsertion: {
+          assistantTurnID: "assistant-active",
+          afterItemCount: 1,
+        },
       })
-      expect((result.current.turnsRef.current["session-1"]?.[1] as { streamInsertion?: unknown }).streamInsertion).toBeUndefined()
+      expect(Object.values(result.current.pendingStreamsRef.current)).toContainEqual(
+        expect.objectContaining({
+          assistantTurnID: "assistant-active",
+          requestedMode: "steer",
+          sessionID: "session-1",
+        }),
+      )
     } finally {
       Object.defineProperty(window, "desktop", {
         configurable: true,
@@ -872,7 +880,7 @@ describe("composer controller", () => {
     const previousDesktop = window.desktop
     const interrupt = vi.fn(async (input: { backendSessionID: string; clientTurnID?: string }) => ({
       ...input,
-      localRequestsAborted: 1,
+      localRequestsAborted: 0,
       backendCancelled: true,
       activeCancelled: true,
       queuedCancelled: 0,
@@ -914,11 +922,57 @@ describe("composer controller", () => {
     }
   })
 
-  it("marks the visible running tool trace as cancelled when interrupt is requested", async () => {
+  it("restores the pending stream state when backend interrupt is rejected", async () => {
     const previousDesktop = window.desktop
     const interrupt = vi.fn(async (input: { backendSessionID: string; clientTurnID?: string }) => ({
       ...input,
-      localRequestsAborted: 1,
+      localRequestsAborted: 0,
+      backendCancelled: false,
+      backendCancelError: "agent offline",
+    }))
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        agentSession: {
+          interrupt,
+        },
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() => useComposerHarness())
+
+      result.current.pendingStreamsRef.current["stream-1"] = {
+        assistantTurnID: "assistant-1",
+        backendSessionID: "backend-session-1",
+        sessionID: "session-1",
+      }
+
+      await act(async () => {
+        await result.current.controller.handleCancelSend()
+      })
+
+      expect(interrupt).toHaveBeenCalledWith({
+        backendSessionID: "backend-session-1",
+        clientTurnID: "stream-1",
+        reason: "user-interrupt",
+      })
+      expect(result.current.pendingStreamsRef.current["stream-1"]?.cancelRequested).toBe(false)
+      expect(result.current.cancellingSessionIDs["session-1"]).toBeUndefined()
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
+  it("leaves the visible running tool trace unchanged while waiting for backend cancellation", async () => {
+    const previousDesktop = window.desktop
+    const interrupt = vi.fn(async (input: { backendSessionID: string; clientTurnID?: string }) => ({
+      ...input,
+      localRequestsAborted: 0,
       backendCancelled: true,
       activeCancelled: true,
       queuedCancelled: 0,
@@ -947,19 +1001,25 @@ describe("composer controller", () => {
         await result.current.controller.handleCancelSend()
       })
 
+      expect(interrupt).toHaveBeenCalledWith({
+        backendSessionID: "backend-session-1",
+        clientTurnID: "stream-1",
+        reason: "user-interrupt",
+      })
+      expect(result.current.pendingStreamsRef.current["stream-1"]?.cancelRequested).toBe(true)
+      expect(result.current.cancellingSessionIDs["session-1"]).toBe(true)
       expect(result.current.turnsRef.current["session-1"]?.[0]).toMatchObject({
         kind: "assistant",
         runtime: {
-          phase: "cancelled",
+          phase: "tool_running",
         },
-        isStreaming: false,
-        items: expect.arrayContaining([
+        isStreaming: true,
+        items: [
           expect.objectContaining({
             kind: "tool",
-            status: "cancelled",
-            isStreaming: false,
+            status: "running",
           }),
-        ]),
+        ],
       })
     } finally {
       Object.defineProperty(window, "desktop", {
@@ -969,11 +1029,11 @@ describe("composer controller", () => {
     }
   })
 
-  it("marks unfinished tool traces as cancelled even when the pending stream points at a stale turn", async () => {
+  it("does not mark stale or visible tool traces as cancelled without a backend stream event", async () => {
     const previousDesktop = window.desktop
     const interrupt = vi.fn(async (input: { backendSessionID: string; clientTurnID?: string }) => ({
       ...input,
-      localRequestsAborted: 1,
+      localRequestsAborted: 0,
       backendCancelled: true,
       activeCancelled: true,
       queuedCancelled: 0,
@@ -1010,14 +1070,15 @@ describe("composer controller", () => {
       expect(result.current.turnsRef.current["session-1"]?.[0]).toMatchObject({
         kind: "assistant",
         runtime: {
-          phase: "cancelled",
+          phase: "tool_running",
         },
-        items: expect.arrayContaining([
+        isStreaming: true,
+        items: [
           expect.objectContaining({
             kind: "tool",
-            status: "cancelled",
+            status: "running",
           }),
-        ]),
+        ],
       })
     } finally {
       Object.defineProperty(window, "desktop", {

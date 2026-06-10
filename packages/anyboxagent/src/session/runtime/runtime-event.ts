@@ -336,6 +336,11 @@ export const ToolCallDeniedEvent = RuntimeEventBase.extend({
   payload: ToolCallPayload,
 })
 
+export const ToolCallCancelledEvent = RuntimeEventBase.extend({
+  type: z.literal("tool.call.cancelled"),
+  payload: ToolCallPayload,
+})
+
 export const ToolCallCompletedEvent = RuntimeEventBase.extend({
   type: z.literal("tool.call.completed"),
   payload: ToolCallPayload,
@@ -428,6 +433,7 @@ export const RuntimeEvent = z.discriminatedUnion("type", [
   ToolCallWaitingApprovalEvent,
   ToolCallApprovedEvent,
   ToolCallDeniedEvent,
+  ToolCallCancelledEvent,
   ToolCallCompletedEvent,
   ToolCallFailedEvent,
   SourceRecordedEvent,
@@ -478,6 +484,7 @@ export type RuntimeEventPayloadByType = {
   "tool.call.waiting_approval": z.infer<typeof ToolCallPayload>
   "tool.call.approved": z.infer<typeof ToolCallPayload>
   "tool.call.denied": z.infer<typeof ToolCallPayload>
+  "tool.call.cancelled": z.infer<typeof ToolCallPayload>
   "tool.call.completed": z.infer<typeof ToolCallPayload>
   "tool.call.failed": z.infer<typeof ToolCallPayload>
   "source.recorded": z.infer<typeof SourceRecordedPayload>

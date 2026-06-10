@@ -299,6 +299,8 @@ export async function sendPromptToSession(
         sessionID: uiSessionID,
         backendSessionID,
         assistantTurnID,
+        requestedMode: submissionMode === "steer" ? "steer" : "new-turn",
+        ...(streamingTurn ? { createdAssistantTurnID: streamingTurn.id } : {}),
         ...(streamTarget?.backendTurnID ? { backendTurnID: streamTarget.backendTurnID } : {}),
       }
 

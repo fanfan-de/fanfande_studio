@@ -94,6 +94,51 @@ function withEnv(name: string, value: string, fn: () => Promise<void>) {
 }
 
 describe("session execution stream handles", () => {
+  it("sends execution mode before runtime events", async () => {
+    const sessionID = Identifier.ascending("session")
+    const turnID = Identifier.ascending("turn")
+    const factory = RuntimeEvent.createRuntimeEventFactory({
+      sessionID,
+      turnID,
+    })
+    const message = assistantMessage({ sessionID })
+    const part = textPart({
+      sessionID,
+      messageID: message.id,
+      text: "answer",
+    })
+
+    const response = createSessionExecutionStream({
+      sessionID,
+      heartbeatIntervalMs: 10,
+      handle: handle({
+        sessionID,
+        turnID,
+        mode: "new-turn",
+        promise: (async () => {
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          LiveStreamHub.publish(factory.next("turn.started", {}))
+          LiveStreamHub.publish(factory.next("turn.completed", {
+            status: "completed",
+            message,
+            parts: [part],
+          }))
+          return { info: message, parts: [part] }
+        })(),
+      }),
+    })
+
+    const raw = await response.text()
+    const modeIndex = raw.indexOf("event: execution.mode")
+    const runtimeIndex = raw.indexOf("event: runtime")
+
+    expect(modeIndex).toBe(0)
+    expect(runtimeIndex).toBeGreaterThan(modeIndex)
+    expect(raw).toContain(`"sessionID":"${sessionID}"`)
+    expect(raw).toContain(`"turnID":"${turnID}"`)
+    expect(raw).toContain(`"mode":"new-turn"`)
+  })
+
   it("keeps a queued stream bound to its preallocated turn id", async () => {
     const sessionID = Identifier.ascending("session")
     const activeTurnID = Identifier.ascending("turn")

@@ -539,6 +539,20 @@ function summarizeRuntimeEvent(event: RuntimeEvent.RuntimeEvent): RuntimeEventSu
         summary,
       }
     }
+    case "tool.call.cancelled": {
+      const summary = summarizeToolState({
+        callID: event.payload.part.callID,
+        tool: event.payload.part.tool,
+        state: readRecord(event.payload.part.state) ?? {},
+      })
+      return {
+        ...base,
+        title: `Tool cancelled: ${summary.tool}`,
+        detail: summary.error,
+        tone: "warning",
+        summary,
+      }
+    }
     case "tool.call.completed": {
       const summary = summarizeToolState({
         callID: event.payload.part.callID,
@@ -852,6 +866,7 @@ function updateTurnFromEvent(turn: MutableTurnSummary, event: RuntimeEvent.Runti
     case "tool.call.waiting_approval":
     case "tool.call.approved":
     case "tool.call.denied":
+    case "tool.call.cancelled":
     case "tool.call.completed":
     case "tool.call.failed":
       upsertTool(turn, {

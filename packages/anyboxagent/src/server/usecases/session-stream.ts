@@ -19,6 +19,12 @@ type SessionStreamResult = {
   parts: Message.Part[]
 }
 
+type ExecutionModePayload = {
+  sessionID: string
+  turnID: string
+  mode: SessionRunner.SessionExecutionMode
+}
+
 function normalizeLogError(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
@@ -43,6 +49,18 @@ function createSSEHeaders(requestId?: string) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function executionModePayload(input: {
+  sessionID: string
+  handle?: SessionRunner.SessionExecutionHandle<SessionStreamResult>
+}): ExecutionModePayload | undefined {
+  if (!input.handle) return undefined
+  return {
+    sessionID: input.sessionID,
+    turnID: input.handle.turnID,
+    mode: input.handle.mode,
+  }
 }
 
 function replayRuntimeEvents(input: {
@@ -417,6 +435,12 @@ export function createSessionExecutionStream(input: {
       }
 
       void (async () => {
+        const modePayload = executionModePayload(input)
+        if (modePayload && !(await send("execution.mode", modePayload))) {
+          subscription.close()
+          return
+        }
+
         let resolved: SessionStreamResult | undefined
         let failed: unknown
         let terminalEvent: RuntimeEvent.RuntimeEvent | undefined

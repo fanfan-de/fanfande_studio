@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import * as Identifier from "#id/id.ts"
+import type * as Message from "#session/core/message.ts"
 import * as Orchestrator from "#session/runtime/orchestrator.ts"
 import { SessionLimitError } from "#session/runtime/session-limits.ts"
 import * as SessionRunner from "#session/runtime/session-runner.ts"
@@ -26,6 +27,26 @@ function testSessionID() {
 
 function testDirectory() {
   return `C:\\tmp\\${Identifier.ascending("project")}`
+}
+
+function toolPart(input: {
+  sessionID: string
+  callID?: string
+}): Message.ToolPart {
+  const callID = input.callID ?? Identifier.ascending("tool")
+  return {
+    id: Identifier.ascending("part"),
+    sessionID: input.sessionID,
+    messageID: Identifier.ascending("message"),
+    type: "tool",
+    callID,
+    tool: "test-tool",
+    state: {
+      status: "pending",
+      input: {},
+      raw: "{}",
+    },
+  }
 }
 
 async function withEnv(name: string, value: string, fn: () => Promise<void>) {
@@ -348,6 +369,86 @@ describe("session runner", () => {
     await steerRecorded.promise
     await expect(SessionRunner.consumePendingSteer(sessionID, first.turnID)).resolves.toBe(1)
     expect(SessionRunner.info(sessionID)?.queueLength).toBe(0)
+
+    finish.resolve()
+
+    await expect(first.promise).resolves.toBe("first")
+    await expect(steer.promise).resolves.toBe("first")
+    await SessionRunner.waitForIdle(sessionID)
+  })
+
+  it("queues prompt input while the active turn is preparing tool input", async () => {
+    const sessionID = testSessionID()
+    const directory = testDirectory()
+    const activeStarted = deferred<Orchestrator.TurnContext>()
+    const finish = deferred()
+    const part = toolPart({ sessionID })
+
+    const first = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      execute: async (runtime) => {
+        const turn = Orchestrator.startTurn({
+          sessionID,
+          turnID: runtime.turnID,
+          steerable: true,
+        })
+        turn.emit("tool.call.pending", { part })
+        activeStarted.resolve(turn)
+        try {
+          await finish.promise
+          return "first"
+        } finally {
+          Orchestrator.finishTurn(turn)
+        }
+      },
+    })
+
+    const turn = await activeStarted.promise
+    expect(turn.concurrentInputDisposition()).toBe("interrupt")
+
+    const queued = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      execute: async () => "queued",
+      steer: async () => {
+        throw new Error("must not steer while tool input is pending")
+      },
+    })
+
+    expect(queued.mode).toBe("queued")
+    queued.cancel()
+    await expect(queued.promise).rejects.toThrow("cancelled before it started")
+
+    turn.emit("tool.call.started", {
+      part: {
+        ...part,
+        state: {
+          status: "running",
+          input: {},
+          raw: "{}",
+          time: {
+            start: Date.now(),
+          },
+        },
+      },
+    })
+    expect(turn.concurrentInputDisposition()).toBe("steer")
+
+    const steer = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      execute: async () => "steered",
+      steer: async ({ turn: activeTurn }) => {
+        expect(activeTurn.turnID).toBe(turn.turnID)
+      },
+    })
+
+    expect(steer.mode).toBe("steer")
+    expect(steer.turnID).toBe(first.turnID)
 
     finish.resolve()
 

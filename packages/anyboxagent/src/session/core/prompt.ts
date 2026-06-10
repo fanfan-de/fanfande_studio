@@ -930,6 +930,14 @@ function createPromptExecutionHandle(input: PromptInput) {
         throw new Error(`Session '${input.sessionID}' was not found.`);
     }
 
+    const activeTurn = Orchestrator.activeTurn(input.sessionID)
+    if (activeTurn?.concurrentInputDisposition() === "interrupt") {
+        cancelSession(input.sessionID, {
+            cancelQueued: true,
+            reason: "user",
+        })
+    }
+
     return SessionRunner.enqueuePrompt({
         sessionID: input.sessionID,
         directory: session.directory,

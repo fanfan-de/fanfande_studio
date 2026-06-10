@@ -457,6 +457,23 @@ export const ToolStateDenied = z
     })
 export type ToolStateDenied = z.infer<typeof ToolStateDenied>
 
+export const ToolStateCancelled = z
+    .object({
+        status: z.literal("cancelled"),
+        input: z.record(z.string(), z.any()),
+        raw: z.string().optional(),
+        reason: z.string(),
+        metadata: z.record(z.string(), z.any()).optional(),
+        time: z.object({
+            start: z.number(),
+            end: z.number(),
+        }),
+    })
+    .meta({
+        ref: "ToolStateCancelled",
+    })
+export type ToolStateCancelled = z.infer<typeof ToolStateCancelled>
+
 export const ToolStateError = z
     .object({
         status: z.literal("error"),
@@ -502,6 +519,7 @@ export const ToolState = z
         ToolStateWaitingApproval,
         ToolStateCompleted,
         ToolStateDenied,
+        ToolStateCancelled,
         ToolStateError,
     ])
     .meta({
@@ -1066,6 +1084,13 @@ export async function toModelMessages(
             }
         }
 
+        if (state.status === "cancelled") {
+            return {
+                type: "error-text",
+                value: state.reason,
+            }
+        }
+
         const cachedRuntime = toolRuntimeCache.get(part.tool) ?? (async () => {
             const { ToolRegistry } = await getToolModules()
             const info = await ToolRegistry.get(part.tool)
@@ -1131,7 +1156,8 @@ export async function toModelMessages(
                     state.status === "waiting-approval" ||
                     state.status === "completed" ||
                     state.status === "error" ||
-                    state.status === "denied"
+                    state.status === "denied" ||
+                    state.status === "cancelled"
                 ) {
                     const toolName = modelSafeToolName(part.tool)
                     const toolCallProviderOptions = providerOptionsFromMetadata(part.metadata)
@@ -1152,7 +1178,7 @@ export async function toModelMessages(
                         })
                     }
 
-                    if (part.providerExecuted && (state.status === "completed" || state.status === "error")) {
+                    if (part.providerExecuted && (state.status === "completed" || state.status === "error" || state.status === "cancelled")) {
                         const toolResultProviderOptions = providerOptionsFromMetadata(state.metadata)
                         assistantContent.push({
                             type: "tool-result" as const,
@@ -1172,7 +1198,7 @@ export async function toModelMessages(
                         })
                     }
 
-                    if (!part.providerExecuted && (state.status === "completed" || state.status === "error" || state.status === "denied")) {
+                    if (!part.providerExecuted && (state.status === "completed" || state.status === "error" || state.status === "denied" || state.status === "cancelled")) {
                         toolContent.push({
                             type: "tool-result" as const,
                             toolCallId: part.callID,

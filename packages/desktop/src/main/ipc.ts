@@ -2061,6 +2061,19 @@ type ActiveAgentSessionRequest = {
   controller: AbortController
 }
 
+type AgentSessionRequestAbortInput = {
+  backendSessionID: string
+  clientTurnID?: string
+  webContentsID: number
+}
+
+type AgentSessionBackendCancelResult = {
+  sessionID: string
+  cancelled: boolean
+  activeCancelled?: boolean
+  queuedCancelled?: number
+}
+
 type DisposableSessionStreamSubscription = {
   dispose(): void
 }
@@ -2093,11 +2106,7 @@ function agentSessionRequestKey(webContentsID: number, clientTurnID: string) {
 
 function abortActiveAgentSessionRequestsInMap(
   activeAgentSessionRequests: Map<string, ActiveAgentSessionRequest>,
-  input: {
-    backendSessionID: string
-    clientTurnID?: string
-    webContentsID: number
-  },
+  input: AgentSessionRequestAbortInput,
 ) {
   const requests: ActiveAgentSessionRequest[] = []
   const clientTurnID = input.clientTurnID?.trim()
@@ -2122,6 +2131,39 @@ function abortActiveAgentSessionRequestsInMap(
   }
 
   return requests.length
+}
+
+async function interruptAgentSessionBackendFirst(input: {
+  backendSessionID: string
+  clientTurnID?: string
+  webContentsID: number
+  requestBackendCancel: (backendSessionID: string) => Promise<AgentSessionBackendCancelResult>
+}): Promise<DesktopIpcOutput<"desktop:agent-session-interrupt">> {
+  const backendSessionID = input.backendSessionID.trim()
+  const clientTurnID = input.clientTurnID?.trim() || undefined
+
+  try {
+    const result = await input.requestBackendCancel(backendSessionID)
+
+    return {
+      backendSessionID,
+      ...(clientTurnID ? { clientTurnID } : {}),
+      localRequestsAborted: 0,
+      backendCancelled: result.cancelled,
+      activeCancelled: result.activeCancelled,
+      queuedCancelled: result.queuedCancelled,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+
+    return {
+      backendSessionID,
+      ...(clientTurnID ? { clientTurnID } : {}),
+      localRequestsAborted: 0,
+      backendCancelled: false,
+      backendCancelError: message,
+    }
+  }
 }
 
 function isAbortError(error: unknown) {
@@ -2359,14 +2401,6 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     return true
   }
 
-  function abortActiveAgentSessionRequests(input: {
-    backendSessionID: string
-    clientTurnID?: string
-    webContentsID: number
-  }) {
-    return abortActiveAgentSessionRequestsInMap(activeAgentSessionRequests, input)
-  }
-
   function removeActiveAgentSessionRequest(webContentsID: number, clientTurnID: string, request: ActiveAgentSessionRequest) {
     const key = agentSessionRequestKey(webContentsID, clientTurnID)
     if (activeAgentSessionRequests.get(key) === request) {
@@ -2379,32 +2413,27 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     clientTurnID?: string
     webContentsID: number
   }) {
-    abortActiveAgentSessionRequests({
+    await interruptAgentSessionBackendFirst({
       backendSessionID: input.backendSessionID,
       clientTurnID: input.clientTurnID,
       webContentsID: input.webContentsID,
-    })
-
-    try {
-      await requestAgentJSON(
-        `/api/sessions/${encodeURIComponent(input.backendSessionID)}/cancel`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
+      requestBackendCancel: async (backendSessionID) => {
+        const result = await requestAgentJSON<AgentSessionBackendCancelResult>(
+          `/api/sessions/${encodeURIComponent(backendSessionID)}/cancel`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              cancelQueued: true,
+              reason: "user",
+            }),
           },
-          body: JSON.stringify({
-            cancelQueued: true,
-            reason: "user",
-          }),
-        },
-      )
-    } catch (error) {
-      safeWarn(
-        "[desktop] computer use overlay cancel endpoint failed:",
-        error instanceof Error ? error.message : String(error),
-      )
-    }
+        )
+        return result.data
+      },
+    })
   }
 
   const computerUseOverlay = new ComputerUseOverlayManager({
@@ -5300,55 +5329,27 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     event: IpcMainInvokeEvent,
     input: { backendSessionID: string; clientTurnID?: string; reason?: "user-interrupt" },
   ): Promise<DesktopIpcOutput<"desktop:agent-session-interrupt">> {
-    const backendSessionID = input.backendSessionID.trim()
-    const clientTurnID = input.clientTurnID?.trim() || undefined
-    const localRequestsAborted = abortActiveAgentSessionRequests({
-      backendSessionID,
-      clientTurnID,
+    return interruptAgentSessionBackendFirst({
+      backendSessionID: input.backendSessionID,
+      clientTurnID: input.clientTurnID,
       webContentsID: event.sender.id,
-    })
-
-    try {
-      const result = await requestAgentJSON<{
-        sessionID: string
-        cancelled: boolean
-        activeCancelled?: boolean
-        queuedCancelled?: number
-      }>(
-        `/api/sessions/${encodeURIComponent(backendSessionID)}/cancel`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
+      requestBackendCancel: async (backendSessionID) => {
+        const result = await requestAgentJSON<AgentSessionBackendCancelResult>(
+          `/api/sessions/${encodeURIComponent(backendSessionID)}/cancel`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              cancelQueued: true,
+              reason: "user",
+            }),
           },
-          body: JSON.stringify({
-            cancelQueued: true,
-            reason: "user",
-          }),
-        },
-      )
-
-      return {
-        backendSessionID,
-        ...(clientTurnID ? { clientTurnID } : {}),
-        localRequestsAborted,
-        backendCancelled: result.data.cancelled,
-        activeCancelled: result.data.activeCancelled,
-        queuedCancelled: result.data.queuedCancelled,
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (localRequestsAborted > 0) {
-        safeWarn("[desktop] agent session interrupt endpoint failed after local abort:", message)
-      }
-      return {
-        backendSessionID,
-        ...(clientTurnID ? { clientTurnID } : {}),
-        localRequestsAborted,
-        backendCancelled: false,
-        backendCancelError: message,
-      }
-    }
+        )
+        return result.data
+      },
+    })
   }
 
   handleDesktopIpc(
@@ -5468,6 +5469,7 @@ export const internal = {
   disposeSessionStreamSubscriptionsForWebContents,
   getSessionTraceExport,
   getToolPermissionMode,
+  interruptAgentSessionBackendFirst,
   isSessionStreamSubscriptionKeyForWebContents,
   readPreviewText,
   resolvePreviewTarget,

@@ -179,6 +179,8 @@ export async function respondPermissionRequest({
         sessionID: input.sessionID,
         backendSessionID: input.request.sessionID,
         assistantTurnID: streamingTurn.id,
+        requestedMode: "new-turn",
+        createdAssistantTurnID: streamingTurn.id,
       }
 
       appendConversationTurns(input.sessionID, [streamingTurn])

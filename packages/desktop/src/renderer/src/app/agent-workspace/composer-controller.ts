@@ -23,7 +23,7 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import { getAgentSessionBridge } from "../agent-session/client"
-import { buildFailureTurn, markAssistantTurnInterrupted } from "../stream"
+import { buildFailureTurn } from "../stream"
 import {
   findSession,
   findWorkspaceByID,
@@ -40,52 +40,6 @@ import { getWorkbenchTabReferenceFromKey } from "./workspace-derived-state"
 import type { WorkspaceStateUpdater } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
-
-const TERMINAL_ASSISTANT_PHASES = new Set(["blocked", "cancelled", "completed", "failed"])
-const TERMINAL_TOOL_TRACE_STATUSES = new Set(["cancelled", "completed", "denied", "error"])
-
-function hasInterruptibleToolTrace(turn: AssistantTurn): boolean {
-  return turn.items.some((item) =>
-    item.kind === "tool" && (!item.status || !TERMINAL_TOOL_TRACE_STATUSES.has(item.status)),
-  )
-}
-
-function shouldMarkAssistantTurnInterrupted(turn: AssistantTurn): boolean {
-  return (
-    turn.isStreaming ||
-    !TERMINAL_ASSISTANT_PHASES.has(turn.runtime.phase) ||
-    hasInterruptibleToolTrace(turn)
-  )
-}
-
-function collectAssistantTurnIDsForInterrupt(
-  turns: Turn[],
-  stream?: PendingAgentStream,
-): string[] {
-  const turnIDs = new Set<string>()
-  if (stream?.assistantTurnID) {
-    turnIDs.add(stream.assistantTurnID)
-  }
-  for (const turn of turns) {
-    if (turn.kind !== "assistant") continue
-    if (shouldMarkAssistantTurnInterrupted(turn)) {
-      turnIDs.add(turn.id)
-    }
-  }
-  return [...turnIDs]
-}
-
-function hasPreparingToolTrace(turn: AssistantTurn): boolean {
-  return turn.items.some((item) => item.kind === "tool" && item.status === "pending")
-}
-
-function shouldInterruptPreparingToolInput(turns: Turn[], stream?: PendingAgentStream) {
-  return turns.some((turn) => {
-    if (turn.kind !== "assistant") return false
-    if (stream?.assistantTurnID && turn.id !== stream.assistantTurnID) return false
-    return hasPreparingToolTrace(turn)
-  })
-}
 
 interface CreateSessionResult {
   backendSessionID: string
@@ -326,15 +280,7 @@ export function useComposerController({
         ? composerParentMessageIDByTabKey[targetTabKey] ?? undefined
         : undefined
     const isSending = Boolean(targetTabKey && isSendingByTabKey[targetTabKey])
-    const pendingStream = targetSessionID
-      ? Object.values(pendingStreamsRef.current).find((stream) => stream.sessionID === targetSessionID && !stream.cancelRequested)
-      : undefined
-    const shouldInterruptForNewInput =
-      Boolean(isSending && effectiveText && targetSessionID) &&
-      shouldInterruptPreparingToolInput(targetSessionID ? getConversationTurns(targetSessionID) : [], pendingStream)
-    const submissionMode = shouldInterruptForNewInput
-      ? undefined
-      : input?.submissionMode ?? (isSending && effectiveText ? "steer" : undefined)
+    const submissionMode = input?.submissionMode ?? (isSending && effectiveText ? "steer" : undefined)
     if (
       !targetTabKey ||
       (!effectiveText && attachments.length === 0) ||
@@ -349,12 +295,6 @@ export function useComposerController({
     if (targetSessionID) {
       const nextSelection = findSession(workspaces, targetSessionID)
       if (!nextSelection.workspace || !nextSelection.session) return
-      if (shouldInterruptForNewInput) {
-        await handleCancelSend({
-          sessionID: targetSessionID,
-          tabKey: targetTabKey,
-        })
-      }
       await sendPromptToSession({
         attachments,
         commentReferences: compiledSubmission.commentReferences,
@@ -581,15 +521,6 @@ export function useComposerController({
     if (stream) {
       stream.cancelRequested = true
     }
-    const targetAssistantTurnIDs = collectAssistantTurnIDsForInterrupt(
-      getConversationTurns(sessionID),
-      stream,
-    )
-    for (const targetAssistantTurnID of targetAssistantTurnIDs) {
-      updateAssistantConversationTurn(sessionID, targetAssistantTurnID, (turn) =>
-        markAssistantTurnInterrupted(turn, "Prompt cancellation requested."),
-      )
-    }
     setCancellingSessionIDs((current) => ({
       ...current,
       [sessionID]: true,
@@ -616,6 +547,9 @@ export function useComposerController({
           : null
 
       if (!result || result.backendCancelError || !result.backendCancelled) {
+        if (stream) {
+          stream.cancelRequested = false
+        }
         setCancellingSessionIDs((current) => {
           if (!current[sessionID]) return current
           const next = { ...current }

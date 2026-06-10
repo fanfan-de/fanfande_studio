@@ -96,6 +96,7 @@ export function project(event: RuntimeEvent.RuntimeEvent) {
     case "tool.call.waiting_approval":
     case "tool.call.approved":
     case "tool.call.denied":
+    case "tool.call.cancelled":
     case "tool.call.completed":
     case "tool.call.failed":
       Session.upsertPart(event.payload.part)

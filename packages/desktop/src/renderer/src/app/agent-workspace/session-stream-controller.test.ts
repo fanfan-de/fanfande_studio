@@ -16,6 +16,7 @@ import {
   readSessionContextUsageFromLlmCompletedEventData,
   readSessionTaskListViewFromStreamEvent,
   reconcileConversationTurns,
+  resolveExecutionModeRoute,
   resolveStreamMessageID,
   resolveStreamCursor,
   resolveStreamTurnID,
@@ -111,6 +112,80 @@ function createPendingToolAssistantTurn(id: string, messageID?: string): Assista
         toolCallID: "late-tool-call",
         toolInputText: "{\"path\":\"game.ts\"",
         timestamp: 5,
+      },
+    ],
+  }
+}
+
+function createCancelledToolAssistantTurn(id: string, messageID?: string): AssistantTurn {
+  return {
+    id,
+    messageID,
+    kind: "assistant",
+    timestamp: 2,
+    runtime: {
+      phase: "cancelled",
+      startedAt: 2,
+      updatedAt: 3,
+    },
+    state: "Backend stream cancelled",
+    isStreaming: false,
+    items: [
+      {
+        id: `${id}-tool`,
+        kind: "tool",
+        label: "Tool",
+        title: "replace-text",
+        status: "cancelled",
+        sourceID: "late-tool-input-part",
+        partID: "late-tool-input-part",
+        messageID,
+        toolCallID: "late-tool-call",
+        toolInputText: "{\"path\":\"game.ts\"",
+        timestamp: 3,
+        isStreaming: false,
+      },
+      {
+        id: `${id}-cancelled`,
+        kind: "system",
+        label: "System",
+        title: "Turn cancelled",
+        detail: "Prompt cancellation requested.",
+        status: "completed",
+        sourceID: `${id}:cancelled`,
+        timestamp: 4,
+      },
+    ],
+  }
+}
+
+function createErroredToolAssistantTurn(id: string, messageID?: string): AssistantTurn {
+  return {
+    id,
+    messageID,
+    kind: "assistant",
+    timestamp: 4,
+    runtime: {
+      phase: "failed",
+      startedAt: 4,
+      updatedAt: 5,
+      errorMessage: "Late tool failure",
+    },
+    state: "Backend request failed",
+    isStreaming: false,
+    items: [
+      {
+        id: `${id}-tool`,
+        kind: "tool",
+        label: "Tool",
+        title: "replace-text",
+        status: "error",
+        sourceID: "late-tool-input-part",
+        partID: "late-tool-input-part",
+        messageID,
+        toolCallID: "late-tool-call",
+        timestamp: 5,
+        isStreaming: false,
       },
     ],
   }
@@ -264,6 +339,41 @@ describe("session stream controller helpers", () => {
         },
       },
     })).toBe(true)
+  })
+
+  it("routes execution mode metadata", () => {
+    expect(resolveExecutionModeRoute({
+      mode: "steer",
+      requestedMode: "steer",
+      currentAssistantTurnID: "assistant-temp",
+      createdAssistantTurnID: "assistant-temp",
+      existingAssistantTurnID: "assistant-active",
+    })).toEqual({
+      assistantTurnID: "assistant-active",
+      clearSteerUserTurn: false,
+      createAssistantTurn: false,
+      removeAssistantTurnID: "assistant-temp",
+    })
+
+    expect(resolveExecutionModeRoute({
+      mode: "queued",
+      requestedMode: "steer",
+      currentAssistantTurnID: "assistant-active",
+    })).toEqual({
+      assistantTurnID: "assistant-active",
+      clearSteerUserTurn: true,
+      createAssistantTurn: true,
+    })
+
+    expect(resolveExecutionModeRoute({
+      mode: "new-turn",
+      requestedMode: "new-turn",
+      currentAssistantTurnID: "assistant-new",
+    })).toEqual({
+      assistantTurnID: "assistant-new",
+      clearSteerUserTurn: false,
+      createAssistantTurn: false,
+    })
   })
 
   it("reads task snapshots directly from runtime and tool part events", () => {
@@ -681,6 +791,33 @@ describe("session stream controller helpers", () => {
       runtime: {
         phase: "cancelled",
         toolName: undefined,
+      },
+      isStreaming: false,
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "tool",
+          title: "replace-text",
+          status: "cancelled",
+          isStreaming: false,
+        }),
+      ]),
+    })
+  })
+
+  it("keeps a cancelled tool trace when a late matching tool error history is merged", () => {
+    const originalTurn = createCancelledToolAssistantTurn("assistant-local", "message-tool")
+    const lateErroredToolTurn = createErroredToolAssistantTurn("assistant-history", "message-tool")
+
+    const reconciled = reconcileConversationTurns([originalTurn, lateErroredToolTurn])
+
+    expect(reconciled).toHaveLength(1)
+    expect(reconciled[0]).toMatchObject({
+      id: "assistant-local",
+      kind: "assistant",
+      runtime: {
+        phase: "cancelled",
+        toolName: undefined,
+        errorMessage: undefined,
       },
       isStreaming: false,
       items: expect.arrayContaining([

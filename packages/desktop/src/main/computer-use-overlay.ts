@@ -180,7 +180,8 @@ export function readComputerUseRuntimeEvent(input: {
   if (
     runtimeType === "tool.call.completed" ||
     runtimeType === "tool.call.failed" ||
-    runtimeType === "tool.call.denied"
+    runtimeType === "tool.call.denied" ||
+    runtimeType === "tool.call.cancelled"
   ) {
     return {
       type: "tool-settled",
