@@ -94,12 +94,11 @@ export function resolveExecutionModeRoute(input: {
   currentAssistantTurnID: string
   createdAssistantTurnID?: string
   existingAssistantTurnID?: string
-  currentStreamingAssistantTurnID?: string
 }): ExecutionModeRouteDecision {
   if (input.mode === "steer") {
     const assistantTurnID =
       input.existingAssistantTurnID ??
-      input.currentStreamingAssistantTurnID ??
+      input.createdAssistantTurnID ??
       input.currentAssistantTurnID
     return {
       assistantTurnID,
@@ -147,31 +146,14 @@ export function applyExecutionModeToUserTurnPresentation(input: {
   mode: AgentSessionExecutionMode
 }) {
   let didUpdate = false
-  const assistantTurn = input.turns.find(
-    (turn): turn is AssistantTurn =>
-      turn.kind === "assistant" && turn.id === input.assistantTurnID,
-  )
 
   const nextTurns = input.turns.map((turn): Turn => {
     if (turn.kind !== "user" || turn.id !== input.userTurnID) return turn
 
     if (input.mode === "steer") {
-      const streamInsertion = {
-        assistantTurnID: input.assistantTurnID,
-        afterItemCount: assistantTurn?.items.length ?? turn.streamInsertion?.afterItemCount ?? 0,
-        status: "pending" as const,
-      }
-      const nextTurn: UserTurn = {
-        ...turn,
-        submissionMode: "steer",
-        streamInsertion,
-      }
-      didUpdate =
-        turn.submissionMode !== nextTurn.submissionMode ||
-        turn.streamInsertion?.assistantTurnID !== streamInsertion.assistantTurnID ||
-        turn.streamInsertion?.afterItemCount !== streamInsertion.afterItemCount ||
-        turn.streamInsertion?.status !== streamInsertion.status
-      return didUpdate ? nextTurn : turn
+      const { submissionMode: _submissionMode, streamInsertion: _streamInsertion, ...steerTurn } = turn
+      didUpdate = Boolean(turn.submissionMode || turn.streamInsertion)
+      return didUpdate ? steerTurn : turn
     }
 
     if (input.mode === "queued") {
@@ -1499,17 +1481,6 @@ export function useSessionStreamController({
     })
   }
 
-  function findCurrentStreamingAssistantTurnID(sessionID: string, excludeTurnID?: string) {
-    const turns = conversationStore.getSessionTurns(sessionID)
-    for (let index = turns.length - 1; index >= 0; index -= 1) {
-      const turn = turns[index]
-      if (turn.kind === "assistant" && turn.isStreaming && turn.id !== excludeTurnID) {
-        return turn.id
-      }
-    }
-    return undefined
-  }
-
   function removeConversationTurn(sessionID: string, turnID: string) {
     setConversations((prev) => {
       const current = prev[sessionID] ?? []
@@ -1809,7 +1780,6 @@ export function useSessionStreamController({
       currentAssistantTurnID: target.assistantTurnID,
       createdAssistantTurnID: target.createdAssistantTurnID,
       existingAssistantTurnID: existingTarget?.assistantTurnID,
-      currentStreamingAssistantTurnID: findCurrentStreamingAssistantTurnID(target.sessionID, target.createdAssistantTurnID),
     })
 
     if (route.createAssistantTurn) {

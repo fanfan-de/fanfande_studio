@@ -38,6 +38,8 @@ export function formatRuntimePhaseLabel(phase?: SessionRuntimeDebugSnapshot["sta
       return "Retrying"
     case "blocked":
       return "Blocked"
+    case "continued_by_user":
+      return "Continued by User"
     case "completed":
       return "Completed"
     case "cancelled":
@@ -57,6 +59,8 @@ export function formatRuntimeTurnStatusLabel(status?: SessionRuntimeDebugSnapsho
       return "Completed"
     case "blocked":
       return "Blocked"
+    case "continued_by_user":
+      return "Continued by User"
     case "failed":
       return "Failed"
     case "stopped":

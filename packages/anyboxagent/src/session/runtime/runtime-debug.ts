@@ -95,7 +95,7 @@ export type RuntimeTurnSummary = {
   endedAt?: number
   durationMs?: number
   lastEventAt?: number
-  status: "running" | "completed" | "blocked" | "stopped" | "failed"
+  status: "running" | "completed" | "blocked" | "stopped" | "failed" | "continued_by_user"
   phase?: RuntimeEvent.TurnRuntimePhase
   phaseReason?: string
   phaseUpdatedAt?: number

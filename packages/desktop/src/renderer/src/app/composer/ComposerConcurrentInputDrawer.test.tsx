@@ -68,7 +68,7 @@ describe("ComposerConcurrentInputDrawer", () => {
     )
 
     expect(screen.getByText("Adjust current turn")).toBeInTheDocument()
-    expect(screen.getByText("等待当前模型/工具步骤结束后生效")).toBeInTheDocument()
+    expect(screen.getByText("将在当前 turn 到达安全边界后继续")).toBeInTheDocument()
   })
 
   it("renders steer submissions without insertion metadata with a waiting note", () => {
@@ -90,6 +90,6 @@ describe("ComposerConcurrentInputDrawer", () => {
     )
 
     expect(screen.getByText("Adjust during tool input")).toBeInTheDocument()
-    expect(screen.getByText("等待当前模型/工具步骤结束后生效")).toBeInTheDocument()
+    expect(screen.getByText("将在当前 turn 到达安全边界后继续")).toBeInTheDocument()
   })
 })

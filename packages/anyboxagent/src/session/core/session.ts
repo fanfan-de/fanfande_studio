@@ -75,7 +75,7 @@ export type SessionModelSelectionInput = {
   reasoning_effort?: Message.ReasoningEffort | null
 }
 
-export const TurnStatus = z.enum(["running", "completed", "blocked", "failed", "cancelled"]).meta({
+export const TurnStatus = z.enum(["running", "completed", "blocked", "failed", "cancelled", "continued_by_user"]).meta({
   ref: "TurnStatus",
 })
 export type TurnStatus = z.output<typeof TurnStatus>
@@ -863,7 +863,11 @@ function updateTurn(turnID: string | undefined, input: UpdateTurnInput): TurnInf
   const completedAt =
     input.completedAt ??
     existing.completedAt ??
-    (nextStatus === "completed" || nextStatus === "blocked" || nextStatus === "failed" || nextStatus === "cancelled"
+    (nextStatus === "completed" ||
+      nextStatus === "blocked" ||
+      nextStatus === "failed" ||
+      nextStatus === "cancelled" ||
+      nextStatus === "continued_by_user"
       ? now
       : undefined)
   const next = TurnInfo.parse({

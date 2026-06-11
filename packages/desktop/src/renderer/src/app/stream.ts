@@ -143,11 +143,11 @@ function readRuntimeEvent(item: AgentStreamEvent): AgentRuntimeEvent | null {
 }
 
 function isSettledRuntimePhase(phase: string) {
-  return phase === "completed" || phase === "blocked" || phase === "cancelled" || phase === "failed"
+  return phase === "completed" || phase === "blocked" || phase === "continued_by_user" || phase === "cancelled" || phase === "failed"
 }
 
 function isSettledAssistantPhase(phase: AssistantTurnPhase) {
-  return phase === "completed" || phase === "blocked" || phase === "cancelled" || phase === "failed"
+  return phase === "completed" || phase === "blocked" || phase === "continued_by_user" || phase === "cancelled" || phase === "failed"
 }
 
 function isTerminalTraceStatus(status: AssistantTraceStatus | undefined) {
@@ -2396,6 +2396,25 @@ export function finalizeStreamAssistantTurn(
     )
   }
 
+  if (input?.status === "continued_by_user") {
+    return updateAssistantTurnLifecycle(
+      {
+        ...messageTurn,
+        messageID: nextMessageID,
+        isStreaming: false,
+      },
+      {
+        phase: "continued_by_user",
+        state: "Continued by user input",
+        toolName: null,
+        approvalRequestID: null,
+        errorMessage: null,
+        ...lifecycleClock,
+      },
+      items,
+    )
+  }
+
   return updateAssistantTurnLifecycle(
     {
       ...messageTurn,
@@ -2470,6 +2489,12 @@ function mapRuntimePhaseToAssistantLifecycle(payload: Record<string, unknown>) {
         phase: "blocked" as const,
         state: reason || "Backend response blocked",
         toolName,
+      }
+    case "continued_by_user":
+      return {
+        phase: "continued_by_user" as const,
+        state: reason || "Continued by user input",
+        toolName: null,
       }
     case "completed":
       return {

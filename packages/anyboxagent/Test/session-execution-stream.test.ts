@@ -232,10 +232,11 @@ describe("session execution stream handles", () => {
 
   it("does not abort an active turn when a steer stream disconnects", async () => {
     const sessionID = Identifier.ascending("session")
-    const turnID = Identifier.ascending("turn")
+    const activeTurnID = Identifier.ascending("turn")
+    const steerTurnID = Identifier.ascending("turn")
     const turn = Orchestrator.startTurn({
       sessionID,
-      turnID,
+      turnID: activeTurnID,
     })
     const observed: string[] = []
     const unsubscribe = EventStore.subscribe((event) => {
@@ -249,7 +250,7 @@ describe("session execution stream handles", () => {
       heartbeatIntervalMs: 10,
       handle: handle({
         sessionID,
-        turnID,
+        turnID: steerTurnID,
         mode: "steer",
         cancel: () => {
           handleCancelled = true
@@ -265,7 +266,7 @@ describe("session execution stream handles", () => {
 
       expect(handleCancelled).toBe(true)
       expect(observed).not.toContain("turn.cancelled")
-      expect(Orchestrator.activeTurn(sessionID)?.turnID).toBe(turnID)
+      expect(Orchestrator.activeTurn(sessionID)?.turnID).toBe(activeTurnID)
     } finally {
       unsubscribe()
       Orchestrator.finishTurn(turn)

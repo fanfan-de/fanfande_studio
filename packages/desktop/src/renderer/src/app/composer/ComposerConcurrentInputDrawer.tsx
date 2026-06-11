@@ -8,7 +8,7 @@ function getPendingSubmissionText(turn: UserTurn) {
 function getPendingSubmissionNote(turn: UserTurn) {
   if (turn.submissionMode === "queued") return "已排队，当前 turn 结束后发送"
   if (turn.streamInsertion?.status === "consumed") return "已引导，当前 turn 会读取这条输入"
-  return "等待当前模型/工具步骤结束后生效"
+  return "将在当前 turn 到达安全边界后继续"
 }
 
 export function ComposerConcurrentInputDrawer({

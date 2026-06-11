@@ -325,7 +325,7 @@ describe("prompt loop concurrency", () => {
     }
   })
 
-  itIfGit("records steer turn diff summary on the final assistant message", async () => {
+  itIfGit("records steer continuation turns with separate turn diff summaries", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "anybox-turn-diff-steer-"))
     let streamCalls = 0
     let releaseFirstPrompt: (() => void) | undefined
@@ -408,6 +408,7 @@ describe("prompt loop concurrency", () => {
 
           const secondPrompt = Prompt.promptExecution({
             sessionID: session.id,
+            concurrentInputMode: "steer",
             model: {
               providerID: "test-provider",
               modelID: "test-model",
@@ -421,6 +422,7 @@ describe("prompt loop concurrency", () => {
           })
 
           expect(secondPrompt.mode).toBe("steer")
+          expect(secondPrompt.turnID).not.toBe(firstPrompt.turnID)
 
           releaseFirstPrompt?.()
           await firstPrompt.promise
@@ -432,15 +434,17 @@ describe("prompt loop concurrency", () => {
             if (item.info.role === "assistant") assistants.push(item)
             if (item.info.role === "user") users.push(item)
           }
+          const turns = Session.listTurns(session.id)
 
           expect(streamCalls).toBe(2)
           expect(assistants).toHaveLength(2)
           expect(users).toHaveLength(2)
+          expect(turns.map((turn) => turn.status)).toEqual(["continued_by_user", "completed"])
           expect(users[0]?.info.role === "user" ? users[0].info.diffSummary : undefined).toBeUndefined()
           expect(users[1]?.info.role === "user" ? users[1].info.diffSummary : undefined).toBeUndefined()
-          expect(assistants[0]?.info.role === "assistant" ? assistants[0].info.diffSummary : undefined).toBeUndefined()
-          expect(assistants[1]?.info.role === "assistant" ? assistants[1].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["first.txt", "second.txt"])
-          expect((await SessionDiff.computeLatestTurnDetailedDiff(session.id))?.diffs.map((diff) => diff.file)).toEqual(["first.txt", "second.txt"])
+          expect(assistants[0]?.info.role === "assistant" ? assistants[0].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["first.txt"])
+          expect(assistants[1]?.info.role === "assistant" ? assistants[1].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["second.txt"])
+          expect((await SessionDiff.computeLatestTurnDetailedDiff(session.id))?.diffs.map((diff) => diff.file)).toEqual(["second.txt"])
         },
       })
     } finally {
@@ -547,7 +551,7 @@ describe("prompt loop concurrency", () => {
     }
   })
 
-  it("records concurrent prompts as steer input on the active turn", async () => {
+  it("records concurrent steer prompts as new continuation turns", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "anybox-prompt-loop-concurrency-"))
     let releaseFirstPrompt: (() => void) | undefined
     const gate = new Promise<void>((resolve) => {
@@ -629,6 +633,7 @@ describe("prompt loop concurrency", () => {
 
           const secondPrompt = Prompt.promptExecution({
             sessionID: session.id,
+            concurrentInputMode: "steer",
             model: {
               providerID: "test-provider",
               modelID: "test-model",
@@ -642,6 +647,7 @@ describe("prompt loop concurrency", () => {
           })
 
           expect(secondPrompt.mode).toBe("steer")
+          expect(secondPrompt.turnID).not.toBe(firstPrompt.turnID)
 
           releaseFirstPrompt?.()
           await firstPrompt.promise
@@ -651,8 +657,10 @@ describe("prompt loop concurrency", () => {
           for await (const item of Message.stream(session.id)) {
             messages.push({ role: item.info.role })
           }
+          const turns = Session.listTurns(session.id)
 
           expect(messages.filter((message) => message.role === "user")).toHaveLength(2)
+          expect(turns.map((turn) => turn.status)).toEqual(["continued_by_user", "completed"])
         },
       })
     } finally {

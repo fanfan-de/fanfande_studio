@@ -80,7 +80,7 @@ export interface TurnContext {
     payload: RuntimeEvent.RuntimeEventPayloadByType[TType],
   ): void
   flushStreamEvents(): void
-  canAcceptSteer(): boolean
+  canAcceptSteerHandoff(): boolean
   concurrentInputDisposition(): ConcurrentInputDisposition
   setAcceptingSteer(accepting: boolean): void
   close(): void
@@ -167,11 +167,10 @@ class TurnRuntime implements TurnContext {
     }
   }
 
-  canAcceptSteer() {
+  canAcceptSteerHandoff() {
     return (
       this.steerable &&
       this.acceptingSteer &&
-      this.concurrentInputDisposition() === "steer" &&
       !this.closed &&
       !this.terminalEvent
     )

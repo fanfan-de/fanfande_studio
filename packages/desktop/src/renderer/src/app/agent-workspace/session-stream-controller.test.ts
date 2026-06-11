@@ -373,12 +373,23 @@ describe("session stream controller helpers", () => {
       requestedMode: "steer",
       currentAssistantTurnID: "assistant-temp",
       createdAssistantTurnID: "assistant-temp",
-      existingAssistantTurnID: "assistant-active",
+      existingAssistantTurnID: "assistant-backend",
     })).toEqual({
-      assistantTurnID: "assistant-active",
+      assistantTurnID: "assistant-backend",
       clearSteerUserTurn: false,
       createAssistantTurn: false,
       removeAssistantTurnID: "assistant-temp",
+    })
+
+    expect(resolveExecutionModeRoute({
+      mode: "steer",
+      requestedMode: "steer",
+      currentAssistantTurnID: "assistant-active",
+      createdAssistantTurnID: "assistant-steer",
+    })).toEqual({
+      assistantTurnID: "assistant-steer",
+      clearSteerUserTurn: false,
+      createAssistantTurn: false,
     })
 
     expect(resolveExecutionModeRoute({
@@ -405,7 +416,6 @@ describe("session stream controller helpers", () => {
       mode: "queued",
       requestedMode: "queue",
       currentAssistantTurnID: "assistant-queued-placeholder",
-      currentStreamingAssistantTurnID: "assistant-active",
     })).toEqual({
       assistantTurnID: "assistant-queued-placeholder",
       clearSteerUserTurn: false,
@@ -459,7 +469,18 @@ describe("session stream controller helpers", () => {
     expect(queuedTurns[1]).not.toHaveProperty("streamInsertion")
 
     const steerTurns = applyExecutionModeToUserTurnPresentation({
-      turns: [assistant, pendingUser],
+      turns: [
+        assistant,
+        {
+          ...pendingUser,
+          submissionMode: "steer",
+          streamInsertion: {
+            assistantTurnID: assistant.id,
+            afterItemCount: assistant.items.length,
+            status: "pending",
+          },
+        },
+      ],
       userTurnID: pendingUser.id,
       assistantTurnID: assistant.id,
       mode: "steer",
@@ -467,13 +488,9 @@ describe("session stream controller helpers", () => {
     expect(steerTurns[1]).toMatchObject({
       id: pendingUser.id,
       kind: "user",
-      submissionMode: "steer",
-      streamInsertion: {
-        assistantTurnID: assistant.id,
-        afterItemCount: assistant.items.length,
-        status: "pending",
-      },
     })
+    expect(steerTurns[1]).not.toHaveProperty("submissionMode")
+    expect(steerTurns[1]).not.toHaveProperty("streamInsertion")
   })
 
   it("reads task snapshots directly from runtime and tool part events", () => {

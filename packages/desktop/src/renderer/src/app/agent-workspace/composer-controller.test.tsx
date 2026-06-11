@@ -462,22 +462,36 @@ describe("composer controller", () => {
         text: "Existing prompt",
       }))
 
+      const steerStreamEntry = Object.entries(result.current.pendingStreamsRef.current).find(
+        ([, stream]) => stream.requestedMode === "steer",
+      )
+      const steerAssistantTurnID = steerStreamEntry?.[1].createdAssistantTurnID
+      expect(steerStreamEntry).toBeDefined()
+      expect(steerAssistantTurnID).toBeTruthy()
+      expect(steerAssistantTurnID).not.toBe("assistant-active")
+      if (!steerStreamEntry || !steerAssistantTurnID) {
+        throw new Error("Expected steer stream and assistant placeholder")
+      }
+
       const nextTurns = result.current.turnsRef.current["session-1"] ?? []
       expect(nextTurns.find((turn) => turn.id === queuedTurn.id)).toBeUndefined()
       expect(nextTurns.find((turn) => turn.id === queuedAssistantTurnID)).toBeUndefined()
-      expect(nextTurns.find((turn) => turn.kind === "user" && turn.submissionMode === "steer")).toMatchObject({
+      const steerUserTurn = nextTurns.find((turn) => turn.kind === "user" && turn.submissionMode === "steer")
+      expect(steerUserTurn).toMatchObject({
         kind: "user",
         text: "Existing prompt",
         submissionMode: "steer",
-        streamInsertion: {
-          assistantTurnID: "assistant-active",
-          afterItemCount: 1,
-        },
+      })
+      expect(steerUserTurn).not.toHaveProperty("streamInsertion")
+      expect(nextTurns.find((turn) => turn.id === steerAssistantTurnID)).toMatchObject({
+        kind: "assistant",
+        isStreaming: true,
       })
       expect(result.current.pendingStreamsRef.current[queuedStreamEntry[0]]).toBeUndefined()
       expect(Object.values(result.current.pendingStreamsRef.current)).toContainEqual(
         expect.objectContaining({
-          assistantTurnID: "assistant-active",
+          assistantTurnID: steerAssistantTurnID,
+          createdAssistantTurnID: steerAssistantTurnID,
           requestedMode: "steer",
           sessionID: "session-1",
         }),
@@ -565,14 +579,22 @@ describe("composer controller", () => {
         kind: "user",
         text: "Existing prompt",
         submissionMode: "steer",
-        streamInsertion: {
-          assistantTurnID: "assistant-active",
-          afterItemCount: 1,
-        },
+      })
+      expect(result.current.turnsRef.current["session-1"]?.[1]).not.toHaveProperty("streamInsertion")
+      const steerStream = Object.values(result.current.pendingStreamsRef.current).find(
+        (stream) => stream.requestedMode === "steer",
+      )
+      expect(steerStream).toBeDefined()
+      expect(steerStream?.assistantTurnID).not.toBe("assistant-active")
+      expect(result.current.turnsRef.current["session-1"]?.[2]).toMatchObject({
+        id: steerStream?.assistantTurnID,
+        kind: "assistant",
+        isStreaming: true,
       })
       expect(Object.values(result.current.pendingStreamsRef.current)).toContainEqual(
         expect.objectContaining({
-          assistantTurnID: "assistant-active",
+          assistantTurnID: steerStream?.assistantTurnID,
+          createdAssistantTurnID: steerStream?.assistantTurnID,
           requestedMode: "steer",
           sessionID: "session-1",
         }),

@@ -157,7 +157,7 @@ export interface SessionSubagentOrigin {
   parentMessageID: string
   parentToolCallID?: string
   agent: string
-  status: "running" | "completed" | "blocked" | "stopped" | "failed" | "cancelled"
+  status: "running" | "completed" | "blocked" | "stopped" | "failed" | "cancelled" | "continued_by_user"
   active: boolean
   updatedAt: number
 }
@@ -352,7 +352,7 @@ export interface LoadedSessionHistoryTurn {
     providerID: string
     modelID: string
   }
-  status: "running" | "completed" | "blocked" | "failed" | "cancelled"
+  status: "running" | "completed" | "blocked" | "failed" | "cancelled" | "continued_by_user"
   phase?: string
   lastMessageID?: string
   finishReason?: string
@@ -693,6 +693,7 @@ export type RuntimePhase =
   | "responding"
   | "retrying"
   | "blocked"
+  | "continued_by_user"
   | "completed"
   | "cancelled"
   | "failed"
@@ -782,7 +783,7 @@ export interface SessionRuntimeTurnSummary {
   endedAt?: number
   durationMs?: number
   lastEventAt?: number
-  status: "running" | "completed" | "blocked" | "stopped" | "failed"
+  status: "running" | "completed" | "blocked" | "stopped" | "failed" | "continued_by_user"
   phase?: RuntimePhase
   phaseReason?: string
   phaseUpdatedAt?: number
@@ -983,6 +984,7 @@ export type AssistantTurnPhase =
   | "tool_running"
   | "waiting_approval"
   | "blocked"
+  | "continued_by_user"
   | "responding"
   | "completed"
   | "cancelled"

@@ -55,7 +55,7 @@ const PermissionResolvedPayload = z.object({
 })
 
 const TurnCompletedPayload = z.object({
-  status: z.enum(["completed", "blocked", "stopped"]),
+  status: z.enum(["completed", "blocked", "stopped", "continued_by_user"]),
   finishReason: z.string().optional(),
   message: Message.MessageInfo.optional(),
   parts: Message.Part.array().optional(),
@@ -165,6 +165,7 @@ export const TurnRuntimePhase = z.enum([
   "responding",
   "retrying",
   "blocked",
+  "continued_by_user",
   "completed",
   "cancelled",
   "failed",

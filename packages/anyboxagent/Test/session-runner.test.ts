@@ -323,12 +323,12 @@ describe("session runner", () => {
     await SessionRunner.waitForIdle(sessionID)
   })
 
-  it("steers active steerable prompt turns instead of creating a queued operation", async () => {
+  it("creates a priority continuation turn for active steerable prompt turns", async () => {
     const sessionID = testSessionID()
     const directory = testDirectory()
-    const activeStarted = deferred<Orchestrator.TurnContext>()
-    const steerRecorded = deferred()
-    const finish = deferred()
+    const activeStarted = deferred()
+    const finishFirst = deferred()
+    const secondStarted = deferred()
 
     const first = SessionRunner.enqueuePrompt({
       sessionID,
@@ -340,9 +340,9 @@ describe("session runner", () => {
           turnID: runtime.turnID,
           steerable: true,
         })
-        activeStarted.resolve(turn)
+        activeStarted.resolve()
         try {
-          await finish.promise
+          await finishFirst.promise
           return "first"
         } finally {
           Orchestrator.finishTurn(turn)
@@ -350,31 +350,39 @@ describe("session runner", () => {
       },
     })
 
-    const turn = await activeStarted.promise
+    await activeStarted.promise
 
     const steer = SessionRunner.enqueuePrompt({
       sessionID,
       directory,
       type: "prompt",
       allowSteer: true,
-      execute: async () => "second",
-      steer: async ({ turn: activeTurn }) => {
-        expect(activeTurn.turnID).toBe(turn.turnID)
-        steerRecorded.resolve()
+      execute: async () => {
+        secondStarted.resolve()
+        return "second"
       },
     })
 
     expect(steer.mode).toBe("steer")
-    expect(steer.turnID).toBe(first.turnID)
+    expect(steer.turnID).not.toBe(first.turnID)
+    expect(SessionRunner.info(sessionID)).toMatchObject({
+      activeTurnID: first.turnID,
+      pendingSteerCount: 1,
+      queueLength: 1,
+    })
 
-    await steerRecorded.promise
     await expect(SessionRunner.consumePendingSteer(sessionID, first.turnID)).resolves.toBe(1)
-    expect(SessionRunner.info(sessionID)?.queueLength).toBe(0)
+    expect(SessionRunner.info(sessionID)).toMatchObject({
+      activeTurnID: first.turnID,
+      pendingSteerCount: 0,
+      queueLength: 1,
+    })
 
-    finish.resolve()
+    finishFirst.resolve()
 
     await expect(first.promise).resolves.toBe("first")
-    await expect(steer.promise).resolves.toBe("first")
+    await secondStarted.promise
+    await expect(steer.promise).resolves.toBe("second")
     await SessionRunner.waitForIdle(sessionID)
   })
 
@@ -415,9 +423,6 @@ describe("session runner", () => {
         secondStarted.resolve()
         return "second"
       },
-      steer: async () => {
-        throw new Error("must not steer without allowSteer")
-      },
     })
 
     expect(second.mode).toBe("queued")
@@ -431,7 +436,7 @@ describe("session runner", () => {
     await SessionRunner.waitForIdle(sessionID)
   })
 
-  it("queues prompt input while the active turn is preparing tool input", async () => {
+  it("accepts steer handoff while the active turn is preparing and running tool input", async () => {
     const sessionID = testSessionID()
     const directory = testDirectory()
     const activeStarted = deferred<Orchestrator.TurnContext>()
@@ -467,14 +472,22 @@ describe("session runner", () => {
       directory,
       type: "prompt",
       execute: async () => "queued",
-      steer: async () => {
-        throw new Error("must not steer while tool input is pending")
-      },
     })
 
     expect(queued.mode).toBe("queued")
     queued.cancel()
     await expect(queued.promise).rejects.toThrow("cancelled before it started")
+
+    const pendingSteer = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      allowSteer: true,
+      execute: async () => "pending-steer",
+    })
+
+    expect(pendingSteer.mode).toBe("steer")
+    expect(pendingSteer.turnID).not.toBe(first.turnID)
 
     turn.emit("tool.call.started", {
       part: {
@@ -491,34 +504,62 @@ describe("session runner", () => {
     })
     expect(turn.concurrentInputDisposition()).toBe("steer")
 
-    const steer = SessionRunner.enqueuePrompt({
+    const runningSteer = SessionRunner.enqueuePrompt({
       sessionID,
       directory,
       type: "prompt",
       allowSteer: true,
       execute: async () => "steered",
-      steer: async ({ turn: activeTurn }) => {
-        expect(activeTurn.turnID).toBe(turn.turnID)
-      },
     })
 
-    expect(steer.mode).toBe("steer")
-    expect(steer.turnID).toBe(first.turnID)
+    expect(runningSteer.mode).toBe("steer")
+    expect(runningSteer.turnID).not.toBe(first.turnID)
+    expect(runningSteer.turnID).not.toBe(pendingSteer.turnID)
+
+    turn.emit("tool.call.waiting_approval", {
+      part: {
+        ...part,
+        state: {
+          status: "waiting-approval",
+          approvalID: "approval-test",
+          input: {},
+          raw: "{}",
+          time: {
+            start: Date.now(),
+          },
+        },
+      },
+    })
+    expect(turn.concurrentInputDisposition()).toBe("steer")
+
+    const approvalSteer = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      allowSteer: true,
+      execute: async () => "approval-steer",
+    })
+
+    expect(approvalSteer.mode).toBe("steer")
+    expect(approvalSteer.turnID).not.toBe(first.turnID)
+    expect(approvalSteer.turnID).not.toBe(pendingSteer.turnID)
+    expect(approvalSteer.turnID).not.toBe(runningSteer.turnID)
+    await expect(SessionRunner.consumePendingSteer(sessionID, first.turnID)).resolves.toBe(3)
 
     finish.resolve()
 
     await expect(first.promise).resolves.toBe("first")
-    await expect(steer.promise).resolves.toBe("first")
+    await expect(pendingSteer.promise).resolves.toBe("pending-steer")
+    await expect(runningSteer.promise).resolves.toBe("steered")
+    await expect(approvalSteer.promise).resolves.toBe("approval-steer")
     await SessionRunner.waitForIdle(sessionID)
   })
 
-  it("waits for accepted steer writes before consuming the pending steer marker", async () => {
+  it("releases pending steer handoff when a queued steer turn is cancelled", async () => {
     const sessionID = testSessionID()
     const directory = testDirectory()
     const activeStarted = deferred()
     const finish = deferred()
-    const allowSteerWrite = deferred()
-    let consumed = false
 
     const first = SessionRunner.enqueuePrompt({
       sessionID,
@@ -528,6 +569,7 @@ describe("session runner", () => {
         const turn = Orchestrator.startTurn({
           sessionID,
           turnID: runtime.turnID,
+          steerable: true,
         })
         activeStarted.resolve()
         try {
@@ -547,27 +589,110 @@ describe("session runner", () => {
       type: "prompt",
       allowSteer: true,
       execute: async () => "second",
-      steer: async () => {
-        await allowSteerWrite.promise
-      },
     })
 
-    const pending = SessionRunner.consumePendingSteer(sessionID, first.turnID).then((count) => {
-      consumed = true
-      return count
+    expect(steer.mode).toBe("steer")
+    expect(SessionRunner.info(sessionID)).toMatchObject({
+      activeTurnID: first.turnID,
+      pendingSteerCount: 1,
+      queueLength: 1,
     })
 
-    await Promise.resolve()
-    expect(consumed).toBe(false)
+    steer.cancel()
+    await expect(steer.promise).rejects.toThrow("cancelled before it started")
 
-    allowSteerWrite.resolve()
-
-    await expect(pending).resolves.toBe(1)
+    expect(SessionRunner.info(sessionID)).toMatchObject({
+      activeTurnID: first.turnID,
+      pendingSteerCount: 0,
+      queueLength: 0,
+    })
+    await expect(SessionRunner.consumePendingSteer(sessionID, first.turnID)).resolves.toBe(0)
 
     finish.resolve()
     await expect(first.promise).resolves.toBe("first")
-    await expect(steer.promise).resolves.toBe("first")
     await SessionRunner.waitForIdle(sessionID)
+  })
+
+  it("prioritizes steer continuation turns before normal queued input in arrival order", async () => {
+    const sessionID = testSessionID()
+    const directory = testDirectory()
+    const activeStarted = deferred()
+    const finishFirst = deferred()
+    const order: string[] = []
+
+    const first = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      execute: async (runtime) => {
+        const turn = Orchestrator.startTurn({
+          sessionID,
+          turnID: runtime.turnID,
+          steerable: true,
+        })
+        order.push("active:start")
+        activeStarted.resolve()
+        try {
+          await finishFirst.promise
+          order.push("active:end")
+          return "first"
+        } finally {
+          Orchestrator.finishTurn(turn)
+        }
+      },
+    })
+
+    await activeStarted.promise
+
+    const normalQueued = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      execute: async () => {
+        order.push("normal")
+        return "normal"
+      },
+    })
+    expect(normalQueued.mode).toBe("queued")
+
+    const firstSteer = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      allowSteer: true,
+      execute: async () => {
+        order.push("steer:1")
+        return "steer:1"
+      },
+    })
+    const secondSteer = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      allowSteer: true,
+      execute: async () => {
+        order.push("steer:2")
+        return "steer:2"
+      },
+    })
+
+    expect(firstSteer.mode).toBe("steer")
+    expect(secondSteer.mode).toBe("steer")
+    expect(SessionRunner.info(sessionID)).toMatchObject({
+      pendingSteerCount: 2,
+      queueLength: 3,
+    })
+    await expect(SessionRunner.consumePendingSteer(sessionID, first.turnID)).resolves.toBe(2)
+
+    finishFirst.resolve()
+
+    await expect(first.promise).resolves.toBe("first")
+    await expect(firstSteer.promise).resolves.toBe("steer:1")
+    await expect(secondSteer.promise).resolves.toBe("steer:2")
+    await expect(normalQueued.promise).resolves.toBe("normal")
+    await SessionRunner.waitForIdle(sessionID)
+
+    expect(order).toEqual(["active:start", "active:end", "steer:1", "steer:2", "normal"])
   })
 
   it("queues prompt input when the active turn is not steerable", async () => {
@@ -606,9 +731,6 @@ describe("session runner", () => {
       execute: async () => {
         secondStarted.resolve()
         return "second"
-      },
-      steer: async () => {
-        throw new Error("must not steer a non-steerable turn")
       },
     })
 

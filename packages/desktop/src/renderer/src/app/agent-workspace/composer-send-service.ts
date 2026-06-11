@@ -166,29 +166,6 @@ export async function sendPromptToSession(
   const concurrentInputMode = submissionMode === "steer" ? "steer" : "queue"
   const usesBackendStream = agentConnected && Boolean(window.desktop?.createAgentSession) && Boolean(agentSession) && canStream
   const localSubmissionMode = usesBackendStream ? submissionMode ?? "queued" : submissionMode
-  const existingStreamingTarget =
-    localSubmissionMode === "steer" && canStream
-      ? Object.values(pendingStreamsRef.current).find(
-          (target) => target.sessionID === uiSessionID && !target.cancelRequested,
-        )
-      : undefined
-  const streamInsertion =
-    existingStreamingTarget
-      ? (() => {
-          const assistantTurn = getConversationTurns(uiSessionID).find(
-            (turn): turn is AssistantTurn =>
-              turn.kind === "assistant" && turn.id === existingStreamingTarget.assistantTurnID,
-          )
-
-          return assistantTurn
-              ? {
-                  assistantTurnID: assistantTurn.id,
-                  afterItemCount: assistantTurn.items.length,
-                  status: "pending" as const,
-                }
-              : undefined
-        })()
-      : undefined
   const normalizedText = text.trim() || normalizeQuestionAnswerText(questionAnswer)
   const attachmentInputs = attachments.map((attachment) => ({
     path: attachment.path,
@@ -204,7 +181,6 @@ export async function sendPromptToSession(
     questionAnswer,
     references,
     submissionMode: localSubmissionMode,
-    streamInsertion,
   })
 
   if (!preserveComposerState) {
@@ -286,11 +262,8 @@ export async function sendPromptToSession(
     }
 
     if (canStream) {
-      const streamTarget = existingStreamingTarget
-      const streamingTurn = streamTarget
-        ? null
-        : buildStreamingAssistantTurn(userTurn.text)
-      const assistantTurnID = streamTarget?.assistantTurnID ?? streamingTurn?.id
+      const streamingTurn = buildStreamingAssistantTurn(userTurn.text)
+      const assistantTurnID = streamingTurn.id
       if (!assistantTurnID) {
         throw new Error("Assistant stream target is missing")
       }
@@ -303,13 +276,10 @@ export async function sendPromptToSession(
         assistantTurnID,
         userTurnID: userTurn.id,
         requestedMode: localSubmissionMode === "steer" ? "steer" : localSubmissionMode === "queued" ? "queue" : "new-turn",
-        ...(streamingTurn ? { createdAssistantTurnID: streamingTurn.id } : {}),
-        ...(streamTarget?.backendTurnID ? { backendTurnID: streamTarget.backendTurnID } : {}),
+        createdAssistantTurnID: streamingTurn.id,
       }
 
-      if (streamingTurn) {
-        appendConversationTurns(uiSessionID, [streamingTurn])
-      }
+      appendConversationTurns(uiSessionID, [streamingTurn])
 
       await agentSession.sendTurn({
         clientTurnID: streamID,

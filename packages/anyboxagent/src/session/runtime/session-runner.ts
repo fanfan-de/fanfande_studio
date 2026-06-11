@@ -66,6 +66,7 @@ type QueuedOperation<T> = {
   resolve: (value: T) => void
   reject: (error: unknown) => void
   cancelled: boolean
+  steerHandoffForTurnID?: string
 }
 
 type ActiveOperation = {
@@ -75,7 +76,7 @@ type ActiveOperation = {
   controller: AbortController
   startedAt: number
   pendingSteerCount: number
-  pendingSteerWrites: Set<Promise<void>>
+  pendingSteerTurnIDs: Set<string>
   promise: Promise<unknown>
 }
 
@@ -88,7 +89,6 @@ type EnqueueOperationInput<T> = {
 
 type EnqueuePromptInput<T> = EnqueueOperationInput<T> & {
   allowSteer?: boolean
-  steer?: (input: { turn: Orchestrator.TurnContext }) => Promise<void>
 }
 
 const runners = new Map<string, SessionRunner>()
@@ -210,22 +210,44 @@ class SessionRunner {
       this.active &&
       input.allowSteer === true &&
       activeTurn?.turnID === this.active.turnID &&
-      activeTurn.canAcceptSteer() &&
-      input.steer
+      activeTurn.canAcceptSteerHandoff()
     ) {
-      const turnID = activeTurn.turnID
-      const activePromise = this.active.promise as Promise<T>
-      const steerWrite = input.steer({ turn: activeTurn }).then(() => {
-        if (this.active?.turnID === turnID) {
-          this.active.pendingSteerCount += 1
-        }
-        notify({ type: "steered", sessionID: this.sessionID })
+      assertQueueCapacity(this)
+      const activeTurnID = activeTurn.turnID
+      const turnID = Identifier.ascending("turn")
+
+      let resolve!: (value: T) => void
+      let reject!: (error: unknown) => void
+      const promise = new Promise<T>((innerResolve, innerReject) => {
+        resolve = innerResolve
+        reject = innerReject
       })
-      this.active.pendingSteerWrites.add(steerWrite)
-      steerWrite.finally(() => {
-        this.active?.pendingSteerWrites.delete(steerWrite)
-      }).catch(() => undefined)
-      const promise = steerWrite.then(() => activePromise)
+
+      const op: QueuedOperation<T> = {
+        type: input.type,
+        sessionID: input.sessionID,
+        directory: input.directory,
+        turnID,
+        execute: input.execute,
+        resolve,
+        reject,
+        cancelled: false,
+        steerHandoffForTurnID: activeTurnID,
+      }
+
+      const insertIndex = this.queue.findIndex((queued) => !queued.cancelled && !queued.steerHandoffForTurnID)
+      if (insertIndex === -1) {
+        this.queue.push(op as QueuedOperation<unknown>)
+      } else {
+        this.queue.splice(insertIndex, 0, op as QueuedOperation<unknown>)
+      }
+
+      if (this.active?.turnID === activeTurnID) {
+        this.active.pendingSteerCount += 1
+        this.active.pendingSteerTurnIDs.add(turnID)
+      }
+      notify({ type: "steered", sessionID: this.sessionID })
+      this.drain()
 
       return {
         sessionID: input.sessionID,
@@ -233,8 +255,7 @@ class SessionRunner {
         mode: "steer",
         promise,
         cancel: () => {
-          // Steer requests are already recorded as user messages. Disconnecting
-          // their request stream must not abort the active turn.
+          this.removeQueued(turnID)
         },
       }
     }
@@ -264,13 +285,9 @@ class SessionRunner {
 
   async consumePendingSteer(turnID: string) {
     if (!this.active || this.active.turnID !== turnID) return 0
-    const pendingWrites = [...this.active.pendingSteerWrites]
-    if (pendingWrites.length > 0) {
-      await Promise.allSettled(pendingWrites)
-    }
-    if (!this.active || this.active.turnID !== turnID) return 0
     const count = this.active.pendingSteerCount
     this.active.pendingSteerCount = 0
+    this.active.pendingSteerTurnIDs.clear()
     return count
   }
 
@@ -302,6 +319,7 @@ class SessionRunner {
     if (index === -1) return false
     const [op] = this.queue.splice(index, 1)
     if (!op) return false
+    this.releasePendingSteerHandoff(op)
     op.cancelled = true
     op.reject(new SessionOperationCancelledError())
     this.resolveIdleIfNeeded()
@@ -312,6 +330,7 @@ class SessionRunner {
     const cancelledTurnIDs: string[] = []
     for (const op of this.queue.splice(0)) {
       if (op.cancelled) continue
+      this.releasePendingSteerHandoff(op)
       op.cancelled = true
       op.reject(new SessionOperationCancelledError())
       cancelledTurnIDs.push(op.turnID)
@@ -381,7 +400,7 @@ class SessionRunner {
       controller,
       startedAt,
       pendingSteerCount: 0,
-      pendingSteerWrites: new Set(),
+      pendingSteerTurnIDs: new Set(),
       promise,
     }
     this.statusValue = "running"
@@ -410,6 +429,13 @@ class SessionRunner {
     for (const waiter of waiters) {
       waiter()
     }
+  }
+
+  private releasePendingSteerHandoff(op: QueuedOperation<unknown>) {
+    const activeTurnID = op.steerHandoffForTurnID
+    if (!activeTurnID || this.active?.turnID !== activeTurnID) return
+    if (!this.active.pendingSteerTurnIDs.delete(op.turnID)) return
+    this.active.pendingSteerCount = Math.max(0, this.active.pendingSteerCount - 1)
   }
 }
 

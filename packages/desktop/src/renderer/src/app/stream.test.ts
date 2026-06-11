@@ -248,6 +248,31 @@ describe("stream trace reducer", () => {
     expect(turn.state).toBe("Backend stream cancelled")
   })
 
+  it("marks continued-by-user runtime completions as settled continuation turns", () => {
+    let turn = buildStreamingAssistantTurn("Steer runtime trace")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-continued",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "turn.completed",
+        payload: {
+          status: "continued_by_user",
+          finishReason: "user-input",
+          parts: [],
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("continued_by_user")
+    expect(turn.isStreaming).toBe(false)
+    expect(turn.state).toBe("Continued by user input")
+  })
+
   it("renders task state runtime events as workflow trace items", () => {
     let turn = buildStreamingAssistantTurn("Track tasks")
 

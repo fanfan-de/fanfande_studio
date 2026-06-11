@@ -46,7 +46,6 @@ const DANGLING_TOOL_CALL_ERROR =
 const MODEL_CALL_PATCH_MAX_PATCH_BYTES = 128 * 1024
 const MODEL_CALL_PATCH_MAX_FILES = 200
 const MODEL_CALL_PATCH_MAX_TOTAL_PATCH_BYTES = 512 * 1024
-const STEER_INPUT_CONSUMED_STATE_REASON = "Steer input consumed."
 
 // ---------------------------------------------------------------------------
 // 输入协议与运行态
@@ -444,7 +443,9 @@ function finishPromptTurnFromResult(
         ? "blocked"
         : result.status === "failed"
             ? "failed"
-            : "completed"
+            : result.status === "continued_by_user"
+                ? "continued_by_user"
+                : "completed"
 
     Session.updateTurn(turn.turnID, {
         status: result.status,
@@ -479,7 +480,7 @@ function finishPromptTurnFromResult(
 
     turn.emit("turn.state.changed", {
         phase,
-        reason: result.finishReason,
+        reason: result.status === "continued_by_user" ? "Continued by user input." : result.finishReason,
         messageID: result.latest.info.id,
     })
 
@@ -523,7 +524,7 @@ export function cancel(sessionID: string) {
 
 type RunLoopResult = {
     latest: Message.WithParts
-    status: "completed" | "blocked" | "failed"
+    status: "completed" | "blocked" | "failed" | "continued_by_user"
     finishReason?: string
     errorInfo?: TurnError.TurnErrorInfo
 }
@@ -568,6 +569,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
     let currentAssistant: Message.Assistant | undefined;
     let turnDiffStartSnapshot: string | undefined;
     let turnDiffEndSnapshot: string | undefined;
+    let continuedByUser = false;
     let iteration = 0;
     try {
         while (true) {
@@ -830,17 +832,14 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             turnDiffEndSnapshot = modelCallEndSnapshot ?? turnDiffEndSnapshot
 
             if (await SessionRunner.consumePendingSteer(sessionID, turn.turnID) > 0) {
-                turn.emit("turn.state.changed", {
-                    phase: "waiting_llm",
-                    reason: STEER_INPUT_CONSUMED_STATE_REASON,
-                    iteration,
-                })
-                log.info("continuing prompt loop after steer input", {
+                continuedByUser = true
+                turn.setAcceptingSteer(false)
+                log.info("ending prompt turn for steer handoff", {
                     sessionID,
                     turnID: turn.turnID,
                     iteration,
                 })
-                continue
+                break
             }
 
             if (isFinalFinishReason(processor.message.finishReason)) {
@@ -906,7 +905,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
         const assistantErrorInfo = latest.info.role === "assistant"
             ? TurnError.fromAssistantError(latest.info.error)
             : undefined
-        const stoppedWithoutCompletion = !blocked && !assistantErrorInfo && !isFinalFinishReason(finishReason)
+        const stoppedWithoutCompletion = !continuedByUser && !blocked && !assistantErrorInfo && !isFinalFinishReason(finishReason)
             ? TurnError.fromMessage(
                 "Assistant turn stopped before producing a final response.",
                 "TurnStoppedWithoutCompletion",
@@ -916,7 +915,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
 
         return {
             latest,
-            status: blocked ? "blocked" : errorInfo ? "failed" : "completed",
+            status: continuedByUser ? "continued_by_user" : blocked ? "blocked" : errorInfo ? "failed" : "completed",
             finishReason,
             errorInfo: errorInfo
                 ? TurnError.withModelContext(
@@ -952,7 +951,6 @@ function createPromptExecutionHandle(input: PromptInput) {
         type: "prompt",
         execute: (runtime) => runPromptOperation(input, runtime),
         allowSteer: input.concurrentInputMode === "steer",
-        steer: ({ turn }) => recordSteerUserMessage(input, turn),
     })
 }
 
@@ -1145,46 +1143,6 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
         }
         Status.set(input.sessionID, { type: "idle" })
     }
-}
-
-async function recordSteerUserMessage(input: PromptInput, turn: Orchestrator.TurnContext) {
-    const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
-    if (!session) {
-        throw new Error(`Session '${input.sessionID}' was not found.`);
-    }
-
-    const steerSnapshot = await captureSnapshot({
-        context: "steer",
-        sessionID: input.sessionID,
-    })
-    if (!turn.canAcceptSteer()) throw new Error("Prompt aborted")
-
-    const agentName = resolveUserMessageAgentName(session, input.agent)
-    const nextInput: PromptInput = {
-        ...input,
-        agent: agentName,
-        skills: await Skill.resolveTurnSkillIDs({
-            projectID: session.projectID,
-            projectRoot: Instance.worktree,
-            requestedSkillIDs: input.skills,
-        }),
-    }
-    if (!turn.canAcceptSteer()) throw new Error("Prompt aborted")
-    const userMessage = await createUserMessage(nextInput, {
-        snapshot: steerSnapshot,
-    })
-    if (!turn.canAcceptSteer()) throw new Error("Prompt aborted")
-    userMessage.messageinfo = {
-        ...userMessage.messageinfo,
-        turnID: turn.turnID,
-    }
-    turn.emit("message.recorded", {
-        message: userMessage.messageinfo,
-    })
-    for (const part of userMessage.parts) {
-        turn.emit("part.recorded", { part })
-    }
-    clearPendingWorkflowInstruction(input.sessionID)
 }
 
 export const ResumeInput = z.object({
