@@ -1854,7 +1854,26 @@ function readAssistantNamedErrorPresentation(value: unknown): HistoryErrorPresen
   }
 }
 
+function isCancellationNamedError(value: unknown) {
+  const record = readRecord(value)
+  if (!record) return false
+
+  const data = readRecord(record.data)
+  const name = readString(record.name).toLowerCase()
+  const message = (readString(record.message) || readString(data?.message)).toLowerCase()
+
+  return (
+    name === "messageabortederror" ||
+    name === "aborterror" ||
+    message === "prompt aborted" ||
+    message === "the model stream was aborted." ||
+    message === "prompt cancellation requested."
+  )
+}
+
 function readAssistantHistoryFailure(message: LoadedSessionHistoryMessage): HistoryErrorPresentation | null {
+  if (isAssistantHistoryCancelled(message)) return null
+
   if (message.turn?.status === "failed") {
     const turnError = readHistoryErrorPresentation(message.turn.errorInfo)
     if (turnError) return turnError
@@ -1875,9 +1894,8 @@ function isAssistantHistoryFailed(message: LoadedSessionHistoryMessage) {
 }
 
 function resolveAssistantHistoryState(items: AssistantTraceItem[], message: LoadedSessionHistoryMessage) {
+  if (isAssistantHistoryCancelled(message) || items.some((item) => item.status === "cancelled")) return "Backend stream cancelled"
   if (isAssistantHistoryFailed(message)) return "Backend request failed"
-  const info = message.info
-  if (isAssistantHistoryCancelled(info) || items.some((item) => item.status === "cancelled")) return "Backend stream cancelled"
   if (items.some((item) => item.kind === "question")) return "Waiting for your answer"
   if (items.some((item) => item.status === "waiting-approval")) return "Waiting for permission approval"
   if (items.some((item) => item.status === "denied")) return "Tool execution denied"
@@ -1888,9 +1906,8 @@ function resolveAssistantHistoryState(items: AssistantTraceItem[], message: Load
 }
 
 function resolveAssistantHistoryPhase(items: AssistantTraceItem[], message: LoadedSessionHistoryMessage): AssistantTurnPhase {
+  if (isAssistantHistoryCancelled(message) || items.some((item) => item.status === "cancelled")) return "cancelled"
   if (isAssistantHistoryFailed(message)) return "failed"
-  const info = message.info
-  if (isAssistantHistoryCancelled(info) || items.some((item) => item.status === "cancelled")) return "cancelled"
   if (items.some((item) => item.kind === "question")) return "blocked"
   if (items.some((item) => item.status === "waiting-approval")) return "waiting_approval"
   if (items.some((item) => item.status === "running" || item.status === "pending")) return "tool_running"
@@ -1903,17 +1920,26 @@ function resolveAssistantHistoryToolName(items: AssistantTraceItem[]) {
     ?.title
 }
 
-function isAssistantHistoryCancelled(info: LoadedSessionHistoryMessage["info"]) {
+function isAssistantHistoryCancelled(message: LoadedSessionHistoryMessage) {
+  const info = message.info
   const finishReason = readString(info.finishReason).toLowerCase()
   const status = readString(info.status).toLowerCase()
   const reason = readString(info.reason).toLowerCase()
+  const turnStatus = readString(message.turn?.status).toLowerCase()
+  const turnPhase = readString(message.turn?.phase).toLowerCase()
+
   return (
     finishReason === "cancelled" ||
     finishReason === "canceled" ||
     status === "cancelled" ||
     status === "canceled" ||
     reason === "cancelled" ||
-    reason === "canceled"
+    reason === "canceled" ||
+    turnStatus === "cancelled" ||
+    turnStatus === "canceled" ||
+    turnPhase === "cancelled" ||
+    turnPhase === "canceled" ||
+    isCancellationNamedError(info.error)
   )
 }
 
@@ -1942,7 +1968,7 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
   let items = mergeTraceParts([], message.parts)
   const failure = readAssistantHistoryFailure(message)
   const errorMessage = failure?.message ?? ""
-  const isCancelled = isAssistantHistoryCancelled(message.info)
+  const isCancelled = isAssistantHistoryCancelled(message)
 
   if (errorMessage) {
     items = appendTraceItem(

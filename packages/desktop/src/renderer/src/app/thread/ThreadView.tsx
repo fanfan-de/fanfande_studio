@@ -2,6 +2,7 @@ import { Component, memo, useEffect, useEffectEvent, useId, useLayoutEffect, use
 import { createPortal } from "react-dom"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
+import { ComposerConcurrentInputDrawer } from "../composer/ComposerConcurrentInputDrawer"
 import {
   COMPOSER_LONG_TEXT_CHARACTER_THRESHOLD,
   COMPOSER_LONG_TEXT_LINE_THRESHOLD,
@@ -27,7 +28,11 @@ import { getSessionMessageIDForTurn, type SessionMessageBranchOption, type Sessi
 import { buildTurnsFromHistory } from "../stream"
 import {
   getAssistantStreamInsertionUserTurns,
+  getPendingQueuedUserTurns,
+  getPendingStreamInsertionUserTurns,
   hasStreamInsertionTarget,
+  isPendingQueuedUserTurn,
+  isPendingSteerUserTurn,
   resolveStreamInsertionItemIndex,
 } from "../stream-insertion"
 import {
@@ -161,6 +166,7 @@ interface ThreadViewProps {
     selectedReasoningEffort?: ReasoningEffort | null
     selectedModel?: string | null
     selectedSkillIDs: string[]
+    steerQueuedTurnID?: string
     submissionMode?: UserTurn["submissionMode"]
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
@@ -544,7 +550,9 @@ function buildThreadDisplayRows({
   const rows: ThreadDisplayRow[] = []
   activeTurns.forEach((turn, turnIndex) => {
     if (turn.kind === "user") {
+      if (isPendingSteerUserTurn(activeTurns, turn)) return
       if (hasStreamInsertionTarget(activeTurns, turn)) return
+      if (isPendingQueuedUserTurn(activeTurns, turn)) return
 
       rows.push({
         estimatedHeight: estimateUserThreadRowHeight(turn),
@@ -1257,13 +1265,16 @@ function isAssistantFinalMessageInUserTurn(turns: Turn[], assistantIndex: number
   return true
 }
 
-function isRegularUserRunBoundary(turn: Turn) {
-  return turn.kind === "user" && !turn.streamInsertion
+function isRegularUserRunBoundary(turns: Turn[], turnIndex: number) {
+  const turn = turns[turnIndex]
+  return turn?.kind === "user" &&
+    !hasStreamInsertionTarget(turns, turn) &&
+    !isPendingSteerUserTurn(turns, turn)
 }
 
 function findAssistantRunStartIndex(turns: Turn[], assistantIndex: number) {
   for (let index = assistantIndex - 1; index >= 0; index -= 1) {
-    if (isRegularUserRunBoundary(turns[index]!)) return index + 1
+    if (isRegularUserRunBoundary(turns, index)) return index + 1
   }
 
   return 0
@@ -1271,7 +1282,7 @@ function findAssistantRunStartIndex(turns: Turn[], assistantIndex: number) {
 
 function findAssistantRunEndIndex(turns: Turn[], assistantIndex: number) {
   for (let index = assistantIndex + 1; index < turns.length; index += 1) {
-    if (isRegularUserRunBoundary(turns[index]!)) return index
+    if (isRegularUserRunBoundary(turns, index)) return index
   }
 
   return turns.length
@@ -2623,6 +2634,7 @@ export interface InlineSideChatThreadProps {
     selectedReasoningEffort?: ReasoningEffort | null
     selectedModel?: string | null
     selectedSkillIDs: string[]
+    steerQueuedTurnID?: string
     submissionMode?: UserTurn["submissionMode"]
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
@@ -2694,6 +2706,14 @@ export function InlineSideChatThread({
     pendingPermissionRequests.length > 0 ||
     isResolvingPermissionRequest ||
     Boolean(permissionRequestActionError)
+  const pendingSubmissionTurns = useMemo(
+    () =>
+      [
+        ...getPendingQueuedUserTurns(effectiveTurns),
+        ...getPendingStreamInsertionUserTurns(effectiveTurns),
+      ].sort((left, right) => left.timestamp - right.timestamp),
+    [effectiveTurns],
+  )
 
   useEffect(() => {
     if (turns.length > 0) {
@@ -2921,6 +2941,21 @@ export function InlineSideChatThread({
           />
         ) : null}
 
+        <ComposerConcurrentInputDrawer
+          canSteer
+          hasPendingPermissionRequests={pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
+          isCancelling={isCancelling}
+          pendingTurns={pendingSubmissionTurns}
+          onSteerQueuedTurn={(turn) =>
+            void onSend({
+              selectedReasoningEffort: composer.selectedReasoningEffort,
+              selectedModel: composer.selectedModel,
+              selectedSkillIDs: composer.selectedSkillIDs,
+              steerQueuedTurnID: turn.id,
+              waitForPendingModelSelection: composer.awaitPendingModelSelection,
+            })
+          }
+        />
         <Composer
           attachments={attachments}
           attachmentButtonTitle={composer.attachmentButtonTitle}
@@ -2979,7 +3014,7 @@ export function InlineSideChatThread({
               selectedReasoningEffort: composer.selectedReasoningEffort,
               selectedModel: composer.selectedModel,
               selectedSkillIDs: composer.selectedSkillIDs,
-              submissionMode: isSending || isInterruptible ? "steer" : undefined,
+              submissionMode: isSending || isInterruptible ? "queued" : undefined,
               waitForPendingModelSelection: composer.awaitPendingModelSelection,
             })
           }

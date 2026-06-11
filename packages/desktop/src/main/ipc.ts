@@ -5194,6 +5194,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
       parentMessageID: input.parentMessageID,
       attachments: input.attachments,
       questionAnswer: input.questionAnswer,
+      concurrentInputMode: input.concurrentInputMode,
       reasoningEffort: input.reasoningEffort,
       model: input.model,
       system: input.system,
@@ -5375,6 +5376,25 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
         localRequestAborted: result.localRequestsAborted > 0,
         backendCancelled: result.backendCancelled,
         ...(result.backendCancelError ? { backendCancelError: result.backendCancelError } : {}),
+      }
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:agent-session-abort-turn",
+    async (event, input: { clientTurnID: string; backendSessionID: string }) => {
+      const clientTurnID = input.clientTurnID.trim()
+      const backendSessionID = input.backendSessionID.trim()
+      const localRequestsAborted = abortActiveAgentSessionRequestsInMap(activeAgentSessionRequests, {
+        backendSessionID,
+        clientTurnID,
+        webContentsID: event.sender.id,
+      })
+
+      return {
+        clientTurnID,
+        backendSessionID,
+        localRequestAborted: localRequestsAborted > 0,
       }
     },
   )

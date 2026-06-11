@@ -1973,6 +1973,7 @@ export function create(input: {
                 }
                 catch (e: any) {
                     const aborted = isAbortSignalAborted(streamInput.abort ?? input.abort)
+                    const errorMessage = aborted ? "Prompt cancellation requested." : normalizeToolError(e)
                     if (!llmCallSettled) {
                         emitRuntimeEvent?.("llm.call.failed", {
                             messageID: input.Assistant.id,
@@ -1983,17 +1984,28 @@ export function create(input: {
                             messageCount: llmSummary.messageCount,
                             toolCount: llmSummary.toolCount,
                             hasAttachments: llmSummary.hasAttachments,
-                            error: normalizeToolError(e),
+                            error: errorMessage,
                             retryable: Boolean(e?.isRetryable === true),
                         })
                     }
-                    await persistPartialDraftOnce?.(normalizeToolError(e))
                     if (aborted) {
+                        input.Assistant.error = input.Assistant.error ?? {
+                            name: "MessageAbortedError",
+                            data: {
+                                message: errorMessage,
+                            },
+                        } as Message.Assistant["error"]
+                        await persistPartialDraftOnce?.(errorMessage)
                         await cancelOpenToolCalls("Prompt cancellation requested.")
                     } else {
-                        await failOpenToolCalls(normalizeToolError(e))
+                        await persistPartialDraftOnce?.(errorMessage)
+                        await failOpenToolCalls(errorMessage)
                     }
-                    log.error("processor failure", { error: e.message, stack: e.stack })
+                    if (aborted) {
+                        log.info("processor cancelled", { error: e.message })
+                    } else {
+                        log.error("processor failure", { error: e.message, stack: e.stack })
+                    }
                     throw e  // 重新抛出错误
                 }
                 if (needsCompaction) return "compact"

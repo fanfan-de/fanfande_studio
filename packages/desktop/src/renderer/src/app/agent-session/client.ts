@@ -44,6 +44,7 @@ export interface AgentSessionTurnInput {
     selectedOptions?: string[]
     freeformText?: string
   }
+  concurrentInputMode?: "queue" | "steer"
   reasoningEffort?: ReasoningEffort
   model?: {
     providerID: string
@@ -68,6 +69,12 @@ export interface AgentSessionCancelTurnResult {
   backendCancelError?: string
 }
 
+export interface AgentSessionAbortTurnResult {
+  clientTurnID: string
+  backendSessionID: string
+  localRequestAborted: boolean
+}
+
 export interface AgentSessionInterruptResult {
   backendSessionID: string
   clientTurnID?: string
@@ -85,6 +92,7 @@ export interface AgentSessionBridge {
   sendTurn(input: AgentSessionTurnInput): Promise<AgentSessionSendTurnResult>
   resumeTurn(input: { clientTurnID: string; backendSessionID: string }): Promise<AgentSessionSendTurnResult>
   cancelTurn(input: { clientTurnID: string; backendSessionID: string }): Promise<AgentSessionCancelTurnResult>
+  abortTurn?(input: { clientTurnID: string; backendSessionID: string }): Promise<AgentSessionAbortTurnResult>
   interrupt(input: { backendSessionID: string; clientTurnID?: string; reason?: "user-interrupt" }): Promise<AgentSessionInterruptResult>
   answerQuestion(input: {
     backendSessionID: string
@@ -123,6 +131,7 @@ function createModernAgentSessionBridge(desktop: NonNullable<Window["desktop"]>)
     sendTurn: modern.sendTurn,
     resumeTurn: modern.resumeTurn,
     cancelTurn: modern.cancelTurn,
+    abortTurn: modern.abortTurn,
     interrupt: modern.interrupt,
     answerQuestion: modern.answerQuestion,
     subscribe: (input) => modern.subscribe(input),

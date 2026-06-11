@@ -404,7 +404,7 @@ function getComposerSendButtonDescription({
   }
 
   if (hasRunningTask) {
-    return "Submit guidance to the current assistant turn without stopping it. Press Shift+Enter for a newline."
+    return "Queue this message after the current assistant turn. Press Shift+Enter for a newline."
   }
 
   return "Press Enter to send. Press Shift+Enter for a newline."
@@ -412,6 +412,10 @@ function getComposerSendButtonDescription({
 
 function hasComposerDraftText(draftState: ComposerDraftState) {
   return draftState.plainText.trim().length > 0
+}
+
+function hasComposerSubmittableContent(draftState: ComposerDraftState, attachments: ComposerAttachment[]) {
+  return hasComposerDraftText(draftState) || attachments.length > 0
 }
 
 function getComposerSelectionRect() {
@@ -1728,7 +1732,7 @@ export function Composer({
     if (action.type === "send") {
       if (!isEditorEventTarget(event.target)) return
       if (isCancelling) return
-      if ((isSending || isInterruptible) && !hasComposerDraftText(draftStateRef.current)) {
+      if ((isSending || isInterruptible) && !hasComposerSubmittableContent(draftStateRef.current, attachments)) {
         void onCancelSend?.()
         return
       }
@@ -1775,8 +1779,9 @@ export function Composer({
 
   const unsupportedAttachmentPathSet = new Set(unsupportedAttachmentPaths)
   const hasRunningTask = isSending || isInterruptible
-  const canInterrupt = isCancelling || (hasRunningTask && !hasDraftText)
-  const sendButtonActsAsStop = canInterrupt
+  const hasSubmittableContent = hasDraftText || attachments.length > 0
+  const sendButtonActsAsStop = hasRunningTask && !hasSubmittableContent
+  const showStopButton = isCancelling || hasRunningTask
   const stopButtonLabel = isCancelling ? "Cancelling task" : "Stop task"
   const stopButtonDisabled = isCancelling || !onCancelSend
   const sendButtonLabel = sendButtonActsAsStop
@@ -1784,7 +1789,7 @@ export function Composer({
     : hasPendingPermissionRequests
       ? "Resolve approval first"
       : hasRunningTask
-        ? "Send guidance"
+        ? "Queue message"
         : "Send task"
   const sendButtonDescription = getComposerSendButtonDescription({
     attachmentError,
@@ -1798,7 +1803,7 @@ export function Composer({
   const sendShortcut = !sendButtonActsAsStop && canSend && !hasPendingPermissionRequests ? "Enter" : undefined
   const sendButtonDisabled = sendButtonActsAsStop
     ? stopButtonDisabled
-    : !canSend || hasPendingPermissionRequests || attachmentError !== null
+    : !canSend || hasPendingPermissionRequests || isCancelling || attachmentError !== null
   const showReasoningEffortSelector = showModelSelector && reasoningEffortOptions.length > 0
   const selectedReasoningEffortButtonLabel = `Reasoning: ${selectedReasoningEffortLabel}`
   const modelMenuEmptyLabel =
@@ -2144,25 +2149,32 @@ export function Composer({
         </div>
 
         <div className="composer-actions">
-          <button
-            aria-description={sendButtonDescription}
-            aria-keyshortcuts={sendShortcut}
-            aria-label={sendButtonLabel}
-            className="primary-button is-icon-only"
-            disabled={sendButtonDisabled}
-            onClick={() => {
-              if ((isSending || isInterruptible) && !hasComposerDraftText(draftStateRef.current)) {
-                void onCancelSend?.()
-                return
-              }
-
-              void onSend(draftStateRef.current)
-            }}
-            title={sendButtonTitle}
-            type="button"
-          >
-            {sendButtonActsAsStop ? <StopIcon /> : <ArrowUpIcon />}
-          </button>
+          {!sendButtonActsAsStop ? (
+            <button
+              aria-description={sendButtonDescription}
+              aria-keyshortcuts={sendShortcut}
+              aria-label={sendButtonLabel}
+              className="primary-button is-icon-only"
+              disabled={sendButtonDisabled}
+              onClick={() => void onSend(draftStateRef.current)}
+              title={sendButtonTitle}
+              type="button"
+            >
+              <ArrowUpIcon />
+            </button>
+          ) : null}
+          {showStopButton ? (
+            <button
+              aria-label={stopButtonLabel}
+              className="secondary-button is-icon-only"
+              disabled={stopButtonDisabled}
+              onClick={() => void onCancelSend?.()}
+              title={stopButtonLabel}
+              type="button"
+            >
+              <StopIcon />
+            </button>
+          ) : null}
         </div>
       </div>
     </footer>

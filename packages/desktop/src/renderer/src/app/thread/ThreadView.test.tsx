@@ -2839,15 +2839,93 @@ describe("ThreadView message actions", () => {
   })
 
   it("renders steering submission status on user turns", () => {
-    renderThread([
-      {
-        ...userTurn("user-steer", "Adjust the current task"),
-        submissionMode: "steer",
+    const insertedTurn: UserTurn = {
+      ...userTurn("user-steer", "Adjust the current task"),
+      submissionMode: "steer",
+      streamInsertion: {
+        assistantTurnID: "assistant-live",
+        afterItemCount: 0,
+        status: "consumed",
       },
+    }
+
+    renderThread([
+      assistantTraceTurn(
+        "assistant-live",
+        [
+          {
+            id: "assistant-before",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "Before steer",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+      insertedTurn,
     ])
 
     expect(screen.getByText("提交，但不中断模型运行")).toBeInTheDocument()
     expect(screen.getByText("下次模型/工具调用后")).toBeInTheDocument()
+  })
+
+  it("does not render pending steer turns without insertion metadata as normal thread messages", () => {
+    const pendingSteerTurn: UserTurn = {
+      ...userTurn("user-steer", "Adjust during tool input"),
+      submissionMode: "steer",
+    }
+
+    const { container } = renderThread([
+      assistantTraceTurn(
+        "assistant-live",
+        [
+          {
+            id: "assistant-tool",
+            kind: "tool",
+            timestamp: 1,
+            label: "Tool",
+            title: "load-skill",
+            status: "running",
+          },
+        ],
+        true,
+      ),
+      pendingSteerTurn,
+    ])
+
+    expect(container.querySelectorAll(".user-turn")).toHaveLength(0)
+    expect(screen.queryByText("Adjust during tool input")).toBeNull()
+  })
+
+  it("does not render queued submissions as normal messages while tool input is streaming", () => {
+    const queuedTurn: UserTurn = {
+      ...userTurn("user-queued", "Adjust patch target"),
+      submissionMode: "queued",
+    }
+
+    const { container } = renderThread([
+      assistantTraceTurn(
+        "assistant-live",
+        [
+          {
+            id: "assistant-tool",
+            kind: "tool",
+            timestamp: 1,
+            label: "Tool",
+            title: "apply_patch",
+            status: "pending",
+            toolInputText: "*** Begin Patch",
+          },
+        ],
+        true,
+      ),
+      queuedTurn,
+    ])
+
+    expect(container.querySelectorAll(".user-turn")).toHaveLength(0)
+    expect(screen.queryByText("Adjust patch target")).toBeNull()
   })
 
   it("renders stream-inserted steer turns between live assistant trace items", () => {

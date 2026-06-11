@@ -2,12 +2,12 @@ import { memo, useLayoutEffect, useMemo, useRef } from "react"
 import { CreateSessionCanvas } from "../canvas/CreateSessionCanvas"
 import { SessionCanvasTopMenu } from "../canvas/SessionCanvasTopMenu"
 import { Composer } from "../composer/Composer"
+import { ComposerConcurrentInputDrawer } from "../composer/ComposerConcurrentInputDrawer"
 import { useDeferredComposerDraftSync } from "../composer/use-deferred-composer-draft-sync"
 import { ComposerUtilityBar } from "../ComposerUtilityBar"
 import { getSessionWorkflowBadge, type SessionWorkflowBadge as SessionWorkflowBadgeInfo } from "../session-workflow"
-import { getPendingStreamInsertionUserTurns } from "../stream-insertion"
+import { getPendingQueuedUserTurns, getPendingStreamInsertionUserTurns } from "../stream-insertion"
 import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "../thread-markdown"
-import { ThreadRichText } from "../thread-rich-text"
 import type {
   AssistantTraceVisibility,
   ComposerDraftState,
@@ -55,33 +55,6 @@ function ComposerBranchParentNotice({
       <button className="composer-branch-parent-clear" type="button" onClick={onClear}>
         Clear
       </button>
-    </div>
-  )
-}
-
-function getUserTurnPendingSteerText(turn: UserTurn) {
-  return turn.displayText?.trim() || turn.text
-}
-
-function ComposerPendingSteerDrawer({ turns }: { turns: UserTurn[] }) {
-  if (turns.length === 0) return null
-
-  return (
-    <div className="composer-pending-steer-drawer" aria-live="polite" aria-label="Pending submitted guidance">
-      {turns.map((turn) => (
-        <article key={turn.id} className="composer-pending-steer-card">
-          <ThreadRichText
-            as="div"
-            className="composer-pending-steer-text"
-            references={turn.references ?? []}
-            text={getUserTurnPendingSteerText(turn)}
-          />
-          <div className="composer-pending-steer-note">
-            <span>提交，但不中断模型运行</span>
-            <span>下次模型/工具调用后</span>
-          </div>
-        </article>
-      ))}
     </div>
   )
 }
@@ -171,7 +144,8 @@ export interface WorkbenchPaneSurfaceProps {
     selectedModel?: string | null
     selectedSkillIDs?: string[]
     sessionID?: string | null
-    submissionMode?: "steer"
+    steerQueuedTurnID?: string
+    submissionMode?: UserTurn["submissionMode"]
     tabKey?: string | null
     waitForPendingModelSelection?: (() => Promise<void>) | null
   }) => Promise<void>
@@ -296,7 +270,14 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
   })
   const readOnlySideChat = isSideChatSession(pane.activeSession)
   const showGitControls = pane.isActivePanel && !readOnlySideChat
-  const pendingSteerTurns = useMemo(() => getPendingStreamInsertionUserTurns(activeTurns), [activeTurns])
+  const pendingSubmissionTurns = useMemo(
+    () =>
+      [
+        ...getPendingQueuedUserTurns(activeTurns),
+        ...getPendingStreamInsertionUserTurns(activeTurns),
+      ].sort((left, right) => left.timestamp - right.timestamp),
+    [activeTurns],
+  )
   const {
     flushDraftSync,
     scheduleDraftSync,
@@ -606,6 +587,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                       selectedModel: input.selectedModel,
                       selectedSkillIDs: input.selectedSkillIDs,
                       sessionID: pane.activeSideChatSession?.id,
+                      steerQueuedTurnID: input.steerQueuedTurnID,
                       submissionMode: input.submissionMode,
                       tabKey: pane.activeSideChatTabKey,
                       waitForPendingModelSelection: input.waitForPendingModelSelection,
@@ -626,7 +608,24 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                 />
               </RendererProfiler>
               <div className="composer-stack">
-                <ComposerPendingSteerDrawer turns={pendingSteerTurns} />
+                <ComposerConcurrentInputDrawer
+                  canSteer={Boolean(pane.activeSession)}
+                  hasPendingPermissionRequests={pane.pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
+                  isCancelling={pane.isCancelling}
+                  pendingTurns={pendingSubmissionTurns}
+                  onSteerQueuedTurn={(turn) => {
+                    void onSend({
+                      paneID: pane.id,
+                      selectedReasoningEffort: composer.selectedReasoningEffort,
+                      selectedModel: composer.selectedModel,
+                      selectedSkillIDs: composer.selectedSkillIDs,
+                      sessionID: pane.sessionID,
+                      steerQueuedTurnID: turn.id,
+                      tabKey: pane.tabKey,
+                      waitForPendingModelSelection: composer.awaitPendingModelSelection,
+                    })
+                  }}
+                />
                 <RendererProfiler id="WorkbenchPaneSurface.Composer" onRender={composerProfiler}>
                   <Composer
                     attachments={pane.composerAttachments}
@@ -697,7 +696,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                         selectedModel: composer.selectedModel,
                         selectedSkillIDs: composer.selectedSkillIDs,
                         sessionID: pane.sessionID,
-                        submissionMode: pane.isSending || pane.isInterruptible ? "steer" : undefined,
+                        submissionMode: pane.isSending || pane.isInterruptible ? "queued" : undefined,
                         tabKey: pane.tabKey,
                         waitForPendingModelSelection: composer.awaitPendingModelSelection,
                       })

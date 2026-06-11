@@ -163,8 +163,11 @@ export async function sendPromptToSession(
   const uiSessionID = session.id
   const agentSession = getAgentSessionBridge()
   const canStream = Boolean(agentSession?.canStream)
+  const concurrentInputMode = submissionMode === "steer" ? "steer" : "queue"
+  const usesBackendStream = agentConnected && Boolean(window.desktop?.createAgentSession) && Boolean(agentSession) && canStream
+  const localSubmissionMode = usesBackendStream ? submissionMode ?? "queued" : submissionMode
   const existingStreamingTarget =
-    submissionMode === "steer" && canStream
+    localSubmissionMode === "steer" && canStream
       ? Object.values(pendingStreamsRef.current).find(
           (target) => target.sessionID === uiSessionID && !target.cancelRequested,
         )
@@ -178,11 +181,12 @@ export async function sendPromptToSession(
           )
 
           return assistantTurn
-            ? {
-                assistantTurnID: assistantTurn.id,
-                afterItemCount: assistantTurn.items.length,
-              }
-            : undefined
+              ? {
+                  assistantTurnID: assistantTurn.id,
+                  afterItemCount: assistantTurn.items.length,
+                  status: "pending" as const,
+                }
+              : undefined
         })()
       : undefined
   const normalizedText = text.trim() || normalizeQuestionAnswerText(questionAnswer)
@@ -199,7 +203,7 @@ export async function sendPromptToSession(
     fallbackText: normalizedText,
     questionAnswer,
     references,
-    submissionMode,
+    submissionMode: localSubmissionMode,
     streamInsertion,
   })
 
@@ -282,9 +286,7 @@ export async function sendPromptToSession(
     }
 
     if (canStream) {
-      const streamTarget = existingStreamingTarget ?? Object.values(pendingStreamsRef.current).find(
-        (target) => target.sessionID === uiSessionID && !target.cancelRequested,
-      )
+      const streamTarget = existingStreamingTarget
       const streamingTurn = streamTarget
         ? null
         : buildStreamingAssistantTurn(userTurn.text)
@@ -299,7 +301,8 @@ export async function sendPromptToSession(
         sessionID: uiSessionID,
         backendSessionID,
         assistantTurnID,
-        requestedMode: submissionMode === "steer" ? "steer" : "new-turn",
+        userTurnID: userTurn.id,
+        requestedMode: localSubmissionMode === "steer" ? "steer" : localSubmissionMode === "queued" ? "queue" : "new-turn",
         ...(streamingTurn ? { createdAssistantTurnID: streamingTurn.id } : {}),
         ...(streamTarget?.backendTurnID ? { backendTurnID: streamTarget.backendTurnID } : {}),
       }
@@ -316,6 +319,7 @@ export async function sendPromptToSession(
         ...(parentMessageID ? { parentMessageID } : {}),
         ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
         ...(questionAnswer ? { questionAnswer } : {}),
+        concurrentInputMode,
         ...(reasoningEffort ? { reasoningEffort } : {}),
         ...(model ? { model } : {}),
         skills: effectiveSelectedSkillIDs,
@@ -332,6 +336,7 @@ export async function sendPromptToSession(
       ...(parentMessageID ? { parentMessageID } : {}),
       ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
       ...(questionAnswer ? { questionAnswer } : {}),
+      concurrentInputMode,
       ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(model ? { model } : {}),
       skills: effectiveSelectedSkillIDs,

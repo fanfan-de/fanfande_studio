@@ -11,6 +11,7 @@ import type {
   PermissionRequest,
   SessionSummary,
   Turn,
+  UserTurn,
   WorkspaceGroup,
 } from "../types"
 import { useComposerController } from "./composer-controller"
@@ -236,7 +237,7 @@ describe("composer controller", () => {
     })
   })
 
-  it("marks running text submissions as steer turns without interrupting the active stream", async () => {
+  it("queues running text submissions without interrupting the active stream", async () => {
     const previousDesktop = window.desktop
     const sendTurn = vi.fn(async (input: { clientTurnID: string }) => ({
       clientTurnID: input.clientTurnID,
@@ -283,26 +284,201 @@ describe("composer controller", () => {
 
       expect(sendTurn).toHaveBeenCalledWith(expect.objectContaining({
         backendSessionID: "backend-session-1",
+        concurrentInputMode: "queue",
         text: "Existing prompt",
       }))
       expect(interrupt).not.toHaveBeenCalled()
       expect(cancelTurn).not.toHaveBeenCalled()
-      expect(result.current.turnsRef.current["session-1"]).toHaveLength(2)
+      expect(result.current.turnsRef.current["session-1"]).toHaveLength(3)
       expect(result.current.turnsRef.current["session-1"]?.[0]).toMatchObject({
         kind: "assistant",
       })
       expect(result.current.turnsRef.current["session-1"]?.[1]).toMatchObject({
         kind: "user",
+        submissionMode: "queued",
+      })
+      expect(result.current.turnsRef.current["session-1"]?.[1]).not.toHaveProperty("streamInsertion")
+      expect(result.current.turnsRef.current["session-1"]?.[2]).toMatchObject({
+        kind: "assistant",
+        isStreaming: true,
+      })
+      expect(Object.values(result.current.pendingStreamsRef.current)).toContainEqual(
+        expect.objectContaining({
+          requestedMode: "queue",
+          sessionID: "session-1",
+        }),
+      )
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
+  it("queues running submissions when the active stream outlives the sending flag", async () => {
+    const previousDesktop = window.desktop
+    const sendTurn = vi.fn(async (input: { clientTurnID: string }) => ({
+      clientTurnID: input.clientTurnID,
+    }))
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        createAgentSession: vi.fn(),
+        agentSession: {
+          sendTurn,
+        },
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() =>
+        useComposerHarness({
+          agentConnected: true,
+          initialAgentSessions: {
+            "session-1": "backend-session-1",
+          },
+        }),
+      )
+
+      result.current.pendingStreamsRef.current["stream-active"] = {
+        assistantTurnID: "assistant-active",
+        backendSessionID: "backend-session-1",
+        backendTurnID: "turn-active",
+        sessionID: "session-1",
+      }
+      result.current.turnsRef.current["session-1"] = [createStreamingAssistantTurn("assistant-active")]
+
+      await act(async () => {
+        await result.current.controller.handleSend()
+      })
+
+      expect(sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "backend-session-1",
+        concurrentInputMode: "queue",
+        text: "Existing prompt",
+      }))
+      expect(result.current.turnsRef.current["session-1"]?.[1]).toMatchObject({
+        kind: "user",
+        text: "Existing prompt",
+        submissionMode: "queued",
+      })
+      expect(Object.values(result.current.pendingStreamsRef.current)).toContainEqual(
+        expect.objectContaining({
+          requestedMode: "queue",
+          sessionID: "session-1",
+        }),
+      )
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
+  it("converts a queued running submission into an explicit steer from the drawer", async () => {
+    const previousDesktop = window.desktop
+    const sendTurn = vi.fn(async (input: { clientTurnID: string }) => ({
+      clientTurnID: input.clientTurnID,
+    }))
+    const abortTurn = vi.fn(async (input: { backendSessionID: string; clientTurnID: string }) => ({
+      ...input,
+      localRequestAborted: true,
+    }))
+    const interrupt = vi.fn()
+    const cancelTurn = vi.fn()
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        createAgentSession: vi.fn(),
+        agentSession: {
+          sendTurn,
+          abortTurn,
+          interrupt,
+          cancelTurn,
+        },
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() =>
+        useComposerHarness({
+          agentConnected: true,
+          initialAgentSessions: {
+            "session-1": "backend-session-1",
+          },
+          initialIsSendingByTabKey: {
+            "session:session-1": true,
+          },
+        }),
+      )
+
+      result.current.pendingStreamsRef.current["stream-active"] = {
+        assistantTurnID: "assistant-active",
+        backendSessionID: "backend-session-1",
+        backendTurnID: "turn-active",
+        sessionID: "session-1",
+      }
+      result.current.turnsRef.current["session-1"] = [createStreamingAssistantTurn("assistant-active")]
+
+      await act(async () => {
+        await result.current.controller.handleSend()
+      })
+
+      const queuedTurn = result.current.turnsRef.current["session-1"]?.find(
+        (turn): turn is UserTurn => turn.kind === "user" && turn.submissionMode === "queued",
+      )
+      const queuedStreamEntry = Object.entries(result.current.pendingStreamsRef.current).find(
+        ([, stream]) => stream.requestedMode === "queue",
+      )
+      const queuedAssistantTurnID = queuedStreamEntry?.[1].createdAssistantTurnID
+
+      expect(queuedTurn).toBeDefined()
+      expect(queuedStreamEntry).toBeDefined()
+      expect(queuedAssistantTurnID).toBeTruthy()
+      if (!queuedTurn || !queuedStreamEntry || !queuedAssistantTurnID) {
+        throw new Error("Expected queued turn, stream, and assistant placeholder")
+      }
+
+      await act(async () => {
+        await result.current.controller.handleSend({
+          steerQueuedTurnID: queuedTurn.id,
+        })
+      })
+
+      expect(abortTurn).toHaveBeenCalledWith({
+        backendSessionID: "backend-session-1",
+        clientTurnID: queuedStreamEntry[0],
+      })
+      expect(interrupt).not.toHaveBeenCalled()
+      expect(cancelTurn).not.toHaveBeenCalled()
+      expect(sendTurn).toHaveBeenCalledTimes(2)
+      expect(sendTurn.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+        backendSessionID: "backend-session-1",
+        concurrentInputMode: "steer",
+        text: "Existing prompt",
+      }))
+
+      const nextTurns = result.current.turnsRef.current["session-1"] ?? []
+      expect(nextTurns.find((turn) => turn.id === queuedTurn.id)).toBeUndefined()
+      expect(nextTurns.find((turn) => turn.id === queuedAssistantTurnID)).toBeUndefined()
+      expect(nextTurns.find((turn) => turn.kind === "user" && turn.submissionMode === "steer")).toMatchObject({
+        kind: "user",
+        text: "Existing prompt",
         submissionMode: "steer",
         streamInsertion: {
           assistantTurnID: "assistant-active",
           afterItemCount: 1,
         },
       })
+      expect(result.current.pendingStreamsRef.current[queuedStreamEntry[0]]).toBeUndefined()
       expect(Object.values(result.current.pendingStreamsRef.current)).toContainEqual(
         expect.objectContaining({
           assistantTurnID: "assistant-active",
-          backendTurnID: "turn-active",
+          requestedMode: "steer",
           sessionID: "session-1",
         }),
       )
@@ -368,6 +544,7 @@ describe("composer controller", () => {
       expect(interrupt).not.toHaveBeenCalled()
       expect(sendTurn).toHaveBeenCalledWith(expect.objectContaining({
         backendSessionID: "backend-session-1",
+        concurrentInputMode: "steer",
         text: "Existing prompt",
       }))
       expect(result.current.pendingStreamsRef.current["stream-active"]?.cancelRequested).toBeUndefined()

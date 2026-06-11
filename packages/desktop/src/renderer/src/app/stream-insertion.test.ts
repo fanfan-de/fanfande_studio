@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest"
 import type { AssistantTurn, Turn, UserTurn } from "./types"
 import {
   getAssistantStreamInsertionUserTurns,
+  getPendingQueuedUserTurns,
   getPendingStreamInsertionUserTurns,
+  isPendingQueuedUserTurn,
+  isPendingSteerUserTurn,
   isStreamInsertionReady,
   resolveStreamInsertionItemIndex,
 } from "./stream-insertion"
@@ -62,6 +65,33 @@ function steerTurn(): UserTurn {
   }
 }
 
+function pendingSteerTurn(): UserTurn {
+  return {
+    ...steerTurn(),
+    streamInsertion: {
+      assistantTurnID: "assistant-live",
+      afterItemCount: 1,
+      status: "pending",
+    },
+  }
+}
+
+function consumedSteerTurn(): UserTurn {
+  return {
+    ...steerTurn(),
+    streamInsertion: {
+      assistantTurnID: "assistant-live",
+      afterItemCount: 1,
+      status: "consumed",
+    },
+  }
+}
+
+function steerTurnWithoutInsertion(): UserTurn {
+  const { streamInsertion: _streamInsertion, ...turn } = steerTurn()
+  return turn
+}
+
 function steerTurnAfterCurrentTool(): UserTurn {
   return {
     ...steerTurn(),
@@ -69,6 +99,16 @@ function steerTurnAfterCurrentTool(): UserTurn {
       assistantTurnID: "assistant-live",
       afterItemCount: 2,
     },
+  }
+}
+
+function queuedTurn(): UserTurn {
+  return {
+    id: "user-queued",
+    kind: "user",
+    text: "Next prompt",
+    submissionMode: "queued",
+    timestamp: 2,
   }
 }
 
@@ -89,6 +129,46 @@ describe("stream insertion presentation", () => {
     expect(isStreamInsertionReady(turns, turn)).toBe(false)
     expect(getPendingStreamInsertionUserTurns(turns)).toEqual([turn])
     expect(getAssistantStreamInsertionUserTurns(turns, assistantTurn("running"))).toEqual([])
+  })
+
+  it("keeps steer turns without insertion metadata pending while the previous assistant is streaming", () => {
+    const turn = steerTurnWithoutInsertion()
+    const turns: Turn[] = [assistantTurn("running"), turn]
+
+    expect(isPendingSteerUserTurn(turns, turn)).toBe(true)
+    expect(getPendingStreamInsertionUserTurns(turns)).toEqual([turn])
+  })
+
+  it("keeps steer turns without insertion metadata pending until execution mode resolves", () => {
+    const assistant: AssistantTurn = {
+      ...assistantTurn("completed"),
+      isStreaming: false,
+    }
+    const turn = steerTurnWithoutInsertion()
+    const turns: Turn[] = [assistant, turn]
+
+    expect(isPendingSteerUserTurn(turns, turn)).toBe(true)
+    expect(getPendingStreamInsertionUserTurns(turns)).toEqual([turn])
+  })
+
+  it("keeps pending steer turns in the drawer after the insertion point is otherwise ready", () => {
+    const assistant = assistantTurn("completed")
+    const turn = pendingSteerTurn()
+    const turns: Turn[] = [assistant, turn]
+
+    expect(isStreamInsertionReady(turns, turn)).toBe(true)
+    expect(getPendingStreamInsertionUserTurns(turns)).toEqual([turn])
+    expect(getAssistantStreamInsertionUserTurns(turns, assistant)).toEqual([])
+  })
+
+  it("moves consumed steer turns into the thread after the insertion point is ready", () => {
+    const assistant = assistantTurn("completed")
+    const turn = consumedSteerTurn()
+    const turns: Turn[] = [assistant, turn]
+
+    expect(isStreamInsertionReady(turns, turn)).toBe(true)
+    expect(getPendingStreamInsertionUserTurns(turns)).toEqual([])
+    expect(getAssistantStreamInsertionUserTurns(turns, assistant)).toEqual([turn])
   })
 
   it("moves steer turns into the thread after the following tool boundary", () => {
@@ -122,5 +202,23 @@ describe("stream insertion presentation", () => {
     expect(getPendingStreamInsertionUserTurns(turns)).toEqual([])
     expect(getAssistantStreamInsertionUserTurns(turns, assistant)).toEqual([turn])
     expect(resolveStreamInsertionItemIndex(assistant.items, turn, 0)).toBe(2)
+  })
+
+  it("keeps queued user turns pending until execution mode resolves", () => {
+    const turn = queuedTurn()
+    const streamingAssistant = assistantTurn("running")
+    const streamingTurns: Turn[] = [streamingAssistant, turn]
+
+    expect(isPendingQueuedUserTurn(streamingTurns, turn)).toBe(true)
+    expect(getPendingQueuedUserTurns(streamingTurns)).toEqual([turn])
+
+    const completedAssistant: AssistantTurn = {
+      ...streamingAssistant,
+      isStreaming: false,
+    }
+    const completedTurns: Turn[] = [completedAssistant, turn]
+
+    expect(isPendingQueuedUserTurn(completedTurns, turn)).toBe(true)
+    expect(getPendingQueuedUserTurns(completedTurns)).toEqual([turn])
   })
 })

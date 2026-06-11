@@ -53,12 +53,39 @@ export function isStreamInsertionReady(turns: Turn[], turn: UserTurn) {
   return true
 }
 
+function isStreamInsertionConsumed(turn: UserTurn) {
+  return turn.streamInsertion?.status !== "pending"
+}
+
+export function isPendingSteerUserTurn(turns: Turn[], turn: UserTurn) {
+  if (turn.submissionMode !== "steer") return false
+
+  if (turn.streamInsertion?.status === "pending") return true
+  if (hasStreamInsertionTarget(turns, turn)) {
+    return !isStreamInsertionConsumed(turn) || !isStreamInsertionReady(turns, turn)
+  }
+  if (turn.streamInsertion?.status === "consumed") return false
+
+  return true
+}
+
 export function getPendingStreamInsertionUserTurns(turns: Turn[]) {
   return turns.filter(
     (turn): turn is UserTurn =>
       turn.kind === "user" &&
-      hasStreamInsertionTarget(turns, turn) &&
-      !isStreamInsertionReady(turns, turn),
+      isPendingSteerUserTurn(turns, turn),
+  )
+}
+
+export function isPendingQueuedUserTurn(_turns: Turn[], turn: UserTurn) {
+  return turn.submissionMode === "queued"
+}
+
+export function getPendingQueuedUserTurns(turns: Turn[]) {
+  return turns.filter(
+    (turn): turn is UserTurn =>
+      turn.kind === "user" &&
+      isPendingQueuedUserTurn(turns, turn),
   )
 }
 
@@ -68,6 +95,7 @@ export function getAssistantStreamInsertionUserTurns(turns: Turn[], assistantTur
       (turn): turn is UserTurn =>
         turn.kind === "user" &&
         turn.streamInsertion?.assistantTurnID === assistantTurn.id &&
+        isStreamInsertionConsumed(turn) &&
         isStreamInsertionReady(turns, turn),
     )
     .sort((left, right) => {

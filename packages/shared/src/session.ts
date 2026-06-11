@@ -52,6 +52,7 @@ export const StreamSessionMessageBodySchema = z
     parentMessageID: z.string().min(1).nullable().optional(),
     attachments: z.array(SessionAttachmentBodySchema).optional(),
     questionAnswer: SessionQuestionAnswerBodySchema.optional(),
+    concurrentInputMode: z.enum(["queue", "steer"]).optional(),
     system: z.string().optional(),
     agent: z.string().optional(),
     skills: z.array(z.string()).optional(),

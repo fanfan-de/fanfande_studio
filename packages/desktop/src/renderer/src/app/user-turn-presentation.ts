@@ -214,10 +214,15 @@ function selectPersistableUserTurns(turns: Turn[]) {
     .filter((turn): turn is UserTurn => turn.kind === "user")
     .slice(-MAX_PERSISTED_USER_TURNS_PER_SESSION)
     .map((turn) => {
-      const { streamInsertion: _streamInsertion, ...persistableTurn } = turn
+      const {
+        streamInsertion: _streamInsertion,
+        submissionMode,
+        ...persistableTurn
+      } = turn
 
       return {
         ...persistableTurn,
+        ...(submissionMode === "steer" ? { submissionMode } : {}),
         ...(turn.attachments?.length ? { attachments: turn.attachments.map((attachment) => ({ ...attachment })) } : {}),
         ...(turn.references?.length ? { references: turn.references.map((reference) => ({ ...reference })) } : {}),
         ...(turn.diffSummary ? { diffSummary: cloneUserTurnDiffSummary(turn.diffSummary) } : {}),
@@ -314,7 +319,7 @@ export function mergeUserTurnPresentationState(previousTurns: Turn[], nextTurns:
       ...(mergedAttachments?.length ? { attachments: mergedAttachments } : {}),
       ...(mergedReferences?.length ? { references: mergedReferences } : {}),
       ...(turn.diffSummary ? { diffSummary: turn.diffSummary } : {}),
-      ...(previousTurn.submissionMode ? { submissionMode: previousTurn.submissionMode } : {}),
+      ...(previousTurn.submissionMode === "steer" ? { submissionMode: previousTurn.submissionMode } : {}),
     }
   })
 

@@ -172,6 +172,13 @@ export function useComposerController({
     setDraftForTab(activeTabKey, value)
   }
 
+  function hasPendingStreamForSession(sessionID: string | null | undefined) {
+    if (!sessionID) return false
+    return Object.values(pendingStreamsRef.current).some(
+      (stream) => stream.sessionID === sessionID && !stream.cancelRequested,
+    )
+  }
+
   async function sendPromptToSession(input: {
     attachments: ComposerAttachment[]
     backendSessionID?: string | null
@@ -256,6 +263,7 @@ export function useComposerController({
     selectedModel?: string | null
     selectedSkillIDs?: string[]
     sessionID?: string | null
+    steerQueuedTurnID?: string
     submissionMode?: UserTurn["submissionMode"]
     tabKey?: string | null
     waitForPendingModelSelection?: (() => Promise<void>) | null
@@ -275,16 +283,30 @@ export function useComposerController({
     const normalizedQuestionAnswerText = normalizeQuestionAnswerText(input?.questionAnswer)
     const effectiveText = compiledSubmission.transportText || normalizedQuestionAnswerText
     const pendingPermissionRequests = targetSessionID ? pendingPermissionRequestsBySession[targetSessionID] ?? [] : []
+    const isSending = Boolean(targetTabKey && isSendingByTabKey[targetTabKey])
+    const isConcurrentSessionInput = isSending || hasPendingStreamForSession(targetSessionID)
+
+    if (input?.steerQueuedTurnID) {
+      await handleSteerQueuedSubmission({
+        selectedReasoningEffort: input.selectedReasoningEffort,
+        selectedModel: input.selectedModel,
+        selectedSkillIDs: input.selectedSkillIDs ?? [],
+        sessionID: targetSessionID,
+        tabKey: targetTabKey,
+        turnID: input.steerQueuedTurnID,
+        waitForPendingModelSelection: input.waitForPendingModelSelection,
+      })
+      return
+    }
+
+    const submissionMode = input?.submissionMode ?? (isConcurrentSessionInput ? "queued" : undefined)
     const parentMessageID =
-      targetTabKey && targetSessionID && !input?.submissionMode
+      targetTabKey && targetSessionID && !submissionMode
         ? composerParentMessageIDByTabKey[targetTabKey] ?? undefined
         : undefined
-    const isSending = Boolean(targetTabKey && isSendingByTabKey[targetTabKey])
-    const submissionMode = input?.submissionMode ?? (isSending && effectiveText ? "steer" : undefined)
     if (
       !targetTabKey ||
       (!effectiveText && attachments.length === 0) ||
-      (isSending && !effectiveText) ||
       pendingPermissionRequests.length > 0
     ) return
     if (input?.waitForPendingModelSelection) {
@@ -408,6 +430,77 @@ export function useComposerController({
       tabKey: targetTabKey,
       text: effectiveText,
       workspace: created.workspace,
+    })
+  }
+
+  async function handleSteerQueuedSubmission(input: {
+    selectedReasoningEffort?: ReasoningEffort | null
+    selectedModel?: string | null
+    selectedSkillIDs: string[]
+    sessionID?: string | null
+    tabKey?: string | null
+    turnID: string
+    waitForPendingModelSelection?: (() => Promise<void>) | null
+  }) {
+    const sessionID = input.sessionID
+    const tabKey = input.tabKey
+    if (!sessionID || !tabKey) return
+
+    const turns = getConversationTurns(sessionID)
+    const queuedTurn = turns.find(
+      (turn): turn is UserTurn =>
+        turn.kind === "user" &&
+        turn.id === input.turnID &&
+        turn.submissionMode === "queued",
+    )
+    if (!queuedTurn) return
+
+    const pendingEntry = Object.entries(pendingStreamsRef.current).find(([, stream]) =>
+      stream.sessionID === sessionID &&
+      stream.userTurnID === queuedTurn.id &&
+      stream.requestedMode === "queue" &&
+      !stream.cancelRequested
+    )
+    if (!pendingEntry) return
+
+    const [streamID, stream] = pendingEntry
+    const backendSessionID = stream.backendSessionID ?? agentSessions[sessionID]
+    const agentSession = getAgentSessionBridge()
+    if (!agentSession?.abortTurn || !backendSessionID) return
+
+    stream.cancelRequested = true
+    const abortResult = await agentSession.abortTurn({
+      backendSessionID,
+      clientTurnID: streamID,
+    }).catch((error) => {
+      console.error("[desktop] queued turn abort before steer failed:", error)
+      return null
+    })
+
+    if (!abortResult?.localRequestAborted) {
+      stream.cancelRequested = false
+      return
+    }
+
+    delete pendingStreamsRef.current[streamID]
+    const assistantTurnID = stream.createdAssistantTurnID ?? stream.assistantTurnID
+    replaceConversationTurns(
+      sessionID,
+      turns.filter((turn) => turn.id !== queuedTurn.id && turn.id !== assistantTurnID),
+    )
+
+    await handleSend({
+      attachmentsOverride: queuedTurn.attachments
+        ?.flatMap((attachment) => attachment.path ? [{ name: attachment.name, path: attachment.path }] : []) ?? [],
+      draftStateOverride: createComposerDraftStateFromPlainText(queuedTurn.displayText ?? queuedTurn.text),
+      preserveComposerState: true,
+      selectedReasoningEffort: input.selectedReasoningEffort,
+      selectedModel: input.selectedModel,
+      selectedSkillIDs: input.selectedSkillIDs,
+      sessionID,
+      submissionMode: "steer",
+      tabKey,
+      waitForPendingModelSelection: input.waitForPendingModelSelection,
     })
   }
 

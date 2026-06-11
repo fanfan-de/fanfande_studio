@@ -903,6 +903,7 @@ export async function createMessageStreamResponse(input: {
           system: input.payload.system,
           agent: input.payload.agent,
           skills: input.payload.skills,
+          concurrentInputMode: input.payload.concurrentInputMode,
           reasoningEffort: input.payload.reasoningEffort,
           model: input.payload.model,
           displayText: input.payload.displayText,

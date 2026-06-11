@@ -124,6 +124,23 @@ describe("user turn presentation persistence", () => {
     expect(restoredTurn?.streamInsertion).toBeUndefined()
   })
 
+  it("does not persist queued submission mode", () => {
+    persistUserTurns("session-1", [
+      buildUserTurn({
+        displayText: "Send this next",
+        submissionMode: "queued",
+        timestamp: 10,
+      }),
+    ])
+
+    const restoredTurn = readPersistedUserTurns("session-1")[0]
+    expect(restoredTurn).toMatchObject({
+      kind: "user",
+      displayText: "Send this next",
+    })
+    expect(restoredTurn?.submissionMode).toBeUndefined()
+  })
+
   it("keeps backend diff summaries when merging user presentation state", () => {
     const previousTurns = [
       buildUserTurn({

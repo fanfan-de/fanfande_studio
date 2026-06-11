@@ -389,31 +389,32 @@ describe("processor fullStream consumption probe", () => {
     const sessionID = `session-tool-input-abort-${Date.now()}`
     const assistantID = `assistant-tool-input-abort-${Date.now()}`
     const recorded = createTurnRecorder(sessionID)
+    const assistant = {
+      id: assistantID,
+      sessionID,
+      role: "assistant",
+      created: Date.now(),
+      parentID: "user-tool-input-abort",
+      modelID: "gpt-5.3-codex",
+      providerID: "openai",
+      agent: "plan",
+      path: {
+        cwd: ".",
+        root: ".",
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+    } as any
     const processor = Processor.create({
-      Assistant: {
-        id: assistantID,
-        sessionID,
-        role: "assistant",
-        created: Date.now(),
-        parentID: "user-tool-input-abort",
-        modelID: "gpt-5.3-codex",
-        providerID: "openai",
-        agent: "plan",
-        path: {
-          cwd: ".",
-          root: ".",
-        },
-        cost: 0,
-        tokens: {
-          input: 0,
-          output: 0,
-          reasoning: 0,
-          cache: {
-            read: 0,
-            write: 0,
-          },
-        },
-      } as any,
+      Assistant: assistant,
       abort: controller.signal,
       turn: recorded.turn,
     })
@@ -425,6 +426,12 @@ describe("processor fullStream consumption probe", () => {
 
     expect(recorded.events.some((event) => event.type === "tool.call.started")).toBe(false)
     expect(recorded.events.some((event) => event.type === "tool.call.failed")).toBe(false)
+    expect(assistant.error).toMatchObject({
+      name: "MessageAbortedError",
+      data: {
+        message: "Prompt cancellation requested.",
+      },
+    })
     const cancelled = recorded.events.find((event) => event.type === "tool.call.cancelled")
     expect(cancelled?.payload.part).toMatchObject({
       type: "tool",

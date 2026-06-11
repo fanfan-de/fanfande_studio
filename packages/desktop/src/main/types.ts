@@ -524,6 +524,7 @@ export interface AgentSessionTurnRequestInput {
   parentMessageID?: string | null
   attachments?: AgentSessionComposerAttachmentInput[]
   questionAnswer?: AgentSessionQuestionAnswerInput
+  concurrentInputMode?: "queue" | "steer"
   reasoningEffort?: ReasoningEffort
   model?: {
     providerID: string

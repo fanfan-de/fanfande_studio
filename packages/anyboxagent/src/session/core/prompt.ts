@@ -46,6 +46,7 @@ const DANGLING_TOOL_CALL_ERROR =
 const MODEL_CALL_PATCH_MAX_PATCH_BYTES = 128 * 1024
 const MODEL_CALL_PATCH_MAX_FILES = 200
 const MODEL_CALL_PATCH_MAX_TOTAL_PATCH_BYTES = 512 * 1024
+const STEER_INPUT_CONSUMED_STATE_REASON = "Steer input consumed."
 
 // ---------------------------------------------------------------------------
 // 输入协议与运行态
@@ -72,6 +73,7 @@ export const PromptInput = z.object({
     system: z.string().optional(),
     displayText: z.string().optional(),
     skills: z.array(z.string()).optional(),
+    concurrentInputMode: z.enum(["queue", "steer"]).optional(),
     variant: z.string().optional(),
     reasoningEffort: Message.ReasoningEffort.optional(),
     parts: z.array(
@@ -408,6 +410,16 @@ function emitTurnCancelled(input: {
     })
 }
 
+function emitTurnCancellationRequested(input: {
+    turn: Orchestrator.TurnContext
+    detail?: string
+}) {
+    input.turn.emit("turn.state.changed", {
+        phase: "cancelled",
+        reason: input.detail ?? "Prompt cancellation requested.",
+    })
+}
+
 function emitQueuedTurnCancelled(input: {
     sessionID: string
     turnID: string
@@ -487,9 +499,8 @@ export function cancelSession(sessionID: string, options?: { cancelQueued?: bool
             phase: "cancelled",
             error: "Prompt cancellation requested.",
         })
-        emitTurnCancelled({
+        emitTurnCancellationRequested({
             turn,
-            reason: options?.reason ?? "user",
         })
     }
 
@@ -819,6 +830,11 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             turnDiffEndSnapshot = modelCallEndSnapshot ?? turnDiffEndSnapshot
 
             if (await SessionRunner.consumePendingSteer(sessionID, turn.turnID) > 0) {
+                turn.emit("turn.state.changed", {
+                    phase: "waiting_llm",
+                    reason: STEER_INPUT_CONSUMED_STATE_REASON,
+                    iteration,
+                })
                 log.info("continuing prompt loop after steer input", {
                     sessionID,
                     turnID: turn.turnID,
@@ -930,19 +946,12 @@ function createPromptExecutionHandle(input: PromptInput) {
         throw new Error(`Session '${input.sessionID}' was not found.`);
     }
 
-    const activeTurn = Orchestrator.activeTurn(input.sessionID)
-    if (activeTurn?.concurrentInputDisposition() === "interrupt") {
-        cancelSession(input.sessionID, {
-            cancelQueued: true,
-            reason: "user",
-        })
-    }
-
     return SessionRunner.enqueuePrompt({
         sessionID: input.sessionID,
         directory: session.directory,
         type: "prompt",
         execute: (runtime) => runPromptOperation(input, runtime),
+        allowSteer: input.concurrentInputMode === "steer",
         steer: ({ turn }) => recordSteerUserMessage(input, turn),
     })
 }

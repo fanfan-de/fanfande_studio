@@ -850,6 +850,12 @@ export interface DesktopAgentSessionCancelTurnResult {
   backendCancelError?: string
 }
 
+export interface DesktopAgentSessionAbortTurnResult {
+  clientTurnID: string
+  backendSessionID: string
+  localRequestAborted: boolean
+}
+
 export interface DesktopAgentSessionInterruptResult {
   backendSessionID: string
   clientTurnID?: string
@@ -1743,6 +1749,10 @@ export interface DesktopIpcContract {
     input: { clientTurnID: string; backendSessionID: string }
     output: DesktopAgentSessionCancelTurnResult
   }
+  "desktop:agent-session-abort-turn": {
+    input: { clientTurnID: string; backendSessionID: string }
+    output: DesktopAgentSessionAbortTurnResult
+  }
   "desktop:agent-session-interrupt": {
     input: { backendSessionID: string; clientTurnID?: string; reason?: "user-interrupt" }
     output: DesktopAgentSessionInterruptResult
@@ -1791,6 +1801,7 @@ export interface DesktopAgentSessionApi {
   sendTurn(input: DesktopIpcInput<"desktop:agent-session-send-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-send-turn">>
   resumeTurn(input: DesktopIpcInput<"desktop:agent-session-resume-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-resume-turn">>
   cancelTurn(input: DesktopIpcInput<"desktop:agent-session-cancel-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-cancel-turn">>
+  abortTurn?(input: DesktopIpcInput<"desktop:agent-session-abort-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-abort-turn">>
   interrupt(input: DesktopIpcInput<"desktop:agent-session-interrupt">): Promise<DesktopIpcOutput<"desktop:agent-session-interrupt">>
   answerQuestion(input: DesktopIpcInput<"desktop:agent-session-answer-question">): Promise<DesktopIpcOutput<"desktop:agent-session-answer-question">>
   subscribe(input: DesktopIpcInput<"desktop:agent-session-subscribe">): Promise<DesktopIpcOutput<"desktop:agent-session-subscribe">>

@@ -108,6 +108,27 @@ describe("server route refactor helpers", () => {
       }).success,
     ).toBe(true)
 
+    expect(
+      SessionUseCase.StreamSessionMessageBody.safeParse({
+        text: "queued note",
+        concurrentInputMode: "queue",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      SessionUseCase.StreamSessionMessageBody.safeParse({
+        text: "steer note",
+        concurrentInputMode: "steer",
+      }).success,
+    ).toBe(true)
+
+    expect(
+      SessionUseCase.StreamSessionMessageBody.safeParse({
+        text: "bad note",
+        concurrentInputMode: "interrupt",
+      }).success,
+    ).toBe(false)
+
     expect(SessionUseCase.StreamSessionMessageBody.safeParse({}).success).toBe(false)
   })
 

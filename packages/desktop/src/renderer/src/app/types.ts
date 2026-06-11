@@ -878,10 +878,11 @@ export interface UserTurn {
     freeformText?: string
   }
   diffSummary?: SessionDiffSummary
-  submissionMode?: "steer"
+  submissionMode?: "steer" | "queued"
   streamInsertion?: {
     assistantTurnID: string
     afterItemCount: number
+    status?: "pending" | "consumed"
   }
   timestamp: number
 }
@@ -1145,7 +1146,8 @@ export interface PendingAgentStream {
   backendSessionID?: string
   assistantTurnID: string
   backendTurnID?: string
-  requestedMode?: "new-turn" | "steer"
+  userTurnID?: string
+  requestedMode?: "new-turn" | "queue" | "steer"
   executionMode?: AgentSessionExecutionMode
   createdAssistantTurnID?: string
   cancelRequested?: boolean

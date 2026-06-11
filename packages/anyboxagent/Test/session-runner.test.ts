@@ -356,6 +356,7 @@ describe("session runner", () => {
       sessionID,
       directory,
       type: "prompt",
+      allowSteer: true,
       execute: async () => "second",
       steer: async ({ turn: activeTurn }) => {
         expect(activeTurn.turnID).toBe(turn.turnID)
@@ -374,6 +375,59 @@ describe("session runner", () => {
 
     await expect(first.promise).resolves.toBe("first")
     await expect(steer.promise).resolves.toBe("first")
+    await SessionRunner.waitForIdle(sessionID)
+  })
+
+  it("queues prompt input by default while the active turn is steerable", async () => {
+    const sessionID = testSessionID()
+    const directory = testDirectory()
+    const activeStarted = deferred()
+    const finishFirst = deferred()
+    const secondStarted = deferred()
+
+    const first = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      execute: async (runtime) => {
+        const turn = Orchestrator.startTurn({
+          sessionID,
+          turnID: runtime.turnID,
+          steerable: true,
+        })
+        activeStarted.resolve()
+        try {
+          await finishFirst.promise
+          return "first"
+        } finally {
+          Orchestrator.finishTurn(turn)
+        }
+      },
+    })
+
+    await activeStarted.promise
+
+    const second = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      execute: async () => {
+        secondStarted.resolve()
+        return "second"
+      },
+      steer: async () => {
+        throw new Error("must not steer without allowSteer")
+      },
+    })
+
+    expect(second.mode).toBe("queued")
+    expect(SessionRunner.info(sessionID)?.queueLength).toBe(1)
+
+    finishFirst.resolve()
+
+    await expect(first.promise).resolves.toBe("first")
+    await secondStarted.promise
+    await expect(second.promise).resolves.toBe("second")
     await SessionRunner.waitForIdle(sessionID)
   })
 
@@ -441,6 +495,7 @@ describe("session runner", () => {
       sessionID,
       directory,
       type: "prompt",
+      allowSteer: true,
       execute: async () => "steered",
       steer: async ({ turn: activeTurn }) => {
         expect(activeTurn.turnID).toBe(turn.turnID)
@@ -490,6 +545,7 @@ describe("session runner", () => {
       sessionID,
       directory,
       type: "prompt",
+      allowSteer: true,
       execute: async () => "second",
       steer: async () => {
         await allowSteerWrite.promise

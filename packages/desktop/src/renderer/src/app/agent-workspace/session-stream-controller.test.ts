@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest"
 import type { AssistantTurn, SessionTaskListView, Turn, UserTurn } from "../types"
 import {
+  applyExecutionModeToUserTurnPresentation,
   compactHighFrequencyDeltaStreamEvent,
   conversationTurnsAreEquivalent,
   isCompletedStreamEvent,
   isHighFrequencyDeltaStreamEvent,
   isLlmCompletedStreamEvent,
   isPermissionRequestStreamEvent,
+  isSteerInputConsumedStreamEvent,
   isTaskStateStreamEvent,
   isTerminalStreamEvent,
   mergeConversationTurnsFromHistory,
@@ -21,6 +23,7 @@ import {
   resolveStreamCursor,
   resolveStreamTurnID,
   shouldRefreshRuntimeDebugForStreamEvent,
+  STEER_INPUT_CONSUMED_STATE_REASON,
 } from "./session-stream-controller"
 
 function createUserTurn(id: string, text: string): UserTurn {
@@ -341,6 +344,29 @@ describe("session stream controller helpers", () => {
     })).toBe(true)
   })
 
+  it("detects steer consumption from runtime state events", () => {
+    expect(isSteerInputConsumedStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("turn.state.changed", {
+        phase: "waiting_llm",
+        reason: STEER_INPUT_CONSUMED_STATE_REASON,
+      }),
+    })).toBe(true)
+
+    expect(isSteerInputConsumedStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("turn.state.changed", {
+        phase: "waiting_llm",
+        reason: "Waiting for model stream",
+      }),
+    })).toBe(false)
+
+    expect(isSteerInputConsumedStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("llm.call.started"),
+    })).toBe(false)
+  })
+
   it("routes execution mode metadata", () => {
     expect(resolveExecutionModeRoute({
       mode: "steer",
@@ -373,6 +399,80 @@ describe("session stream controller helpers", () => {
       assistantTurnID: "assistant-new",
       clearSteerUserTurn: false,
       createAssistantTurn: false,
+    })
+
+    expect(resolveExecutionModeRoute({
+      mode: "queued",
+      requestedMode: "queue",
+      currentAssistantTurnID: "assistant-queued-placeholder",
+      currentStreamingAssistantTurnID: "assistant-active",
+    })).toEqual({
+      assistantTurnID: "assistant-queued-placeholder",
+      clearSteerUserTurn: false,
+      createAssistantTurn: false,
+    })
+  })
+
+  it("applies backend execution mode to pending user turn presentation", () => {
+    const pendingUser: UserTurn = {
+      ...createUserTurn("user-pending", "Continue with this"),
+      submissionMode: "queued",
+    }
+    const assistant = createPendingToolAssistantTurn("assistant-active")
+
+    const nextTurnTurns = applyExecutionModeToUserTurnPresentation({
+      turns: [assistant, pendingUser],
+      userTurnID: pendingUser.id,
+      assistantTurnID: assistant.id,
+      mode: "new-turn",
+    })
+    expect(nextTurnTurns[1]).toMatchObject({
+      id: pendingUser.id,
+      kind: "user",
+      text: "Continue with this",
+    })
+    expect(nextTurnTurns[1]).not.toHaveProperty("submissionMode")
+    expect(nextTurnTurns[1]).not.toHaveProperty("streamInsertion")
+
+    const queuedTurns = applyExecutionModeToUserTurnPresentation({
+      turns: [
+        assistant,
+        {
+          ...pendingUser,
+          submissionMode: "steer",
+          streamInsertion: {
+            assistantTurnID: assistant.id,
+            afterItemCount: 1,
+            status: "pending",
+          },
+        },
+      ],
+      userTurnID: pendingUser.id,
+      assistantTurnID: assistant.id,
+      mode: "queued",
+    })
+    expect(queuedTurns[1]).toMatchObject({
+      id: pendingUser.id,
+      kind: "user",
+      submissionMode: "queued",
+    })
+    expect(queuedTurns[1]).not.toHaveProperty("streamInsertion")
+
+    const steerTurns = applyExecutionModeToUserTurnPresentation({
+      turns: [assistant, pendingUser],
+      userTurnID: pendingUser.id,
+      assistantTurnID: assistant.id,
+      mode: "steer",
+    })
+    expect(steerTurns[1]).toMatchObject({
+      id: pendingUser.id,
+      kind: "user",
+      submissionMode: "steer",
+      streamInsertion: {
+        assistantTurnID: assistant.id,
+        afterItemCount: assistant.items.length,
+        status: "pending",
+      },
     })
   })
 

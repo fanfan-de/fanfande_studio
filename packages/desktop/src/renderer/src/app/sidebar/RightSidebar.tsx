@@ -139,6 +139,7 @@ interface RightSidebarProps {
     selectedReasoningEffort?: ReasoningEffort | null
     selectedModel?: string | null
     selectedSkillIDs: string[]
+    steerQueuedTurnID?: string
     submissionMode?: UserTurn["submissionMode"]
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>

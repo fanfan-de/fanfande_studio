@@ -21,6 +21,24 @@ describe("shared contracts", () => {
 
   it("validates session stream request payloads", () => {
     expect(AgentRouteSchemas.sessions.streamMessage.body.safeParse({ text: "hello" }).success).toBe(true)
+    expect(
+      AgentRouteSchemas.sessions.streamMessage.body.safeParse({
+        text: "hello",
+        concurrentInputMode: "queue",
+      }).success,
+    ).toBe(true)
+    expect(
+      AgentRouteSchemas.sessions.streamMessage.body.safeParse({
+        text: "hello",
+        concurrentInputMode: "steer",
+      }).success,
+    ).toBe(true)
+    expect(
+      AgentRouteSchemas.sessions.streamMessage.body.safeParse({
+        text: "hello",
+        concurrentInputMode: "interrupt",
+      }).success,
+    ).toBe(false)
     expect(AgentRouteSchemas.sessions.streamMessage.body.safeParse({ attachments: [{ path: "/tmp/a.png" }] }).success).toBe(true)
     expect(AgentRouteSchemas.sessions.streamMessage.body.safeParse({}).success).toBe(false)
   })

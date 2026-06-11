@@ -87,6 +87,7 @@ type EnqueueOperationInput<T> = {
 }
 
 type EnqueuePromptInput<T> = EnqueueOperationInput<T> & {
+  allowSteer?: boolean
   steer?: (input: { turn: Orchestrator.TurnContext }) => Promise<void>
 }
 
@@ -207,6 +208,7 @@ class SessionRunner {
     if (
       this.statusValue === "running" &&
       this.active &&
+      input.allowSteer === true &&
       activeTurn?.turnID === this.active.turnID &&
       activeTurn.canAcceptSteer() &&
       input.steer

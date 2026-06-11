@@ -532,7 +532,7 @@ describe("Composer", () => {
     expect(onSend).not.toHaveBeenCalled()
   })
 
-  it("switches the send button to guidance while sending when the draft has text", () => {
+  it("shows queue and stop controls while sending when the draft has text", () => {
     const onCancelSend = vi.fn()
     const onSend = vi.fn()
 
@@ -543,17 +543,18 @@ describe("Composer", () => {
       onSend,
     })
 
-    const sendButton = screen.getByRole("button", { name: "Send guidance" })
+    const sendButton = screen.getByRole("button", { name: "Queue message" })
+    const stopButton = screen.getByRole("button", { name: "Stop task" })
 
     expect(sendButton).toBeEnabled()
-    expect(screen.queryByRole("button", { name: "Stop task" })).not.toBeInTheDocument()
+    expect(stopButton).toBeEnabled()
 
     fireEvent.click(sendButton)
     expect(onSend).toHaveBeenCalledTimes(1)
     expect(onCancelSend).not.toHaveBeenCalled()
   })
 
-  it("switches from stop to guidance after text is typed during a running task", async () => {
+  it("switches from stop-only to queue after text is typed during a running task", async () => {
     const onCancelSend = vi.fn()
     const onSend = vi.fn()
     const { container } = renderComposer({
@@ -574,7 +575,7 @@ describe("Composer", () => {
       }),
     )
 
-    const sendButton = await screen.findByRole("button", { name: "Send guidance" })
+    const sendButton = await screen.findByRole("button", { name: "Queue message" })
     expect(sendButton).toBeEnabled()
 
     fireEvent.click(sendButton)
@@ -582,7 +583,7 @@ describe("Composer", () => {
     expect(onCancelSend).not.toHaveBeenCalled()
   })
 
-  it("keeps the stop button while sending with attachments but no draft text", () => {
+  it("shows queue and stop while sending with attachments but no draft text", () => {
     const onCancelSend = vi.fn()
     const onSend = vi.fn()
 
@@ -594,10 +595,12 @@ describe("Composer", () => {
       onSend,
     })
 
-    const button = screen.getByRole("button", { name: "Stop task" })
+    const sendButton = screen.getByRole("button", { name: "Queue message" })
+    const stopButton = screen.getByRole("button", { name: "Stop task" })
 
-    expect(button).toBeEnabled()
-    fireEvent.click(button)
+    expect(sendButton).toBeEnabled()
+    expect(stopButton).toBeEnabled()
+    fireEvent.click(stopButton)
     expect(onCancelSend).toHaveBeenCalledTimes(1)
     expect(onSend).not.toHaveBeenCalled()
   })
@@ -619,7 +622,7 @@ describe("Composer", () => {
     expect(onSend).not.toHaveBeenCalled()
   })
 
-  it("uses Enter to submit guidance while sending with draft text", () => {
+  it("uses Enter to queue while sending with draft text", () => {
     const onCancelSend = vi.fn()
     const onSend = vi.fn()
     const { container } = renderComposer({

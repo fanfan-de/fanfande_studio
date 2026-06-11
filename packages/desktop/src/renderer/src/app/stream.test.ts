@@ -1866,6 +1866,76 @@ describe("stream trace reducer", () => {
     )
   })
 
+  it("restores cancelled assistant turns as cancelled even when an abort error was persisted", () => {
+    const turns = buildTurnsFromHistory([
+      {
+        info: {
+          id: "assistant-cancelled-with-error",
+          sessionID: "session-runtime",
+          role: "assistant",
+          created: 100,
+          completed: 110,
+          error: {
+            name: "UnknownError",
+            data: {
+              message: "Prompt aborted",
+            },
+          },
+        },
+        parts: [
+          {
+            id: "tool-part",
+            type: "tool",
+            tool: "apply_patch",
+            callID: "tool-call",
+            state: {
+              status: "pending",
+              raw: "{}",
+            },
+          },
+        ],
+        turn: {
+          id: "turn-cancelled-with-error",
+          sessionID: "session-runtime",
+          projectID: "project-1",
+          status: "cancelled",
+          phase: "cancelled",
+          lastMessageID: "assistant-cancelled-with-error",
+          error: "Prompt aborted",
+          createdAt: 100,
+          updatedAt: 110,
+          completedAt: 110,
+        },
+      },
+    ])
+
+    expect(turns).toHaveLength(1)
+    const turn = turns[0]
+    expect(turn).toMatchObject({
+      kind: "assistant",
+      state: "Backend stream cancelled",
+      runtime: {
+        phase: "cancelled",
+      },
+      isStreaming: false,
+    })
+    expect(turn?.kind === "assistant" ? turn.items : []).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "tool",
+          title: "apply_patch",
+          status: "cancelled",
+          isStreaming: false,
+        }),
+        expect.objectContaining({
+          kind: "system",
+          title: "Turn cancelled",
+        }),
+      ]),
+    )
+    expect(turn?.kind === "assistant" ? turn.items.some((item) => item.kind === "error") : true).toBe(false)
+  })
+
   it("keeps streamed reasoning visible when a sparse completion event is followed by tool input", () => {
     let turn = buildStreamingAssistantTurn("Inspect live reasoning before tools")
 
