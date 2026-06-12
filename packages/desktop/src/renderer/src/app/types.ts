@@ -560,7 +560,7 @@ export interface WorkspaceFileReviewState {
   pendingComment: WorkspaceFilePendingComment | null
 }
 
-export type RightSidebarTabKind = "files" | "browser" | "review" | "terminal" | "side-chat" | "message-tree"
+export type RightSidebarTabKind = "files" | "browser" | "review" | "terminal" | "side-chat" | "message-tree" | "session-thread"
 
 interface RightSidebarBaseTab {
   id: string
@@ -606,6 +606,11 @@ export interface RightSidebarMessageTreeTab extends RightSidebarBaseTab {
   sessionID: string
 }
 
+export interface RightSidebarSessionThreadTab extends RightSidebarBaseTab {
+  kind: "session-thread"
+  sessionID: string
+}
+
 export type RightSidebarTab =
   | RightSidebarFilesTab
   | RightSidebarBrowserTab
@@ -613,6 +618,7 @@ export type RightSidebarTab =
   | RightSidebarTerminalTab
   | RightSidebarSideChatTab
   | RightSidebarMessageTreeTab
+  | RightSidebarSessionThreadTab
 
 export interface RightSidebarState {
   tabs: RightSidebarTab[]
@@ -658,6 +664,12 @@ export type RightSidebarOpenTabInput =
     }
   | {
       kind: "message-tree"
+      sessionID: string
+      targetKey?: string
+      title?: string
+    }
+  | {
+      kind: "session-thread"
       sessionID: string
       targetKey?: string
       title?: string

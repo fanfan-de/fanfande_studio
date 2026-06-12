@@ -447,6 +447,10 @@ export function isTaskStateStreamEvent(streamEvent: { event: string; data: unkno
   return readString(metadata?.kind) === "task-state"
 }
 
+export function isSubagentCreatedStreamEvent(streamEvent: { event: string; data: unknown }) {
+  return readRuntimeStreamType(streamEvent) === "subagent.created"
+}
+
 function readSessionTaskListView(value: unknown): SessionTaskListView | null {
   const state = readRecord(value)
   const summary = readRecord(state?.summary)
@@ -1394,6 +1398,28 @@ export function useSessionStreamController({
     ))
   }
 
+  function refreshSessionTasksForStreamEvent(input: {
+    sessionID: string
+    backendSessionID?: string
+    streamEvent: { event: string; data: unknown }
+    errorPrefix: string
+  }) {
+    const isTaskStateEvent = isTaskStateStreamEvent(input.streamEvent)
+    if (!isTaskStateEvent && !isSubagentCreatedStreamEvent(input.streamEvent)) return
+
+    refreshWorkspaceForSession(input.sessionID)
+    if (isTaskStateEvent) {
+      applySessionTasksSnapshot(input.sessionID, readSessionTaskListViewFromStreamEvent(input.streamEvent))
+    }
+    void loadSessionTasksForSession(input.sessionID, input.backendSessionID ?? resolveBackendSessionID(input.sessionID), {
+      force: true,
+      mode: "silent",
+      reason: "stream",
+    }).catch((error) => {
+      console.error(input.errorPrefix, error)
+    })
+  }
+
   useEffect(() => {
     if (isRuntimeDebugEnabled) return
     for (const sessionID of Object.keys(runtimeDebugRefreshTimerRef.current)) {
@@ -2261,17 +2287,12 @@ export function useSessionStreamController({
       })
     }
 
-    if (isTaskStateStreamEvent(streamEvent)) {
-      refreshWorkspaceForSession(target.sessionID)
-      applySessionTasksSnapshot(target.sessionID, readSessionTaskListViewFromStreamEvent(streamEvent))
-      void loadSessionTasksForSession(target.sessionID, target.backendSessionID ?? resolveBackendSessionID(target.sessionID), {
-        force: true,
-        mode: "silent",
-        reason: "stream",
-      }).catch((error) => {
-        console.error("[desktop] stream task refresh failed:", error)
-      })
-    }
+    refreshSessionTasksForStreamEvent({
+      sessionID: target.sessionID,
+      backendSessionID: target.backendSessionID,
+      streamEvent,
+      errorPrefix: "[desktop] stream task refresh failed:",
+    })
 
     if (shouldRefreshRuntimeDebugForStreamEvent(streamEvent)) {
       scheduleRuntimeDebugRefresh(
@@ -2399,17 +2420,12 @@ export function useSessionStreamController({
       })
     }
 
-    if (isTaskStateStreamEvent(streamEvent)) {
-      refreshWorkspaceForSession(uiSessionID)
-      applySessionTasksSnapshot(uiSessionID, readSessionTaskListViewFromStreamEvent(streamEvent))
-      void loadSessionTasksForSession(uiSessionID, streamEvent.sessionID, {
-        force: true,
-        mode: "silent",
-        reason: "stream",
-      }).catch((error) => {
-        console.error("[desktop] session stream task refresh failed:", error)
-      })
-    }
+    refreshSessionTasksForStreamEvent({
+      sessionID: uiSessionID,
+      backendSessionID: streamEvent.sessionID,
+      streamEvent,
+      errorPrefix: "[desktop] session stream task refresh failed:",
+    })
 
     if (shouldRefreshRuntimeDebugForStreamEvent(streamEvent)) {
       scheduleRuntimeDebugRefresh(uiSessionID, streamEvent.sessionID)

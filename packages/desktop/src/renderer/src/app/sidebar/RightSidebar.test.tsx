@@ -4,6 +4,7 @@ import {
   DEFAULT_ASSISTANT_TRACE_VISIBILITY,
   type RightSidebarState,
   type RightSidebarTab,
+  type Turn,
   type WorkspaceGroup,
 } from "../types"
 import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE, DEFAULT_WORKSPACE_PREVIEW_STATE } from "../agent-workspace/review-preview-state"
@@ -73,6 +74,17 @@ function createMessageTreeTab(): RightSidebarTab {
     targetKey: "message-tree:session-1",
     createdAt: 3,
     sessionID: "session-1",
+  }
+}
+
+function createSessionThreadTab(): RightSidebarTab {
+  return {
+    id: "session-thread-tab",
+    kind: "session-thread",
+    title: "Child subagent",
+    targetKey: "session-thread:child-session",
+    createdAt: 4,
+    sessionID: "child-session",
   }
 }
 
@@ -309,6 +321,7 @@ function renderRightSidebar(input: {
   canOpenTerminal?: boolean
   messageTreeBySession?: Record<string, SessionMessageTree>
   rightSidebar: RightSidebarState
+  sessionThreadPanelState?: Parameters<typeof RightSidebar>[0]["sessionThreadPanelState"]
   workspaces?: WorkspaceGroup[]
   onActivateTab?: (tabID: string) => void
   onCloseTab?: (tabID: string) => void
@@ -341,6 +354,7 @@ function renderRightSidebar(input: {
         sessionDiffStateBySession={{}}
         messageTreeBySession={input.messageTreeBySession ?? {}}
         sideChatPanelState={null}
+        sessionThreadPanelState={input.sessionThreadPanelState ?? null}
         workspaces={input.workspaces ?? [workspace]}
         onActivateTab={input.onActivateTab ?? vi.fn()}
         onCloseTab={input.onCloseTab ?? vi.fn()}
@@ -452,6 +466,60 @@ describe("RightSidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open right sidebar launcher" }))
     expect(screen.getByRole("button", { name: /^Review/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /^Tree/ })).toBeInTheDocument()
+  })
+
+  it("renders session thread tabs as read-only thread views", () => {
+    const childSession: WorkspaceGroup["sessions"][number] = {
+      id: "child-session",
+      title: "Child subagent",
+      branch: "main",
+      focus: "Subagent",
+      summary: "",
+      status: "Ready",
+      subagent: {
+        taskID: "task-child",
+        parentSessionID: "session-1",
+        parentMessageID: "msg-parent",
+        agent: "default",
+        status: "completed",
+        active: false,
+        updatedAt: 2,
+      },
+      updated: 2,
+    }
+    const childTurns: Turn[] = [
+      {
+        id: "user-1",
+        kind: "user",
+        text: "Subagent prompt",
+        timestamp: 1,
+      },
+    ]
+
+    renderRightSidebar({
+      rightSidebar: {
+        activeTabID: "session-thread-tab",
+        tabs: [createSessionThreadTab()],
+      },
+      sessionThreadPanelState: {
+        activeProjectID: "project-1",
+        activeTabID: "session-thread-tab",
+        messageTree: null,
+        session: childSession,
+        turns: childTurns,
+      },
+      workspaces: [
+        {
+          ...workspace,
+          sessions: [...workspace.sessions, childSession],
+        },
+      ],
+    })
+
+    expect(screen.getByRole("tab", { name: /Child subagent/ })).toBeInTheDocument()
+    expect(screen.getByText("Subagent prompt")).toBeInTheDocument()
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^Send$/i })).not.toBeInTheDocument()
   })
 
   it("renders message tree tabs and selects non-active nodes", () => {

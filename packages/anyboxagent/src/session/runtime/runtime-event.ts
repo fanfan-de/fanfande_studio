@@ -156,6 +156,15 @@ const TaskStateUpdatedPayload = z.object({
   state: Task.SessionTaskListView,
 })
 
+const SubagentCreatedPayload = z.object({
+  taskID: Identifier.schema("task"),
+  childSessionID: Identifier.schema("session"),
+  title: z.string(),
+  agent: z.string(),
+  status: z.enum(["running", "completed", "blocked", "stopped", "failed", "cancelled"]),
+  updatedAt: z.number().int().nonnegative(),
+})
+
 export const TurnRuntimePhase = z.enum([
   "preparing",
   "waiting_llm",
@@ -382,6 +391,11 @@ export const TaskStateUpdatedEvent = RuntimeEventBase.extend({
   payload: TaskStateUpdatedPayload,
 })
 
+export const SubagentCreatedEvent = RuntimeEventBase.extend({
+  type: z.literal("subagent.created"),
+  payload: SubagentCreatedPayload,
+})
+
 export const TurnStateChangedEvent = RuntimeEventBase.extend({
   type: z.literal("turn.state.changed"),
   payload: TurnStateChangedPayload,
@@ -443,6 +457,7 @@ export const RuntimeEvent = z.discriminatedUnion("type", [
   SnapshotCapturedEvent,
   RetryScheduledEvent,
   TaskStateUpdatedEvent,
+  SubagentCreatedEvent,
 ])
 
 export type RuntimeEvent = z.infer<typeof RuntimeEvent>
@@ -494,6 +509,7 @@ export type RuntimeEventPayloadByType = {
   "snapshot.captured": z.infer<typeof SnapshotCapturedPayload>
   "retry.scheduled": z.infer<typeof RetryScheduledPayload>
   "task.state.updated": z.infer<typeof TaskStateUpdatedPayload>
+  "subagent.created": z.infer<typeof SubagentCreatedPayload>
 }
 
 export function createRuntimeEventFactory(input: {

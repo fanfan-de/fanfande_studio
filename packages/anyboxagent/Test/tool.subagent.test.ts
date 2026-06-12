@@ -89,6 +89,141 @@ async function waitFor(
 }
 
 describe("subagent tools", () => {
+  it("parses subagent.created runtime events", async () => {
+    const Identifier = await import("#id/id.ts")
+    const RuntimeEvent = await import("#session/runtime/runtime-event.ts")
+    const sessionID = Identifier.ascending("session")
+    const childSessionID = Identifier.ascending("session")
+    const taskID = Identifier.ascending("task")
+    const event = RuntimeEvent.createRuntimeEventFactory({
+      sessionID,
+      turnID: "trn_subagent_created",
+      timestamp: () => 123,
+    }).next("subagent.created", {
+      taskID,
+      childSessionID,
+      title: "Inspect docs",
+      agent: "default",
+      status: "running",
+      updatedAt: 123,
+    })
+
+    expect(event).toMatchObject({
+      sessionID,
+      type: "subagent.created",
+      payload: {
+        taskID,
+        childSessionID,
+        title: "Inspect docs",
+        agent: "default",
+        status: "running",
+        updatedAt: 123,
+      },
+    })
+  })
+
+  it("runs the start hook after storing a foreground subagent and before it completes", async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    streamHandler = async () => ({
+      fullStream: (async function* () {
+        yield { type: "start" }
+        await gate
+        yield { type: "text-start" }
+        yield { type: "text-delta", text: "foreground done" }
+        yield { type: "text-end" }
+        yield { type: "finish", finishReason: "stop" }
+      })(),
+    })
+
+    const Identifier = await import("#id/id.ts")
+    const Session = await import("#session/core/session.ts")
+    const Subtask = await import("#session/tasks/subtask.ts")
+
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        const parent = await Session.createSession({
+          directory: Instance.directory,
+          projectID: Instance.project.id,
+          title: "parent-hook",
+        })
+        let started: Awaited<ReturnType<typeof Subtask.startSubtask>> | undefined
+        let resolved = false
+        const promise = Subtask.startSubtask({
+          parentSessionID: parent.id,
+          parentMessageID: Identifier.ascending("message"),
+          prompt: "Run a foreground task.",
+          agent: "default",
+        }, {
+          onStarted: (subtask) => {
+            started = subtask
+          },
+        })
+        void promise.then(() => {
+          resolved = true
+        })
+
+        await waitFor(() => Boolean(started))
+        expect(resolved).toBe(false)
+        expect(started?.status).toBe("running")
+        expect(Subtask.readSubtask(started!.id)?.childSessionID).toBe(started?.childSessionID)
+
+        release()
+        const completed = await promise
+        expect(completed.status).toBe("completed")
+        expect(completed.summary).toBe("foreground done")
+      },
+    })
+  })
+
+  it("keeps subtask creation when the start hook fails", async () => {
+    streamHandler = async () => ({
+      fullStream: (async function* () {
+        yield { type: "start" }
+        yield { type: "text-start" }
+        yield { type: "text-delta", text: "hook failure still runs" }
+        yield { type: "text-end" }
+        yield { type: "finish", finishReason: "stop" }
+      })(),
+    })
+
+    const Identifier = await import("#id/id.ts")
+    const Session = await import("#session/core/session.ts")
+    const Subtask = await import("#session/tasks/subtask.ts")
+
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        const parent = await Session.createSession({
+          directory: Instance.directory,
+          projectID: Instance.project.id,
+          title: "parent-hook-failure",
+        })
+        let hookCalls = 0
+
+        const result = await Subtask.startSubtask({
+          parentSessionID: parent.id,
+          parentMessageID: Identifier.ascending("message"),
+          prompt: "Run despite a hook failure.",
+          agent: "default",
+        }, {
+          onStarted: () => {
+            hookCalls += 1
+            throw new Error("hook exploded")
+          },
+        })
+
+        expect(hookCalls).toBe(1)
+        expect(result.status).toBe("completed")
+        expect(result.summary).toBe("hook failure still runs")
+        expect(Subtask.readSubtask(result.id)?.childSessionID).toBe(result.childSessionID)
+      },
+    })
+  })
+
   it("runs a child session synchronously and returns the final summary", async () => {
     streamHandler = async () => ({
       fullStream: (async function* () {

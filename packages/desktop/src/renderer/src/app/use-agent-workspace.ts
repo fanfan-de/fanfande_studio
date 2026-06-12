@@ -1010,6 +1010,7 @@ export function useAgentWorkspace({
     createSessionWorkspaceID,
     deletingSessionID,
     draftState,
+    ensureSessionHistoryLoaded,
     expandedFolderIDs,
     handleCanvasSessionTabClose: handleCanvasSessionTabCloseWithScrollCleanup,
     handleCanvasSessionTabSelect,

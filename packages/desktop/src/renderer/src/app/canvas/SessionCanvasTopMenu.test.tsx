@@ -41,7 +41,10 @@ function createTask(
   }
 }
 
-function createTaskList(tasks: SessionTaskSummary[]): SessionTaskListView {
+function createTaskList(
+  tasks: SessionTaskSummary[],
+  teammateActivity: SessionTaskListView["teammateActivity"] = [],
+): SessionTaskListView {
   const completed = tasks.filter((task) => task.status === "completed").length
   const inProgress = tasks.filter((task) => task.status === "in_progress").length
   const pending = tasks.filter((task) => task.status === "pending").length
@@ -55,7 +58,7 @@ function createTaskList(tasks: SessionTaskSummary[]): SessionTaskListView {
     next: tasks.filter((task) => task.status === "pending" && !task.isBlocked),
     blocked: tasks.filter((task) => task.isBlocked),
     owners: [],
-    teammateActivity: [],
+    teammateActivity,
     summary: {
       total: tasks.length,
       completed,
@@ -532,6 +535,33 @@ describe("SessionCanvasTopMenu task progress", () => {
 
     expect(within(menu).getByText("Task data not loaded")).toBeInTheDocument()
     expect(within(menu).getByText("Task progress will appear here once the session reports it.")).toBeInTheDocument()
+  })
+
+  it("opens child subagent sessions from the information panel", () => {
+    const onOpenSubagentSession = vi.fn()
+    renderTopMenu({
+      onOpenSubagentSession,
+      sessionTasks: createTaskList([], [
+        {
+          id: "subagent-1",
+          owner: "codex",
+          title: "Write intro doc",
+          status: "running",
+          active: true,
+          childSessionID: "child-session",
+          updatedAt: 2,
+        },
+      ]),
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Session information: no tasks" }))
+
+    const menu = screen.getByRole("dialog", { name: "Session information" })
+    expect(within(menu).getByText("子 Agent")).toBeInTheDocument()
+
+    fireEvent.click(within(menu).getByRole("button", { name: "打开子 Agent: Write intro doc" }))
+
+    expect(onOpenSubagentSession).toHaveBeenCalledWith("child-session", "Write intro doc")
   })
 
   it("hides the task trigger without an active session", () => {

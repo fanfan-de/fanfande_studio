@@ -12,6 +12,7 @@ import {
   isPermissionRequestStreamEvent,
   isSteerHandoffBoundaryStreamEvent,
   isSteerInputConsumedStreamEvent,
+  isSubagentCreatedStreamEvent,
   isTaskStateStreamEvent,
   isTerminalStreamEvent,
   mergeConversationTurnsFromHistory,
@@ -347,6 +348,29 @@ describe("session stream controller helpers", () => {
         },
       },
     })).toBe(true)
+    expect(isSubagentCreatedStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("subagent.created", {
+        taskID: "task-subagent-1",
+        childSessionID: "ses_child_1",
+        title: "Inspect docs",
+        agent: "default",
+        status: "running",
+        updatedAt: 123,
+      }),
+    })).toBe(true)
+    expect(isSubagentCreatedStreamEvent({
+      event: "part",
+      data: {
+        part: {
+          type: "tool",
+          tool: "spawn_subagent",
+          state: {
+            status: "completed",
+          },
+        },
+      },
+    })).toBe(false)
   })
 
   it("detects steer consumption from runtime state events", () => {

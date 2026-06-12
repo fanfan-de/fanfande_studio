@@ -305,7 +305,7 @@ describe("Sidebar", () => {
     expect(screen.queryByRole("button", { name: "Three Unread" })).not.toBeInTheDocument()
   })
 
-  it("nests subagent sessions under the parent session", () => {
+  it("hides subagent sessions from the left sidebar tree", () => {
     const onSessionSelect = vi.fn()
     const parent = createSession("parent-session", "Parent session")
     const child = {
@@ -338,16 +338,8 @@ describe("Sidebar", () => {
     expect(topLevelNodes).toHaveLength(2)
     expect(within(topLevelNodes[0] as HTMLElement).getByRole("button", { name: "Parent session" })).toBeInTheDocument()
     expect(within(topLevelNodes[1] as HTMLElement).getByRole("button", { name: "Sibling session" })).toBeInTheDocument()
-
-    const firstTopLevelShell = topLevelNodes[0]?.firstElementChild as HTMLElement
-    expect(within(firstTopLevelShell).queryByRole("button", { name: "Child subagent" })).not.toBeInTheDocument()
-
-    const childContainer = topLevelNodes[0]?.querySelector(".session-tree-children") as HTMLElement
-    const childButton = within(childContainer).getByRole("button", { name: "Child subagent" })
-    expect(childButton).toHaveClass("is-subagent")
-
-    fireEvent.click(childButton)
-    expect(onSessionSelect).toHaveBeenCalledWith("workspace-1", "child-session")
+    expect(screen.queryByRole("button", { name: "Child subagent" })).not.toBeInTheDocument()
+    expect(onSessionSelect).not.toHaveBeenCalled()
   })
 
   it("shows the project root path inline with the folder name", () => {

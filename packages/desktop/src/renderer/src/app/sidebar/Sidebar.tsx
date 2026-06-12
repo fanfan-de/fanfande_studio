@@ -274,7 +274,7 @@ interface WorkspaceSessionTreeNode {
 }
 
 function buildWorkspaceSessionTree(sessions: SessionSummary[]): WorkspaceSessionTreeNode[] {
-  const primarySessions = sessions.filter((session) => !isSideChatSession(session))
+  const primarySessions = sessions.filter((session) => !isSideChatSession(session) && !session.subagent)
   const sessionsByID = new Map(primarySessions.map((session) => [session.id, session]))
   const childrenByParentID = new Map<string, SessionSummary[]>()
   const attachedChildIDs = new Set<string>()

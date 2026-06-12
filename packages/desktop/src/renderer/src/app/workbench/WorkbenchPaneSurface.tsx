@@ -95,6 +95,7 @@ export interface WorkbenchPaneSurfaceProps {
   onCreateSideChatTab: (anchorMessageID: string, options?: { paneID?: string | null; parentSessionID?: string | null; placement?: "inline" | "right-sidebar" }) => Promise<void>
   onDeleteSideChatTab: (sessionID: string) => Promise<void>
   onOpenSideChat: (anchorMessageID: string, options?: { paneID?: string | null; parentSessionID?: string | null; placement?: "inline" | "right-sidebar" }) => Promise<void>
+  onOpenSubagentSession?: (sessionID: string, title?: string) => void | Promise<void>
   onBranchSelect: (input: { messageID: string; sessionID?: string | null }) => Promise<void>
   onClearComposerParentMessage: (input?: { tabKey?: string | null }) => void
   onForkFromMessage: (messageID: string, options?: { tabKey?: string | null }) => void
@@ -217,6 +218,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
   onCreateSideChatTab,
   onDeleteSideChatTab,
   onOpenSideChat,
+  onOpenSubagentSession,
   onBranchSelect,
   onClearComposerParentMessage,
   onForkFromMessage,
@@ -358,6 +360,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
               toolPermissionModeError={toolPermissionModeError}
               onToolPermissionModeChange={onToolPermissionModeChange}
               onOpenReview={() => onTurnDiffReview([], pane.sessionID, pane.id)}
+              onOpenSubagentSession={onOpenSubagentSession}
               skillOptions={composer.skillOptions}
               selectedSkillIDs={composer.selectedSkillIDs}
               selectedSkillLabel={composer.selectedSkillLabel}

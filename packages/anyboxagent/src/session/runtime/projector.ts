@@ -57,6 +57,7 @@ export function project(event: RuntimeEvent.RuntimeEvent) {
     case "llm.call.failed":
     case "turn.error.context":
     case "retry.scheduled":
+    case "subagent.created":
       return
     case "task.state.updated":
       Task.replaceTasksFromState({

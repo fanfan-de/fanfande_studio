@@ -93,6 +93,9 @@ export const StartSubtaskInput = z.object({
   skills: z.array(z.string()).optional(),
 })
 export type StartSubtaskInput = z.infer<typeof StartSubtaskInput>
+export type StartSubtaskOptions = {
+  onStarted?: (subtask: SubtaskView) => PromiseLike<void> | void
+}
 
 let subtaskTablesGeneration = -1
 
@@ -623,7 +626,10 @@ async function runSubtaskLifecycle(input: {
   return finalized ? toView(finalized) : null
 }
 
-export async function startSubtask(input: StartSubtaskInput): Promise<SubtaskView> {
+export async function startSubtask(
+  input: StartSubtaskInput,
+  options: StartSubtaskOptions = {},
+): Promise<SubtaskView> {
   const parentSession = Session.DataBaseRead("sessions", input.parentSessionID) as Session.SessionInfo | null
   if (!parentSession) {
     throw new Error(`Parent session '${input.parentSessionID}' was not found.`)
@@ -673,6 +679,22 @@ export async function startSubtask(input: StartSubtaskInput): Promise<SubtaskVie
     updatedAt: now,
   })
   insertSubtask(record)
+  const started = toView(record)
+  if (options.onStarted) {
+    try {
+      await options.onStarted(started)
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : String(error)
+      log.warn("subtask started hook failed", {
+        id: record.id,
+        childSessionID: record.childSessionID,
+        error: message,
+      })
+    }
+  }
 
   const promptInput = {
     sessionID: childSession.id,
@@ -694,7 +716,7 @@ export async function startSubtask(input: StartSubtaskInput): Promise<SubtaskVie
       directory: parentSession.directory,
       promptInput,
     })
-    return toView(record)
+    return started
   }
 
   const completed = await runSubtaskLifecycle({
@@ -703,7 +725,7 @@ export async function startSubtask(input: StartSubtaskInput): Promise<SubtaskVie
     promptInput,
   })
 
-  return completed ?? toView(record)
+  return completed ?? started
 }
 
 export function readSubtask(id: string): SubtaskView | null {

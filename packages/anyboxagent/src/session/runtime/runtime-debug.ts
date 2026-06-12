@@ -667,6 +667,21 @@ function summarizeRuntimeEvent(event: RuntimeEvent.RuntimeEvent): RuntimeEventSu
           blocked: event.payload.state.summary.blocked,
         },
       }
+    case "subagent.created":
+      return {
+        ...base,
+        title: "Subagent created",
+        detail: `${event.payload.title} (${event.payload.agent})`,
+        tone: "info",
+        summary: {
+          taskID: event.payload.taskID,
+          childSessionID: event.payload.childSessionID,
+          title: event.payload.title,
+          agent: event.payload.agent,
+          status: event.payload.status,
+          updatedAt: event.payload.updatedAt,
+        },
+      }
     case "turn.completed":
       return {
         ...base,

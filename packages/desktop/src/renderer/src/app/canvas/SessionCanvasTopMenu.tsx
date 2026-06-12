@@ -10,6 +10,7 @@ import type {
   PermissionRequest,
   SessionTaskListView,
   SessionTaskSummary,
+  SessionTaskTeammateActivity,
   SessionSummary,
   ToolPermissionMode,
 } from "../types"
@@ -59,6 +60,7 @@ interface SessionCanvasTopMenuProps {
   toolPermissionModeError: string | null
   onToolPermissionModeChange: (mode: ToolPermissionMode) => void | Promise<void>
   onOpenReview?: (() => void | Promise<void>) | null
+  onOpenSubagentSession?: (sessionID: string, title?: string) => void | Promise<void>
   skillOptions: ComposerSkillOption[]
   selectedSkillIDs: string[]
   selectedSkillLabel: string
@@ -507,6 +509,46 @@ function TaskStatusIcon({ task }: { task: SessionTaskSummary }) {
   return <span className="task-progress-menu-pending-dot" aria-hidden="true" />
 }
 
+function getSubagentDisplayText(activity: SessionTaskTeammateActivity) {
+  return activity.title.trim() || activity.owner.trim() || "Sub Agent"
+}
+
+function getSubagentStatusLabel(activity: SessionTaskTeammateActivity) {
+  if (activity.active) return "Running"
+
+  switch (activity.status) {
+    case "completed":
+      return "Completed"
+    case "failed":
+      return "Failed"
+    case "cancelled":
+      return "Cancelled"
+    case "blocked":
+      return "Blocked"
+    case "stopped":
+      return "Stopped"
+    default:
+      return activity.status.trim() || "Pending"
+  }
+}
+
+function getSubagentStatusClassName(activity: SessionTaskTeammateActivity) {
+  if (activity.active || activity.status === "running") return "is-running"
+  if (activity.status === "completed") return "is-completed"
+  if (activity.status === "blocked" || activity.status === "failed") return "is-blocked"
+  return "is-pending"
+}
+
+function SubagentStatusIcon({ activity }: { activity: SessionTaskTeammateActivity }) {
+  if (activity.active || activity.status === "running") {
+    return <SessionRunningIcon />
+  }
+  if (activity.status === "completed") {
+    return <CheckIcon />
+  }
+  return <span className="task-progress-menu-pending-dot" aria-hidden="true" />
+}
+
 function sessionInfoPanelCanAutoOpen(button: HTMLButtonElement | null) {
   if (!button) return false
 
@@ -523,7 +565,15 @@ function sessionInfoPanelCanAutoOpen(button: HTMLButtonElement | null) {
   return panelLeft >= threadRect.right + SESSION_INFO_PANEL_THREAD_MARGIN
 }
 
-function SessionInfoMenuButton({ sessionID, tasks }: { sessionID: string; tasks?: SessionTaskListView | null }) {
+function SessionInfoMenuButton({
+  onOpenSubagentSession,
+  sessionID,
+  tasks,
+}: {
+  onOpenSubagentSession?: (sessionID: string, title?: string) => void | Promise<void>
+  sessionID: string
+  tasks?: SessionTaskListView | null
+}) {
   const menuRef = useRef<HTMLDivElement | null>(null)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const lastSessionIDRef = useRef(sessionID)
@@ -587,9 +637,15 @@ function SessionInfoMenuButton({ sessionID, tasks }: { sessionID: string; tasks?
   }, [isMenuOpen])
 
   const hasTasks = Boolean(tasks && tasks.summary.total > 0)
+  const subagents = useMemo(
+    () => tasks?.teammateActivity.filter((activity) => Boolean(activity.childSessionID?.trim())) ?? [],
+    [tasks],
+  )
   const openCount = tasks ? tasks.summary.inProgress + tasks.summary.pending : 0
   const hasRunningTasks = Boolean(tasks && tasks.summary.inProgress > 0)
+  const hasSubagents = subagents.length > 0
   const [isProgressOpen, setIsProgressOpen] = useState(hasRunningTasks)
+  const [isSubagentsOpen, setIsSubagentsOpen] = useState(hasSubagents)
   const emptyTitle = tasks ? "No tasks yet" : "Task data not loaded"
   const emptyText = tasks
     ? "Tasks created by the agent will appear here."
@@ -598,6 +654,10 @@ function SessionInfoMenuButton({ sessionID, tasks }: { sessionID: string; tasks?
   useEffect(() => {
     setIsProgressOpen(hasRunningTasks)
   }, [hasRunningTasks, sessionID])
+
+  useEffect(() => {
+    setIsSubagentsOpen(hasSubagents)
+  }, [hasSubagents, sessionID])
 
   return (
     <div className="canvas-top-menu-quick-anchor canvas-top-menu-info-anchor">
@@ -659,6 +719,60 @@ function SessionInfoMenuButton({ sessionID, tasks }: { sessionID: string; tasks?
             )
           ) : null}
           <div className="task-progress-menu-divider" />
+          {hasSubagents ? (
+            <>
+              <button
+                type="button"
+                className="task-progress-menu-header"
+                aria-expanded={isSubagentsOpen}
+                aria-label={isSubagentsOpen ? "收起子 Agent" : "展开子 Agent"}
+                onClick={() => setIsSubagentsOpen((current) => !current)}
+              >
+                <span className="task-progress-menu-title-row">
+                  <span className="task-progress-menu-icon" aria-hidden="true">
+                    <SessionRunningIcon />
+                  </span>
+                  <span className="task-progress-menu-title">子 Agent</span>
+                </span>
+                <span className={isSubagentsOpen ? "task-progress-menu-chevron is-open" : "task-progress-menu-chevron"} aria-hidden="true">
+                  <ChevronDownIcon />
+                </span>
+              </button>
+
+              {isSubagentsOpen ? (
+                <ol className="task-progress-menu-list session-info-subagent-list">
+                  {subagents.map((activity) => {
+                    const childSessionID = activity.childSessionID?.trim() ?? ""
+                    const title = getSubagentDisplayText(activity)
+                    const statusLabel = getSubagentStatusLabel(activity)
+
+                    return (
+                      <li key={activity.id} className="session-info-subagent-list-item">
+                        <button
+                          type="button"
+                          className={`session-info-subagent-row ${getSubagentStatusClassName(activity)}`}
+                          disabled={!childSessionID}
+                          aria-label={`打开子 Agent: ${title}`}
+                          title={`${title} · ${statusLabel}`}
+                          onClick={() => {
+                            if (!childSessionID) return
+                            void onOpenSubagentSession?.(childSessionID, title)
+                          }}
+                        >
+                          <span className="task-progress-menu-row-icon" aria-hidden="true">
+                            <SubagentStatusIcon activity={activity} />
+                          </span>
+                          <span className="task-progress-menu-task-title">{title}</span>
+                          <span className="session-info-subagent-meta">{statusLabel}</span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ol>
+              ) : null}
+              <div className="task-progress-menu-divider" />
+            </>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -921,6 +1035,7 @@ export function SessionCanvasTopMenu({
   toolPermissionModeError,
   onToolPermissionModeChange,
   onOpenReview,
+  onOpenSubagentSession,
   skillOptions,
   selectedSkillIDs,
   selectedSkillLabel,
@@ -992,7 +1107,13 @@ export function SessionCanvasTopMenu({
               ) : null}
             </>
           ) : null}
-          {activeSession ? <SessionInfoMenuButton sessionID={activeSession.id} tasks={sessionTasks} /> : null}
+          {activeSession ? (
+            <SessionInfoMenuButton
+              sessionID={activeSession.id}
+              tasks={sessionTasks}
+              onOpenSubagentSession={onOpenSubagentSession}
+            />
+          ) : null}
         </>
       )}
       trailingClassName="session-canvas-top-menu-actions"

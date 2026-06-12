@@ -2,6 +2,7 @@ import z from "zod"
 import type { JSONValue } from "@ai-sdk/provider"
 import * as Tool from "#tool/tool.ts"
 import * as Subtask from "#session/tasks/subtask.ts"
+import * as Orchestrator from "#session/runtime/orchestrator.ts"
 import { renderSubtaskText, toSubtaskModelValue } from "#tool/subagent-shared.ts"
 
 const SpawnSubagentParameters = z.object({
@@ -46,6 +47,17 @@ export const SpawnSubagentTool = Tool.define(
           runInBackground: parameters.runInBackground,
           system: parameters.system,
           skills: parameters.skills,
+        }, {
+          onStarted: (subtask) => {
+            Orchestrator.activeTurn(ctx.sessionID)?.emit("subagent.created", {
+              taskID: subtask.id,
+              childSessionID: subtask.childSessionID,
+              title: subtask.title,
+              agent: subtask.agent,
+              status: subtask.status,
+              updatedAt: subtask.updatedAt,
+            })
+          },
         })
 
         return {

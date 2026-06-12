@@ -14,7 +14,7 @@ import {
 import { UnifiedPreviewPanel } from "../preview/UnifiedPreviewPanel"
 import { ShellTopMenu } from "../shared-ui"
 import type { SessionMessageTree } from "../session-message-tree"
-import { InlineSideChatThread } from "../thread/ThreadView"
+import { InlineSideChatThread, ThreadView } from "../thread/ThreadView"
 import type {
   AssistantTraceVisibility,
   ComposerAttachment,
@@ -57,6 +57,14 @@ interface RightSidebarSideChatPanelState {
   turns: Turn[]
 }
 
+interface RightSidebarSessionThreadPanelState {
+  activeProjectID: string | null
+  activeTabID: string
+  messageTree: SessionMessageTree | null
+  session: SessionSummary
+  turns: Turn[]
+}
+
 interface RightSidebarProps {
   activeSession: SessionSummary | null
   activeSessionDirectory: string | null
@@ -77,6 +85,7 @@ interface RightSidebarProps {
   sessionDiffStateBySession: Record<string, SessionDiffState>
   messageTreeBySession: Record<string, SessionMessageTree>
   sideChatPanelState: RightSidebarSideChatPanelState | null
+  sessionThreadPanelState: RightSidebarSessionThreadPanelState | null
   workspaces: WorkspaceGroup[]
   onActivateTab: (tabID: string) => void
   onCloseTab: (tabID: string) => void
@@ -159,7 +168,7 @@ interface RightSidebarProps {
   windowControls?: ReactNode
 }
 
-type RightSidebarLauncherTabKind = Exclude<RightSidebarTab["kind"], "side-chat">
+type RightSidebarLauncherTabKind = Exclude<RightSidebarTab["kind"], "side-chat" | "session-thread">
 
 interface LauncherCard {
   description: string
@@ -179,6 +188,10 @@ function findSessionByID(workspaces: WorkspaceGroup[], sessionID: string | null 
 
   return null
 }
+
+const EMPTY_RIGHT_SIDEBAR_PENDING_INPUTS: PendingConversationInput[] = []
+const EMPTY_RIGHT_SIDEBAR_PERMISSION_REQUESTS: PermissionRequest[] = []
+const EMPTY_RIGHT_SIDEBAR_SIDE_CHAT_COUNTS: Record<string, number> = {}
 
 function findSessionDirectoryByID(workspaces: WorkspaceGroup[], sessionID: string | null | undefined) {
   if (!sessionID) return null
@@ -204,6 +217,8 @@ function getTabIcon(kind: RightSidebarTab["kind"]) {
       return <TerminalIcon />
     case "message-tree":
       return <SessionTreeIcon />
+    case "session-thread":
+      return <SessionTreeIcon />
     case "side-chat":
       return <SideChatIcon />
   }
@@ -223,9 +238,67 @@ function getViewHostClassName(tab: RightSidebarTab | null, isLauncherVisible: bo
       return "right-sidebar-view-host is-terminal"
     case "message-tree":
       return "right-sidebar-view-host is-message-tree"
+    case "session-thread":
+      return "right-sidebar-view-host is-session-thread"
     case "side-chat":
       return "right-sidebar-view-host is-side-chat"
   }
+}
+
+function ReadOnlySessionThreadPanel({
+  assistantTraceVisibility,
+  composerRefreshVersion,
+  isAgentDebugTraceEnabled,
+  onArtifactLinkOpen,
+  onLocalFileLinkOpen,
+  permissionRequestActionError,
+  permissionRequestActionRequestID,
+  state,
+}: {
+  assistantTraceVisibility: AssistantTraceVisibility
+  composerRefreshVersion: number
+  isAgentDebugTraceEnabled: boolean
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
+  onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
+  permissionRequestActionError: string | null
+  permissionRequestActionRequestID: string | null
+  state: RightSidebarSessionThreadPanelState | null
+}) {
+  const threadColumnRef = useRef<HTMLDivElement | null>(null)
+
+  if (!state) {
+    return (
+      <div className="right-sidebar-empty" role="status">
+        <p>Session is unavailable.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="right-sidebar-session-thread-panel">
+      <ThreadView
+        activeProjectID={state.activeProjectID}
+        activeSession={state.session}
+        activeTurns={state.turns}
+        assistantTraceVisibility={assistantTraceVisibility}
+        composerRefreshVersion={composerRefreshVersion}
+        isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+        isResolvingPermissionRequest={true}
+        messageTree={state.messageTree}
+        pendingConversationInputs={EMPTY_RIGHT_SIDEBAR_PENDING_INPUTS}
+        pendingPermissionRequests={EMPTY_RIGHT_SIDEBAR_PERMISSION_REQUESTS}
+        permissionRequestActionError={permissionRequestActionError}
+        permissionRequestActionRequestID={permissionRequestActionRequestID}
+        scrollStateKey={`right-sidebar:session-thread:${state.session.id}`}
+        sideChatCountsByAnchorMessageID={EMPTY_RIGHT_SIDEBAR_SIDE_CHAT_COUNTS}
+        threadColumnRef={threadColumnRef}
+        onAskUserQuestionAnswer={async () => {}}
+        onArtifactLinkOpen={onArtifactLinkOpen}
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+        onPermissionRequestResponse={async () => {}}
+      />
+    </div>
+  )
 }
 
 export function RightSidebar({
@@ -248,6 +321,7 @@ export function RightSidebar({
   sessionDiffStateBySession,
   messageTreeBySession,
   sideChatPanelState,
+  sessionThreadPanelState,
   workspaces,
   onActivateTab,
   onCloseTab,
@@ -478,6 +552,19 @@ export function RightSidebar({
           />
         )
       }
+      case "session-thread":
+        return (
+          <ReadOnlySessionThreadPanel
+            assistantTraceVisibility={assistantTraceVisibility}
+            composerRefreshVersion={composerRefreshVersion}
+            isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+            permissionRequestActionError={permissionRequestActionError}
+            permissionRequestActionRequestID={permissionRequestActionRequestID}
+            state={sessionThreadPanelState?.activeTabID === activeTab.id ? sessionThreadPanelState : null}
+            onArtifactLinkOpen={onArtifactLinkOpen}
+            onLocalFileLinkOpen={onLocalFileLinkOpen}
+          />
+        )
       case "side-chat":
         if (!sideChatPanelState || sideChatPanelState.activeTabID !== activeTab.id) {
           return (
