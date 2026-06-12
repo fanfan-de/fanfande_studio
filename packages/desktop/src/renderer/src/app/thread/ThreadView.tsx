@@ -5854,7 +5854,10 @@ function VisibleThreadView({
         return
       }
 
-      const progress = Math.min(1, Math.max(0, (timestamp - animation.startedAt) / animation.duration))
+      const effectiveTimestamp = timestamp < animation.startedAt
+        ? animation.startedAt + animation.duration
+        : timestamp
+      const progress = Math.min(1, Math.max(0, (effectiveTimestamp - animation.startedAt) / animation.duration))
       const easedProgress = easeThreadFollowScroll(progress)
       const nextScrollTop =
         animation.fromScrollTop +

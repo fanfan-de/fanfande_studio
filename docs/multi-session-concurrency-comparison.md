@@ -107,7 +107,84 @@ const activeTurns = new Map<string, TurnRuntime>()
 - `runningSessions` 防止同 session 多个 prompt/resume 同时开始。
 - `activeTurns` 防止同 session 多个 turn runtime 同时存在。
 
-### 3.3 Prompt 执行流程
+### 3.3 状态分类与语义边界
+
+当前实现里，“状态”不是单一字段，而是按职责拆成几类：
+
+1. `SessionRunnerStatus`
+
+   定义在 `packages\anyboxagent\src\session\runtime\session-runner.ts`，描述一个 session runner 当前的调度状态。
+
+   - `idle`：没有正在执行的 active operation，也没有需要继续处理的队列。
+   - `running`：当前 session 有一个 active operation，通常对应一个 active turn。
+   - `cancelling`：已经对 active operation 调用 `AbortController.abort()`，正在等待执行链路自然退出并清理。
+   - `stopped`：类型里保留的状态；当前 `SessionRunner` 代码里没有明显的实际赋值路径。
+
+2. `SessionExecutionMode`
+
+   同样定义在 `session-runner.ts`，但它不是 runner 的长期状态。它的主体是“本次用户输入对应的 operation/request”，含义是这一次输入被 runner 如何安排。这个结果会出现在 `SessionExecutionHandle.mode` 上，并通过 SSE 的 `execution.mode` 事件推送给前端。
+
+   - `new-turn`：这次输入提交时，runner 没有 active operation，所以这次输入会直接启动一个新 turn。
+   - `queued`：这次输入提交时，同 session 正在运行或取消中，所以这次输入会进入队列等待。
+   - `steer`：这次输入提交时，同 session 正在运行，且当前 active turn 允许接收并发输入，所以这次输入会作为 steer/接管类输入交给当前 active turn。
+
+   因此，`SessionRunnerStatus` 和 `SessionExecutionMode` 不是重复分类。前者回答“这个 session runner 现在处于什么状态”，后者回答“这条刚来的输入被如何安排，并返回/推送给调用方”。例如 runner 可以保持 `running`，同时新输入返回 `queued` 或 `steer`。
+
+3. `TurnRuntimePhase`
+
+   定义在 `packages\anyboxagent\src\session\runtime\runtime-event.ts`，通过 `turn.state.changed` 推送，描述一个 active turn 正在做哪一步。
+
+   - `preparing`：准备请求阶段，例如记录用户消息、构造上下文、准备模型调用。
+   - `waiting_llm`：已进入模型调用流程，等待模型开始返回。
+   - `reasoning`：模型正在输出 reasoning 内容。
+   - `responding`：模型正在输出普通 assistant 文本。
+   - `executing_tool`：正在准备或执行工具调用。
+   - `waiting_approval`：工具调用需要权限审批，正在等待用户或权限系统决定。
+   - `retrying`：遇到可重试问题，准备重试模型调用或相关流程。
+   - `blocked`：turn 没有失败，但被阻塞，常见原因是等待权限或等待用户回答问题。
+   - `continued_by_user`：当前 turn 被新的用户输入接续，旧 turn 以“由用户继续”结束。
+   - `completed`：正常完成。
+   - `cancelled`：被取消，例如用户取消、客户端断开或 shutdown。
+   - `failed`：执行失败，属于错误终态。
+
+4. turn 终态事件
+
+   runtime 里真正的终态事件是：
+
+   - `turn.completed`
+   - `turn.failed`
+   - `turn.cancelled`
+
+   其中 `turn.completed.payload.status` 还能细分为 `completed`、`blocked`、`stopped`、`continued_by_user`。也就是说，`blocked` 和 `continued_by_user` 是“非失败结束”，会走 `turn.completed`；`failed` 和 `cancelled` 则有独立终态事件。
+
+5. `TurnRuntime` 内部控制状态
+
+   `TurnRuntime` 还维护一些不直接展示给用户的控制字段：
+
+   - `terminalEvent`：已经发出终态事件后，后续 emit 会直接返回该终态，避免重复结束。
+   - `closed`：turn 已关闭，并从 `activeTurns` map 移除。
+   - `acceptingSteer`：当前 turn 是否还允许接收 steer 输入。
+   - `preparingToolCallIDs`：正在准备中的工具调用集合；如果不为空，并发输入策略倾向 `interrupt`，否则是 `steer`。
+
+6. 前端展示状态
+
+   renderer 里的 `AssistantTurnPhase` 是 UI 层状态，定义在 `packages\desktop\src\renderer\src\app\types.ts`。它会把后端 phase 映射成更适合展示的状态，例如：
+
+   - `requesting`、`waiting_first_event`：前端本地状态，表示请求已经发出但还没有收到后端 runtime event。
+   - `tool_running`：前端对后端 `executing_tool` 的展示名。
+   - `reasoning`、`waiting_approval`、`responding`、`completed`、`cancelled`、`failed` 等基本对应后端语义。
+
+整体关系可以概括为：
+
+```ts
+runner.status = 当前 session runner 的机器状态
+execution.mode = 本次输入的调度决策
+turn.phase = 当前 active turn 的执行阶段
+terminal event = 当前 turn 的结束方式
+assistant runtime phase = 前端展示层状态
+```
+
+### 3.4 Prompt 执行流程
 
 核心文件：
 
@@ -137,7 +214,7 @@ flowchart TD
 - `Orchestrator.startTurn()` 再次确保同 session 没有 active turn。
 - finally 阶段清理 active turn 和 running state。
 
-### 3.4 Resume 执行流程
+### 3.5 Resume 执行流程
 
 `resume()` 和 `prompt()` 的主要差异是：resume 会先等待该 session 停止。
 
@@ -151,7 +228,7 @@ await waitForStop(input.sessionID)
 
 优点是简单，不需要设计队列语义；缺点是 `waitForStop()` 是轮询，且无法表达更复杂的调度策略，例如“排队 resume”、“替换当前 turn”、“注入当前 turn”。
 
-### 3.5 Cancel 执行流程
+### 3.6 Cancel 执行流程
 
 核心文件：
 
@@ -171,7 +248,7 @@ await waitForStop(input.sessionID)
 
 这不是必然 bug，但说明当前模型里“运行标记”和“turn runtime 生命周期”不是一个原子状态机。
 
-### 3.6 事件流：`EventStore` + `LiveStreamHub`
+### 3.7 事件流：`EventStore` + `LiveStreamHub`
 
 核心文件：
 
@@ -208,7 +285,7 @@ flowchart TD
 
 这套事件设计比较适合 Electron + SSE 的实时 UI。
 
-### 3.7 桌面端请求与订阅
+### 3.8 桌面端请求与订阅
 
 核心文件：
 

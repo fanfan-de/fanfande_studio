@@ -4,10 +4,13 @@ import {
   applyExecutionModeToUserTurnPresentation,
   compactHighFrequencyDeltaStreamEvent,
   conversationTurnsAreEquivalent,
+  ensureAssistantTurnPresentation,
+  isBackendUserMessageRecordedStreamEvent,
   isCompletedStreamEvent,
   isHighFrequencyDeltaStreamEvent,
   isLlmCompletedStreamEvent,
   isPermissionRequestStreamEvent,
+  isSteerHandoffBoundaryStreamEvent,
   isSteerInputConsumedStreamEvent,
   isTaskStateStreamEvent,
   isTerminalStreamEvent,
@@ -18,6 +21,8 @@ import {
   readSessionContextUsageFromLlmCompletedEventData,
   readSessionTaskListViewFromStreamEvent,
   reconcileConversationTurns,
+  revealBackendRecordedUserTurnPresentation,
+  revealPendingSteerUserTurnsAtHandoffPresentation,
   resolveExecutionModeRoute,
   resolveStreamMessageID,
   resolveStreamCursor,
@@ -367,6 +372,67 @@ describe("session stream controller helpers", () => {
     })).toBe(false)
   })
 
+  it("detects backend-recorded user messages from runtime events", () => {
+    expect(isBackendUserMessageRecordedStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("message.recorded", {
+        message: {
+          id: "message-user",
+          role: "user",
+        },
+      }),
+    })).toBe(true)
+
+    expect(isBackendUserMessageRecordedStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("message.recorded", {
+        message: {
+          id: "message-assistant",
+          role: "assistant",
+        },
+      }),
+    })).toBe(false)
+
+    expect(isBackendUserMessageRecordedStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("turn.started"),
+    })).toBe(false)
+  })
+
+  it("detects steer handoff boundaries from runtime events", () => {
+    expect(isSteerHandoffBoundaryStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("turn.state.changed", {
+        phase: "continued_by_user",
+        reason: "Continued by user input.",
+      }),
+    })).toBe(true)
+
+    expect(isSteerHandoffBoundaryStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("turn.completed", {
+        status: "continued_by_user",
+      }),
+    })).toBe(true)
+
+    expect(isSteerHandoffBoundaryStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("turn.completed", {
+        status: "completed",
+      }),
+    })).toBe(false)
+
+    expect(isSteerHandoffBoundaryStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("message.recorded", {
+        message: {
+          id: "message-user",
+          role: "user",
+        },
+      }),
+    })).toBe(false)
+  })
+
   it("routes execution mode metadata", () => {
     expect(resolveExecutionModeRoute({
       mode: "steer",
@@ -488,9 +554,149 @@ describe("session stream controller helpers", () => {
     expect(steerTurns[1]).toMatchObject({
       id: pendingUser.id,
       kind: "user",
+      submissionMode: "steer",
+      streamInsertion: {
+        assistantTurnID: assistant.id,
+        afterItemCount: assistant.items.length,
+        status: "pending",
+      },
     })
-    expect(steerTurns[1]).not.toHaveProperty("submissionMode")
-    expect(steerTurns[1]).not.toHaveProperty("streamInsertion")
+
+    const recordedTurns = revealBackendRecordedUserTurnPresentation({
+      turns: steerTurns,
+      userTurnID: pendingUser.id,
+    })
+    expect(recordedTurns[1]).toMatchObject({
+      id: pendingUser.id,
+      kind: "user",
+      text: "Continue with this",
+    })
+    expect(recordedTurns[1]).not.toHaveProperty("submissionMode")
+    expect(recordedTurns[1]).not.toHaveProperty("streamInsertion")
+  })
+
+  it("reveals pending steer user turns at the continued-by-user handoff boundary", () => {
+    const assistant = createPendingToolAssistantTurn("assistant-active")
+    const otherAssistant = createPendingToolAssistantTurn("assistant-other")
+    const pendingSteer: UserTurn = {
+      ...createUserTurn("user-steer", "Stop task"),
+      submissionMode: "steer",
+    }
+    const queued: UserTurn = {
+      ...createUserTurn("user-queued", "Run after this"),
+      submissionMode: "queued",
+    }
+    const insertedForAssistant: UserTurn = {
+      ...createUserTurn("user-inserted", "Guide here"),
+      submissionMode: "steer",
+      streamInsertion: {
+        assistantTurnID: assistant.id,
+        afterItemCount: 1,
+        status: "pending",
+      },
+    }
+    const insertedForOtherAssistant: UserTurn = {
+      ...createUserTurn("user-other", "Guide elsewhere"),
+      submissionMode: "steer",
+      streamInsertion: {
+        assistantTurnID: otherAssistant.id,
+        afterItemCount: 1,
+        status: "pending",
+      },
+    }
+    const consumedInsertion: UserTurn = {
+      ...createUserTurn("user-consumed", "Already shown"),
+      submissionMode: "steer",
+      streamInsertion: {
+        assistantTurnID: assistant.id,
+        afterItemCount: 1,
+        status: "consumed",
+      },
+    }
+
+    const nextTurns = revealPendingSteerUserTurnsAtHandoffPresentation({
+      turns: [
+        assistant,
+        pendingSteer,
+        queued,
+        insertedForAssistant,
+        insertedForOtherAssistant,
+        consumedInsertion,
+      ],
+      assistantTurnID: assistant.id,
+    })
+
+    expect(nextTurns[1]).toMatchObject({
+      id: pendingSteer.id,
+      kind: "user",
+      text: pendingSteer.text,
+    })
+    expect(nextTurns[1]).not.toHaveProperty("submissionMode")
+    expect(nextTurns[1]).not.toHaveProperty("streamInsertion")
+
+    expect(nextTurns[2]).toMatchObject({
+      id: queued.id,
+      kind: "user",
+      submissionMode: "queued",
+    })
+
+    expect(nextTurns[3]).toMatchObject({
+      id: insertedForAssistant.id,
+      kind: "user",
+      text: insertedForAssistant.text,
+    })
+    expect(nextTurns[3]).not.toHaveProperty("submissionMode")
+    expect(nextTurns[3]).not.toHaveProperty("streamInsertion")
+
+    expect(nextTurns[4]).toMatchObject({
+      id: insertedForOtherAssistant.id,
+      kind: "user",
+      submissionMode: "steer",
+      streamInsertion: {
+        assistantTurnID: otherAssistant.id,
+        status: "pending",
+      },
+    })
+    expect(nextTurns[5]).toMatchObject({
+      id: consumedInsertion.id,
+      kind: "user",
+      submissionMode: "steer",
+      streamInsertion: {
+        assistantTurnID: assistant.id,
+        status: "consumed",
+      },
+    })
+  })
+
+  it("ensures a missing stream assistant target before applying live events", () => {
+    const turns: Turn[] = [
+      createUserTurn("user-1", "Prompt"),
+    ]
+
+    const nextTurns = ensureAssistantTurnPresentation({
+      turns,
+      assistantTurnID: "assistant-steer",
+      detail: "Receiving backend session activity.",
+    })
+
+    expect(nextTurns).toHaveLength(2)
+    expect(nextTurns[1]).toMatchObject({
+      id: "assistant-steer",
+      kind: "assistant",
+      isStreaming: true,
+      state: "Waiting for agent stream",
+      items: [
+        expect.objectContaining({
+          sourceID: "assistant-steer:prompt",
+          status: "pending",
+        }),
+      ],
+    })
+
+    expect(ensureAssistantTurnPresentation({
+      turns: nextTurns,
+      assistantTurnID: "assistant-steer",
+    })).toBe(nextTurns)
   })
 
   it("reads task snapshots directly from runtime and tool part events", () => {

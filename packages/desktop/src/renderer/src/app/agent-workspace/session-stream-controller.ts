@@ -151,9 +151,7 @@ export function applyExecutionModeToUserTurnPresentation(input: {
     if (turn.kind !== "user" || turn.id !== input.userTurnID) return turn
 
     if (input.mode === "steer") {
-      const { submissionMode: _submissionMode, streamInsertion: _streamInsertion, ...steerTurn } = turn
-      didUpdate = Boolean(turn.submissionMode || turn.streamInsertion)
-      return didUpdate ? steerTurn : turn
+      return turn
     }
 
     if (input.mode === "queued") {
@@ -174,6 +172,77 @@ export function applyExecutionModeToUserTurnPresentation(input: {
   })
 
   return didUpdate ? nextTurns : input.turns
+}
+
+export function revealBackendRecordedUserTurnPresentation(input: {
+  turns: Turn[]
+  userTurnID: string
+}) {
+  let didUpdate = false
+
+  const nextTurns = input.turns.map((turn): Turn => {
+    if (turn.kind !== "user" || turn.id !== input.userTurnID) return turn
+    const {
+      submissionMode: _submissionMode,
+      streamInsertion: _streamInsertion,
+      ...regularTurn
+    } = turn
+    didUpdate = Boolean(turn.submissionMode || turn.streamInsertion)
+    return didUpdate ? regularTurn : turn
+  })
+
+  return didUpdate ? nextTurns : input.turns
+}
+
+export function revealPendingSteerUserTurnsAtHandoffPresentation(input: {
+  turns: Turn[]
+  assistantTurnID: string
+}) {
+  let didUpdate = false
+
+  const nextTurns = input.turns.map((turn): Turn => {
+    if (turn.kind !== "user" || turn.submissionMode !== "steer") return turn
+    if (
+      turn.streamInsertion &&
+      (turn.streamInsertion.assistantTurnID !== input.assistantTurnID ||
+        turn.streamInsertion.status === "consumed")
+    ) {
+      return turn
+    }
+
+    const { submissionMode: _submissionMode, streamInsertion: _streamInsertion, ...regularTurn } = turn
+    didUpdate = true
+    return regularTurn
+  })
+
+  return didUpdate ? nextTurns : input.turns
+}
+
+function buildSessionStreamingAssistantTurnWithID(assistantTurnID: string, detail?: string): AssistantTurn {
+  const turn = buildSessionStreamingAssistantTurn(detail)
+  return {
+    ...turn,
+    id: assistantTurnID,
+    items: turn.items.map((item) => ({
+      ...item,
+      sourceID: item.sourceID === `${turn.id}:prompt` ? `${assistantTurnID}:prompt` : item.sourceID,
+    })),
+  }
+}
+
+export function ensureAssistantTurnPresentation(input: {
+  turns: Turn[]
+  assistantTurnID: string
+  detail?: string
+}) {
+  if (input.turns.some((turn) => turn.kind === "assistant" && turn.id === input.assistantTurnID)) {
+    return input.turns
+  }
+
+  return [
+    ...input.turns,
+    buildSessionStreamingAssistantTurnWithID(input.assistantTurnID, input.detail),
+  ]
 }
 
 function readRecord(value: unknown): Record<string, unknown> | null {
@@ -229,6 +298,25 @@ export function isSteerInputConsumedStreamEvent(streamEvent: { event: string; da
     readString(payload?.phase) === "waiting_llm" &&
     readString(payload?.reason) === STEER_INPUT_CONSUMED_STATE_REASON
   )
+}
+
+export function isBackendUserMessageRecordedStreamEvent(streamEvent: { event: string; data: unknown }) {
+  if (readRuntimeStreamType(streamEvent) !== "message.recorded") return false
+  const payload = readRuntimeStreamPayload(streamEvent.data)
+  const message = readRecord(payload?.message)
+  return readString(message?.role) === "user"
+}
+
+export function isSteerHandoffBoundaryStreamEvent(streamEvent: { event: string; data: unknown }) {
+  const type = readRuntimeStreamType(streamEvent)
+  if (type !== "turn.state.changed" && type !== "turn.completed") return false
+
+  const payload = readRuntimeStreamPayload(streamEvent.data)
+  if (type === "turn.state.changed") {
+    return readString(payload?.phase) === "continued_by_user"
+  }
+
+  return readString(payload?.status) === "continued_by_user"
 }
 
 function updateConversationMapWithDeltaGroups(
@@ -1446,6 +1534,68 @@ export function useSessionStreamController({
     })
   }
 
+  function revealBackendRecordedUserTurn(input: {
+    sessionID: string
+    userTurnID: string
+  }) {
+    setConversations((prev) => {
+      const current = prev[input.sessionID] ?? []
+      const nextTurns = revealBackendRecordedUserTurnPresentation({
+        turns: current,
+        userTurnID: input.userTurnID,
+      })
+
+      if (nextTurns === current) return prev
+      bumpConversationVersion(input.sessionID)
+      const reconciled = reconcileConversationTurns(nextTurns)
+      persistUserTurns(input.sessionID, reconciled)
+      return {
+        ...prev,
+        [input.sessionID]: reconciled,
+      }
+    })
+  }
+
+  function revealPendingSteerUserTurnsAtHandoff(input: {
+    sessionID: string
+    assistantTurnID: string
+  }) {
+    setConversations((prev) => {
+      const current = prev[input.sessionID] ?? []
+      const nextTurns = revealPendingSteerUserTurnsAtHandoffPresentation({
+        turns: current,
+        assistantTurnID: input.assistantTurnID,
+      })
+
+      if (nextTurns === current) return prev
+      bumpConversationVersion(input.sessionID)
+      const reconciled = reconcileConversationTurns(nextTurns)
+      persistUserTurns(input.sessionID, reconciled)
+      return {
+        ...prev,
+        [input.sessionID]: reconciled,
+      }
+    })
+  }
+
+  function revealPendingUserTurnForBackendEvent(input: {
+    uiSessionID: string
+    backendSessionID: string
+    backendTurnID: string
+  }) {
+    const pending = Object.values(pendingStreamsRef.current).find((target) =>
+      target.sessionID === input.uiSessionID &&
+      (target.backendSessionID ?? input.backendSessionID) === input.backendSessionID &&
+      target.backendTurnID === input.backendTurnID &&
+      Boolean(target.userTurnID)
+    )
+    if (!pending?.userTurnID) return
+    revealBackendRecordedUserTurn({
+      sessionID: pending.sessionID,
+      userTurnID: pending.userTurnID,
+    })
+  }
+
   function markPendingSteerUserTurnsConsumed(sessionID: string, assistantTurnID: string) {
     setConversations((prev) => {
       const current = prev[sessionID] ?? []
@@ -1491,6 +1641,34 @@ export function useSessionStreamController({
       return {
         ...prev,
         [sessionID]: reconciled,
+      }
+    })
+  }
+
+  function ensureAssistantConversationTurn(input: {
+    sessionID: string
+    assistantTurnID: string
+    detail?: string
+  }) {
+    if (conversationStore.getSessionTurns(input.sessionID).some(
+      (turn) => turn.kind === "assistant" && turn.id === input.assistantTurnID,
+    )) {
+      return
+    }
+
+    setConversations((prev) => {
+      const current = prev[input.sessionID] ?? []
+      const nextTurns = ensureAssistantTurnPresentation({
+        turns: current,
+        assistantTurnID: input.assistantTurnID,
+        detail: input.detail,
+      })
+      if (nextTurns === current) return prev
+
+      bumpConversationVersion(input.sessionID)
+      return {
+        ...prev,
+        [input.sessionID]: reconcileConversationTurns(nextTurns),
       }
     })
   }
@@ -1621,6 +1799,12 @@ export function useSessionStreamController({
     target: StreamEventUpdateTarget,
     streamEvent: AgentSessionStreamIPCEvent | AgentStreamIPCEvent,
   ) {
+    ensureAssistantConversationTurn({
+      sessionID: target.sessionID,
+      assistantTurnID: target.assistantTurnID,
+      detail: "Receiving backend session activity.",
+    })
+
     if (isHighFrequencyDeltaStreamEvent(streamEvent)) {
       enqueuePendingDeltaUpdate({ target, event: streamEvent })
       return
@@ -1862,6 +2046,18 @@ export function useSessionStreamController({
       },
       streamEvent,
     )
+    if (target.userTurnID && isBackendUserMessageRecordedStreamEvent(streamEvent)) {
+      revealBackendRecordedUserTurn({
+        sessionID: target.sessionID,
+        userTurnID: target.userTurnID,
+      })
+    }
+    if (isSteerHandoffBoundaryStreamEvent(streamEvent)) {
+      revealPendingSteerUserTurnsAtHandoff({
+        sessionID: target.sessionID,
+        assistantTurnID,
+      })
+    }
     if (isSteerInputConsumedStreamEvent(streamEvent)) {
       markPendingSteerUserTurnsConsumed(target.sessionID, assistantTurnID)
     }
@@ -1984,6 +2180,19 @@ export function useSessionStreamController({
       },
       streamEvent,
     )
+    if (isBackendUserMessageRecordedStreamEvent(streamEvent)) {
+      revealPendingUserTurnForBackendEvent({
+        uiSessionID,
+        backendSessionID: streamEvent.sessionID,
+        backendTurnID,
+      })
+    }
+    if (isSteerHandoffBoundaryStreamEvent(streamEvent)) {
+      revealPendingSteerUserTurnsAtHandoff({
+        sessionID: uiSessionID,
+        assistantTurnID,
+      })
+    }
     if (isSteerInputConsumedStreamEvent(streamEvent)) {
       markPendingSteerUserTurnsConsumed(uiSessionID, assistantTurnID)
     }

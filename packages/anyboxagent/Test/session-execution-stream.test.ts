@@ -189,6 +189,71 @@ describe("session execution stream handles", () => {
     expect(raw).not.toContain(`"turnID":"${activeTurnID}"`)
   })
 
+  it("keeps a steer stream bound to its continuation turn after handoff", async () => {
+    const sessionID = Identifier.ascending("session")
+    const activeTurnID = Identifier.ascending("turn")
+    const steerTurnID = Identifier.ascending("turn")
+    const activeFactory = RuntimeEvent.createRuntimeEventFactory({
+      sessionID,
+      turnID: activeTurnID,
+    })
+    const steerFactory = RuntimeEvent.createRuntimeEventFactory({
+      sessionID,
+      turnID: steerTurnID,
+    })
+    const message = assistantMessage({ sessionID })
+    const part = textPart({
+      sessionID,
+      messageID: message.id,
+      text: "steered answer",
+    })
+
+    const response = createSessionExecutionStream({
+      sessionID,
+      heartbeatIntervalMs: 10,
+      handle: handle({
+        sessionID,
+        turnID: steerTurnID,
+        mode: "steer",
+        promise: (async () => {
+          LiveStreamHub.publish(activeFactory.next("turn.started", {}))
+          LiveStreamHub.publish(activeFactory.next("turn.completed", {
+            status: "continued_by_user",
+          }))
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          LiveStreamHub.publish(steerFactory.next("turn.started", {}))
+          LiveStreamHub.publish(steerFactory.next("text.part.delta", {
+            messageID: message.id,
+            partID: part.id,
+            kind: "text",
+            delta: "steered ",
+          }))
+          LiveStreamHub.publish(steerFactory.next("text.part.delta", {
+            messageID: message.id,
+            partID: part.id,
+            kind: "text",
+            delta: "answer",
+          }))
+          LiveStreamHub.publish(steerFactory.next("turn.completed", {
+            status: "completed",
+            message,
+            parts: [part],
+          }))
+          return { info: message, parts: [part] }
+        })(),
+      }),
+    })
+
+    const raw = await response.text()
+
+    expect(raw).toContain(`"mode":"steer"`)
+    expect(raw).toContain(`"turnID":"${steerTurnID}"`)
+    expect(raw).toContain(`"type":"text.part.delta"`)
+    expect(raw).toContain("steered ")
+    expect(raw).not.toContain(`"turnID":"${activeTurnID}"`)
+    expect(raw).not.toContain(`"status":"continued_by_user"`)
+  })
+
   it("cancels active new-turn handles on stream disconnect", async () => {
     const sessionID = Identifier.ascending("session")
     const turnID = Identifier.ascending("turn")
