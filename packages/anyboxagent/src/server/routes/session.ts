@@ -149,7 +149,7 @@ export function SessionRoutes(options: { ptyRegistry: PtyRegistry }) {
       "Body must include optional cancelQueued and reason fields",
       {},
     )
-    return ok(c, SessionUseCase.cancelSession(c.req.param("id"), payload))
+    return ok(c, await SessionUseCase.cancelSession(c.req.param("id"), payload))
   })
 
   app.post("/:id/questions/answer", async (c) => {

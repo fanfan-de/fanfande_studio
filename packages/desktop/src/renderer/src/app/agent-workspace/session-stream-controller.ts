@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useEffectEvent, useRef, type MutableRefObject } from "react"
+import { startTransition, useEffect, useEffectEvent, useRef, useState, type MutableRefObject } from "react"
 import { getAgentSessionBridge, type AgentSessionBridgeEvent } from "../agent-session/client"
 import { AgentSessionEventRouter } from "../agent-session/event-router"
 import {
@@ -449,6 +449,13 @@ export function isTaskStateStreamEvent(streamEvent: { event: string; data: unkno
 
 export function isSubagentCreatedStreamEvent(streamEvent: { event: string; data: unknown }) {
   return readRuntimeStreamType(streamEvent) === "subagent.created"
+}
+
+export function readSubagentCreatedChildSessionID(streamEvent: { event: string; data: unknown }) {
+  if (!isSubagentCreatedStreamEvent(streamEvent)) return null
+  const payload = readRuntimeStreamPayload(streamEvent.data)
+  const childSessionID = readString(payload?.childSessionID)?.trim()
+  return childSessionID || null
 }
 
 function readSessionTaskListView(value: unknown): SessionTaskListView | null {
@@ -1155,6 +1162,12 @@ export function readLatestSessionContextUsageFromHistory(messages: LoadedSession
 export function resolveStreamCursor(event: { id?: string; data: unknown }) {
   const runtimeEvent = readRuntimeStreamEvent(event.data)
   if (runtimeEvent) {
+    const timestamp = readStreamNumber(runtimeEvent.timestamp)
+    const seq = readStreamNumber(runtimeEvent.seq)
+    const turnID = readStreamString(runtimeEvent.turnID)
+    if (timestamp !== null && seq !== null && turnID) {
+      return `${timestamp}:${turnID}:${seq}`
+    }
     return event.id || readStreamString(runtimeEvent.eventID)
   }
 
@@ -1306,6 +1319,7 @@ export function useSessionStreamController({
   const externalTurnUserHistoryMergedRef = useRef<Set<string>>(new Set())
   const externalTurnHistoryRefreshInFlightRef = useRef<Set<string>>(new Set())
   const externalTurnHistoryLastAttemptAtRef = useRef<Record<string, number>>({})
+  const [backgroundObservedSessionIDs, setBackgroundObservedSessionIDs] = useState<string[]>([])
   const pendingConversationInputsBySessionRef = useRef(pendingConversationInputsBySession)
   pendingConversationInputsBySessionRef.current = pendingConversationInputsBySession
 
@@ -1398,6 +1412,32 @@ export function useSessionStreamController({
     ))
   }
 
+  function ensureBackgroundObservedSession(sessionID: string | null) {
+    if (!sessionID) return
+
+    setConversations((prev) => (
+      Object.prototype.hasOwnProperty.call(prev, sessionID)
+        ? prev
+        : {
+            ...prev,
+            [sessionID]: [],
+          }
+    ))
+    setBackgroundObservedSessionIDs((current) => (
+      current.includes(sessionID)
+        ? current
+        : [...current, sessionID]
+    ))
+  }
+
+  function clearBackgroundObservedSession(sessionID: string) {
+    setBackgroundObservedSessionIDs((current) => (
+      current.includes(sessionID)
+        ? current.filter((candidate) => candidate !== sessionID)
+        : current
+    ))
+  }
+
   function refreshSessionTasksForStreamEvent(input: {
     sessionID: string
     backendSessionID?: string
@@ -1405,9 +1445,11 @@ export function useSessionStreamController({
     errorPrefix: string
   }) {
     const isTaskStateEvent = isTaskStateStreamEvent(input.streamEvent)
-    if (!isTaskStateEvent && !isSubagentCreatedStreamEvent(input.streamEvent)) return
+    const childSessionID = readSubagentCreatedChildSessionID(input.streamEvent)
+    if (!isTaskStateEvent && !childSessionID) return
 
     refreshWorkspaceForSession(input.sessionID)
+    ensureBackgroundObservedSession(childSessionID)
     if (isTaskStateEvent) {
       applySessionTasksSnapshot(input.sessionID, readSessionTaskListViewFromStreamEvent(input.streamEvent))
     }
@@ -2304,6 +2346,7 @@ export function useSessionStreamController({
     if (isTerminalStreamEvent(streamEvent)) {
       clearRendererPerformanceEntries("session-stream-terminal")
       clearCancellingSession(target.sessionID)
+      clearBackgroundObservedSession(target.sessionID)
       if (isCompletedStreamEvent(streamEvent)) {
         updateSessionContextUsage(target.sessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
       }
@@ -2344,6 +2387,7 @@ export function useSessionStreamController({
     if (!backendTurnID) {
       if (isTerminalStreamEvent(streamEvent)) {
         clearCancellingSession(uiSessionID)
+        clearBackgroundObservedSession(uiSessionID)
         if (isCompletedStreamEvent(streamEvent)) {
           updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
         }
@@ -2434,6 +2478,7 @@ export function useSessionStreamController({
     if (isTerminalStreamEvent(streamEvent)) {
       clearRendererPerformanceEntries("session-stream-terminal")
       clearCancellingSession(uiSessionID)
+      clearBackgroundObservedSession(uiSessionID)
       if (isCompletedStreamEvent(streamEvent)) {
         updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
       }
@@ -2698,6 +2743,7 @@ export function useSessionStreamController({
   useAgentSessionStreamEffects({
     agentConnected,
     agentSessions,
+    backgroundSessionIDs: backgroundObservedSessionIDs,
     canLoadSessionHistory,
     openCanvasSessionIDs,
     pendingStreamsRef,

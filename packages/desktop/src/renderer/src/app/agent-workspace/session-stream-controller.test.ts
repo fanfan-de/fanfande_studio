@@ -18,6 +18,7 @@ import {
   mergeConversationTurnsFromHistory,
   mergeExternalUserTurnsFromHistory,
   readLatestSessionContextUsageFromHistory,
+  readSubagentCreatedChildSessionID,
   readSessionContextUsageFromDoneEventData,
   readSessionContextUsageFromLlmCompletedEventData,
   readSessionTaskListViewFromStreamEvent,
@@ -206,6 +207,7 @@ function createRuntimeEvent(type: string, payload: Record<string, unknown> = {})
     eventID: "runtime-cursor-1",
     sessionID: "backend-session-1",
     turnID: "backend-turn-1",
+    seq: 7,
     timestamp: 456,
     payload,
   }
@@ -260,8 +262,8 @@ describe("session stream controller helpers", () => {
   it("resolves request/session cursors and backend turn IDs from runtime and legacy events", () => {
     const runtimeData = createRuntimeEvent("turn.completed")
 
-    expect(resolveStreamCursor({ id: "ipc-cursor-1", data: runtimeData })).toBe("ipc-cursor-1")
-    expect(resolveStreamCursor({ data: runtimeData })).toBe("runtime-cursor-1")
+    expect(resolveStreamCursor({ id: "runtime-cursor-1", data: runtimeData })).toBe("456:backend-turn-1:7")
+    expect(resolveStreamCursor({ data: runtimeData })).toBe("456:backend-turn-1:7")
     expect(resolveStreamTurnID({ data: runtimeData })).toBe("backend-turn-1")
 
     expect(resolveStreamCursor({ data: { cursor: "legacy-cursor-1", turnID: "legacy-turn-1" } })).toBe("legacy-cursor-1")
@@ -359,6 +361,17 @@ describe("session stream controller helpers", () => {
         updatedAt: 123,
       }),
     })).toBe(true)
+    expect(readSubagentCreatedChildSessionID({
+      event: "runtime",
+      data: createRuntimeEvent("subagent.created", {
+        taskID: "task-subagent-1",
+        childSessionID: "ses_child_1",
+        title: "Inspect docs",
+        agent: "default",
+        status: "running",
+        updatedAt: 123,
+      }),
+    })).toBe("ses_child_1")
     expect(isSubagentCreatedStreamEvent({
       event: "part",
       data: {
@@ -371,6 +384,18 @@ describe("session stream controller helpers", () => {
         },
       },
     })).toBe(false)
+    expect(readSubagentCreatedChildSessionID({
+      event: "part",
+      data: {
+        part: {
+          type: "tool",
+          tool: "spawn_subagent",
+          state: {
+            status: "completed",
+          },
+        },
+      },
+    })).toBeNull()
   })
 
   it("detects steer consumption from runtime state events", () => {

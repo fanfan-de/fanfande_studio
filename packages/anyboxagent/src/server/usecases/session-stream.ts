@@ -69,19 +69,64 @@ function replayRuntimeEvents(input: {
   sinceSeq?: number
   since?: RuntimeEvent.RuntimeEventCursor
 }) {
-  if (input.turnID) {
-    return EventStore.listTurnEvents({
-      sessionID: input.sessionID,
-      turnID: input.turnID,
-      sinceSeq: input.sinceSeq,
+  const mergeReplayEvents = (
+    persisted: RuntimeEvent.RuntimeEvent[],
+    buffered: RuntimeEvent.RuntimeEvent[],
+  ) => {
+    const byEventID = new Map<string, RuntimeEvent.RuntimeEvent>()
+    for (const event of [...persisted, ...buffered]) {
+      byEventID.set(event.eventID, event)
+    }
+    return [...byEventID.values()].sort((left, right) => {
+      const leftCursor = RuntimeEvent.cursorOf(left)
+      const rightCursor = RuntimeEvent.cursorOf(right)
+      if (leftCursor.timestamp !== rightCursor.timestamp) return leftCursor.timestamp - rightCursor.timestamp
+      const turnDelta = leftCursor.turnID.localeCompare(rightCursor.turnID)
+      if (turnDelta !== 0) return turnDelta
+      return leftCursor.seq - rightCursor.seq
     })
   }
 
+  if (input.turnID) {
+    return mergeReplayEvents(
+      EventStore.listTurnEvents({
+        sessionID: input.sessionID,
+        turnID: input.turnID,
+        sinceSeq: input.sinceSeq,
+      }),
+      LiveStreamHub.listRecentEvents({
+        sessionID: input.sessionID,
+        turnID: input.turnID,
+        sinceSeq: input.sinceSeq,
+      }),
+    )
+  }
+
   if (input.since) {
-    return EventStore.listSessionEvents({
-      sessionID: input.sessionID,
-      after: input.since,
-    })
+    return mergeReplayEvents(
+      EventStore.listSessionEvents({
+        sessionID: input.sessionID,
+        after: input.since,
+      }),
+      LiveStreamHub.listRecentEvents({
+        sessionID: input.sessionID,
+        since: input.since,
+      }),
+    )
+  }
+
+  const activeTurn = Orchestrator.activeTurn(input.sessionID)
+  if (activeTurn) {
+    return mergeReplayEvents(
+      EventStore.listTurnEvents({
+        sessionID: input.sessionID,
+        turnID: activeTurn.turnID,
+      }),
+      LiveStreamHub.listRecentEvents({
+        sessionID: input.sessionID,
+        turnID: activeTurn.turnID,
+      }),
+    )
   }
 
   return []

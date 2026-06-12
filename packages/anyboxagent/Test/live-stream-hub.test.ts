@@ -101,6 +101,56 @@ describe("live stream hub", () => {
     }
   })
 
+  it("buffers recent transient events for late subscribers", async () => {
+    const factory = createFactory()
+    const delta = factory.next("tool.input.delta", {
+      messageID: "assistant-late",
+      partID: "tool-part-late",
+      toolCallID: "call-late",
+      toolName: "apply_patch",
+      delta: "{\"cmd\":\"patch\"}",
+      rawLength: 15,
+    })
+
+    LiveStreamHub.publish(delta)
+
+    const seed = LiveStreamHub.listRecentEvents({
+      sessionID: delta.sessionID,
+      turnID: delta.turnID,
+    })
+    const subscription = LiveStreamHub.subscribe({
+      sessionID: delta.sessionID,
+      turnID: delta.turnID,
+      closeOnTerminalTurn: false,
+      seed,
+    })
+
+    try {
+      const next = await subscription.next()
+      expect(next?.eventID).toBe(delta.eventID)
+      expect(next?.type).toBe("tool.input.delta")
+    } finally {
+      subscription.close()
+    }
+  })
+
+  it("bounds recent events per session", () => {
+    const factory = createFactory()
+    const first = factory.next("turn.started", {})
+    const sessionID = first.sessionID
+
+    LiveStreamHub.publish(first)
+    for (let index = 1; index < 2005; index += 1) {
+      LiveStreamHub.publish(factory.next("turn.started", {}))
+    }
+
+    const recent = LiveStreamHub.listRecentEvents({
+      sessionID,
+    })
+
+    expect(recent.length).toBeLessThanOrEqual(2000)
+  })
+
   it("drops transient deltas before closing slow subscribers with non-transient queues", () => {
     const sessionID = Identifier.ascending("session")
     const turnID = Identifier.ascending("turn")

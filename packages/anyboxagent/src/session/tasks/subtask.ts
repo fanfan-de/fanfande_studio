@@ -69,6 +69,13 @@ export type SubtaskView = SubtaskRecord & {
   active: boolean
 }
 
+export type CancelSubtasksResult = {
+  cancelled: boolean
+  cancelledCount: number
+  cancelledTaskIDs: string[]
+  cancelledSessionIDs: string[]
+}
+
 export type SubtaskSessionOrigin = {
   active: boolean
   agent: string
@@ -770,6 +777,13 @@ export function listSubtasksByParentSession(parentSessionID: string): SubtaskVie
 }
 
 export async function cancelSubtask(id: string): Promise<SubtaskView> {
+  return cancelSubtaskWithOptions(id)
+}
+
+async function cancelSubtaskWithOptions(
+  id: string,
+  options: { cancelQueued?: boolean } = {},
+): Promise<SubtaskView> {
   const current = readStoredSubtask(id)
   if (!current) {
     throw new Error(`Subtask '${id}' was not found.`)
@@ -780,7 +794,9 @@ export async function cancelSubtask(id: string): Promise<SubtaskView> {
   }
 
   const Prompt = await import("#session/core/prompt.ts")
-  const cancelled = Prompt.cancel(current.childSessionID)
+  const cancelled = Prompt.cancelSession(current.childSessionID, {
+    cancelQueued: options.cancelQueued,
+  }).cancelled
   const now = Date.now()
   const next = updateStoredSubtask(id, (record) => ({
     ...record,
@@ -795,4 +811,56 @@ export async function cancelSubtask(id: string): Promise<SubtaskView> {
   }
 
   return toView(next)
+}
+
+export async function cancelRunningSubtasksByParentSession(
+  parentSessionID: string,
+  options: {
+    cancelQueued?: boolean
+    seenParentSessionIDs?: Set<string>
+  } = {},
+): Promise<CancelSubtasksResult> {
+  const seenParentSessionIDs = options.seenParentSessionIDs ?? new Set<string>()
+  if (seenParentSessionIDs.has(parentSessionID)) {
+    return {
+      cancelled: false,
+      cancelledCount: 0,
+      cancelledTaskIDs: [],
+      cancelledSessionIDs: [],
+    }
+  }
+  seenParentSessionIDs.add(parentSessionID)
+
+  const runningSubtasks = listSubtasksByParentSession(parentSessionID)
+    .filter((subtask) => subtask.status === "running")
+
+  let cancelledCount = 0
+  const cancelledTaskIDs: string[] = []
+  const cancelledSessionIDs: string[] = []
+
+  for (const subtask of runningSubtasks) {
+    const cancelled = await cancelSubtaskWithOptions(subtask.id, {
+      cancelQueued: options.cancelQueued,
+    })
+    if (cancelled.status === "cancelled") {
+      cancelledCount += 1
+      cancelledTaskIDs.push(cancelled.id)
+      cancelledSessionIDs.push(cancelled.childSessionID)
+    }
+
+    const childResult = await cancelRunningSubtasksByParentSession(cancelled.childSessionID, {
+      cancelQueued: options.cancelQueued,
+      seenParentSessionIDs,
+    })
+    cancelledCount += childResult.cancelledCount
+    cancelledTaskIDs.push(...childResult.cancelledTaskIDs)
+    cancelledSessionIDs.push(...childResult.cancelledSessionIDs)
+  }
+
+  return {
+    cancelled: cancelledCount > 0,
+    cancelledCount,
+    cancelledTaskIDs,
+    cancelledSessionIDs,
+  }
 }

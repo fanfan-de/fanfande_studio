@@ -7,6 +7,8 @@ import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "session.live-stream" })
 const MAX_SUBSCRIPTION_QUEUE_EVENTS = 1000
+const MAX_RECENT_EVENTS_PER_SESSION = 2000
+const RECENT_EVENT_TTL_MS = 5 * 60 * 1000
 
 const metrics = {
   coalescedEvents: 0,
@@ -23,6 +25,10 @@ type SubscriberOptions = {
 }
 
 type PendingResolver = (event: RuntimeEvent.RuntimeEvent | undefined) => void
+type RecentEventEntry = {
+  event: RuntimeEvent.RuntimeEvent
+  observedAt: number
+}
 
 export interface LiveStreamSubscription {
   next(): Promise<RuntimeEvent.RuntimeEvent | undefined>
@@ -212,6 +218,49 @@ class Subscription implements LiveStreamSubscription {
 }
 
 const subscriptionsBySession = new Map<string, Set<Subscription>>()
+const recentEventsBySession = new Map<string, RecentEventEntry[]>()
+
+function compareRuntimeEventCursor(left: RuntimeEvent.RuntimeEvent, right: RuntimeEvent.RuntimeEvent) {
+  if (left.timestamp !== right.timestamp) return left.timestamp - right.timestamp
+  const turnDelta = left.turnID.localeCompare(right.turnID)
+  if (turnDelta !== 0) return turnDelta
+  return left.seq - right.seq
+}
+
+function isRuntimeEventAfterCursor(event: RuntimeEvent.RuntimeEvent, cursor: RuntimeEvent.RuntimeEventCursor) {
+  if (event.timestamp !== cursor.timestamp) return event.timestamp > cursor.timestamp
+  const turnDelta = event.turnID.localeCompare(cursor.turnID)
+  if (turnDelta !== 0) return turnDelta > 0
+  return event.seq > cursor.seq
+}
+
+function pruneRecentEventsForSession(sessionID: string, now = Date.now()) {
+  const current = recentEventsBySession.get(sessionID)
+  if (!current) return
+
+  const cutoff = now - RECENT_EVENT_TTL_MS
+  const fresh = current.filter((entry) => entry.observedAt >= cutoff)
+  const bounded = fresh.length > MAX_RECENT_EVENTS_PER_SESSION
+    ? fresh.slice(fresh.length - MAX_RECENT_EVENTS_PER_SESSION)
+    : fresh
+
+  if (bounded.length === 0) {
+    recentEventsBySession.delete(sessionID)
+    return
+  }
+
+  if (bounded.length !== current.length) {
+    recentEventsBySession.set(sessionID, bounded)
+  }
+}
+
+function rememberRecentEvent(event: RuntimeEvent.RuntimeEvent) {
+  const now = Date.now()
+  const current = recentEventsBySession.get(event.sessionID) ?? []
+  current.push({ event, observedAt: now })
+  recentEventsBySession.set(event.sessionID, current)
+  pruneRecentEventsForSession(event.sessionID, now)
+}
 
 function subscriptionsForSession(sessionID: string) {
   let current = subscriptionsBySession.get(sessionID)
@@ -231,6 +280,7 @@ function activeSubscriptionCount() {
 }
 
 export function publish(event: RuntimeEvent.RuntimeEvent) {
+  rememberRecentEvent(event)
   const subscribers = subscriptionsBySession.get(event.sessionID)
   if (!subscribers || subscribers.size === 0) return event
 
@@ -246,6 +296,32 @@ export function publish(event: RuntimeEvent.RuntimeEvent) {
   }
 
   return event
+}
+
+export function listRecentEvents(input: {
+  sessionID: string
+  turnID?: string
+  since?: RuntimeEvent.RuntimeEventCursor
+  sinceSeq?: number
+}) {
+  pruneRecentEventsForSession(input.sessionID)
+  const current = recentEventsBySession.get(input.sessionID) ?? []
+  return current
+    .map((entry) => entry.event)
+    .filter((event) => {
+      if (input.turnID && event.turnID !== input.turnID) return false
+      if (input.since && !isRuntimeEventAfterCursor(event, input.since)) return false
+      if (
+        input.turnID &&
+        typeof input.sinceSeq === "number" &&
+        Number.isFinite(input.sinceSeq) &&
+        event.seq <= input.sinceSeq
+      ) {
+        return false
+      }
+      return true
+    })
+    .sort(compareRuntimeEventCursor)
 }
 
 export function subscribe(options: SubscriberOptions): LiveStreamSubscription {

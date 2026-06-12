@@ -6335,6 +6335,125 @@ describe("App", () => {
     await screen.findByRole("button", { name: /read-file.*等待确认/i })
   })
 
+  it("subscribes to child sessions in the background when subagents are created", async () => {
+    let sessionStreamListener: DesktopAgentSessionEventListener | undefined
+
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-parent",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Parent session",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([])
+    window.desktop!.agentSession!.loadPermissionRequests = vi.fn().mockResolvedValue([])
+    window.desktop!.agentSession!.subscribe = vi.fn().mockImplementation(async ({ backendSessionID }: { backendSessionID: string }) => ({
+      backendSessionID,
+    }))
+    window.desktop!.agentSession!.unsubscribe = vi.fn().mockImplementation(async ({ backendSessionID }: { backendSessionID: string }) => ({
+      backendSessionID,
+      removed: true,
+    }))
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
+      sessionStreamListener = listener
+      return vi.fn()
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.subscribe).toHaveBeenCalledWith({
+        uiSessionID: "session-parent",
+        backendSessionID: "session-parent",
+      })
+    })
+
+    act(() => {
+      sessionStreamListener?.(createSubscriptionStreamEvent({
+        backendSessionID: "session-parent",
+        id: "100:turn-parent:2",
+        event: "runtime",
+        data: {
+          type: "subagent.created",
+          eventID: "event-subagent-created",
+          sessionID: "session-parent",
+          turnID: "turn-parent",
+          seq: 2,
+          timestamp: 100,
+          payload: {
+            taskID: "task-child",
+            childSessionID: "session-child",
+            title: "Child session",
+            agent: "default",
+            status: "running",
+            updatedAt: 100,
+          },
+        },
+      }))
+    })
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.subscribe).toHaveBeenCalledWith({
+        uiSessionID: "session-child",
+        backendSessionID: "session-child",
+      })
+    })
+    expect(screen.queryByText("Child session")).not.toBeInTheDocument()
+
+    act(() => {
+      sessionStreamListener?.(createSubscriptionStreamEvent({
+        backendSessionID: "session-child",
+        id: "110:turn-child:3",
+        event: "runtime",
+        data: {
+          type: "turn.completed",
+          eventID: "event-child-completed",
+          sessionID: "session-child",
+          turnID: "turn-child",
+          seq: 3,
+          timestamp: 110,
+          payload: {
+            status: "completed",
+            message: {
+              id: "message-child",
+              sessionID: "session-child",
+              role: "assistant",
+              created: 100,
+            },
+            parts: [],
+          },
+        },
+      }))
+    })
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.unsubscribe).toHaveBeenCalledWith({
+        backendSessionID: "session-child",
+      })
+    })
+  })
+
   it("streams the response immediately while keeping file changes hidden until completion", async () => {
     let streamListener: DesktopAgentSessionEventListener | undefined
     let activeStreamID = ""

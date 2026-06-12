@@ -5,6 +5,7 @@ import type { PendingAgentStream } from "../types"
 interface UseAgentSessionStreamEffectsOptions {
   agentConnected: boolean
   agentSessions: Record<string, string>
+  backgroundSessionIDs: string[]
   canLoadSessionHistory: boolean
   openCanvasSessionIDs: string[]
   pendingStreamsRef: MutableRefObject<Record<string, PendingAgentStream>>
@@ -16,6 +17,7 @@ interface UseAgentSessionStreamEffectsOptions {
 export function useAgentSessionStreamEffects({
   agentConnected,
   agentSessions,
+  backgroundSessionIDs,
   canLoadSessionHistory,
   openCanvasSessionIDs,
   pendingStreamsRef,
@@ -48,7 +50,7 @@ export function useAgentSessionStreamEffects({
     }
 
     const nextSubscriptions = Object.fromEntries(
-      openCanvasSessionIDs
+      [...new Set([...openCanvasSessionIDs, ...backgroundSessionIDs])]
         .map((uiSessionID) => [uiSessionID, resolveBackendSessionID(uiSessionID)] as const)
         .filter(([, backendSessionID]) => Boolean(backendSessionID)),
     )
@@ -66,7 +68,7 @@ export function useAgentSessionStreamEffects({
         console.error("[desktop] agentSession.subscribe failed:", error)
       })
     }
-  }, [agentConnected, canLoadSessionHistory, openCanvasSessionIDs, agentSessions])
+  }, [agentConnected, canLoadSessionHistory, openCanvasSessionIDs, backgroundSessionIDs, agentSessions])
 
   useEffect(() => {
     return () => {

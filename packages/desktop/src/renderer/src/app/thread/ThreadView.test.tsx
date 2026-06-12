@@ -1589,6 +1589,113 @@ describe("ThreadView trace collapse", () => {
     expect(getByText("list-directory")).toBeInTheDocument()
   })
 
+  it("does not collapse process trace while the assistant turn is not terminal", () => {
+    const turn = assistantTraceTurn(
+      "assistant-1",
+      [
+        {
+          id: "response-1",
+          kind: "text",
+          timestamp: 1,
+          label: "Assistant",
+          text: "I will create the tasks first.",
+          status: "completed",
+        },
+        {
+          id: "tool-1",
+          kind: "tool",
+          timestamp: 2,
+          label: "Tool",
+          title: "task_create",
+          status: "completed",
+        },
+        {
+          id: "response-2",
+          kind: "text",
+          timestamp: 3,
+          label: "Assistant",
+          text: "Now I will start the child agents.",
+          status: "completed",
+        },
+      ],
+      false,
+    )
+
+    const { getByText, queryByRole } = renderThread([
+      {
+        ...turn,
+        runtime: {
+          ...turn.runtime,
+          phase: "waiting_llm",
+        },
+        state: "waiting_llm",
+      },
+    ])
+
+    expect(queryByRole("button", { name: /Processed/ })).toBeNull()
+    expect(getByText("I will create the tasks first.")).toBeInTheDocument()
+    expect(getByText("task_create")).toBeInTheDocument()
+    expect(getByText("Now I will start the child agents.")).toBeInTheDocument()
+  })
+
+  it("orders adjacent live assistant turns by trace time when they arrive out of sequence", () => {
+    const spawnTurn = assistantTraceTurn(
+      "assistant-spawn",
+      [
+        {
+          id: "response-spawn",
+          kind: "text",
+          timestamp: 300,
+          label: "Assistant",
+          text: "Now I will start the child agents.",
+          status: "completed",
+        },
+        {
+          id: "tool-spawn",
+          kind: "tool",
+          timestamp: 310,
+          label: "Tool",
+          title: "spawn_subagent",
+          status: "completed",
+        },
+      ],
+      true,
+    )
+    const taskTurn = assistantTraceTurn(
+      "assistant-task",
+      [
+        {
+          id: "response-task",
+          kind: "text",
+          timestamp: 100,
+          label: "Assistant",
+          text: "I will create the task list first.",
+          status: "completed",
+        },
+        {
+          id: "tool-task",
+          kind: "tool",
+          timestamp: 110,
+          label: "Tool",
+          title: "task_create",
+          status: "completed",
+        },
+      ],
+      true,
+    )
+
+    const { getByText } = renderThread([
+      userTurn("user-1", "Use multiagent."),
+      spawnTurn,
+      taskTurn,
+    ])
+
+    const taskText = getByText("I will create the task list first.")
+    const spawnText = getByText("Now I will start the child agents.")
+
+    expect(taskText.compareDocumentPosition(spawnText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it("renders the whole process trace header as the collapse button", () => {
     const { getByRole } = renderThread([
       assistantTraceTurn(

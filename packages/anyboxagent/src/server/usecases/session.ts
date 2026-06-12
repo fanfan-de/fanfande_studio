@@ -796,16 +796,19 @@ export function deleteSession(sessionID: string, options?: { ptyRegistry?: PtyRe
   }
 }
 
-export function cancelSession(sessionID: string, input: CancelSessionInput = {}) {
+export async function cancelSession(sessionID: string, input: CancelSessionInput = {}) {
   requireSession(sessionID)
   const result = Prompt.cancelSession(sessionID, {
     cancelQueued: input.cancelQueued ?? false,
     reason: input.reason ?? "user",
   })
+  const subtasks = await Subtask.cancelRunningSubtasksByParentSession(sessionID, {
+    cancelQueued: true,
+  })
 
   return {
     sessionID,
-    cancelled: result.cancelled,
+    cancelled: result.cancelled || subtasks.cancelled,
     activeCancelled: result.activeCancelled,
     queuedCancelled: result.queuedCancelled,
   }

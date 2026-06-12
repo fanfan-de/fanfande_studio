@@ -14,6 +14,17 @@ describe("agent session event router", () => {
     expect(router.rememberSeenCursor("session-a", "cursor-1")).toBe(false)
   })
 
+  it("dedupes identical runtime cursors without dropping unseen older runtime cursors", () => {
+    const router = createAgentSessionEventRouter()
+
+    expect(router.rememberSeenCursor("session-a", "1000:turn-a:3")).toBe(false)
+    expect(router.rememberSeenCursor("session-a", "1000:turn-a:3")).toBe(true)
+    expect(router.rememberSeenCursor("session-a", "1000:turn-a:2")).toBe(false)
+    expect(router.rememberSeenCursor("session-a", "999:turn-z:99")).toBe(false)
+
+    expect(router.rememberSeenCursor("session-b", "1000:turn-a:3")).toBe(false)
+  })
+
   it("tracks backend turn targets and removes them on cleanup", () => {
     const router = createAgentSessionEventRouter()
 

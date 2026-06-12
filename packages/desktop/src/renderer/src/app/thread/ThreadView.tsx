@@ -397,6 +397,63 @@ function readLatestAssistantTurnState(turns: Turn[]): LatestAssistantTurnState |
   return null
 }
 
+function readAssistantTurnOrderTimestamp(turn: AssistantTurn) {
+  const traceTimestamps = turn.items
+    .filter((item) => !item.sourceID?.endsWith(":prompt") && item.kind !== "system")
+    .map((item) => item.timestamp)
+    .filter((timestamp) => Number.isFinite(timestamp))
+
+  if (traceTimestamps.length > 0) return Math.min(...traceTimestamps)
+
+  const runtimeTimestamps = [
+    turn.runtime.firstVisibleAt,
+    turn.runtime.startedAt,
+    turn.timestamp,
+  ].filter((timestamp): timestamp is number => Number.isFinite(timestamp))
+
+  return runtimeTimestamps.length > 0 ? Math.min(...runtimeTimestamps) : 0
+}
+
+function orderAdjacentAssistantTurnsForDisplay(turns: Turn[]) {
+  const orderedTurns = [...turns]
+  let assistantBlockStart = -1
+
+  const flushAssistantBlock = (endIndex: number) => {
+    if (assistantBlockStart < 0) return
+
+    const startIndex = assistantBlockStart
+    assistantBlockStart = -1
+    if (endIndex - startIndex <= 1) return
+
+    const orderedAssistantBlock = orderedTurns
+      .slice(startIndex, endIndex)
+      .map((turn, index) => ({ turn, index }))
+      .sort((left, right) => {
+        const leftTurn = left.turn
+        const rightTurn = right.turn
+        if (leftTurn.kind !== "assistant" || rightTurn.kind !== "assistant") return left.index - right.index
+
+        const timestampDelta = readAssistantTurnOrderTimestamp(leftTurn) - readAssistantTurnOrderTimestamp(rightTurn)
+        return timestampDelta || left.index - right.index
+      })
+      .map(({ turn }) => turn)
+
+    orderedTurns.splice(startIndex, endIndex - startIndex, ...orderedAssistantBlock)
+  }
+
+  for (let index = 0; index < orderedTurns.length; index += 1) {
+    if (orderedTurns[index]?.kind === "assistant") {
+      if (assistantBlockStart < 0) assistantBlockStart = index
+      continue
+    }
+
+    flushAssistantBlock(index)
+  }
+
+  flushAssistantBlock(orderedTurns.length)
+  return orderedTurns
+}
+
 function readThreadColumnPaddingTop(threadColumn: HTMLDivElement) {
   if (typeof window === "undefined") return 0
 
@@ -1301,8 +1358,12 @@ function assistantTurnHasTextResponse(turn: AssistantTurn) {
   )
 }
 
+function isTerminalAssistantTurnPhase(phase: AssistantTurnPhase) {
+  return phase === "completed" || phase === "failed" || phase === "cancelled"
+}
+
 function canCollapseAssistantProcessTrace(turn: AssistantTurn) {
-  return !turn.isStreaming && turn.runtime.phase !== "blocked" && turn.runtime.phase !== "waiting_approval"
+  return !turn.isStreaming && isTerminalAssistantTurnPhase(turn.runtime.phase)
 }
 
 function buildAssistantProcessTraceCollapseEligibilityByTurnID(turns: Turn[]) {
@@ -5407,6 +5468,7 @@ function VisibleThreadView({
   onSideChatSelect,
 }: ThreadViewProps) {
   const answeredQuestionIDs = useMemo(() => collectAnsweredQuestionIDs(activeTurns), [activeTurns])
+  const displayTurns = useMemo(() => orderAdjacentAssistantTurnsForDisplay(activeTurns), [activeTurns])
   const readOnlySideChat = isSideChatSession(activeSession)
   const [copiedResponseTurnID, setCopiedResponseTurnID] = useState<string | null>(null)
   const [copiedUserTurnID, setCopiedUserTurnID] = useState<string | null>(null)
@@ -5453,16 +5515,16 @@ function VisibleThreadView({
   const effectiveScrollStateKey = scrollStateKey ?? activeSessionID ?? "thread:no-session"
   const isResizeLightweightMode = useSidebarResizeLightweightMode()
   const visibleTurnIDs = useMemo(() => {
-    const ids = activeTurns.map((turn) => turn.id)
+    const ids = displayTurns.map((turn) => turn.id)
     const pendingRequestID = pendingPermissionRequests[0]?.id
     return pendingRequestID ? [...ids, `permission-request:${pendingRequestID}`] : ids
-  }, [activeTurns, pendingPermissionRequests])
+  }, [displayTurns, pendingPermissionRequests])
   const visibleTurnIDsKey = visibleTurnIDs.join("\u0000")
   const pendingProcessTraceAutoCollapseTurnIDs = (() => {
     const previousEligibility = previousProcessTraceCollapseEligibilityByTurnIDRef.current
     const ids: string[] = []
 
-    activeTurns.forEach((turn) => {
+    displayTurns.forEach((turn) => {
       if (turn.kind !== "assistant") return
       if (threadViewUiState.processTraceExpansionByTurnID[turn.id] !== undefined) return
       if (previousEligibility[turn.id] !== false || !canCollapseAssistantProcessTrace(turn)) return
@@ -5490,7 +5552,7 @@ function VisibleThreadView({
   const displayRows = useMemo(
     () => buildThreadDisplayRows({
       activeSession,
-      activeTurns,
+      activeTurns: displayTurns,
       assistantTraceVisibility,
       isResolvingPermissionRequest,
       pendingPermissionRequests,
@@ -5498,7 +5560,7 @@ function VisibleThreadView({
     }),
     [
       activeSession,
-      activeTurns,
+      displayTurns,
       assistantTraceVisibility,
       isResolvingPermissionRequest,
       pendingPermissionRequests,
@@ -5528,8 +5590,8 @@ function VisibleThreadView({
 
   useLayoutEffect(() => {
     previousProcessTraceCollapseEligibilityByTurnIDRef.current =
-      buildAssistantProcessTraceCollapseEligibilityByTurnID(activeTurns)
-  }, [activeTurns])
+      buildAssistantProcessTraceCollapseEligibilityByTurnID(displayTurns)
+  }, [displayTurns])
 
   useLayoutEffect(() => {
     if (pendingProcessTraceAutoCollapseTurnIDs.length === 0) return
@@ -6243,7 +6305,7 @@ function VisibleThreadView({
 
     const previousLatestAssistantTurnState = latestAssistantTurnStateRef.current
     const previousActiveTurnCount = previousActiveTurnCountRef.current
-    const latestAssistantTurnState = readLatestAssistantTurnState(activeTurns)
+    const latestAssistantTurnState = readLatestAssistantTurnState(displayTurns)
     const isCompletingLatestAssistantTurn = Boolean(
       previousLatestAssistantTurnState &&
       latestAssistantTurnState &&
@@ -6257,7 +6319,7 @@ function VisibleThreadView({
       previousLatestAssistantTurnState.id === latestAssistantTurnState.id &&
       previousLatestAssistantTurnState.isStreaming &&
       latestAssistantTurnState.isStreaming &&
-      previousActiveTurnCount === activeTurns.length,
+      previousActiveTurnCount === displayTurns.length,
     )
 
     if (isCompletingLatestAssistantTurn) {
@@ -6269,9 +6331,9 @@ function VisibleThreadView({
       smoothFollow: isUpdatingSameStreamingAssistantTurn,
     })
     latestAssistantTurnStateRef.current = latestAssistantTurnState
-    previousActiveTurnCountRef.current = activeTurns.length
+    previousActiveTurnCountRef.current = displayTurns.length
   }, [
-    activeTurns,
+    displayTurns,
     effectiveScrollStateKey,
     pendingPermissionRequests.length,
     permissionRequestActionRequestID,
@@ -6414,12 +6476,12 @@ function VisibleThreadView({
           onCopy={handleCopyUserMessage}
           turn={turn}
           diffCard={
-            shouldRenderDiffOnStandaloneUserTurn(activeTurns, turnIndex, turn) ? (
+            shouldRenderDiffOnStandaloneUserTurn(displayTurns, turnIndex, turn) ? (
               <TurnDiffCard
                 turnID={turn.id}
                 diffSummary={turn.diffSummary}
                 activeSessionDiff={activeSessionDiff}
-                allowWorkspaceDiffFallback={turnIndex === activeTurns.length - 1}
+                allowWorkspaceDiffFallback={turnIndex === displayTurns.length - 1}
                 onFileChangeSelect={onFileChangeSelect}
                 onTurnDiffSummaryHydrate={onTurnDiffSummaryHydrate}
                 onTurnDiffRestore={onTurnDiffRestore}
@@ -6478,7 +6540,7 @@ function VisibleThreadView({
     }
 
     if (row.kind === "process-item") {
-      const isLatestAssistantMessage = isAssistantLatestRenderableTurn(activeTurns, row.turnIndex, row.turn)
+      const isLatestAssistantMessage = isAssistantLatestRenderableTurn(displayTurns, row.turnIndex, row.turn)
 
       return (
         <article
@@ -6521,7 +6583,7 @@ function VisibleThreadView({
     const traceItems = turn.items
     const sideChatAnchorMessageID = turn.messageID ?? turn.id
     const turnMessageID = getSessionMessageIDForTurn(turn)
-    const canExposeResponseActions = isAssistantFinalMessageInUserTurn(activeTurns, turnIndex, turn)
+    const canExposeResponseActions = isAssistantFinalMessageInUserTurn(displayTurns, turnIndex, turn)
     const branchOptions = canExposeResponseActions ? messageTree?.branchOptionsByParentID[turnMessageID] ?? [] : []
     const existingSideChatCount = sideChatCountsByAnchorMessageID[sideChatAnchorMessageID] ?? 0
     const lastResponseItems = canExposeResponseActions ? getLastAssistantResponseSectionItems(traceItems, assistantTraceVisibility) : []
@@ -6553,14 +6615,14 @@ function VisibleThreadView({
           ? `${existingSideChatCount} side chat thread${existingSideChatCount === 1 ? "" : "s"}`
           : "Open a side chat for this reply"
     const hasAssistantDiffSummary = normalizeTurnDiffSummary(turn.diffSummary).length > 0
-    const trailingUserDiffTurn = hasAssistantDiffSummary ? null : getAssistantTrailingUserDiffTurn(activeTurns, turnIndex, turn)
+    const trailingUserDiffTurn = hasAssistantDiffSummary ? null : getAssistantTrailingUserDiffTurn(displayTurns, turnIndex, turn)
     const shouldRenderResponseActions = Boolean(
       responseCopyText ||
       canOpenSideChat ||
       canForkFromMessage ||
       branchOptions.length > 1,
     )
-    const isLatestAssistantMessage = isAssistantLatestRenderableTurn(activeTurns, turnIndex, turn)
+    const isLatestAssistantMessage = isAssistantLatestRenderableTurn(displayTurns, turnIndex, turn)
 
     return (
       <article

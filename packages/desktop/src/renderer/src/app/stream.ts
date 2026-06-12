@@ -217,6 +217,52 @@ function createTraceItem(
   }
 }
 
+function readTraceTimestamp(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+function readPartTimeTimestamp(value: unknown) {
+  const range = readRecord(value)
+  if (!range) return null
+
+  return readTraceTimestamp(range.start) ?? readTraceTimestamp(range.end)
+}
+
+function readCanonicalPartTimestamp(part: Record<string, unknown>) {
+  const state = readRecord(part.state)
+  const stateTime = readPartTimeTimestamp(state?.time)
+  if (stateTime !== null) return stateTime
+
+  return readPartTimeTimestamp(part.time)
+}
+
+function isPromptTraceItem(item: AssistantTraceItem) {
+  return Boolean(item.sourceID?.endsWith(":prompt"))
+}
+
+function insertTraceItemByTimestamp(items: AssistantTraceItem[], nextItem: AssistantTraceItem) {
+  const nextTimestamp = readTraceTimestamp(nextItem.timestamp)
+  if (nextTimestamp === null) return [...items, nextItem]
+
+  let insertIndex = items.length
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index]
+    if (!item) continue
+    if (isPromptTraceItem(item)) break
+
+    const itemTimestamp = readTraceTimestamp(item.timestamp)
+    if (itemTimestamp === null || itemTimestamp <= nextTimestamp) break
+    insertIndex = index
+  }
+
+  if (insertIndex === items.length) return [...items, nextItem]
+  return [
+    ...items.slice(0, insertIndex),
+    nextItem,
+    ...items.slice(insertIndex),
+  ]
+}
+
 function readBoolean(value: unknown) {
   return value === true
 }
@@ -547,6 +593,7 @@ function buildCompletionTraceItem(input: {
   finishReason?: unknown
   message?: unknown
   status?: AssistantTraceStatus
+  timestamp?: number
   debugEntries?: AssistantTraceDebugEntry[]
 }) {
   return createTraceItem({
@@ -555,6 +602,7 @@ function buildCompletionTraceItem(input: {
     kind: "system",
     label: "Workflow",
     title: input.status === "pending" ? "Approval required" : "Response complete",
+    timestamp: input.timestamp,
     detail: input.status === "pending"
       ? "The backend paused this turn until a permission decision is made."
       : buildCompletionDetail({
@@ -751,6 +799,7 @@ function readTaskState(value: unknown) {
 function createTaskStateTraceItem(input: {
   sourceID: string
   taskState: NonNullable<ReturnType<typeof readTaskState>>
+  timestamp?: number
   debugEntries?: AssistantTraceDebugEntry[]
 }) {
   const status: AssistantTraceStatus =
@@ -766,6 +815,7 @@ function createTaskStateTraceItem(input: {
     kind: "task-state",
     label: "Tasks",
     title: `${input.taskState.completed}/${input.taskState.tasks.length} tasks`,
+    timestamp: input.timestamp,
     detail: input.taskState.active?.activeForm,
     status,
     section: "workflow",
@@ -970,7 +1020,7 @@ function settleDraftPatchPreviews(items: AssistantTraceItem[], status: Assistant
 }
 
 function appendTraceItem(items: AssistantTraceItem[], nextItem: AssistantTraceItem) {
-  return [...items, nextItem]
+  return insertTraceItemByTimestamp(items, nextItem)
 }
 
 function upsertTraceItems(items: AssistantTraceItem[], nextItems: AssistantTraceItem[]) {
@@ -1066,6 +1116,7 @@ function appendTraceDelta(
     delta: string
     fullText?: string
     sourceID?: string
+    timestamp?: number
     debugEntries?: AssistantTraceDebugEntry[]
   },
 ) {
@@ -1107,6 +1158,7 @@ function appendTraceDelta(
       label: input.kind === "reasoning" ? "Reasoning" : "Response",
       text: nextText.text,
       sourceID: input.sourceID,
+      timestamp: input.timestamp,
       isStreaming: true,
       debugEntries: appendTruncationDebugEntry(input.debugEntries, nextText.truncated),
     }),
@@ -1123,6 +1175,7 @@ function appendToolInputDelta(
     toolName?: string
     status?: AssistantTraceStatus
     detail?: string
+    timestamp?: number
     debugEntries?: AssistantTraceDebugEntry[]
   },
 ) {
@@ -1160,6 +1213,7 @@ function appendToolInputDelta(
     title: input.toolName || existing?.title || "Tool",
     text: existing?.toolOutputText ?? nextToolInputText,
     detail: input.detail || existing?.detail || "Preparing tool call.",
+    timestamp: existing?.timestamp ?? input.timestamp,
     toolInputText: nextToolInputText,
     toolOutputText: existing?.toolOutputText,
     status,
@@ -1188,6 +1242,7 @@ function buildTraceItemFromPart(
   const sourceID = readString(part.id) || createID("trace")
   const type = readString(part.type)
   const debugEntries = mergeDebugEntries(buildPartDebugEntries(part), options?.debugEntries)
+  const timestamp = readCanonicalPartTimestamp(part)
 
   if (type === "reasoning" || type === "text") {
     const renderedText = truncateStreamRenderText(readString(part.text), STREAM_TEXT_RENDER_LIMIT)
@@ -1197,6 +1252,7 @@ function buildTraceItemFromPart(
       kind: type,
       label: type === "reasoning" ? "Reasoning" : "Response",
       text: renderedText.text,
+      timestamp: timestamp ?? undefined,
       section: type === "reasoning" ? "reasoning" : "response",
       visibilityKey: type === "reasoning" ? "reasoning" : "response",
       isStreaming: false,
@@ -1278,6 +1334,7 @@ function buildTraceItemFromPart(
       messageID,
       partID: sourceID,
       toolCallID,
+      timestamp: timestamp ?? undefined,
       ...(draftPatch ? { draftPatch } : {}),
       section: "tools",
       visibilityKey: "toolCalls",
@@ -1297,6 +1354,7 @@ function buildTraceItemFromPart(
       title: readString(part.title) || "Referenced URL",
       detail: readString(part.url) || "The model cited a URL source.",
       status: "completed",
+      timestamp: timestamp ?? undefined,
       section: "sources",
       visibilityKey: "sources",
       debugEntries,
@@ -1313,6 +1371,7 @@ function buildTraceItemFromPart(
       title: readString(part.title) || "Referenced document",
       detail: detail || "The model cited a document source.",
       status: "completed",
+      timestamp: timestamp ?? undefined,
       section: "sources",
       visibilityKey: "sources",
       debugEntries,
@@ -1342,6 +1401,7 @@ function buildTraceItemFromPart(
       height,
       alt: readString(part.alt) || readString(metadata?.alt) || readString(metadata?.prompt) || title,
       status: "completed",
+      timestamp: timestamp ?? undefined,
       section: "file-change",
       visibilityKey: "files",
       debugEntries,
@@ -1392,6 +1452,7 @@ function buildTraceItemFromPart(
       fileChanges: changes,
       filePaths: changes.length > 0 ? changes.map((change) => change.file) : files,
       status: "completed",
+      timestamp: timestamp ?? undefined,
       section: "file-change",
       visibilityKey: "files",
       debugEntries,
@@ -1426,6 +1487,7 @@ function buildTraceItemFromPart(
       title,
       detail,
       status,
+      timestamp: timestamp ?? undefined,
       section: "approvals",
       visibilityKey: "approvals",
       debugEntries,
@@ -1441,6 +1503,7 @@ function buildTraceItemFromPart(
       title: readString(part.description) || readString(part.agent) || "Delegated task",
       detail: compactText(readString(part.prompt), 220) || "The assistant delegated part of the request.",
       status: "completed",
+      timestamp: timestamp ?? undefined,
       section: "workflow",
       visibilityKey: "workflow",
       debugEntries,
@@ -1456,6 +1519,7 @@ function buildTraceItemFromPart(
       title: "Model step started",
       detail: "The model started a new generation step.",
       status: "pending",
+      timestamp: timestamp ?? undefined,
       section: "workflow",
       visibilityKey: "workflow",
       debugEntries,
@@ -1471,6 +1535,7 @@ function buildTraceItemFromPart(
       title: "Model step finished",
       detail: readString(part.reason) || "The model completed one generation step.",
       status: "completed",
+      timestamp: timestamp ?? undefined,
       section: "workflow",
       visibilityKey: "workflow",
       debugEntries,
@@ -1501,6 +1566,7 @@ function buildTraceItemFromPart(
       title: "Workspace snapshot",
       detail: "The backend captured a workspace snapshot during the run.",
       status: "completed",
+      timestamp: timestamp ?? undefined,
       section: "workflow",
       visibilityKey: "workflow",
       debugEntries,
@@ -1588,6 +1654,7 @@ function appendSystemTrace(
   debugEntries?: AssistantTraceDebugEntry[],
   section: AssistantTraceSectionKey = "workflow",
   visibilityKey: AssistantTraceVisibilityKey = "workflow",
+  timestamp?: number,
 ) {
   const nextItems = clearStreamingItems(settleQueuedPrompt(items, turnID))
   return appendTraceItem(
@@ -1598,6 +1665,7 @@ function appendSystemTrace(
       title,
       detail,
       status,
+      timestamp,
       section,
       visibilityKey,
       debugEntries,
@@ -2357,6 +2425,7 @@ export function finalizeStreamAssistantTurn(
         id: `${turn.id}-blocked`,
         sourceID: `${turn.id}:blocked`,
         status: "pending",
+        timestamp: input?.updatedAt,
         debugEntries: input?.debugEntries,
       }),
     )
@@ -2436,6 +2505,7 @@ export function finalizeStreamAssistantTurn(
         sourceID: `${turn.id}:complete`,
         finishReason: input?.finishReason,
         message: input?.message,
+        timestamp: input?.updatedAt,
         debugEntries: input?.debugEntries,
       }),
     ),
@@ -2596,6 +2666,9 @@ function applyRuntimeEventToTurn(
         "Renderer subscribed to canonical runtime updates.",
         "completed",
         debugEntries,
+        "workflow",
+        "workflow",
+        eventTimestamp,
       ),
     )
   }
@@ -2658,6 +2731,7 @@ function applyRuntimeEventToTurn(
         delta: readString(payload.delta) || readString(payload.text),
         fullText: readString(payload.text) || undefined,
         sourceID: readString(payload.partID) || undefined,
+        timestamp: eventTimestamp,
         debugEntries: buildRuntimeEventDebugEntries(event, item.id, {
           "message.id": readString(payload.messageID),
           "part.id": readString(payload.partID),
@@ -2684,6 +2758,7 @@ function applyRuntimeEventToTurn(
         delta: readString(payload.delta) || readString(payload.text),
         fullText: readString(payload.text) || undefined,
         sourceID: readString(payload.partID) || undefined,
+        timestamp: eventTimestamp,
         debugEntries: buildRuntimeEventDebugEntries(event, item.id, {
           "message.id": readString(payload.messageID),
           "part.id": readString(payload.partID),
@@ -2722,6 +2797,7 @@ function applyRuntimeEventToTurn(
         toolName: readString(payload.toolName),
         status: isAlreadyCancelled ? "cancelled" : undefined,
         detail: isAlreadyCancelled ? cancelledDetail : undefined,
+        timestamp: eventTimestamp,
         debugEntries: buildRuntimeEventDebugEntries(event, item.id, {
           "message.id": readString(payload.messageID),
           "part.id": partID,
@@ -2758,6 +2834,7 @@ function applyRuntimeEventToTurn(
       createTaskStateTraceItem({
         sourceID,
         taskState,
+        timestamp: eventTimestamp,
         debugEntries,
       }),
     )
@@ -2924,6 +3001,7 @@ function applyRuntimeEventToTurn(
         sourceID: `${turn.id}:cancelled`,
         section: "workflow",
         visibilityKey: "workflow",
+        timestamp: eventTimestamp,
         debugEntries,
       }),
     )

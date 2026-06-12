@@ -600,6 +600,115 @@ describe("stream trace reducer", () => {
     expect(turn.items.some((item) => item.kind === "text" && item.text === "Done.")).toBe(true)
   })
 
+  it("keeps late-arriving runtime trace items in backend timestamp order", () => {
+    let turn = buildStreamingAssistantTurn("Create tasks before spawning agents")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-later-text",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 10,
+        timestamp: 300,
+        type: "text.part.delta",
+        payload: {
+          messageID: "message-spawn",
+          partID: "part-spawn-text",
+          kind: "text",
+          delta: "Now I will start the child agents.",
+          text: "Now I will start the child agents.",
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-later-tool",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 11,
+        timestamp: 310,
+        type: "tool.call.completed",
+        payload: {
+          part: {
+            id: "part-spawn-tool",
+            sessionID: "session-runtime",
+            messageID: "message-spawn",
+            type: "tool",
+            callID: "call-spawn",
+            tool: "spawn_subagent",
+            state: {
+              status: "completed",
+              input: {},
+              output: "spawned",
+              time: { start: 310, end: 320 },
+            },
+          },
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-earlier-text-late",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 5,
+        timestamp: 100,
+        type: "text.part.delta",
+        payload: {
+          messageID: "message-task",
+          partID: "part-task-text",
+          kind: "text",
+          delta: "I will create the task list first.",
+          text: "I will create the task list first.",
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-earlier-tool-late",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 6,
+        timestamp: 110,
+        type: "tool.call.completed",
+        payload: {
+          part: {
+            id: "part-task-tool",
+            sessionID: "session-runtime",
+            messageID: "message-task",
+            type: "tool",
+            callID: "call-task-create",
+            tool: "task_create",
+            state: {
+              status: "completed",
+              input: {},
+              output: "created",
+              time: { start: 110, end: 120 },
+            },
+          },
+        },
+      },
+    })
+
+    const renderedTrace = turn.items
+      .filter((item) => item.kind === "text" || item.kind === "tool")
+      .map((item) => item.kind === "tool" ? item.title : item.text)
+
+    expect(renderedTrace).toEqual([
+      "I will create the task list first.",
+      "task_create",
+      "Now I will start the child agents.",
+      "spawn_subagent",
+    ])
+  })
+
   it("does not regress a settled legacy stream when older events arrive late", () => {
     let turn = buildStreamingAssistantTurn("Handle legacy ordering")
 

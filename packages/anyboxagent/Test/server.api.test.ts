@@ -13,6 +13,7 @@ import * as Orchestrator from "#session/runtime/orchestrator.ts"
 import * as RunningState from "#session/runtime/running-state.ts"
 import * as SessionRunner from "#session/runtime/session-runner.ts"
 import * as Session from "#session/core/session.ts"
+import * as Subtask from "#session/tasks/subtask.ts"
 import * as LiveStreamHub from "#session/runtime/live-stream-hub.ts"
 import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
 import * as Env from "#env/env.ts"
@@ -21,6 +22,7 @@ import * as Provider from "#provider/provider.ts"
 import * as SystemPrompt from "#session/core/system.ts"
 import * as SettingsUseCase from "#server/usecases/settings.ts"
 import * as Log from "#util/log.ts"
+import * as db from "#database/Sqlite.ts"
 
 interface JsonEnvelope<T = Record<string, unknown>> {
   success: boolean
@@ -1534,6 +1536,123 @@ describe("server api", () => {
       if (sessionID) {
         RunningState.finish(sessionID, controller)
         Session.removeSession(sessionID)
+      }
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test("POST /api/sessions/:id/cancel should stop running child subagents", async () => {
+    const app = createServerApp()
+    const directory = await createTempDirectory("anybox-cancel-subagents-")
+    const childController = new AbortController()
+    const grandchildController = new AbortController()
+    let parentSessionID: string | null = null
+    let childSessionID: string | null = null
+    let grandchildSessionID: string | null = null
+    let taskID: string | null = null
+    let grandchildTaskID: string | null = null
+
+    try {
+      const createResponse = await app.request("http://localhost/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory }),
+      })
+      const createBody = (await createResponse.json()) as SessionResponseEnvelope
+      parentSessionID = createBody.data?.id ?? null
+      const projectID = createBody.data?.projectID
+
+      expect(createResponse.status).toBe(201)
+      expect(parentSessionID).toBeString()
+      expect(projectID).toBeString()
+      if (!parentSessionID || !projectID) throw new Error("Expected parent session")
+
+      const child = await Session.createSession({
+        directory,
+        projectID,
+        title: "child subagent",
+      })
+      childSessionID = child.id
+      taskID = Identifier.ascending("task")
+      const grandchild = await Session.createSession({
+        directory,
+        projectID,
+        title: "nested child subagent",
+      })
+      grandchildSessionID = grandchild.id
+      grandchildTaskID = Identifier.ascending("task")
+      const now = Date.now()
+
+      Subtask.readSubtask(Identifier.ascending("task"))
+      db.insertOneWithSchema("subtasks", Subtask.SubtaskRecord.parse({
+        id: taskID,
+        parentSessionID,
+        parentMessageID: Identifier.ascending("message"),
+        childSessionID,
+        title: "child subagent",
+        prompt: "Wait until the parent session is cancelled.",
+        agent: "default",
+        model: {
+          providerID: "test-provider",
+          modelID: "test-model",
+        },
+        runInBackground: true,
+        permissionMode: "default",
+        status: "running",
+        startedAt: now,
+        updatedAt: now,
+      }), Subtask.SubtaskRecord)
+      db.insertOneWithSchema("subtasks", Subtask.SubtaskRecord.parse({
+        id: grandchildTaskID,
+        parentSessionID: childSessionID,
+        parentMessageID: Identifier.ascending("message"),
+        childSessionID: grandchildSessionID,
+        title: "nested child subagent",
+        prompt: "Wait until the root parent session is cancelled.",
+        agent: "default",
+        model: {
+          providerID: "test-provider",
+          modelID: "test-model",
+        },
+        runInBackground: true,
+        permissionMode: "default",
+        status: "running",
+        startedAt: now,
+        updatedAt: now,
+      }), Subtask.SubtaskRecord)
+      expect(RunningState.register(childSessionID, childController, { reason: "subagent" })).toBe(true)
+      expect(RunningState.register(grandchildSessionID, grandchildController, { reason: "subagent" })).toBe(true)
+
+      const response = await app.request(`http://localhost/api/sessions/${parentSessionID}/cancel`, {
+        method: "POST",
+      })
+      const body = (await response.json()) as CancelSessionResponseEnvelope
+
+      expect(response.status).toBe(200)
+      expect(body.success).toBe(true)
+      expect(body.data).toEqual({
+        sessionID: parentSessionID,
+        cancelled: true,
+        activeCancelled: false,
+        queuedCancelled: 0,
+      })
+      expect(childController.signal.aborted).toBe(true)
+      expect(RunningState.isRunning(childSessionID)).toBe(false)
+      expect(Subtask.readSubtask(taskID)?.status).toBe("cancelled")
+      expect(grandchildController.signal.aborted).toBe(true)
+      expect(RunningState.isRunning(grandchildSessionID)).toBe(false)
+      expect(Subtask.readSubtask(grandchildTaskID)?.status).toBe("cancelled")
+    } finally {
+      if (grandchildSessionID) {
+        RunningState.finish(grandchildSessionID, grandchildController)
+        Session.removeSession(grandchildSessionID)
+      }
+      if (childSessionID) {
+        RunningState.finish(childSessionID, childController)
+        Session.removeSession(childSessionID)
+      }
+      if (parentSessionID) {
+        Session.removeSession(parentSessionID)
       }
       await rm(directory, { recursive: true, force: true })
     }
@@ -5110,6 +5229,57 @@ describe("server api", () => {
     expect(raw).toContain(`"tool":"read_file"`)
     expect(raw).toContain(`"turnID":"${turn2ID}"`)
     expect(raw).not.toContain(`"turnID":"${turn1ID}"`)
+  })
+
+  test("GET /api/sessions/:id/events/stream seeds active turn transient deltas for late subscribers", async () => {
+    const app = createServerApp()
+    const session = await Session.createSession({
+      directory: process.cwd(),
+      projectID: "project_stream_late_subscriber",
+      title: "Late subscriber stream",
+    })
+    const turnID = Identifier.ascending("turn")
+    const messageID = Identifier.ascending("message")
+    const partID = Identifier.ascending("part")
+    const turn = Orchestrator.startTurn({
+      sessionID: session.id,
+      turnID,
+    })
+
+    try {
+      turn.emitStream("tool.input.delta", {
+        messageID,
+        partID,
+        toolCallID: "toolcall_apply_patch_late",
+        toolName: "apply_patch",
+        delta: "{\"cmd\":\"patch\"}",
+        rawLength: 15,
+      })
+      turn.flushStreamEvents()
+
+      const response = await app.request(
+        `http://localhost/api/sessions/${session.id}/events/stream`,
+      )
+      const raw = await readStreamUntil(response, [
+        `"type":"tool.input.delta"`,
+        `"toolName":"apply_patch"`,
+        `"turnID":"${turnID}"`,
+      ])
+
+      expect(response.status).toBe(200)
+      expect(raw).toContain(`"type":"turn.started"`)
+      expect(raw).toContain(`"type":"tool.input.delta"`)
+      expect(raw).toContain(`"toolCallID":"toolcall_apply_patch_late"`)
+      expect(raw).toContain(`"delta":"{\\"cmd\\":\\"patch\\"}"`)
+    } finally {
+      if (Orchestrator.activeTurn(session.id)?.turnID === turnID) {
+        turn.emit("turn.cancelled", {
+          reason: "user",
+          detail: "test cleanup",
+        })
+        Orchestrator.finishTurn(turn)
+      }
+    }
   })
 
   test("GET /api/projects/:id/sessions should return 404 for missing project", async () => {
