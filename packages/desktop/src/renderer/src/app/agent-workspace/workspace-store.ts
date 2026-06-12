@@ -8,6 +8,7 @@ import type {
   ComposerDraftState,
   CreateSessionTab,
   LeftSidebarView,
+  PendingConversationInput,
   PermissionRequest,
   RightSidebarOpenTabInput,
   RightSidebarState,
@@ -322,6 +323,7 @@ export interface AgentStreamSliceState {
   contextUsageBySession: Record<string, SessionContextUsage>
   conversations: ConversationMap
   messageTreeBySession: Record<string, SessionMessageTree>
+  pendingConversationInputsBySession: Record<string, PendingConversationInput[]>
   pendingPermissionRequestsBySession: Record<string, PermissionRequest[]>
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
@@ -394,6 +396,9 @@ export interface AgentStreamSliceActions {
   ) => void
   setConversations: (update: WorkspaceStateUpdater<ConversationMap>) => void
   setMessageTreeBySession: (update: WorkspaceStateUpdater<Record<string, SessionMessageTree>>) => void
+  setPendingConversationInputsBySession: (
+    update: WorkspaceStateUpdater<Record<string, PendingConversationInput[]>>,
+  ) => void
   setPendingPermissionRequestsBySession: (
     update: WorkspaceStateUpdater<Record<string, PermissionRequest[]>>,
   ) => void
@@ -514,6 +519,7 @@ export function createWorkspaceStore({
       contextUsageBySession: {},
       conversations: conversationStore.getConversations(),
       messageTreeBySession: {},
+      pendingConversationInputsBySession: {},
       pendingPermissionRequestsBySession: {},
       permissionRequestActionError: null,
       permissionRequestActionRequestID: null,
@@ -920,6 +926,16 @@ export function createWorkspaceStore({
           agentStream: {
             ...state.agentStream,
             messageTreeBySession: resolveStateUpdate(state.agentStream.messageTreeBySession, update),
+          },
+        })),
+      setPendingConversationInputsBySession: (update) =>
+        set((state) => ({
+          agentStream: {
+            ...state.agentStream,
+            pendingConversationInputsBySession: resolveStateUpdate(
+              state.agentStream.pendingConversationInputsBySession,
+              update,
+            ),
           },
         })),
       setPendingPermissionRequestsBySession: (update) =>

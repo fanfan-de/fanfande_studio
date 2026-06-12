@@ -1,13 +1,13 @@
 import { ThreadRichText } from "../thread-rich-text"
-import type { UserTurn } from "../types"
+import type { PendingConversationInput } from "../types"
 
-function getPendingSubmissionText(turn: UserTurn) {
-  return turn.displayText?.trim() || turn.text
+function getPendingSubmissionText(input: PendingConversationInput) {
+  return input.displayText?.trim() || input.text
 }
 
-function getPendingSubmissionNote(turn: UserTurn) {
-  if (turn.submissionMode === "queued") return "已排队，当前 turn 结束后发送"
-  if (turn.streamInsertion?.status === "consumed") return "已引导，当前 turn 会读取这条输入"
+function getPendingSubmissionNote(input: PendingConversationInput) {
+  if (input.mode === "queued") return "已排队，当前 turn 结束后发送"
+  if (input.status === "consumed") return "已引导，当前 turn 会读取这条输入"
   return "将在当前 turn 到达安全边界后继续"
 }
 
@@ -16,15 +16,15 @@ export function ComposerConcurrentInputDrawer({
   hasPendingPermissionRequests,
   isCancelling,
   onSteerQueuedTurn,
-  pendingTurns,
+  pendingInputs,
 }: {
   canSteer: boolean
   hasPendingPermissionRequests: boolean
   isCancelling: boolean
-  onSteerQueuedTurn?: (turn: UserTurn) => void | Promise<void>
-  pendingTurns: UserTurn[]
+  onSteerQueuedTurn?: (input: PendingConversationInput) => void | Promise<void>
+  pendingInputs: PendingConversationInput[]
 }) {
-  if (pendingTurns.length === 0) return null
+  if (pendingInputs.length === 0) return null
 
   const steerDisabled =
     !canSteer ||
@@ -33,21 +33,21 @@ export function ComposerConcurrentInputDrawer({
 
   return (
     <div className="composer-concurrent-input-drawer" aria-live="polite" aria-label="运行中输入操作">
-      {pendingTurns.map((turn) => (
-        <article key={turn.id} className="composer-concurrent-input-card">
+      {pendingInputs.map((input) => (
+        <article key={input.id} className="composer-concurrent-input-card">
           <ThreadRichText
             as="div"
             className="composer-concurrent-input-text"
-            references={turn.references ?? []}
-            text={getPendingSubmissionText(turn)}
+            references={input.references ?? []}
+            text={getPendingSubmissionText(input)}
           />
-          {turn.submissionMode === "queued" ? (
+          {input.mode === "queued" ? (
             <div className="composer-concurrent-input-actions">
               <button
                 aria-label="引导当前 turn"
                 className="composer-concurrent-input-steer-button"
                 disabled={steerDisabled || !onSteerQueuedTurn}
-                onClick={() => void onSteerQueuedTurn?.(turn)}
+                onClick={() => void onSteerQueuedTurn?.(input)}
                 title="引导当前正在运行的 turn"
                 type="button"
               >
@@ -56,7 +56,7 @@ export function ComposerConcurrentInputDrawer({
             </div>
           ) : (
             <div className="composer-concurrent-input-note">
-              <span>{getPendingSubmissionNote(turn)}</span>
+              <span>{getPendingSubmissionNote(input)}</span>
             </div>
           )}
         </article>

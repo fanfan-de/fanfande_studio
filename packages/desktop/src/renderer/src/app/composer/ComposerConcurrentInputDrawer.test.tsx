@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { ComposerConcurrentInputDrawer } from "./ComposerConcurrentInputDrawer"
-import type { UserTurn } from "../types"
+import type { PendingConversationInput } from "../types"
 
 describe("ComposerConcurrentInputDrawer", () => {
   it("stays hidden until a submitted turn is pending", () => {
@@ -10,7 +10,7 @@ describe("ComposerConcurrentInputDrawer", () => {
         canSteer
         hasPendingPermissionRequests={false}
         isCancelling={false}
-        pendingTurns={[]}
+        pendingInputs={[]}
       />,
     )
 
@@ -19,12 +19,13 @@ describe("ComposerConcurrentInputDrawer", () => {
 
   it("renders queued pending submissions with the steer action", () => {
     const onSteerQueuedTurn = vi.fn()
-    const queuedTurn: UserTurn = {
-      id: "user-queued",
-      kind: "user",
+    const queuedInput: PendingConversationInput = {
+      id: "input-queued",
+      sessionID: "session-1",
       text: "Queued request",
-      submissionMode: "queued",
-      timestamp: 1,
+      mode: "queued",
+      status: "pending",
+      createdAt: 1,
     }
 
     render(
@@ -32,7 +33,7 @@ describe("ComposerConcurrentInputDrawer", () => {
         canSteer
         hasPendingPermissionRequests={false}
         isCancelling={false}
-        pendingTurns={[queuedTurn]}
+        pendingInputs={[queuedInput]}
         onSteerQueuedTurn={onSteerQueuedTurn}
       />,
     )
@@ -41,21 +42,19 @@ describe("ComposerConcurrentInputDrawer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "引导当前 turn" }))
 
-    expect(onSteerQueuedTurn).toHaveBeenCalledWith(queuedTurn)
+    expect(onSteerQueuedTurn).toHaveBeenCalledWith(queuedInput)
   })
 
   it("renders pending steer submissions with a waiting note", () => {
-    const steerTurn: UserTurn = {
-      id: "user-steer",
-      kind: "user",
+    const steerInput: PendingConversationInput = {
+      id: "input-steer",
+      sessionID: "session-1",
       text: "Adjust current turn",
-      submissionMode: "steer",
-      streamInsertion: {
-        assistantTurnID: "assistant-active",
-        afterItemCount: 1,
-        status: "pending",
-      },
-      timestamp: 2,
+      mode: "steer",
+      status: "pending",
+      targetAssistantTurnID: "assistant-active",
+      afterItemCount: 1,
+      createdAt: 2,
     }
 
     render(
@@ -63,7 +62,7 @@ describe("ComposerConcurrentInputDrawer", () => {
         canSteer
         hasPendingPermissionRequests={false}
         isCancelling={false}
-        pendingTurns={[steerTurn]}
+        pendingInputs={[steerInput]}
       />,
     )
 
@@ -72,12 +71,13 @@ describe("ComposerConcurrentInputDrawer", () => {
   })
 
   it("renders steer submissions without insertion metadata with a waiting note", () => {
-    const steerTurn: UserTurn = {
-      id: "user-steer",
-      kind: "user",
+    const steerInput: PendingConversationInput = {
+      id: "input-steer",
+      sessionID: "session-1",
       text: "Adjust during tool input",
-      submissionMode: "steer",
-      timestamp: 2,
+      mode: "steer",
+      status: "pending",
+      createdAt: 2,
     }
 
     render(
@@ -85,7 +85,7 @@ describe("ComposerConcurrentInputDrawer", () => {
         canSteer
         hasPendingPermissionRequests={false}
         isCancelling={false}
-        pendingTurns={[steerTurn]}
+        pendingInputs={[steerInput]}
       />,
     )
 

@@ -3,6 +3,7 @@ import { createAgentSessionEventRouter } from "../agent-session/event-router"
 import { createAgentSessionStore } from "../agent-session/store"
 import type {
   PendingAgentStream,
+  PendingConversationInput,
   PermissionRequest
 } from "../types"
 import { createSessionDataLoadCache } from "./session-data-load-cache"
@@ -34,6 +35,10 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
   const conversationStore = useWorkspaceStoreSelector(store, (state) => state.agentStream.conversationStore)
   const contextUsageBySession = useWorkspaceStoreSelector(store, (state) => state.agentStream.contextUsageBySession)
   const messageTreeBySession = useWorkspaceStoreSelector(store, (state) => state.agentStream.messageTreeBySession)
+  const pendingConversationInputsBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.agentStream.pendingConversationInputsBySession as Record<string, PendingConversationInput[]>,
+  )
   const pendingPermissionRequestsBySession = useWorkspaceStoreSelector(
     store,
     (state) => state.agentStream.pendingPermissionRequestsBySession as Record<string, PermissionRequest[]>,
@@ -58,6 +63,10 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
   )
   const setConversations = useWorkspaceStoreSelector(store, (state) => state.agentStreamActions.setConversations)
   const setMessageTreeBySession = useWorkspaceStoreSelector(store, (state) => state.agentStreamActions.setMessageTreeBySession)
+  const setPendingConversationInputsBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.agentStreamActions.setPendingConversationInputsBySession,
+  )
   const setPendingPermissionRequestsBySession = useWorkspaceStoreSelector(
     store,
     (state) => state.agentStreamActions.setPendingPermissionRequestsBySession,
@@ -86,6 +95,7 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
     historyRequestRef,
     lastFocusedSessionIDRef,
     messageTreeBySession,
+    pendingConversationInputsBySession,
     pendingPermissionRequestsBySession,
     pendingStreamsRef,
     permissionRequestActionError,
@@ -99,6 +109,7 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
     setContextUsageBySession,
     setConversations,
     setMessageTreeBySession,
+    setPendingConversationInputsBySession,
     setPendingPermissionRequestsBySession,
     setPermissionRequestActionError,
     setPermissionRequestActionRequestID,

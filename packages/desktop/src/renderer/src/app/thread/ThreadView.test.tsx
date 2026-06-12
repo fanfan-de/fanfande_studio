@@ -2871,8 +2871,8 @@ describe("ThreadView message actions", () => {
     expect(screen.getByText("下次模型/工具调用后")).toBeInTheDocument()
   })
 
-  it("does not render pending steer turns without insertion metadata as normal thread messages", () => {
-    const pendingSteerTurn: UserTurn = {
+  it("renders active steer-marked user turns without insertion metadata as committed messages", () => {
+    const steerTurn: UserTurn = {
       ...userTurn("user-steer", "Adjust during tool input"),
       submissionMode: "steer",
     }
@@ -2892,14 +2892,14 @@ describe("ThreadView message actions", () => {
         ],
         true,
       ),
-      pendingSteerTurn,
+      steerTurn,
     ])
 
-    expect(container.querySelectorAll(".user-turn")).toHaveLength(0)
-    expect(screen.queryByText("Adjust during tool input")).toBeNull()
+    expect(container.querySelectorAll(".user-turn")).toHaveLength(1)
+    expect(screen.getByText("Adjust during tool input")).toBeInTheDocument()
   })
 
-  it("does not render queued submissions as normal messages while tool input is streaming", () => {
+  it("renders active queued-marked user turns as committed messages", () => {
     const queuedTurn: UserTurn = {
       ...userTurn("user-queued", "Adjust patch target"),
       submissionMode: "queued",
@@ -2924,8 +2924,8 @@ describe("ThreadView message actions", () => {
       queuedTurn,
     ])
 
-    expect(container.querySelectorAll(".user-turn")).toHaveLength(0)
-    expect(screen.queryByText("Adjust patch target")).toBeNull()
+    expect(container.querySelectorAll(".user-turn")).toHaveLength(1)
+    expect(screen.getByText("Adjust patch target")).toBeInTheDocument()
   })
 
   it("renders stream-inserted steer turns between live assistant trace items", () => {

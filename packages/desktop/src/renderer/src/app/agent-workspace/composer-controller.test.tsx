@@ -8,10 +8,10 @@ import type {
   ComposerDraftState,
   CreateSessionTab,
   PendingAgentStream,
+  PendingConversationInput,
   PermissionRequest,
   SessionSummary,
   Turn,
-  UserTurn,
   WorkspaceGroup,
 } from "../types"
 import { useComposerController } from "./composer-controller"
@@ -106,6 +106,7 @@ function useComposerHarness(input?: {
   const [pendingPermissionRequestsBySession, setPendingPermissionRequestsBySessionState] = useState<Record<string, PermissionRequest[]>>(
     input?.initialPendingPermissionRequestsBySession ?? {},
   )
+  const [pendingConversationInputsBySession, setPendingConversationInputsBySessionState] = useState<Record<string, PendingConversationInput[]>>({})
   const [sessionDirectoryBySession, setSessionDirectoryBySessionState] = useState<Record<string, string>>({})
   const [workspaces, setWorkspacesState] = useState<WorkspaceGroup[]>([workspace])
   const turnsRef = useRef<Record<string, Turn[]>>({})
@@ -157,6 +158,7 @@ function useComposerHarness(input?: {
     loadPendingPermissionRequestsForSession: vi.fn(async () => undefined),
     loadSessionDiffForSession: vi.fn(async () => undefined),
     loadSessionRuntimeDebugForSession: vi.fn(async () => undefined),
+    pendingConversationInputsBySession,
     pendingPermissionRequestsBySession,
     pendingStreamsRef,
     permissionRequestActionRequestID: null,
@@ -177,6 +179,8 @@ function useComposerHarness(input?: {
       applyUpdate(setComposerParentMessageIDByTabKeyState, composerParentMessageIDByTabKey, update),
     setCreateSessionTabs: (update) => applyUpdate(setCreateSessionTabsState, createSessionTabs, update),
     setIsSendingByTabKey: (update) => applyUpdate(setIsSendingByTabKeyState, isSendingByTabKey, update),
+    setPendingConversationInputsBySession: (update) =>
+      applyUpdate(setPendingConversationInputsBySessionState, pendingConversationInputsBySession, update),
     setPendingPermissionRequestsBySession: (update) =>
       applyUpdate(setPendingPermissionRequestsBySessionState, pendingPermissionRequestsBySession, update),
     setPermissionRequestActionError: vi.fn(),
@@ -193,6 +197,7 @@ function useComposerHarness(input?: {
     controller,
     createSessionForWorkspace,
     createSessionTabs,
+    pendingConversationInputsBySession,
     pendingStreamsRef,
     turnsRef,
     updateAssistantConversationTurn,
@@ -289,21 +294,18 @@ describe("composer controller", () => {
       }))
       expect(interrupt).not.toHaveBeenCalled()
       expect(cancelTurn).not.toHaveBeenCalled()
-      expect(result.current.turnsRef.current["session-1"]).toHaveLength(3)
+      expect(result.current.turnsRef.current["session-1"]).toHaveLength(1)
       expect(result.current.turnsRef.current["session-1"]?.[0]).toMatchObject({
         kind: "assistant",
       })
-      expect(result.current.turnsRef.current["session-1"]?.[1]).toMatchObject({
-        kind: "user",
-        submissionMode: "queued",
-      })
-      expect(result.current.turnsRef.current["session-1"]?.[1]).not.toHaveProperty("streamInsertion")
-      expect(result.current.turnsRef.current["session-1"]?.[2]).toMatchObject({
-        kind: "assistant",
-        isStreaming: true,
+      expect(result.current.pendingConversationInputsBySession["session-1"]?.[0]).toMatchObject({
+        mode: "queued",
+        status: "pending",
+        text: "Existing prompt",
       })
       expect(Object.values(result.current.pendingStreamsRef.current)).toContainEqual(
         expect.objectContaining({
+          pendingInputID: result.current.pendingConversationInputsBySession["session-1"]?.[0]?.id,
           requestedMode: "queue",
           sessionID: "session-1",
         }),
@@ -359,13 +361,15 @@ describe("composer controller", () => {
         concurrentInputMode: "queue",
         text: "Existing prompt",
       }))
-      expect(result.current.turnsRef.current["session-1"]?.[1]).toMatchObject({
-        kind: "user",
+      expect(result.current.turnsRef.current["session-1"]).toHaveLength(1)
+      expect(result.current.pendingConversationInputsBySession["session-1"]?.[0]).toMatchObject({
+        mode: "queued",
+        status: "pending",
         text: "Existing prompt",
-        submissionMode: "queued",
       })
       expect(Object.values(result.current.pendingStreamsRef.current)).toContainEqual(
         expect.objectContaining({
+          pendingInputID: result.current.pendingConversationInputsBySession["session-1"]?.[0]?.id,
           requestedMode: "queue",
           sessionID: "session-1",
         }),
@@ -428,24 +432,24 @@ describe("composer controller", () => {
         await result.current.controller.handleSend()
       })
 
-      const queuedTurn = result.current.turnsRef.current["session-1"]?.find(
-        (turn): turn is UserTurn => turn.kind === "user" && turn.submissionMode === "queued",
+      const queuedInput = result.current.pendingConversationInputsBySession["session-1"]?.find(
+        (input) => input.mode === "queued",
       )
       const queuedStreamEntry = Object.entries(result.current.pendingStreamsRef.current).find(
         ([, stream]) => stream.requestedMode === "queue",
       )
       const queuedAssistantTurnID = queuedStreamEntry?.[1].createdAssistantTurnID
 
-      expect(queuedTurn).toBeDefined()
+      expect(queuedInput).toBeDefined()
       expect(queuedStreamEntry).toBeDefined()
       expect(queuedAssistantTurnID).toBeTruthy()
-      if (!queuedTurn || !queuedStreamEntry || !queuedAssistantTurnID) {
-        throw new Error("Expected queued turn, stream, and assistant placeholder")
+      if (!queuedInput || !queuedStreamEntry || !queuedAssistantTurnID) {
+        throw new Error("Expected queued pending input, stream, and assistant placeholder")
       }
 
       await act(async () => {
         await result.current.controller.handleSend({
-          steerQueuedTurnID: queuedTurn.id,
+          steerQueuedTurnID: queuedInput.id,
         })
       })
 
@@ -474,24 +478,24 @@ describe("composer controller", () => {
       }
 
       const nextTurns = result.current.turnsRef.current["session-1"] ?? []
-      expect(nextTurns.find((turn) => turn.id === queuedTurn.id)).toBeUndefined()
+      expect(nextTurns.find((turn) => turn.id === queuedInput.id)).toBeUndefined()
       expect(nextTurns.find((turn) => turn.id === queuedAssistantTurnID)).toBeUndefined()
-      const steerUserTurn = nextTurns.find((turn) => turn.kind === "user" && turn.submissionMode === "steer")
-      expect(steerUserTurn).toMatchObject({
-        kind: "user",
+      expect(nextTurns.some((turn) => turn.kind === "user" && turn.text === "Existing prompt")).toBe(false)
+      expect(nextTurns.find((turn) => turn.id === steerAssistantTurnID)).toBeUndefined()
+      const steerInput = result.current.pendingConversationInputsBySession["session-1"]?.find(
+        (input) => input.mode === "steer",
+      )
+      expect(steerInput).toMatchObject({
+        mode: "steer",
+        status: "pending",
         text: "Existing prompt",
-        submissionMode: "steer",
-      })
-      expect(steerUserTurn).not.toHaveProperty("streamInsertion")
-      expect(nextTurns.find((turn) => turn.id === steerAssistantTurnID)).toMatchObject({
-        kind: "assistant",
-        isStreaming: true,
       })
       expect(result.current.pendingStreamsRef.current[queuedStreamEntry[0]]).toBeUndefined()
       expect(Object.values(result.current.pendingStreamsRef.current)).toContainEqual(
         expect.objectContaining({
           assistantTurnID: steerAssistantTurnID,
           createdAssistantTurnID: steerAssistantTurnID,
+          pendingInputID: steerInput?.id,
           requestedMode: "steer",
           sessionID: "session-1",
         }),
@@ -575,26 +579,22 @@ describe("composer controller", () => {
           }),
         ],
       })
-      expect(result.current.turnsRef.current["session-1"]?.[1]).toMatchObject({
-        kind: "user",
-        text: "Existing prompt",
-        submissionMode: "steer",
-      })
-      expect(result.current.turnsRef.current["session-1"]?.[1]).not.toHaveProperty("streamInsertion")
       const steerStream = Object.values(result.current.pendingStreamsRef.current).find(
         (stream) => stream.requestedMode === "steer",
       )
       expect(steerStream).toBeDefined()
       expect(steerStream?.assistantTurnID).not.toBe("assistant-active")
-      expect(result.current.turnsRef.current["session-1"]?.[2]).toMatchObject({
-        id: steerStream?.assistantTurnID,
-        kind: "assistant",
-        isStreaming: true,
+      expect(result.current.turnsRef.current["session-1"]).toHaveLength(1)
+      expect(result.current.pendingConversationInputsBySession["session-1"]?.[0]).toMatchObject({
+        mode: "steer",
+        status: "pending",
+        text: "Existing prompt",
       })
       expect(Object.values(result.current.pendingStreamsRef.current)).toContainEqual(
         expect.objectContaining({
           assistantTurnID: steerStream?.assistantTurnID,
           createdAssistantTurnID: steerStream?.assistantTurnID,
+          pendingInputID: result.current.pendingConversationInputsBySession["session-1"]?.[0]?.id,
           requestedMode: "steer",
           sessionID: "session-1",
         }),

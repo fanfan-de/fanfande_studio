@@ -8,12 +8,14 @@ import {
   buildStreamingAssistantTurn,
   buildUserTurn,
 } from "../stream"
+import { appendPendingConversationInput, removePendingConversationInput } from "../pending-conversation-inputs"
 import type {
   AssistantTurn,
   ComposerAttachment,
   ComposerCommentReference,
   ComposerDraftState,
   PendingAgentStream,
+  PendingConversationInput,
   ReasoningEffort,
   SessionSummary,
   Turn,
@@ -111,6 +113,9 @@ interface SendPromptToSessionEnvironment {
     update: WorkspaceStateUpdater<Record<string, ComposerDraftState>>,
   ) => void
   setIsSendingByTabKey: (update: WorkspaceStateUpdater<Record<string, boolean>>) => void
+  setPendingConversationInputsBySession: (
+    update: WorkspaceStateUpdater<Record<string, PendingConversationInput[]>>,
+  ) => void
   setSessionDirectoryBySession: (update: WorkspaceStateUpdater<Record<string, string>>) => void
   setWorkspaces: (update: WorkspaceStateUpdater<WorkspaceGroup[]>) => void
   updateAssistantConversationTurn: (
@@ -140,6 +145,7 @@ export async function sendPromptToSession(
     setComposerAttachmentsByTabKey,
     setComposerDraftStateByTabKey,
     setIsSendingByTabKey,
+    setPendingConversationInputsBySession,
     setSessionDirectoryBySession,
     setWorkspaces,
     updateAssistantConversationTurn,
@@ -163,9 +169,11 @@ export async function sendPromptToSession(
   const uiSessionID = session.id
   const agentSession = getAgentSessionBridge()
   const canStream = Boolean(agentSession?.canStream)
-  const concurrentInputMode = submissionMode === "steer" ? "steer" : "queue"
+  const concurrentInputMode = submissionMode === "steer" ? "steer" : submissionMode === "queued" ? "queue" : undefined
   const usesBackendStream = agentConnected && Boolean(window.desktop?.createAgentSession) && Boolean(agentSession) && canStream
-  const localSubmissionMode = usesBackendStream ? submissionMode ?? "queued" : submissionMode
+  const pendingInputMode = usesBackendStream && (submissionMode === "queued" || submissionMode === "steer")
+    ? submissionMode
+    : null
   const normalizedText = text.trim() || normalizeQuestionAnswerText(questionAnswer)
   const attachmentInputs = attachments.map((attachment) => ({
     path: attachment.path,
@@ -174,14 +182,27 @@ export async function sendPromptToSession(
   const model = resolveComposerTurnModel(selectedModel, session)
   const effectiveSelectedSkillIDs = resolveComposerSkillSelectionForSession(session, selectedSkillIDs)
   const userTurnDisplayText = displayText?.trim() || normalizeQuestionAnswerText(questionAnswer) || undefined
-  const userTurn: Turn = buildUserTurn({
+  const userTurn: UserTurn = buildUserTurn({
     attachments: attachmentInputs,
     displayText: userTurnDisplayText,
     fallbackText: normalizedText,
     questionAnswer,
     references,
-    submissionMode: localSubmissionMode,
   })
+  const pendingInput: PendingConversationInput | null = pendingInputMode
+    ? {
+        id: userTurn.id,
+        sessionID: uiSessionID,
+        text: userTurn.text,
+        ...(userTurn.displayText ? { displayText: userTurn.displayText } : {}),
+        ...(userTurn.attachments?.length ? { attachments: userTurn.attachments } : {}),
+        ...(userTurn.references?.length ? { references: userTurn.references } : {}),
+        ...(userTurn.questionAnswer ? { questionAnswer: userTurn.questionAnswer } : {}),
+        mode: pendingInputMode,
+        status: "pending",
+        createdAt: userTurn.timestamp,
+      }
+    : null
 
   if (!preserveComposerState) {
     setComposerDraftStateByTabKey((current) => ({
@@ -194,7 +215,9 @@ export async function sendPromptToSession(
     }))
   }
 
-  if (parentMessageID) {
+  if (pendingInput) {
+    setPendingConversationInputsBySession((current) => appendPendingConversationInput(current, pendingInput))
+  } else if (parentMessageID) {
     const currentTurns = getConversationTurns(uiSessionID)
     const parentTurnIndex = currentTurns.findIndex((turn) =>
       turn.kind === "assistant"
@@ -274,12 +297,16 @@ export async function sendPromptToSession(
         sessionID: uiSessionID,
         backendSessionID,
         assistantTurnID,
+        ...(pendingInput ? { pendingInput } : {}),
+        ...(pendingInput ? { pendingInputID: pendingInput.id } : {}),
         userTurnID: userTurn.id,
-        requestedMode: localSubmissionMode === "steer" ? "steer" : localSubmissionMode === "queued" ? "queue" : "new-turn",
+        requestedMode: pendingInput?.mode === "steer" ? "steer" : pendingInput?.mode === "queued" ? "queue" : "new-turn",
         createdAssistantTurnID: streamingTurn.id,
       }
 
-      appendConversationTurns(uiSessionID, [streamingTurn])
+      if (!pendingInput) {
+        appendConversationTurns(uiSessionID, [streamingTurn])
+      }
 
       await agentSession.sendTurn({
         clientTurnID: streamID,
@@ -289,7 +316,7 @@ export async function sendPromptToSession(
         ...(parentMessageID ? { parentMessageID } : {}),
         ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
         ...(questionAnswer ? { questionAnswer } : {}),
-        concurrentInputMode,
+        ...(concurrentInputMode ? { concurrentInputMode } : {}),
         ...(reasoningEffort ? { reasoningEffort } : {}),
         ...(model ? { model } : {}),
         skills: effectiveSelectedSkillIDs,
@@ -306,7 +333,7 @@ export async function sendPromptToSession(
       ...(parentMessageID ? { parentMessageID } : {}),
       ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
       ...(questionAnswer ? { questionAnswer } : {}),
-      concurrentInputMode,
+      ...(concurrentInputMode ? { concurrentInputMode } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
       ...(model ? { model } : {}),
       skills: effectiveSelectedSkillIDs,
@@ -328,6 +355,11 @@ export async function sendPromptToSession(
     const message = error instanceof Error ? error.message : String(error)
     if (streamID) {
       delete pendingStreamsRef.current[streamID]
+    }
+    if (pendingInput) {
+      setPendingConversationInputsBySession((current) =>
+        removePendingConversationInput(current, pendingInput.sessionID, pendingInput.id),
+      )
     }
 
     startTransition(() => {

@@ -14,6 +14,7 @@ import type {
   ComposerPastedImageAttachment,
   CreateSessionTab,
   PendingAgentStream,
+  PendingConversationInput,
   PermissionDecision,
   PermissionRequest,
   ReasoningEffort,
@@ -31,6 +32,10 @@ import {
   updateSessionInWorkspaces,
   updateSessionModelSelectionInWorkspaces,
 } from "../workspace"
+import {
+  removePendingConversationInput,
+  updatePendingConversationInput,
+} from "../pending-conversation-inputs"
 import {
   normalizeQuestionAnswerText,
   sendPromptToSession as sendPromptToSessionService,
@@ -76,6 +81,7 @@ interface UseComposerControllerOptions {
   loadPendingPermissionRequestsForSession: (sessionID: string, backendSessionID?: string) => Promise<void>
   loadSessionDiffForSession: (sessionID: string, backendSessionID?: string) => Promise<void>
   loadSessionRuntimeDebugForSession: (sessionID: string, backendSessionID?: string) => Promise<void>
+  pendingConversationInputsBySession: Record<string, PendingConversationInput[]>
   pendingPermissionRequestsBySession: Record<string, PermissionRequest[]>
   pendingStreamsRef: MutableRefObject<Record<string, PendingAgentStream>>
   permissionRequestActionRequestID: string | null
@@ -92,6 +98,7 @@ interface UseComposerControllerOptions {
   setComposerParentMessageIDByTabKey: StateSetter<Record<string, string>>
   setCreateSessionTabs: StateSetter<CreateSessionTab[]>
   setIsSendingByTabKey: StateSetter<Record<string, boolean>>
+  setPendingConversationInputsBySession: StateSetter<Record<string, PendingConversationInput[]>>
   setPendingPermissionRequestsBySession: StateSetter<Record<string, PermissionRequest[]>>
   setPermissionRequestActionError: StateSetter<string | null>
   setPermissionRequestActionRequestID: StateSetter<string | null>
@@ -125,6 +132,7 @@ export function useComposerController({
   loadPendingPermissionRequestsForSession,
   loadSessionDiffForSession,
   loadSessionRuntimeDebugForSession,
+  pendingConversationInputsBySession,
   pendingPermissionRequestsBySession,
   pendingStreamsRef,
   permissionRequestActionRequestID,
@@ -141,6 +149,7 @@ export function useComposerController({
   setComposerParentMessageIDByTabKey,
   setCreateSessionTabs,
   setIsSendingByTabKey,
+  setPendingConversationInputsBySession,
   setPendingPermissionRequestsBySession,
   setPermissionRequestActionError,
   setPermissionRequestActionRequestID,
@@ -217,6 +226,7 @@ export function useComposerController({
       setComposerAttachmentsByTabKey,
       setComposerDraftStateByTabKey,
       setIsSendingByTabKey,
+      setPendingConversationInputsBySession,
       setSessionDirectoryBySession,
       setWorkspaces,
       updateAssistantConversationTurn,
@@ -446,18 +456,16 @@ export function useComposerController({
     const tabKey = input.tabKey
     if (!sessionID || !tabKey) return
 
-    const turns = getConversationTurns(sessionID)
-    const queuedTurn = turns.find(
-      (turn): turn is UserTurn =>
-        turn.kind === "user" &&
-        turn.id === input.turnID &&
-        turn.submissionMode === "queued",
+    const queuedInput = (pendingConversationInputsBySession[sessionID] ?? []).find(
+      (pendingInput) =>
+        pendingInput.id === input.turnID &&
+        pendingInput.mode === "queued",
     )
-    if (!queuedTurn) return
+    if (!queuedInput) return
 
     const pendingEntry = Object.entries(pendingStreamsRef.current).find(([, stream]) =>
       stream.sessionID === sessionID &&
-      stream.userTurnID === queuedTurn.id &&
+      (stream.pendingInputID === queuedInput.id || stream.userTurnID === queuedInput.id) &&
       stream.requestedMode === "queue" &&
       !stream.cancelRequested
     )
@@ -469,6 +477,12 @@ export function useComposerController({
     if (!agentSession?.abortTurn || !backendSessionID) return
 
     stream.cancelRequested = true
+    setPendingConversationInputsBySession((current) =>
+      updatePendingConversationInput(current, sessionID, queuedInput.id, (pendingInput) => ({
+        ...pendingInput,
+        status: "cancelled",
+      })),
+    )
     const abortResult = await agentSession.abortTurn({
       backendSessionID,
       clientTurnID: streamID,
@@ -479,20 +493,29 @@ export function useComposerController({
 
     if (!abortResult?.localRequestAborted) {
       stream.cancelRequested = false
+      setPendingConversationInputsBySession((current) =>
+        updatePendingConversationInput(current, sessionID, queuedInput.id, (pendingInput) => ({
+          ...pendingInput,
+          status: "pending",
+        })),
+      )
       return
     }
 
     delete pendingStreamsRef.current[streamID]
     const assistantTurnID = stream.createdAssistantTurnID ?? stream.assistantTurnID
+    setPendingConversationInputsBySession((current) =>
+      removePendingConversationInput(current, sessionID, queuedInput.id),
+    )
     replaceConversationTurns(
       sessionID,
-      turns.filter((turn) => turn.id !== queuedTurn.id && turn.id !== assistantTurnID),
+      getConversationTurns(sessionID).filter((turn) => turn.id !== assistantTurnID),
     )
 
     await handleSend({
-      attachmentsOverride: queuedTurn.attachments
+      attachmentsOverride: queuedInput.attachments
         ?.flatMap((attachment) => attachment.path ? [{ name: attachment.name, path: attachment.path }] : []) ?? [],
-      draftStateOverride: createComposerDraftStateFromPlainText(queuedTurn.displayText ?? queuedTurn.text),
+      draftStateOverride: createComposerDraftStateFromPlainText(queuedInput.displayText ?? queuedInput.text),
       preserveComposerState: true,
       selectedReasoningEffort: input.selectedReasoningEffort,
       selectedModel: input.selectedModel,

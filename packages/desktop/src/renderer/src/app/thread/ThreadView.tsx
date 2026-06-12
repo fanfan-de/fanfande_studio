@@ -28,10 +28,7 @@ import { getSessionMessageIDForTurn, type SessionMessageBranchOption, type Sessi
 import { buildTurnsFromHistory } from "../stream"
 import {
   getAssistantStreamInsertionUserTurns,
-  getPendingQueuedUserTurns,
-  getPendingStreamInsertionUserTurns,
   hasStreamInsertionTarget,
-  isPendingQueuedUserTurn,
   isPendingSteerUserTurn,
   resolveStreamInsertionItemIndex,
 } from "../stream-insertion"
@@ -62,6 +59,7 @@ import type {
   ComposerAttachment,
   ComposerDraftState,
   ComposerPastedImageAttachment,
+  PendingConversationInput,
   PermissionDecision,
   PermissionRequest,
   ReasoningEffort,
@@ -120,6 +118,7 @@ interface ThreadViewProps {
   onTurnDiffSummaryHydrate?: (turnID: string, diffSummary: SessionDiffSummary) => void | Promise<void>
   onTurnDiffRestore?: (diffs: SessionDiffFile[]) => void | Promise<void>
   onTurnDiffReview?: (files: string[]) => void | Promise<void>
+  pendingConversationInputs?: PendingConversationInput[]
   pendingPermissionRequests: PermissionRequest[]
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
@@ -129,6 +128,7 @@ interface ThreadViewProps {
   sideChatIsCancelling?: boolean
   sideChatIsInterruptible?: boolean
   sideChatIsSending?: boolean
+  sideChatPendingInputs?: PendingConversationInput[]
   sideChatPendingPermissionRequests?: PermissionRequest[]
   sideChatPermissionRequestActionError?: string | null
   sideChatPermissionRequestActionRequestID?: string | null
@@ -550,9 +550,7 @@ function buildThreadDisplayRows({
   const rows: ThreadDisplayRow[] = []
   activeTurns.forEach((turn, turnIndex) => {
     if (turn.kind === "user") {
-      if (isPendingSteerUserTurn(activeTurns, turn)) return
       if (hasStreamInsertionTarget(activeTurns, turn)) return
-      if (isPendingQueuedUserTurn(activeTurns, turn)) return
 
       rows.push({
         estimatedHeight: estimateUserThreadRowHeight(turn),
@@ -2594,6 +2592,7 @@ export interface InlineSideChatThreadProps {
   isCancelling?: boolean
   isInterruptible?: boolean
   isSending: boolean
+  pendingInputs: PendingConversationInput[]
   pendingPermissionRequests: PermissionRequest[]
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
@@ -2655,6 +2654,7 @@ export function InlineSideChatThread({
   isCancelling = false,
   isInterruptible = false,
   isSending,
+  pendingInputs,
   pendingPermissionRequests,
   permissionRequestActionError,
   permissionRequestActionRequestID,
@@ -2706,13 +2706,9 @@ export function InlineSideChatThread({
     pendingPermissionRequests.length > 0 ||
     isResolvingPermissionRequest ||
     Boolean(permissionRequestActionError)
-  const pendingSubmissionTurns = useMemo(
-    () =>
-      [
-        ...getPendingQueuedUserTurns(effectiveTurns),
-        ...getPendingStreamInsertionUserTurns(effectiveTurns),
-      ].sort((left, right) => left.timestamp - right.timestamp),
-    [effectiveTurns],
+  const pendingSubmissionInputs = useMemo(
+    () => [...pendingInputs].sort((left, right) => left.createdAt - right.createdAt),
+    [pendingInputs],
   )
 
   useEffect(() => {
@@ -2920,6 +2916,7 @@ export function InlineSideChatThread({
             composerRefreshVersion={composerRefreshVersion}
             isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
             isResolvingPermissionRequest={isResolvingPermissionRequest}
+            pendingConversationInputs={pendingInputs}
             pendingPermissionRequests={pendingPermissionRequests}
             permissionRequestActionError={permissionRequestActionError}
             permissionRequestActionRequestID={permissionRequestActionRequestID}
@@ -2945,13 +2942,13 @@ export function InlineSideChatThread({
           canSteer
           hasPendingPermissionRequests={pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
           isCancelling={isCancelling}
-          pendingTurns={pendingSubmissionTurns}
-          onSteerQueuedTurn={(turn) =>
+          pendingInputs={pendingSubmissionInputs}
+          onSteerQueuedTurn={(input) =>
             void onSend({
               selectedReasoningEffort: composer.selectedReasoningEffort,
               selectedModel: composer.selectedModel,
               selectedSkillIDs: composer.selectedSkillIDs,
-              steerQueuedTurnID: turn.id,
+              steerQueuedTurnID: input.id,
               waitForPendingModelSelection: composer.awaitPendingModelSelection,
             })
           }
@@ -5289,6 +5286,7 @@ function getThreadViewPropsChangeReason(left: ThreadViewProps, right: ThreadView
   if (left.isAgentDebugTraceEnabled !== right.isAgentDebugTraceEnabled) return "isAgentDebugTraceEnabled"
   if (left.isResolvingPermissionRequest !== right.isResolvingPermissionRequest) return "isResolvingPermissionRequest"
   if (left.messageTree !== right.messageTree) return "messageTree"
+  if (!areArraysShallowEqual(left.pendingConversationInputs, right.pendingConversationInputs)) return "pendingConversationInputs"
   if (!areArraysShallowEqual(left.pendingPermissionRequests, right.pendingPermissionRequests)) return "pendingPermissionRequests"
   if (left.permissionRequestActionError !== right.permissionRequestActionError) return "permissionRequestActionError"
   if (left.permissionRequestActionRequestID !== right.permissionRequestActionRequestID) return "permissionRequestActionRequestID"
@@ -5300,6 +5298,9 @@ function getThreadViewPropsChangeReason(left: ThreadViewProps, right: ThreadView
   if (left.sideChatIsCancelling !== right.sideChatIsCancelling) return "sideChatIsCancelling"
   if (left.sideChatIsInterruptible !== right.sideChatIsInterruptible) return "sideChatIsInterruptible"
   if (left.sideChatIsSending !== right.sideChatIsSending) return "sideChatIsSending"
+  if (!areArraysShallowEqual(left.sideChatPendingInputs, right.sideChatPendingInputs)) {
+    return "sideChatPendingInputs"
+  }
   if (!areArraysShallowEqual(left.sideChatPendingPermissionRequests, right.sideChatPendingPermissionRequests)) {
     return "sideChatPendingPermissionRequests"
   }
@@ -5369,6 +5370,7 @@ function VisibleThreadView({
   onTurnDiffRestore,
   onTurnDiffReview,
   onAskUserQuestionAnswer,
+  pendingConversationInputs = [],
   pendingPermissionRequests,
   permissionRequestActionError,
   permissionRequestActionRequestID,
@@ -5378,6 +5380,7 @@ function VisibleThreadView({
   sideChatIsCancelling = false,
   sideChatIsInterruptible = false,
   sideChatIsSending = false,
+  sideChatPendingInputs = [],
   sideChatPendingPermissionRequests = [],
   sideChatPermissionRequestActionError = null,
   sideChatPermissionRequestActionRequestID = null,
@@ -6653,6 +6656,7 @@ function VisibleThreadView({
                   isCancelling={sideChatIsCancelling}
                   isInterruptible={sideChatIsInterruptible}
                   isSending={sideChatIsSending}
+                  pendingInputs={sideChatPendingInputs}
                   pendingPermissionRequests={sideChatPendingPermissionRequests}
                   permissionRequestActionError={sideChatPermissionRequestActionError}
                   permissionRequestActionRequestID={sideChatPermissionRequestActionRequestID}

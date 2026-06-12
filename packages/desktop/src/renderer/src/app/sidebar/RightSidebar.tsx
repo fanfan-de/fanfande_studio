@@ -22,6 +22,7 @@ import type {
   ComposerPastedImageAttachment,
   PreviewInteractionCommitInput,
   PreviewInteractionPluginID,
+  PendingConversationInput,
   PermissionDecision,
   PermissionRequest,
   ReasoningEffort,
@@ -48,6 +49,7 @@ interface RightSidebarSideChatPanelState {
   isInterruptible: boolean
   isSending: boolean
   parentSessionID: string
+  pendingInputs: PendingConversationInput[]
   pendingPermissionRequests: PermissionRequest[]
   session: SessionSummary
   sideChatSessions: SessionSummary[]
@@ -499,6 +501,7 @@ export function RightSidebar({
               isCancelling={sideChatPanelState.isCancelling}
               isInterruptible={sideChatPanelState.isInterruptible}
               isSending={sideChatPanelState.isSending}
+              pendingInputs={sideChatPanelState.pendingInputs}
               pendingPermissionRequests={sideChatPanelState.pendingPermissionRequests}
               permissionRequestActionError={permissionRequestActionError}
               permissionRequestActionRequestID={permissionRequestActionRequestID}

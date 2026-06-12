@@ -6,7 +6,6 @@ import { ComposerConcurrentInputDrawer } from "../composer/ComposerConcurrentInp
 import { useDeferredComposerDraftSync } from "../composer/use-deferred-composer-draft-sync"
 import { ComposerUtilityBar } from "../ComposerUtilityBar"
 import { getSessionWorkflowBadge, type SessionWorkflowBadge as SessionWorkflowBadgeInfo } from "../session-workflow"
-import { getPendingQueuedUserTurns, getPendingStreamInsertionUserTurns } from "../stream-insertion"
 import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "../thread-markdown"
 import type {
   AssistantTraceVisibility,
@@ -270,13 +269,9 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
   })
   const readOnlySideChat = isSideChatSession(pane.activeSession)
   const showGitControls = pane.isActivePanel && !readOnlySideChat
-  const pendingSubmissionTurns = useMemo(
-    () =>
-      [
-        ...getPendingQueuedUserTurns(activeTurns),
-        ...getPendingStreamInsertionUserTurns(activeTurns),
-      ].sort((left, right) => left.timestamp - right.timestamp),
-    [activeTurns],
+  const pendingSubmissionInputs = useMemo(
+    () => [...pane.pendingConversationInputs].sort((left, right) => left.createdAt - right.createdAt),
+    [pane.pendingConversationInputs],
   )
   const {
     flushDraftSync,
@@ -477,6 +472,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                   isResolvingPermissionRequest={isResolvingPermissionRequest}
                   isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
                   pendingPermissionRequests={pane.pendingPermissionRequests}
+                  pendingConversationInputs={pane.pendingConversationInputs}
                   permissionRequestActionError={permissionRequestActionError}
                   permissionRequestActionRequestID={permissionRequestActionRequestID}
                   activeTurns={activeTurns}
@@ -487,6 +483,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                   sideChatIsCancelling={pane.activeSideChatIsCancelling}
                   sideChatIsInterruptible={pane.activeSideChatIsInterruptible}
                   sideChatIsSending={pane.activeSideChatIsSending}
+                  sideChatPendingInputs={pane.activeSideChatPendingInputs}
                   sideChatPendingPermissionRequests={pane.activeSideChatPendingPermissionRequests}
                   sideChatPermissionRequestActionError={permissionRequestActionError}
                   sideChatPermissionRequestActionRequestID={permissionRequestActionRequestID}
@@ -612,15 +609,15 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                   canSteer={Boolean(pane.activeSession)}
                   hasPendingPermissionRequests={pane.pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
                   isCancelling={pane.isCancelling}
-                  pendingTurns={pendingSubmissionTurns}
-                  onSteerQueuedTurn={(turn) => {
+                  pendingInputs={pendingSubmissionInputs}
+                  onSteerQueuedTurn={(input) => {
                     void onSend({
                       paneID: pane.id,
                       selectedReasoningEffort: composer.selectedReasoningEffort,
                       selectedModel: composer.selectedModel,
                       selectedSkillIDs: composer.selectedSkillIDs,
                       sessionID: pane.sessionID,
-                      steerQueuedTurnID: turn.id,
+                      steerQueuedTurnID: input.id,
                       tabKey: pane.tabKey,
                       waitForPendingModelSelection: composer.awaitPendingModelSelection,
                     })

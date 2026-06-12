@@ -18,6 +18,7 @@ import type {
   AssistantTurn,
   LoadedSessionHistoryMessage,
   PendingAgentStream,
+  PendingConversationInput,
   PermissionRequest,
   SessionContextUsage,
   SessionDiffState,
@@ -30,6 +31,11 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import { buildSessionMessageTree, type SessionMessageTree } from "../session-message-tree"
+import {
+  pendingConversationInputToUserTurn,
+  removePendingConversationInput,
+  updatePendingConversationInput,
+} from "../pending-conversation-inputs"
 import { mergeUserTurnPresentationState, persistUserTurns, readPersistedUserTurns } from "../user-turn-presentation"
 import { findSession } from "../workspace"
 import {
@@ -1210,6 +1216,7 @@ interface UseSessionStreamControllerOptions {
   openCanvasSessionIDs: string[]
   visibleCanvasSessionIDs: string[]
   onSessionCanvasActivity: (sessionID: string) => void
+  pendingConversationInputsBySession: Record<string, PendingConversationInput[]>
   pendingStreamsRef: MutableRefObject<Record<string, PendingAgentStream>>
   permissionRequestsRequestRef: MutableRefObject<Record<string, number>>
   platform: string
@@ -1228,6 +1235,7 @@ interface UseSessionStreamControllerOptions {
   setContextUsageBySession: StateSetter<Record<string, SessionContextUsage>>
   setConversations: StateSetter<Record<string, Turn[]>>
   setMessageTreeBySession: StateSetter<Record<string, SessionMessageTree>>
+  setPendingConversationInputsBySession: StateSetter<Record<string, PendingConversationInput[]>>
   setPendingPermissionRequestsBySession: StateSetter<Record<string, PermissionRequest[]>>
   setSessionDiffBySession: StateSetter<Record<string, SessionDiffSummary>>
   setSessionDiffStateBySession: StateSetter<Record<string, SessionDiffState>>
@@ -1255,6 +1263,7 @@ export function useSessionStreamController({
   openCanvasSessionIDs,
   visibleCanvasSessionIDs,
   onSessionCanvasActivity,
+  pendingConversationInputsBySession,
   pendingStreamsRef,
   permissionRequestsRequestRef,
   platform,
@@ -1273,6 +1282,7 @@ export function useSessionStreamController({
   setContextUsageBySession,
   setConversations,
   setMessageTreeBySession,
+  setPendingConversationInputsBySession,
   setPendingPermissionRequestsBySession,
   setSessionDiffBySession,
   setSessionDiffStateBySession,
@@ -1292,6 +1302,8 @@ export function useSessionStreamController({
   const externalTurnUserHistoryMergedRef = useRef<Set<string>>(new Set())
   const externalTurnHistoryRefreshInFlightRef = useRef<Set<string>>(new Set())
   const externalTurnHistoryLastAttemptAtRef = useRef<Record<string, number>>({})
+  const pendingConversationInputsBySessionRef = useRef(pendingConversationInputsBySession)
+  pendingConversationInputsBySessionRef.current = pendingConversationInputsBySession
 
   function updateSessionContextUsage(sessionID: string, usage: SessionContextUsage | null) {
     setContextUsageBySession((prev) => {
@@ -1444,6 +1456,9 @@ export function useSessionStreamController({
     for (const [streamID, target] of Object.entries(pendingStreamsRef.current)) {
       if (target.backendSessionID === backendSessionID && target.backendTurnID === turnID) {
         delete pendingStreamsRef.current[streamID]
+        if (target.pendingInputID) {
+          removePendingConversationInputForSession(target.sessionID, target.pendingInputID)
+        }
       }
     }
   }
@@ -1537,7 +1552,16 @@ export function useSessionStreamController({
   function revealBackendRecordedUserTurn(input: {
     sessionID: string
     userTurnID: string
+    beforeTurnID?: string
   }) {
+    if (commitPendingConversationInputAsUserTurn({
+      sessionID: input.sessionID,
+      inputID: input.userTurnID,
+      beforeTurnID: input.beforeTurnID,
+    })) {
+      return
+    }
+
     setConversations((prev) => {
       const current = prev[input.sessionID] ?? []
       const nextTurns = revealBackendRecordedUserTurnPresentation({
@@ -1553,6 +1577,116 @@ export function useSessionStreamController({
         ...prev,
         [input.sessionID]: reconciled,
       }
+    })
+  }
+
+  function findPendingConversationInput(sessionID: string, inputID: string) {
+    const stateInput = (pendingConversationInputsBySessionRef.current[sessionID] ?? []).find((input) => input.id === inputID)
+    if (stateInput) return stateInput
+
+    return Object.values(pendingStreamsRef.current).find((stream) =>
+      stream.sessionID === sessionID &&
+      stream.pendingInputID === inputID
+    )?.pendingInput ?? null
+  }
+
+  function readAssistantItemCount(sessionID: string, assistantTurnID: string | undefined) {
+    if (!assistantTurnID) return 0
+    const assistantTurn = conversationStore.getSessionTurns(sessionID).find(
+      (turn): turn is AssistantTurn => turn.kind === "assistant" && turn.id === assistantTurnID,
+    )
+    return assistantTurn?.items.length ?? 0
+  }
+
+  function removePendingConversationInputForSession(sessionID: string, inputID: string) {
+    setPendingConversationInputsBySession((current) =>
+      removePendingConversationInput(current, sessionID, inputID),
+    )
+    for (const stream of Object.values(pendingStreamsRef.current)) {
+      if (stream.sessionID === sessionID && stream.pendingInputID === inputID) {
+        delete stream.pendingInput
+      }
+    }
+  }
+
+  function updatePendingConversationInputForSession(
+    sessionID: string,
+    inputID: string,
+    updater: (input: PendingConversationInput) => PendingConversationInput,
+  ) {
+    setPendingConversationInputsBySession((current) =>
+      updatePendingConversationInput(current, sessionID, inputID, updater),
+    )
+    for (const stream of Object.values(pendingStreamsRef.current)) {
+      if (stream.sessionID !== sessionID || stream.pendingInputID !== inputID || !stream.pendingInput) continue
+      stream.pendingInput = updater(stream.pendingInput)
+    }
+  }
+
+  function insertCommittedUserTurn(
+    turns: Turn[],
+    userTurn: UserTurn,
+    beforeTurnID: string | undefined,
+  ) {
+    if (turns.some((turn) => turn.id === userTurn.id)) return turns
+    if (!beforeTurnID) return [...turns, userTurn]
+
+    const beforeIndex = turns.findIndex((turn) => turn.id === beforeTurnID)
+    if (beforeIndex === -1) return [...turns, userTurn]
+
+    return [
+      ...turns.slice(0, beforeIndex),
+      userTurn,
+      ...turns.slice(beforeIndex),
+    ]
+  }
+
+  function commitPendingConversationInputAsUserTurn(input: {
+    sessionID: string
+    inputID: string
+    beforeTurnID?: string
+    streamInsertion?: UserTurn["streamInsertion"]
+  }) {
+    const pendingInput = findPendingConversationInput(input.sessionID, input.inputID)
+    if (!pendingInput) return false
+
+    const userTurn = pendingConversationInputToUserTurn(pendingInput, {
+      ...(input.streamInsertion ? { streamInsertion: input.streamInsertion } : {}),
+    })
+    setConversations((prev) => {
+      const current = prev[input.sessionID] ?? []
+      const nextTurns = insertCommittedUserTurn(current, userTurn, input.beforeTurnID)
+      if (nextTurns === current) return prev
+
+      bumpConversationVersion(input.sessionID)
+      const reconciled = reconcileConversationTurns(nextTurns)
+      persistUserTurns(input.sessionID, reconciled)
+      return {
+        ...prev,
+        [input.sessionID]: reconciled,
+      }
+    })
+    removePendingConversationInputForSession(input.sessionID, input.inputID)
+    return true
+  }
+
+  function commitPendingSteerInputAsConsumedInsertion(input: {
+    sessionID: string
+    inputID: string
+    assistantTurnID: string
+  }) {
+    const pendingInput = findPendingConversationInput(input.sessionID, input.inputID)
+    if (!pendingInput || pendingInput.mode !== "steer") return false
+
+    return commitPendingConversationInputAsUserTurn({
+      sessionID: input.sessionID,
+      inputID: input.inputID,
+      beforeTurnID: undefined,
+      streamInsertion: {
+        assistantTurnID: input.assistantTurnID,
+        afterItemCount: pendingInput.afterItemCount ?? readAssistantItemCount(input.sessionID, input.assistantTurnID),
+        status: "consumed",
+      },
     })
   }
 
@@ -1593,6 +1727,7 @@ export function useSessionStreamController({
     revealBackendRecordedUserTurn({
       sessionID: pending.sessionID,
       userTurnID: pending.userTurnID,
+      beforeTurnID: pending.assistantTurnID,
     })
   }
 
@@ -1947,6 +2082,9 @@ export function useSessionStreamController({
     const backendTurnID = executionMode.turnID
     if (sessionEventRouterRef.current.hasBackendTurnSettled(backendSessionID, backendTurnID)) {
       delete pendingStreamsRef.current[streamID]
+      if (target.pendingInputID) {
+        removePendingConversationInputForSession(target.sessionID, target.pendingInputID)
+      }
       cleanupTurnTarget(backendSessionID, backendTurnID)
       return
     }
@@ -1979,7 +2117,32 @@ export function useSessionStreamController({
       removeConversationTurn(target.sessionID, route.removeAssistantTurnID)
     }
 
-    if (target.userTurnID) {
+    if (target.pendingInputID) {
+      if (executionMode.mode === "new-turn") {
+        commitPendingConversationInputAsUserTurn({
+          sessionID: target.sessionID,
+          inputID: target.pendingInputID,
+          beforeTurnID: target.assistantTurnID,
+        })
+      } else {
+        updatePendingConversationInputForSession(
+          target.sessionID,
+          target.pendingInputID,
+          (pendingInput) => ({
+            ...pendingInput,
+            status: executionMode.mode === "steer" ? "accepted" : "pending",
+            ...(executionMode.mode === "steer"
+              ? {
+                  targetAssistantTurnID: target.assistantTurnID,
+                  afterItemCount: pendingInput.afterItemCount ?? readAssistantItemCount(target.sessionID, target.assistantTurnID),
+                }
+              : {}),
+          }),
+        )
+      }
+    }
+
+    if (target.userTurnID && !target.pendingInputID) {
       applyExecutionModeToUserTurn({
         sessionID: target.sessionID,
         userTurnID: target.userTurnID,
@@ -2012,6 +2175,9 @@ export function useSessionStreamController({
       const backendSessionID = target.backendSessionID ?? resolveBackendSessionID(target.sessionID)
       if (backendTurnID && isTerminalStreamEvent(streamEvent)) {
         delete pendingStreamsRef.current[streamEvent.streamID]
+        if (target.pendingInputID) {
+          removePendingConversationInputForSession(target.sessionID, target.pendingInputID)
+        }
         cleanupTurnTarget(backendSessionID, backendTurnID)
       }
       return
@@ -2026,6 +2192,9 @@ export function useSessionStreamController({
       const backendSessionID = target.backendSessionID ?? resolveBackendSessionID(target.sessionID)
       if (sessionEventRouterRef.current.hasBackendTurnSettled(backendSessionID, backendTurnID)) {
         delete pendingStreamsRef.current[streamEvent.streamID]
+        if (target.pendingInputID) {
+          removePendingConversationInputForSession(target.sessionID, target.pendingInputID)
+        }
         cleanupTurnTarget(backendSessionID, backendTurnID)
         return
       }
@@ -2050,16 +2219,32 @@ export function useSessionStreamController({
       revealBackendRecordedUserTurn({
         sessionID: target.sessionID,
         userTurnID: target.userTurnID,
+        beforeTurnID: assistantTurnID,
       })
     }
     if (isSteerHandoffBoundaryStreamEvent(streamEvent)) {
+      if (target.pendingInputID) {
+        commitPendingConversationInputAsUserTurn({
+          sessionID: target.sessionID,
+          inputID: target.pendingInputID,
+        })
+      }
       revealPendingSteerUserTurnsAtHandoff({
         sessionID: target.sessionID,
         assistantTurnID,
       })
     }
     if (isSteerInputConsumedStreamEvent(streamEvent)) {
-      markPendingSteerUserTurnsConsumed(target.sessionID, assistantTurnID)
+      if (
+        !target.pendingInputID ||
+        !commitPendingSteerInputAsConsumedInsertion({
+          sessionID: target.sessionID,
+          inputID: target.pendingInputID,
+          assistantTurnID,
+        })
+      ) {
+        markPendingSteerUserTurnsConsumed(target.sessionID, assistantTurnID)
+      }
     }
 
     if (isLlmCompletedStreamEvent(streamEvent)) {
@@ -2103,6 +2288,9 @@ export function useSessionStreamController({
       }
       sessionEventRouterRef.current.markBackendTurnSettled(target.backendSessionID, target.backendTurnID)
       delete pendingStreamsRef.current[streamEvent.streamID]
+      if (target.pendingInputID) {
+        removePendingConversationInputForSession(target.sessionID, target.pendingInputID)
+      }
       cleanupTurnTarget(target.backendSessionID, target.backendTurnID)
       refreshWorkspaceForSession(target.sessionID)
 

@@ -4,6 +4,7 @@ import type {
   ComposerAttachment,
   ComposerDraftState,
   CreateSessionTab,
+  PendingConversationInput,
   PermissionRequest,
   SessionContextUsage,
   SessionDiffState,
@@ -47,6 +48,7 @@ import type { WorkspaceStore } from "./workspace-store"
 
 const EMPTY_COMPOSER_ATTACHMENTS: ComposerAttachment[] = []
 const EMPTY_COMPOSER_DRAFT_STATE = createEmptyComposerDraftState()
+const EMPTY_PENDING_CONVERSATION_INPUTS: PendingConversationInput[] = []
 const EMPTY_PERMISSION_REQUESTS: PermissionRequest[] = []
 const EMPTY_SIDE_CHAT_COUNTS_BY_ANCHOR_MESSAGE_ID: Record<string, number> = {}
 const EMPTY_SIDE_CHAT_SESSIONS_BY_ANCHOR_MESSAGE_ID: Record<string, SessionSummary[]> = {}
@@ -362,6 +364,7 @@ export interface BuildWorkspaceDerivedStateInput {
   isCreatingSessionByTabKey: Record<string, boolean>
   isInitialWorkspaceLoadPending: boolean
   isSendingByTabKey: Record<string, boolean>
+  pendingConversationInputsBySession?: Record<string, PendingConversationInput[]>
   pendingPermissionRequestsBySession: Record<string, PermissionRequest[]>
   platform: string
   previewByWorkspaceID: Record<string, WorkspacePreviewState>
@@ -618,6 +621,9 @@ export function buildWorkbenchSurfaceState(
     activeSideChatPendingPermissionRequests: paneActiveSideChatSession
       ? input.pendingPermissionRequestsBySession[paneActiveSideChatSession.id] ?? EMPTY_PERMISSION_REQUESTS
       : EMPTY_PERMISSION_REQUESTS,
+    activeSideChatPendingInputs: paneActiveSideChatSession
+      ? input.pendingConversationInputsBySession?.[paneActiveSideChatSession.id] ?? EMPTY_PENDING_CONVERSATION_INPUTS
+      : EMPTY_PENDING_CONVERSATION_INPUTS,
     activeSideChatSession: paneActiveSideChatSession,
     activeSideChatTabKey: paneActiveSideChatTabKey,
     activeSideChatTurns: paneActiveSideChatSession ? input.conversations[paneActiveSideChatSession.id] ?? EMPTY_TURNS : EMPTY_TURNS,
@@ -663,6 +669,9 @@ export function buildWorkbenchSurfaceState(
         tabKey: currentActiveTabKey,
       }),
     pendingPermissionRequests: currentActiveSessionID ? input.pendingPermissionRequestsBySession[currentActiveSessionID] ?? EMPTY_PERMISSION_REQUESTS : EMPTY_PERMISSION_REQUESTS,
+    pendingConversationInputs: currentActiveSessionID
+      ? input.pendingConversationInputsBySession?.[currentActiveSessionID] ?? EMPTY_PENDING_CONVERSATION_INPUTS
+      : EMPTY_PENDING_CONVERSATION_INPUTS,
     projectID:
       input.isInitialWorkspaceLoadPending && currentWorkspace && input.seedWorkspaceIDs.has(currentWorkspace.id)
         ? null
@@ -701,6 +710,7 @@ function createInactiveWorkbenchSurfaceState(surface: Pick<WorkbenchSurfaceState
     activeSideChatIsCancelling: false,
     activeSideChatIsInterruptible: false,
     activeSideChatPendingPermissionRequests: EMPTY_PERMISSION_REQUESTS,
+    activeSideChatPendingInputs: EMPTY_PENDING_CONVERSATION_INPUTS,
     activeSideChatSession: null,
     activeSideChatTabKey: null,
     activeSideChatTurns: EMPTY_TURNS,
@@ -722,6 +732,7 @@ function createInactiveWorkbenchSurfaceState(surface: Pick<WorkbenchSurfaceState
     isCancelling: false,
     isInterruptible: false,
     pendingPermissionRequests: EMPTY_PERMISSION_REQUESTS,
+    pendingConversationInputs: EMPTY_PENDING_CONVERSATION_INPUTS,
     projectID: null,
     size: 1,
     sessionID: null,
@@ -818,6 +829,7 @@ export function buildWorkspaceDerivedStateInputFromStore(
     isInitialWorkspaceLoadPending: state.sessions.isInitialWorkspaceLoadPending,
     isSendingByTabKey: state.composer.isSendingByTabKey,
     messageTreeBySession: state.agentStream.messageTreeBySession,
+    pendingConversationInputsBySession: state.agentStream.pendingConversationInputsBySession,
     pendingPermissionRequestsBySession: state.agentStream.pendingPermissionRequestsBySession,
     platform,
     previewByWorkspaceID: state.review.previewByWorkspaceID,
@@ -1072,6 +1084,7 @@ export function buildWorkspaceDerivedState({
   isInitialWorkspaceLoadPending,
   isSendingByTabKey,
   messageTreeBySession = {},
+  pendingConversationInputsBySession,
   pendingPermissionRequestsBySession,
   platform,
   previewByWorkspaceID,
@@ -1160,6 +1173,8 @@ export function buildWorkspaceDerivedState({
     : null
   const activeSessionSelectedDiffFile = activeSession ? selectedDiffFileBySession[activeSession.id] ?? null : null
   const activePendingPermissionRequests = activeSession ? pendingPermissionRequestsBySession[activeSession.id] ?? [] : []
+  const activePendingConversationInputs =
+    activeSession ? pendingConversationInputsBySession?.[activeSession.id] ?? [] : []
   const activeSessionContextUsage = activeSession ? contextUsageBySession[activeSession.id] ?? null : null
   const activeSessionIsSideChat = isSideChatSession(activeSession)
   const activeSideChatSessionID =
@@ -1177,6 +1192,8 @@ export function buildWorkspaceDerivedState({
   const activeSideChatTurns = activeSideChatSession ? conversations[activeSideChatSession.id] ?? [] : []
   const activeSideChatPendingPermissionRequests =
     activeSideChatSession ? pendingPermissionRequestsBySession[activeSideChatSession.id] ?? [] : []
+  const activeSideChatPendingInputs =
+    activeSideChatSession ? pendingConversationInputsBySession?.[activeSideChatSession.id] ?? [] : []
   const activeSideChatDraftState = activeSideChatTabKey
     ? composerDraftStateByTabKey[activeSideChatTabKey] ?? createEmptyComposerDraftState()
     : createEmptyComposerDraftState()
@@ -1268,6 +1285,7 @@ export function buildWorkspaceDerivedState({
     activeCreateSessionTab,
     activeCreateSessionTabID,
     activePendingPermissionRequests,
+    activePendingConversationInputs,
     activePreviewState,
     activeSession,
     activeSessionContextUsage,
@@ -1287,6 +1305,7 @@ export function buildWorkspaceDerivedState({
     activeSideChatIsInterruptible,
     activeSideChatIsSending,
     activeSideChatPendingPermissionRequests,
+    activeSideChatPendingInputs,
     activeSideChatSession,
     activeSideChatSessionsByAnchorMessageID,
     activeSideChatTabKey,

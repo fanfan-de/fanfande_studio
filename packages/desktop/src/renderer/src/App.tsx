@@ -22,6 +22,7 @@ import type {
   ComposerAttachment,
   ComposerDraftState,
   ConnectionsTab,
+  PendingConversationInput,
   PermissionRequest,
   ProjectWorktreeCreateRequest,
   SessionDiffFile,
@@ -99,6 +100,7 @@ const EMPTY_CONNECTION_SEARCH_QUERIES: Record<ConnectionsTab, string> = {
 }
 const EMPTY_SIDE_CHAT_DRAFT_STATE = createEmptyComposerDraftState()
 const EMPTY_SIDE_CHAT_ATTACHMENTS: ComposerAttachment[] = []
+const EMPTY_SIDE_CHAT_PENDING_INPUTS: PendingConversationInput[] = []
 const EMPTY_SIDE_CHAT_PERMISSION_REQUESTS: PermissionRequest[] = []
 const EMPTY_SIDE_CHAT_TURNS: Turn[] = []
 
@@ -137,6 +139,7 @@ interface RightSidebarSideChatPanelState {
   isInterruptible: boolean
   isSending: boolean
   parentSessionID: string
+  pendingInputs: PendingConversationInput[]
   pendingPermissionRequests: PermissionRequest[]
   session: SessionSummary
   sideChatSessions: SessionSummary[]
@@ -169,6 +172,7 @@ function rightSidebarSideChatPanelStatesAreEqual(
     left.isInterruptible === right.isInterruptible &&
     left.isSending === right.isSending &&
     left.parentSessionID === right.parentSessionID &&
+    left.pendingInputs === right.pendingInputs &&
     left.pendingPermissionRequests === right.pendingPermissionRequests &&
     left.session === right.session &&
     left.sideChatSessions.length === right.sideChatSessions.length &&
@@ -1638,6 +1642,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
         isInterruptible,
         isSending: Boolean(state.composer.isSendingByTabKey[tabKey]),
         parentSessionID: tab.parentSessionID,
+        pendingInputs: state.agentStream.pendingConversationInputsBySession[session.id] ?? EMPTY_SIDE_CHAT_PENDING_INPUTS,
         pendingPermissionRequests:
           state.agentStream.pendingPermissionRequestsBySession[session.id] ?? EMPTY_SIDE_CHAT_PERMISSION_REQUESTS,
         session,

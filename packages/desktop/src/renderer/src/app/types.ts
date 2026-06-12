@@ -888,6 +888,21 @@ export interface UserTurn {
   timestamp: number
 }
 
+export interface PendingConversationInput {
+  id: string
+  sessionID: string
+  text: string
+  displayText?: string
+  attachments?: UserTurnAttachment[]
+  references?: UserTurnReference[]
+  questionAnswer?: UserTurn["questionAnswer"]
+  mode: "queued" | "steer"
+  status: "pending" | "accepted" | "consumed" | "cancelled" | "failed"
+  targetAssistantTurnID?: string
+  afterItemCount?: number
+  createdAt: number
+}
+
 export interface UserTurnAttachment {
   name: string
   path?: string
@@ -1148,6 +1163,8 @@ export interface PendingAgentStream {
   backendSessionID?: string
   assistantTurnID: string
   backendTurnID?: string
+  pendingInput?: PendingConversationInput
+  pendingInputID?: string
   userTurnID?: string
   requestedMode?: "new-turn" | "queue" | "steer"
   executionMode?: AgentSessionExecutionMode
