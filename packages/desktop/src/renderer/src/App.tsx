@@ -17,7 +17,6 @@ import {
 import { useConversationTurns } from "./app/agent-workspace/conversation-store"
 import { WorkspaceStoreProvider } from "./app/agent-workspace/workspace-store-context"
 import { resolveWorkspaceRelativePath } from "./app/agent-workspace/workspace-loading-hooks"
-import type { SessionMessageTree } from "./app/session-message-tree"
 import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "./app/thread-markdown"
 import type {
   ComposerAttachment,
@@ -150,16 +149,6 @@ interface RightSidebarSideChatPanelState {
   workspaceID: string | null
 }
 
-interface RightSidebarSessionThreadPanelState {
-  activeProjectID: string | null
-  activeTabID: string
-  messageTree: SessionMessageTree | null
-  session: SessionSummary
-  turns: Turn[]
-  workspaceDirectory: string | null
-  workspaceID: string | null
-}
-
 interface CalendarProjectOption {
   directory?: string
   id: string
@@ -189,24 +178,6 @@ function rightSidebarSideChatPanelStatesAreEqual(
     left.sideChatSessions.length === right.sideChatSessions.length &&
     left.sideChatSessions.every((session, index) => session === right.sideChatSessions[index]) &&
     left.tabKey === right.tabKey &&
-    left.turns === right.turns &&
-    left.workspaceDirectory === right.workspaceDirectory &&
-    left.workspaceID === right.workspaceID
-  )
-}
-
-function rightSidebarSessionThreadPanelStatesAreEqual(
-  left: RightSidebarSessionThreadPanelState | null,
-  right: RightSidebarSessionThreadPanelState | null,
-) {
-  if (left === right) return true
-  if (!left || !right) return false
-
-  return (
-    left.activeProjectID === right.activeProjectID &&
-    left.activeTabID === right.activeTabID &&
-    left.messageTree === right.messageTree &&
-    left.session === right.session &&
     left.turns === right.turns &&
     left.workspaceDirectory === right.workspaceDirectory &&
     left.workspaceID === right.workspaceID
@@ -1009,7 +980,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     canInsertWorkspaceFileCommentsIntoDraft,
     composerRefreshVersion,
     deletingSessionID,
-    ensureSessionHistoryLoaded,
     handleApproveProposedPlan,
     expandedFolderIDs,
     handleCancelSend,
@@ -1701,45 +1671,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
         : rightSidebarSideChatPanelState.turns,
     }
   }, [liveRightSidebarSideChatTurns, rightSidebarSideChatPanelState])
-  const rightSidebarSessionThreadPanelState = useWorkspaceStoreSelector(
-    workspaceStore,
-    (state): RightSidebarSessionThreadPanelState | null => {
-      const tab = state.sessions.rightSidebar.tabs.find((candidate) => (
-        candidate.id === state.sessions.rightSidebar.activeTabID
-      ))
-      if (!tab || tab.kind !== "session-thread") return null
-
-      const sessionSelection = findSession(state.sessions.workspaces, tab.sessionID)
-      if (!sessionSelection.session) return null
-
-      return {
-        activeProjectID: sessionSelection.workspace?.project.id ?? null,
-        activeTabID: tab.id,
-        messageTree: state.agentStream.messageTreeBySession[sessionSelection.session.id] ?? null,
-        session: sessionSelection.session,
-        turns: state.agentStream.conversations[sessionSelection.session.id] ?? EMPTY_SIDE_CHAT_TURNS,
-        workspaceDirectory: sessionSelection.workspace?.directory ?? null,
-        workspaceID: sessionSelection.workspace?.id ?? null,
-      }
-    },
-    rightSidebarSessionThreadPanelStatesAreEqual,
-  )
-  const liveRightSidebarSessionThreadTurns = useConversationTurns(
-    conversationStore,
-    rightSidebarSessionThreadPanelState?.session.id ?? null,
-  )
-  const liveRightSidebarSessionThreadPanelState = useMemo(() => {
-    if (!rightSidebarSessionThreadPanelState) return null
-    return {
-      ...rightSidebarSessionThreadPanelState,
-      turns: liveRightSidebarSessionThreadTurns.length > 0
-        ? liveRightSidebarSessionThreadTurns
-        : rightSidebarSessionThreadPanelState.turns,
-    }
-  }, [liveRightSidebarSessionThreadTurns, rightSidebarSessionThreadPanelState])
-  const rightSidebarThreadLinkContext = activeRightSidebarTab?.kind === "session-thread"
-    ? liveRightSidebarSessionThreadPanelState
-    : liveRightSidebarSideChatPanelState
+  const rightSidebarThreadLinkContext = liveRightSidebarSideChatPanelState
   const rightSidebarProfiler = useMemo(
     () => createRendererProfilerOnRender("RightSidebar commit", () => ({
       activeTabID: activeRightSidebarTab?.id ?? null,
@@ -1809,24 +1741,26 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     })
   }
 
-  async function handleOpenSubagentSessionInRightSidebar(sessionID: string, title?: string) {
+  async function handleOpenSubagentSessionTab(sessionID: string) {
     const trimmedSessionID = sessionID.trim()
     if (!trimmedSessionID) return
 
-    if (isRightSidebarCollapsed) {
-      handleRightSidebarToggle()
+    const currentSelection = findSession(workspaces, trimmedSessionID)
+    if (currentSelection.workspace && currentSelection.session) {
+      handleSessionSelect(currentSelection.workspace.id, currentSelection.session.id)
+      return
     }
 
-    const fallbackTitle = findSession(workspaces, trimmedSessionID).session?.title ?? "Session"
-    openOrFocusRightSidebarTab({
-      kind: "session-thread",
-      sessionID: trimmedSessionID,
-      title: title?.trim() || fallbackTitle,
-    })
-    await ensureSessionHistoryLoaded(trimmedSessionID, undefined, {
-      mode: "silent",
-      reason: "open",
-    })
+    const parentWorkspace = activeSession?.id
+      ? findSession(workspaces, activeSession.id).workspace
+      : null
+    const refreshedWorkspace = parentWorkspace
+      ? await refreshWorkspaceFromDirectory(parentWorkspace.directory)
+      : null
+    const refreshedSession = refreshedWorkspace?.sessions.find((session) => session.id === trimmedSessionID) ?? null
+    if (refreshedWorkspace && refreshedSession) {
+      handleSessionSelect(refreshedWorkspace.id, refreshedSession.id)
+    }
   }
 
   async function handleMessageTreeNodeSelect(sessionID: string, messageID: string) {
@@ -1868,12 +1802,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     activateRightSidebarTab(tabID)
     if (tab?.kind === "side-chat" && tab.sessionID) {
       void handleSelectSideChatTabInRightSidebar(tab.sessionID, tab.id)
-    }
-    if (tab?.kind === "session-thread") {
-      void ensureSessionHistoryLoaded(tab.sessionID, undefined, {
-        mode: "silent",
-        reason: "open",
-      })
     }
   }
 
@@ -2613,7 +2541,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onClearComposerParentMessage={handleClearComposerParentMessage}
                 onOpenCreateSessionTab={handleOpenCreateSessionTab}
                 onOpenSideChat={handleOpenSideChatInRightSidebar}
-                onOpenSubagentSession={handleOpenSubagentSessionInRightSidebar}
+                onOpenSubagentSession={handleOpenSubagentSessionTab}
                 onForkFromMessage={handleForkFromMessage}
                 onPermissionRequestResponse={handlePermissionRequestResponse}
                 onApproveProposedPlan={handleApproveProposedPlan}
@@ -2673,7 +2601,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 sessionDiffStateBySession={sessionDiffStateBySession}
                 messageTreeBySession={messageTreeBySession}
                 sideChatPanelState={liveRightSidebarSideChatPanelState}
-                sessionThreadPanelState={liveRightSidebarSessionThreadPanelState}
                 workspaces={workspaces}
                 onActivateTab={handleActivateRightSidebarTab}
                 onCloseTab={closeRightSidebarTab}

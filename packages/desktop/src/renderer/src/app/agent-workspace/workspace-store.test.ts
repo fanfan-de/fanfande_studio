@@ -159,30 +159,6 @@ describe("workspace store", () => {
     expect(store.getState().sessions.rightSidebar.activeTabID).toBeNull()
   })
 
-  it("deduplicates session thread right sidebar tabs by session", () => {
-    const store = createTestStore()
-
-    const firstTabID = store.getState().sessionsActions.openOrFocusRightSidebarTab({
-      kind: "session-thread",
-      sessionID: "child-session",
-      title: "Child subagent",
-    })
-    const focusedTabID = store.getState().sessionsActions.openOrFocusRightSidebarTab({
-      kind: "session-thread",
-      sessionID: "child-session",
-      title: "Renamed child",
-    })
-
-    expect(focusedTabID).toBe(firstTabID)
-    expect(store.getState().sessions.rightSidebar.tabs).toHaveLength(1)
-    expect(store.getState().sessions.rightSidebar.activeTabID).toBe(firstTabID)
-
-    const [tab] = store.getState().sessions.rightSidebar.tabs
-    expect(tab?.kind).toBe("session-thread")
-    expect(tab?.targetKey).toBe("session-thread:child-session")
-    expect(tab?.title).toBe("Child subagent")
-  })
-
   it("starts without seed workspaces while the desktop workspace loader is available", () => {
     const store = createWorkspaceStore({
       hasFolderWorkspaceLoader: true,
