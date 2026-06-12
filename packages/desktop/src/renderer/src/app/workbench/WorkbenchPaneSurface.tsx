@@ -474,6 +474,7 @@ const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
                   composerRefreshVersion={composerRefreshVersion}
                   isResolvingPermissionRequest={isResolvingPermissionRequest}
                   isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+                  isSessionRunning={pane.isSending || pane.isInterruptible}
                   pendingPermissionRequests={pane.pendingPermissionRequests}
                   pendingConversationInputs={pane.pendingConversationInputs}
                   permissionRequestActionError={permissionRequestActionError}

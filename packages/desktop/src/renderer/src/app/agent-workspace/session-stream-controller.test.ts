@@ -1109,6 +1109,40 @@ describe("session stream controller helpers", () => {
     expect(merged[2]).not.toHaveProperty("displayText", "old branch text")
   })
 
+  it("preserves trace item identity without keeping stale local timestamps", () => {
+    const previousTurn = createAssistantTurn(
+      "assistant-local",
+      "trace-local",
+      "Create the task list first",
+      "part-task-text",
+      "message-task",
+    )
+    previousTurn.items = previousTurn.items.map((item) => ({
+      ...item,
+      timestamp: 500,
+    }))
+
+    const historyTurn = createAssistantTurn(
+      "assistant-history",
+      "trace-history",
+      "Create the task list first",
+      "part-task-text",
+      "message-task",
+    )
+    historyTurn.items = historyTurn.items.map((item) => ({
+      ...item,
+      timestamp: 100,
+    }))
+
+    const merged = mergeConversationTurnsFromHistory([previousTurn], [historyTurn])
+
+    expect(merged[0]?.id).toBe("assistant-local")
+    expect((merged[0] as AssistantTurn).items[0]).toMatchObject({
+      id: "trace-local",
+      timestamp: 100,
+    })
+  })
+
   it("treats equal conversation turns as equivalent for no-op history refreshes", () => {
     const turns: Turn[] = [
       createUserTurn("user-1", "hello"),
@@ -1293,5 +1327,59 @@ describe("session stream controller helpers", () => {
       ],
     })
     expect((reconciled[0] as AssistantTurn).items.some((item) => item.title === "Approval required")).toBe(false)
+  })
+
+  it("uses earlier canonical trace timestamps when merging assistant turns by message", () => {
+    const currentTurn = createAssistantTurn(
+      "assistant-current",
+      "trace-task-local",
+      "Creating tasks.",
+      "part-task-tool",
+      "message-task",
+    )
+    currentTurn.items = [
+      {
+        id: "trace-task-local",
+        kind: "tool",
+        label: "Tool",
+        title: "task_create",
+        status: "completed",
+        sourceID: "part-task-tool",
+        partID: "part-task-tool",
+        messageID: "message-task",
+        toolCallID: "call-task",
+        timestamp: 500,
+      },
+    ]
+
+    const incomingTurn = createAssistantTurn(
+      "assistant-history",
+      "trace-task-history",
+      "Creating tasks.",
+      "part-task-tool",
+      "message-task",
+    )
+    incomingTurn.items = [
+      {
+        id: "trace-task-history",
+        kind: "tool",
+        label: "Tool",
+        title: "task_create",
+        status: "completed",
+        sourceID: "part-task-tool",
+        partID: "part-task-tool",
+        messageID: "message-task",
+        toolCallID: "call-task",
+        timestamp: 100,
+      },
+    ]
+
+    const reconciled = reconcileConversationTurns([currentTurn, incomingTurn])
+
+    expect(reconciled).toHaveLength(1)
+    expect((reconciled[0] as AssistantTurn).items[0]).toMatchObject({
+      id: "trace-task-local",
+      timestamp: 100,
+    })
   })
 })

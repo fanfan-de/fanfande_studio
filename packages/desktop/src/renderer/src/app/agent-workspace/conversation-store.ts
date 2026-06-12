@@ -42,6 +42,32 @@ export interface ConversationStoreApi {
   updateConversations: (update: ConversationStoreUpdater) => boolean
 }
 
+interface ThreadDebugWatchOptions {
+  intervalMs?: number
+  sessionID?: string | null
+}
+
+interface ThreadDebugAssistantTurnSnapshot {
+  sessionID: string
+  turn: AssistantTurn
+}
+
+interface ThreadDebugApi {
+  getConversations: () => ConversationMap
+  getSessionTurns: (sessionID: string) => Turn[]
+  getStreamingTurns: (sessionID?: string | null) => ThreadDebugAssistantTurnSnapshot[]
+  latestStreaming: (sessionID?: string | null) => ThreadDebugAssistantTurnSnapshot | null
+  sessionIDs: () => string[]
+  unwatch: () => void
+  watch: (options?: ThreadDebugWatchOptions | string | null) => () => void
+}
+
+declare global {
+  interface Window {
+    __ANYBOX_THREAD_DEBUG__?: ThreadDebugApi
+  }
+}
+
 const EMPTY_TURNS: Turn[] = []
 const EMPTY_CONVERSATION_ACTIVITY: ConversationActivity = {
   hasStreamingAssistantTurn: false,
@@ -101,6 +127,127 @@ function conversationsAreEquivalent(left: ConversationMap, right: ConversationMa
   const rightKeys = Object.keys(right)
   if (leftKeys.length !== rightKeys.length) return false
   return leftKeys.every((key) => Object.is(left[key], right[key]))
+}
+
+function cloneThreadDebugValue<T>(value: T): T {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value)
+  }
+
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function readThreadDebugWatchOptions(input?: ThreadDebugWatchOptions | string | null): Required<ThreadDebugWatchOptions> {
+  if (typeof input === "string") {
+    return {
+      intervalMs: 250,
+      sessionID: input,
+    }
+  }
+
+  return {
+    intervalMs: Math.max(0, Number(input?.intervalMs ?? 250)),
+    sessionID: input?.sessionID ?? null,
+  }
+}
+
+function findStreamingAssistantTurns(conversations: ConversationMap, sessionID?: string | null) {
+  const snapshots: ThreadDebugAssistantTurnSnapshot[] = []
+  const entries = sessionID
+    ? ([[sessionID, conversations[sessionID] ?? EMPTY_TURNS]] as Array<[string, Turn[]]>)
+    : Object.entries(conversations)
+
+  for (const [currentSessionID, turns] of entries) {
+    for (const turn of turns) {
+      if (turn.kind === "assistant" && turn.isStreaming) {
+        snapshots.push({ sessionID: currentSessionID, turn })
+      }
+    }
+  }
+
+  return snapshots
+}
+
+function findLatestStreamingAssistantTurn(conversations: ConversationMap, sessionID?: string | null) {
+  const snapshots = findStreamingAssistantTurns(conversations, sessionID)
+  return snapshots.reduce<ThreadDebugAssistantTurnSnapshot | null>((latest, snapshot) => {
+    if (!latest) return snapshot
+    const latestUpdatedAt = latest.turn.runtime.updatedAt || latest.turn.timestamp
+    const snapshotUpdatedAt = snapshot.turn.runtime.updatedAt || snapshot.turn.timestamp
+    return snapshotUpdatedAt >= latestUpdatedAt ? snapshot : latest
+  }, null)
+}
+
+function installThreadDebugApi(store: ConversationStoreApi) {
+  if (typeof window === "undefined") return
+
+  window.__ANYBOX_THREAD_DEBUG__?.unwatch()
+
+  let watchUnsubscribe: (() => void) | null = null
+  let watchTimer: number | null = null
+  let lastWatchSignature = ""
+
+  const readLatestStreamingSnapshot = (sessionID?: string | null) =>
+    findLatestStreamingAssistantTurn(store.getConversations(), sessionID)
+
+  const cloneSnapshot = <T,>(value: T): T => cloneThreadDebugValue(value)
+
+  const api: ThreadDebugApi = {
+    getConversations() {
+      return cloneSnapshot(store.getConversations())
+    },
+    getSessionTurns(sessionID) {
+      return cloneSnapshot(store.getSessionTurns(sessionID))
+    },
+    getStreamingTurns(sessionID) {
+      return cloneSnapshot(findStreamingAssistantTurns(store.getConversations(), sessionID))
+    },
+    latestStreaming(sessionID) {
+      return cloneSnapshot(readLatestStreamingSnapshot(sessionID))
+    },
+    sessionIDs() {
+      return Object.keys(store.getConversations())
+    },
+    unwatch() {
+      if (watchTimer !== null) {
+        window.clearTimeout(watchTimer)
+        watchTimer = null
+      }
+      watchUnsubscribe?.()
+      watchUnsubscribe = null
+      lastWatchSignature = ""
+    },
+    watch(input) {
+      const options = readThreadDebugWatchOptions(input)
+
+      api.unwatch()
+
+      const emit = () => {
+        watchTimer = null
+        const snapshot = readLatestStreamingSnapshot(options.sessionID)
+        const signature = JSON.stringify(snapshot)
+        if (signature === lastWatchSignature) return
+
+        lastWatchSignature = signature
+        console.log("[anybox thread debug] latest streaming assistant turn", cloneSnapshot(snapshot))
+      }
+
+      const scheduleEmit = () => {
+        if (options.intervalMs === 0) {
+          emit()
+          return
+        }
+        if (watchTimer !== null) return
+        watchTimer = window.setTimeout(emit, options.intervalMs)
+      }
+
+      watchUnsubscribe = store.subscribe(scheduleEmit)
+      emit()
+      return api.unwatch
+    },
+  }
+
+  window.__ANYBOX_THREAD_DEBUG__ = api
 }
 
 export function createConversationStore(initialConversations: ConversationMap = {}): ConversationStoreApi {
@@ -172,9 +319,7 @@ export function createConversationStore(initialConversations: ConversationMap = 
     return replaceConversations(resolveConversationUpdate(conversations, update))
   }
 
-  replaceConversations(initialConversations)
-
-  return {
+  const api: ConversationStoreApi = {
     appendAssistantDelta(sessionID, turnID, updater) {
       return updateConversations((current) => {
         const currentTurns = current[sessionID] ?? EMPTY_TURNS
@@ -243,6 +388,11 @@ export function createConversationStore(initialConversations: ConversationMap = 
     },
     updateConversations,
   }
+
+  replaceConversations(initialConversations)
+  installThreadDebugApi(api)
+
+  return api
 }
 
 export function useConversationTurns(

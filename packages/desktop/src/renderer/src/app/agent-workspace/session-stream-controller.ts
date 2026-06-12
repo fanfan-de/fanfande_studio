@@ -569,7 +569,7 @@ function preserveTraceItemIdentity(
     return {
       ...nextItem,
       id: previousItem.id,
-      timestamp: previousItem.timestamp,
+      timestamp: Math.min(previousItem.timestamp, nextItem.timestamp),
     }
   })
 }
@@ -672,7 +672,7 @@ function mergeAssistantTraceItem(existing: AssistantTraceItem, nextItem: Assista
     ...existing,
     ...nextItem,
     id: existing.id,
-    timestamp: existing.timestamp,
+    timestamp: Math.min(existing.timestamp, nextItem.timestamp),
     debugEntries: mergeTraceDebugEntries(existing.debugEntries, nextItem.debugEntries),
   }
 

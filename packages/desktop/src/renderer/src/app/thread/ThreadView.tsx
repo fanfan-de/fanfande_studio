@@ -108,6 +108,7 @@ interface ThreadViewProps {
   composerRefreshVersion?: number
   isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
+  isSessionRunning?: boolean
   messageTree?: SessionMessageTree | null
   onBranchSelect?: (messageID: string) => void | Promise<void>
   onFileChangeSelect?: (file: string) => void
@@ -2977,6 +2978,7 @@ export function InlineSideChatThread({
             composerRefreshVersion={composerRefreshVersion}
             isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
             isResolvingPermissionRequest={isResolvingPermissionRequest}
+            isSessionRunning={isSending || isInterruptible}
             pendingConversationInputs={pendingInputs}
             pendingPermissionRequests={pendingPermissionRequests}
             permissionRequestActionError={permissionRequestActionError}
@@ -5346,6 +5348,7 @@ function getThreadViewPropsChangeReason(left: ThreadViewProps, right: ThreadView
   if (left.composerRefreshVersion !== right.composerRefreshVersion) return "composerRefreshVersion"
   if (left.isAgentDebugTraceEnabled !== right.isAgentDebugTraceEnabled) return "isAgentDebugTraceEnabled"
   if (left.isResolvingPermissionRequest !== right.isResolvingPermissionRequest) return "isResolvingPermissionRequest"
+  if (left.isSessionRunning !== right.isSessionRunning) return "isSessionRunning"
   if (left.messageTree !== right.messageTree) return "messageTree"
   if (!areArraysShallowEqual(left.pendingConversationInputs, right.pendingConversationInputs)) return "pendingConversationInputs"
   if (!areArraysShallowEqual(left.pendingPermissionRequests, right.pendingPermissionRequests)) return "pendingPermissionRequests"
@@ -5420,6 +5423,7 @@ function VisibleThreadView({
   composerRefreshVersion = 0,
   isAgentDebugTraceEnabled,
   isResolvingPermissionRequest,
+  isSessionRunning = false,
   messageTree = null,
   onBranchSelect,
   onFileChangeSelect,
@@ -6583,7 +6587,7 @@ function VisibleThreadView({
     const traceItems = turn.items
     const sideChatAnchorMessageID = turn.messageID ?? turn.id
     const turnMessageID = getSessionMessageIDForTurn(turn)
-    const canExposeResponseActions = isAssistantFinalMessageInUserTurn(displayTurns, turnIndex, turn)
+    const canExposeResponseActions = !isSessionRunning && isAssistantFinalMessageInUserTurn(displayTurns, turnIndex, turn)
     const branchOptions = canExposeResponseActions ? messageTree?.branchOptionsByParentID[turnMessageID] ?? [] : []
     const existingSideChatCount = sideChatCountsByAnchorMessageID[sideChatAnchorMessageID] ?? 0
     const lastResponseItems = canExposeResponseActions ? getLastAssistantResponseSectionItems(traceItems, assistantTraceVisibility) : []

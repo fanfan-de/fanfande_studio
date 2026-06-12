@@ -221,6 +221,14 @@ function readTraceTimestamp(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null
 }
 
+function mergeTraceTimestamp(currentTimestamp: number, nextTimestamp: number) {
+  const current = readTraceTimestamp(currentTimestamp)
+  const next = readTraceTimestamp(nextTimestamp)
+  if (current === null) return next ?? Date.now()
+  if (next === null) return current
+  return Math.min(current, next)
+}
+
 function readPartTimeTimestamp(value: unknown) {
   const range = readRecord(value)
   if (!range) return null
@@ -1053,7 +1061,7 @@ function mergeTraceItem(existing: AssistantTraceItem, nextItem: AssistantTraceIt
     ...existing,
     ...nextItem,
     id: existing.id,
-    timestamp: existing.timestamp,
+    timestamp: mergeTraceTimestamp(existing.timestamp, nextItem.timestamp),
     debugEntries: mergeDebugEntries(existing.debugEntries, nextItem.debugEntries),
   }
 

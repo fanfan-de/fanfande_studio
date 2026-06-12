@@ -3527,6 +3527,75 @@ describe("ThreadView message actions", () => {
     expect(onOpenSideChat).toHaveBeenCalledWith("assistant-1")
   })
 
+  it("hides final response actions while the session is still running", () => {
+    const onBranchSelect = vi.fn()
+    const onForkFromMessage = vi.fn()
+    const onOpenSideChat = vi.fn()
+    const messageTree: SessionMessageTree = {
+      activeMessageID: "message-1",
+      activePathMessageIDs: ["message-1"],
+      branchOptionsByParentID: {
+        "message-1": [
+          {
+            childMessageID: "child-1",
+            index: 0,
+            isActive: true,
+            label: "Branch 1",
+            leafMessageID: "leaf-1",
+            parentMessageID: "message-1",
+            preview: "First branch",
+            total: 2,
+          },
+          {
+            childMessageID: "child-2",
+            index: 1,
+            isActive: false,
+            label: "Branch 2",
+            leafMessageID: "leaf-2",
+            parentMessageID: "message-1",
+            preview: "Second branch",
+            total: 2,
+          },
+        ],
+      },
+      childIDsByParentID: {},
+      nodesByID: {},
+      rootMessageIDs: [],
+      sessionID: "session-1",
+    }
+    const completedIntermediateTurn = {
+      ...assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "Now I will create the tasks.",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+      messageID: "message-1",
+    }
+
+    const { container, queryByRole } = renderThread([userTurn("user-1", "Prompt"), completedIntermediateTurn], {
+      isSessionRunning: true,
+      messageTree,
+      onBranchSelect,
+      onForkFromMessage,
+      onOpenSideChat,
+    })
+
+    expect(queryByRole("button", { name: "Copy assistant response" })).toBeNull()
+    expect(queryByRole("button", { name: "Open side chat" })).toBeNull()
+    expect(queryByRole("button", { name: "Fork from here" })).toBeNull()
+    expect(container.querySelector(".assistant-branch-switcher")).toBeNull()
+    expect(container.querySelector(".assistant-response-actions")).toBeNull()
+  })
+
   it("shows assistant response actions in the assistant message footer for the final response", () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", {
