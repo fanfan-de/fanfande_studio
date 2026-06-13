@@ -7,15 +7,10 @@ const promptRoot = await mkdtemp(join(tmpdir(), "anybox-server-test-prompts-"))
 const databaseFile = join(databaseRoot, "agent-local-test.db")
 
 try {
-  const child = Bun.spawn(
-    [
-      process.execPath,
-      "test",
-      "--max-concurrency=1",
-      "Test/server.api.test.ts",
-      "Test/plugin.test.ts",
-    ],
-    {
+  const testFiles = ["Test/server.api.test.ts", "Test/plugin.test.ts"]
+
+  for (const testFile of testFiles) {
+    const child = Bun.spawn([process.execPath, "test", "--max-concurrency=1", testFile], {
       cwd: join(import.meta.dir, ".."),
       env: {
         ...process.env,
@@ -24,11 +19,14 @@ try {
       },
       stderr: "inherit",
       stdout: "inherit",
-    },
-  )
+    })
 
-  const exitCode = await child.exited
-  process.exitCode = exitCode
+    const exitCode = await child.exited
+    if (exitCode !== 0) {
+      process.exitCode = exitCode
+      break
+    }
+  }
 } finally {
   await rm(databaseRoot, { recursive: true, force: true })
   await rm(promptRoot, { recursive: true, force: true })
