@@ -1,5 +1,7 @@
 # Anybox
 
+English | [简体中文](./README.zh-CN.md)
+
 Anybox is an open-source desktop workspace for working with AI agents on local projects. It brings project folders, agent conversations, terminals, model and provider settings, skills, MCP servers, permissions, patches, and tool traces into one inspectable Electron app.
 
 The repository is a `pnpm` workspace. The main desktop product lives in `packages/desktop`; the local agent runtime and HTTP service live in `packages/anyboxagent`.
