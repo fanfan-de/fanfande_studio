@@ -1,6 +1,42 @@
-# Anybox
+<div align="center">
+  <img src="./packages/site/public/brand-mark.svg" width="120" height="120" alt="Anybox logo" />
 
-[English](./README.md) | 简体中文
+  <h1>Anybox</h1>
+
+  <p><strong>面向本地项目的开源 AI Agent 桌面工作台。</strong></p>
+  <p>在一个可检查、可追踪的桌面应用里运行 Agent 会话、查看工具轨迹、管理 MCP 服务器，并协作处理本地项目。</p>
+
+  <p>
+    <a href="./README.md">English</a> |
+    简体中文 |
+    <a href="https://github.com/fanfan-de/anybox/releases/latest">下载</a> |
+    <a href="./packages/site/src/docs/content">文档</a> |
+    <a href="./docs/anybox-third-party-plugin-development.md">开发</a> |
+    <a href="https://github.com/fanfan-de/anybox/issues">反馈</a>
+  </p>
+
+  <p>
+    <a href="https://github.com/fanfan-de/anybox/releases/latest"><img src="https://img.shields.io/github/v/release/fanfan-de/anybox?style=flat-square&logo=github&label=release" alt="Release" /></a>
+    <a href="https://github.com/fanfan-de/anybox/actions"><img src="https://img.shields.io/github/actions/workflow/status/fanfan-de/anybox/desktop-dual-platform.yml?style=flat-square&logo=githubactions&label=desktop%20build" alt="Desktop build status" /></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/github/license/fanfan-de/anybox?style=flat-square" alt="License" /></a>
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-2563eb?style=flat-square" alt="Supported desktop platforms" />
+    <img src="https://img.shields.io/badge/mobile-in%20development-f59e0b?style=flat-square" alt="Mobile app status" />
+  </p>
+
+  <p>
+    <img src="./packages/site/public/product-preview.png" width="900" alt="Anybox 产品预览图" />
+  </p>
+
+  <table>
+    <tr>
+      <td align="center"><strong>官网</strong><br /><sub>占位：后续替换为正式官网链接</sub></td>
+      <td align="center"><strong>社区</strong><br /><sub>占位：Discord、Telegram 或微信群</sub></td>
+      <td align="center"><strong>展示</strong><br /><sub>占位：媒体推荐、奖项或发布卡片</sub></td>
+    </tr>
+  </table>
+</div>
+
+## 概览
 
 Anybox 是一个开源的 AI Agent 桌面工作台，面向本地项目协作场景。它把项目文件夹、Agent 会话、终端、模型与供应商配置、Skills、MCP 服务器、权限审批、补丁和工具调用轨迹放到一个可检查、可追踪的 Electron 应用里。
 
@@ -22,6 +58,28 @@ Anybox 是一个开源的 AI Agent 桌面工作台，面向本地项目协作场
 
 - [Latest release](https://github.com/fanfan-de/anybox/releases/latest)
 - 当前主要桌面目标平台：Windows x64 和 macOS Apple Silicon。
+
+## 平台状态
+
+| 平台 | 状态 | 说明 |
+| --- | --- | --- |
+| Windows x64 | 早期访问 | 主要桌面目标平台 |
+| macOS Apple Silicon | 早期访问 | 主要 macOS 目标平台 |
+| Android | 开发中 | 配套移动端包位于 `packages/mobile-app` |
+| Linux | 计划中 | 当前不是主要桌面打包目标 |
+
+## 架构概览
+
+```mermaid
+flowchart LR
+  Desktop["Electron 桌面应用"] --> Agent["Bun/Hono Agent 服务"]
+  Desktop --> Terminal["内置终端"]
+  Agent --> Workspace["本地项目工作区"]
+  Agent --> Tools["工具与权限审批"]
+  Agent --> MCP["MCP 服务器"]
+  Agent --> Skills["Skills 与插件"]
+  Agent --> Providers["模型供应商"]
+```
 
 ## 快速开始
 
@@ -123,6 +181,13 @@ pnpm site:build
 - [Thread view 前端设计](./docs/thread-view-frontend-design.md)
 - [移动端控制桌面实现](./docs/anybox-mobile-desktop-control-implementation.md)
 - [官网文档内容](./packages/site/src/docs/content)
+
+## 路线图
+
+- 将顶部占位卡片替换为正式官网、社区和发布展示链接。
+- 补充 chat、cowork、code、MCP、Git 工作流等更丰富的截图。
+- 继续完善移动端配套能力和桌面远程控制支持。
+- 扩展面向插件作者和连接器开发者的公开文档。
 
 ## 环境变量
 

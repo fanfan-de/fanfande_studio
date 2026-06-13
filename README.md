@@ -1,6 +1,42 @@
-# Anybox
+<div align="center">
+  <img src="./packages/site/public/brand-mark.svg" width="120" height="120" alt="Anybox logo" />
 
-English | [简体中文](./README.zh-CN.md)
+  <h1>Anybox</h1>
+
+  <p><strong>Open-source desktop workspace for local AI agents.</strong></p>
+  <p>Run agent sessions, review tool traces, manage MCP servers, and work with local projects from one inspectable desktop app.</p>
+
+  <p>
+    English |
+    <a href="./README.zh-CN.md">简体中文</a> |
+    <a href="https://github.com/fanfan-de/anybox/releases/latest">Download</a> |
+    <a href="./packages/site/src/docs/content">Documents</a> |
+    <a href="./docs/anybox-third-party-plugin-development.md">Development</a> |
+    <a href="https://github.com/fanfan-de/anybox/issues">Feedback</a>
+  </p>
+
+  <p>
+    <a href="https://github.com/fanfan-de/anybox/releases/latest"><img src="https://img.shields.io/github/v/release/fanfan-de/anybox?style=flat-square&logo=github&label=release" alt="Release" /></a>
+    <a href="https://github.com/fanfan-de/anybox/actions"><img src="https://img.shields.io/github/actions/workflow/status/fanfan-de/anybox/desktop-dual-platform.yml?style=flat-square&logo=githubactions&label=desktop%20build" alt="Desktop build status" /></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/github/license/fanfan-de/anybox?style=flat-square" alt="License" /></a>
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-2563eb?style=flat-square" alt="Supported desktop platforms" />
+    <img src="https://img.shields.io/badge/mobile-in%20development-f59e0b?style=flat-square" alt="Mobile app status" />
+  </p>
+
+  <p>
+    <img src="./packages/site/public/product-preview.png" width="900" alt="Anybox product preview" />
+  </p>
+
+  <table>
+    <tr>
+      <td align="center"><strong>Official Site</strong><br /><sub>Placeholder for public website URL</sub></td>
+      <td align="center"><strong>Community</strong><br /><sub>Placeholder for Discord, Telegram, or WeChat</sub></td>
+      <td align="center"><strong>Showcase</strong><br /><sub>Placeholder for media, awards, or launch cards</sub></td>
+    </tr>
+  </table>
+</div>
+
+## Overview
 
 Anybox is an open-source desktop workspace for working with AI agents on local projects. It brings project folders, agent conversations, terminals, model and provider settings, skills, MCP servers, permissions, patches, and tool traces into one inspectable Electron app.
 
@@ -22,6 +58,28 @@ Installers are published from GitHub Releases:
 
 - [Latest release](https://github.com/fanfan-de/anybox/releases/latest)
 - Current primary desktop targets: Windows x64 and macOS Apple Silicon.
+
+## Platform Status
+
+| Platform | Status | Notes |
+| --- | --- | --- |
+| Windows x64 | Early access | Primary desktop target |
+| macOS Apple Silicon | Early access | Primary macOS target |
+| Android | In development | Companion app package lives in `packages/mobile-app` |
+| Linux | Planned | Desktop packaging is not a primary target yet |
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Desktop["Electron Desktop"] --> Agent["Bun/Hono Agent Service"]
+  Desktop --> Terminal["Integrated Terminal"]
+  Agent --> Workspace["Local Project Workspace"]
+  Agent --> Tools["Tools and Permissions"]
+  Agent --> MCP["MCP Servers"]
+  Agent --> Skills["Skills and Plugins"]
+  Agent --> Providers["Model Providers"]
+```
 
 ## Quick Start
 
@@ -123,6 +181,13 @@ pnpm site:build
 - [Thread view frontend design](./docs/thread-view-frontend-design.md)
 - [Mobile desktop control implementation](./docs/anybox-mobile-desktop-control-implementation.md)
 - [Public website docs](./packages/site/src/docs/content)
+
+## Roadmap
+
+- Replace the placeholder cards above with official website, community, and launch links.
+- Publish richer screenshots for chat, cowork, code, MCP, and Git workflows.
+- Continue polishing mobile companion workflows and desktop remote-control support.
+- Expand public documentation for plugin authors and connector developers.
 
 ## Environment Variables
 
