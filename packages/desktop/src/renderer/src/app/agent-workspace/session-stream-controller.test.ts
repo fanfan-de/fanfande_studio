@@ -1382,4 +1382,291 @@ describe("session stream controller helpers", () => {
       timestamp: 100,
     })
   })
+
+  it("merges task tool traces by tool call id when stream and history part ids differ", () => {
+    const currentTurn = createAssistantTurn(
+      "assistant-current",
+      "trace-task-local",
+      "Creating tasks.",
+      "stream-task-create",
+      "message-task",
+    )
+    currentTurn.items = [
+      {
+        id: "trace-task-local",
+        kind: "tool",
+        label: "Tool",
+        title: "task_create",
+        status: "pending",
+        sourceID: "stream-task-create",
+        partID: "stream-task-create",
+        messageID: "message-task",
+        toolCallID: "call-task",
+        toolInputText: "{\"tasks\":[{\"subject\":\"Implement\"}]}",
+        timestamp: 500,
+      },
+    ]
+
+    const incomingTurn = createAssistantTurn(
+      "assistant-history",
+      "trace-task-history",
+      "Creating tasks.",
+      "recorded-task-create",
+      "message-task",
+    )
+    incomingTurn.items = [
+      {
+        id: "trace-task-history",
+        kind: "tool",
+        label: "Tool",
+        title: "task_create",
+        status: "completed",
+        sourceID: "recorded-task-create",
+        partID: "recorded-task-create",
+        messageID: "message-task",
+        toolCallID: "call-task",
+        toolOutputText: "Tasks created",
+        timestamp: 100,
+      },
+    ]
+
+    const reconciled = reconcileConversationTurns([currentTurn, incomingTurn])
+
+    expect(reconciled).toHaveLength(1)
+    const assistantTurn = reconciled[0] as AssistantTurn
+    const toolItems = assistantTurn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(toolItems[0]).toMatchObject({
+      id: "trace-task-local",
+      sourceID: "recorded-task-create",
+      partID: "recorded-task-create",
+      toolCallID: "call-task",
+      status: "completed",
+      toolOutputText: "Tasks created",
+      timestamp: 100,
+    })
+  })
+
+  it("preserves streamed tool trace identity during history refresh by message and tool call id", () => {
+    const previousTurn = createAssistantTurn(
+      "assistant-local",
+      "trace-task-local",
+      "Creating tasks.",
+      "stream-task-create",
+      "message-task",
+    )
+    previousTurn.items = [
+      {
+        id: "trace-task-local",
+        kind: "tool",
+        label: "Tool",
+        title: "task_create",
+        status: "pending",
+        sourceID: "stream-task-create",
+        partID: "stream-task-create",
+        messageID: "message-task",
+        toolCallID: "call-task",
+        timestamp: 500,
+      },
+    ]
+
+    const historyTurn = createAssistantTurn(
+      "assistant-history",
+      "trace-task-history",
+      "Creating tasks.",
+      "recorded-task-create",
+      "message-task",
+    )
+    historyTurn.items = [
+      {
+        id: "trace-task-history",
+        kind: "tool",
+        label: "Tool",
+        title: "task_create",
+        status: "completed",
+        sourceID: "recorded-task-create",
+        partID: "recorded-task-create",
+        messageID: "message-task",
+        toolCallID: "call-task",
+        toolOutputText: "Tasks created",
+        timestamp: 100,
+      },
+    ]
+
+    const merged = mergeConversationTurnsFromHistory([previousTurn], [historyTurn])
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({
+      id: "assistant-local",
+      kind: "assistant",
+      items: [
+        expect.objectContaining({
+          id: "trace-task-local",
+          sourceID: "recorded-task-create",
+          partID: "recorded-task-create",
+          toolCallID: "call-task",
+          status: "completed",
+        }),
+      ],
+    })
+  })
+
+  it("keeps a merged assistant turn streaming when history refresh reports a running backend phase", () => {
+    const currentTurn = createAssistantTurn(
+      "assistant-local",
+      "trace-task-local",
+      "Creating tasks.",
+      "stream-task-create",
+      "message-task",
+    )
+    currentTurn.runtime = {
+      phase: "tool_running",
+      startedAt: 100,
+      updatedAt: 150,
+      toolName: "task_create",
+    }
+    currentTurn.state = "Running tools"
+    currentTurn.isStreaming = true
+    currentTurn.items = [
+      {
+        id: "trace-task-local",
+        kind: "tool",
+        label: "Tool",
+        title: "task_create",
+        status: "pending",
+        sourceID: "stream-task-create",
+        partID: "stream-task-create",
+        messageID: "message-task",
+        toolCallID: "call-task",
+        timestamp: 150,
+      },
+    ]
+
+    const historyTurn = createAssistantTurn(
+      "assistant-history",
+      "trace-task-history",
+      "Creating tasks.",
+      "recorded-task-create",
+      "message-task",
+    )
+    historyTurn.runtime = {
+      phase: "waiting_llm",
+      startedAt: 100,
+      updatedAt: 200,
+    }
+    historyTurn.state = "Waiting for model stream"
+    historyTurn.isStreaming = true
+    historyTurn.items = [
+      {
+        id: "trace-task-history",
+        kind: "tool",
+        label: "Tool",
+        title: "task_create",
+        status: "completed",
+        sourceID: "recorded-task-create",
+        partID: "recorded-task-create",
+        messageID: "message-task",
+        toolCallID: "call-task",
+        toolOutputText: "Tasks created",
+        timestamp: 180,
+      },
+    ]
+
+    const reconciled = reconcileConversationTurns([currentTurn, historyTurn])
+
+    expect(reconciled).toHaveLength(1)
+    expect(reconciled[0]).toMatchObject({
+      id: "assistant-local",
+      kind: "assistant",
+      isStreaming: true,
+      runtime: expect.objectContaining({
+        phase: "waiting_llm",
+      }),
+      items: [
+        expect.objectContaining({
+          id: "trace-task-local",
+          status: "completed",
+          toolCallID: "call-task",
+        }),
+      ],
+    })
+  })
+
+  it("merges different assistant messages that belong to the same backend turn", () => {
+    const shellTurn = createAssistantTurn(
+      "assistant-shell",
+      "trace-shell-text",
+      "I will inspect the workspace.",
+      "part-shell-text",
+      "message-shell",
+    )
+    shellTurn.items = [
+      {
+        id: "trace-shell-text",
+        kind: "text",
+        label: "Response",
+        text: "I will inspect the workspace.",
+        sourceID: "part-shell-text",
+        messageID: "message-shell",
+        backendTurnID: "turn-runtime",
+        timestamp: 100,
+      },
+      {
+        id: "trace-shell-tool",
+        kind: "tool",
+        label: "Tool",
+        title: "powershell_command",
+        status: "completed",
+        sourceID: "part-shell-tool",
+        partID: "part-shell-tool",
+        messageID: "message-shell",
+        backendTurnID: "turn-runtime",
+        toolCallID: "call-shell",
+        timestamp: 120,
+      },
+    ]
+
+    const taskTurn = createAssistantTurn(
+      "assistant-task",
+      "trace-task-text",
+      "I will create the task list.",
+      "part-task-text",
+      "message-task",
+    )
+    taskTurn.items = [
+      {
+        id: "trace-task-text",
+        kind: "text",
+        label: "Response",
+        text: "I will create the task list.",
+        sourceID: "part-task-text",
+        messageID: "message-task",
+        backendTurnID: "turn-runtime",
+        timestamp: 200,
+      },
+      {
+        id: "trace-task-tool",
+        kind: "tool",
+        label: "Tool",
+        title: "task_create",
+        status: "completed",
+        sourceID: "part-task-tool",
+        partID: "part-task-tool",
+        messageID: "message-task",
+        backendTurnID: "turn-runtime",
+        toolCallID: "call-task",
+        timestamp: 220,
+      },
+    ]
+
+    const reconciled = reconcileConversationTurns([shellTurn, taskTurn])
+
+    expect(reconciled).toHaveLength(1)
+    expect((reconciled[0] as AssistantTurn).items.map((item) => item.kind === "tool" ? item.title : item.text)).toEqual([
+      "I will inspect the workspace.",
+      "powershell_command",
+      "I will create the task list.",
+      "task_create",
+    ])
+  })
 })

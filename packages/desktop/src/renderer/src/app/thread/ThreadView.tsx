@@ -426,8 +426,13 @@ function orderAdjacentAssistantTurnsForDisplay(turns: Turn[]) {
     assistantBlockStart = -1
     if (endIndex - startIndex <= 1) return
 
-    const orderedAssistantBlock = orderedTurns
-      .slice(startIndex, endIndex)
+    const assistantBlock = orderedTurns.slice(startIndex, endIndex)
+    const shouldOrderByTraceTime = assistantBlock.some(
+      (turn) => turn.kind === "assistant" && (turn.isStreaming || !isTerminalAssistantTurnPhase(turn.runtime.phase)),
+    )
+    if (!shouldOrderByTraceTime) return
+
+    const orderedAssistantBlock = assistantBlock
       .map((turn, index) => ({ turn, index }))
       .sort((left, right) => {
         const leftTurn = left.turn
@@ -1398,6 +1403,7 @@ function collectAssistantRunProcessPrefixItems(
   for (let index = runStartIndex; index < finalAssistantIndex; index += 1) {
     const turn = turns[index]
     if (turn?.kind !== "assistant") continue
+    if (!shouldFoldAssistantTurnIntoFinalRunTrace(turns, index, turn)) continue
     items.push(...filterRenderedAssistantTraceItems(turn.items, true, traceVisibility))
   }
 

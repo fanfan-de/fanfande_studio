@@ -52,7 +52,18 @@ interface ThreadDebugAssistantTurnSnapshot {
   turn: AssistantTurn
 }
 
+type ThreadDebugWatchSnapshot =
+  | {
+      kind: "latest-streaming"
+      snapshot: ThreadDebugAssistantTurnSnapshot
+    }
+  | {
+      kind: "assistant-turns"
+      snapshots: ThreadDebugAssistantTurnSnapshot[]
+    }
+
 interface ThreadDebugApi {
+  getAssistantTurns: (sessionID?: string | null) => ThreadDebugAssistantTurnSnapshot[]
   getConversations: () => ConversationMap
   getSessionTurns: (sessionID: string) => Turn[]
   getStreamingTurns: (sessionID?: string | null) => ThreadDebugAssistantTurnSnapshot[]
@@ -168,6 +179,23 @@ function findStreamingAssistantTurns(conversations: ConversationMap, sessionID?:
   return snapshots
 }
 
+function findAssistantTurns(conversations: ConversationMap, sessionID?: string | null) {
+  const snapshots: ThreadDebugAssistantTurnSnapshot[] = []
+  const entries = sessionID
+    ? ([[sessionID, conversations[sessionID] ?? EMPTY_TURNS]] as Array<[string, Turn[]]>)
+    : Object.entries(conversations)
+
+  for (const [currentSessionID, turns] of entries) {
+    for (const turn of turns) {
+      if (turn.kind === "assistant") {
+        snapshots.push({ sessionID: currentSessionID, turn })
+      }
+    }
+  }
+
+  return snapshots
+}
+
 function findLatestStreamingAssistantTurn(conversations: ConversationMap, sessionID?: string | null) {
   const snapshots = findStreamingAssistantTurns(conversations, sessionID)
   return snapshots.reduce<ThreadDebugAssistantTurnSnapshot | null>((latest, snapshot) => {
@@ -176,6 +204,21 @@ function findLatestStreamingAssistantTurn(conversations: ConversationMap, sessio
     const snapshotUpdatedAt = snapshot.turn.runtime.updatedAt || snapshot.turn.timestamp
     return snapshotUpdatedAt >= latestUpdatedAt ? snapshot : latest
   }, null)
+}
+
+function readThreadDebugWatchSnapshot(conversations: ConversationMap, sessionID?: string | null): ThreadDebugWatchSnapshot {
+  const latestStreaming = findLatestStreamingAssistantTurn(conversations, sessionID)
+  if (latestStreaming) {
+    return {
+      kind: "latest-streaming",
+      snapshot: latestStreaming,
+    }
+  }
+
+  return {
+    kind: "assistant-turns",
+    snapshots: findAssistantTurns(conversations, sessionID),
+  }
 }
 
 function installThreadDebugApi(store: ConversationStoreApi) {
@@ -193,6 +236,9 @@ function installThreadDebugApi(store: ConversationStoreApi) {
   const cloneSnapshot = <T,>(value: T): T => cloneThreadDebugValue(value)
 
   const api: ThreadDebugApi = {
+    getAssistantTurns(sessionID) {
+      return cloneSnapshot(findAssistantTurns(store.getConversations(), sessionID))
+    },
     getConversations() {
       return cloneSnapshot(store.getConversations())
     },
@@ -224,12 +270,17 @@ function installThreadDebugApi(store: ConversationStoreApi) {
 
       const emit = () => {
         watchTimer = null
-        const snapshot = readLatestStreamingSnapshot(options.sessionID)
+        const snapshot = readThreadDebugWatchSnapshot(store.getConversations(), options.sessionID)
         const signature = JSON.stringify(snapshot)
         if (signature === lastWatchSignature) return
 
         lastWatchSignature = signature
-        console.log("[anybox thread debug] latest streaming assistant turn", cloneSnapshot(snapshot))
+        if (snapshot.kind === "latest-streaming") {
+          console.log("[anybox thread debug] latest streaming assistant turn", cloneSnapshot(snapshot.snapshot))
+          return
+        }
+
+        console.log("[anybox thread debug] assistant turns", cloneSnapshot(snapshot.snapshots))
       }
 
       const scheduleEmit = () => {

@@ -217,6 +217,53 @@ function createTraceItem(
   }
 }
 
+type TraceItemOwnership = Pick<AssistantTraceItem, "messageID" | "backendTurnID">
+
+function normalizeTraceItemOwnership(input?: TraceItemOwnership): TraceItemOwnership {
+  return {
+    messageID: readString(input?.messageID) || undefined,
+    backendTurnID: readString(input?.backendTurnID) || undefined,
+  }
+}
+
+function traceItemOwnershipFromPart(
+  part: Record<string, unknown>,
+  fallback?: TraceItemOwnership,
+): TraceItemOwnership {
+  return normalizeTraceItemOwnership({
+    messageID: readString(part.messageID) || fallback?.messageID,
+    backendTurnID: readString(part.backendTurnID) || readString(part.turnID) || fallback?.backendTurnID,
+  })
+}
+
+function traceItemOwnershipFromHistoryMessage(message: LoadedSessionHistoryMessage): TraceItemOwnership {
+  return normalizeTraceItemOwnership({
+    messageID: message.info.id,
+    backendTurnID: message.turn?.id || readString(message.info.turnID),
+  })
+}
+
+function applyTraceItemOwnership<T extends AssistantTraceItem>(
+  item: T,
+  ownership?: TraceItemOwnership,
+): T {
+  const normalized = normalizeTraceItemOwnership(ownership)
+  if (!normalized.messageID && !normalized.backendTurnID) return item
+
+  return {
+    ...item,
+    messageID: item.messageID ?? normalized.messageID,
+    backendTurnID: item.backendTurnID ?? normalized.backendTurnID,
+  }
+}
+
+function applyTraceItemsOwnership<T extends AssistantTraceItem>(
+  items: T[],
+  ownership?: TraceItemOwnership,
+): T[] {
+  return items.map((item) => applyTraceItemOwnership(item, ownership))
+}
+
 function readTraceTimestamp(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null
 }
@@ -600,6 +647,8 @@ function buildCompletionTraceItem(input: {
   sourceID: string
   finishReason?: unknown
   message?: unknown
+  messageID?: string
+  backendTurnID?: string
   status?: AssistantTraceStatus
   timestamp?: number
   debugEntries?: AssistantTraceDebugEntry[]
@@ -611,6 +660,8 @@ function buildCompletionTraceItem(input: {
     label: "Workflow",
     title: input.status === "pending" ? "Approval required" : "Response complete",
     timestamp: input.timestamp,
+    messageID: input.messageID,
+    backendTurnID: input.backendTurnID,
     detail: input.status === "pending"
       ? "The backend paused this turn until a permission decision is made."
       : buildCompletionDetail({
@@ -807,6 +858,8 @@ function readTaskState(value: unknown) {
 function createTaskStateTraceItem(input: {
   sourceID: string
   taskState: NonNullable<ReturnType<typeof readTaskState>>
+  messageID?: string
+  backendTurnID?: string
   timestamp?: number
   debugEntries?: AssistantTraceDebugEntry[]
 }) {
@@ -824,6 +877,8 @@ function createTaskStateTraceItem(input: {
     label: "Tasks",
     title: `${input.taskState.completed}/${input.taskState.tasks.length} tasks`,
     timestamp: input.timestamp,
+    messageID: input.messageID,
+    backendTurnID: input.backendTurnID,
     detail: input.taskState.active?.activeForm,
     status,
     section: "workflow",
@@ -1051,6 +1106,7 @@ function mergeTraceItem(existing: AssistantTraceItem, nextItem: AssistantTraceIt
     return {
       ...existing,
       messageID: existing.messageID ?? nextItem.messageID,
+      backendTurnID: existing.backendTurnID ?? nextItem.backendTurnID,
       partID: existing.partID ?? nextItem.partID,
       toolCallID: existing.toolCallID ?? nextItem.toolCallID,
       debugEntries: mergeDebugEntries(existing.debugEntries, nextItem.debugEntries),
@@ -1061,6 +1117,8 @@ function mergeTraceItem(existing: AssistantTraceItem, nextItem: AssistantTraceIt
     ...existing,
     ...nextItem,
     id: existing.id,
+    messageID: nextItem.messageID ?? existing.messageID,
+    backendTurnID: nextItem.backendTurnID ?? existing.backendTurnID,
     timestamp: mergeTraceTimestamp(existing.timestamp, nextItem.timestamp),
     debugEntries: mergeDebugEntries(existing.debugEntries, nextItem.debugEntries),
   }
@@ -1091,9 +1149,18 @@ function mergeTraceItem(existing: AssistantTraceItem, nextItem: AssistantTraceIt
   return merged
 }
 
+function traceItemsShareToolCallIdentity(left: AssistantTraceItem, right: AssistantTraceItem) {
+  return left.kind === "tool" &&
+    right.kind === "tool" &&
+    Boolean(left.toolCallID && right.toolCallID && left.toolCallID === right.toolCallID)
+}
+
 function upsertTraceItem(items: AssistantTraceItem[], nextItem: AssistantTraceItem) {
   const matchingIndices = items.reduce<number[]>((result, item, index) => {
-    if (nextItem.sourceID && item.sourceID ? item.sourceID === nextItem.sourceID : item.id === nextItem.id) {
+    if (
+      (nextItem.sourceID && item.sourceID ? item.sourceID === nextItem.sourceID : item.id === nextItem.id) ||
+      traceItemsShareToolCallIdentity(item, nextItem)
+    ) {
       result.push(index)
     }
 
@@ -1124,6 +1191,8 @@ function appendTraceDelta(
     delta: string
     fullText?: string
     sourceID?: string
+    messageID?: string
+    backendTurnID?: string
     timestamp?: number
     debugEntries?: AssistantTraceDebugEntry[]
   },
@@ -1150,6 +1219,8 @@ function appendTraceDelta(
         ? {
             ...existing,
             text: nextText.text,
+            messageID: existing?.messageID ?? input.messageID,
+            backendTurnID: existing?.backendTurnID ?? input.backendTurnID,
             isStreaming: true,
             debugEntries,
           }
@@ -1166,6 +1237,8 @@ function appendTraceDelta(
       label: input.kind === "reasoning" ? "Reasoning" : "Response",
       text: nextText.text,
       sourceID: input.sourceID,
+      messageID: input.messageID,
+      backendTurnID: input.backendTurnID,
       timestamp: input.timestamp,
       isStreaming: true,
       debugEntries: appendTruncationDebugEntry(input.debugEntries, nextText.truncated),
@@ -1179,6 +1252,7 @@ function appendToolInputDelta(
     delta: string
     sourceID: string
     messageID?: string
+    backendTurnID?: string
     toolCallID?: string
     toolName?: string
     status?: AssistantTraceStatus
@@ -1226,6 +1300,7 @@ function appendToolInputDelta(
     toolOutputText: existing?.toolOutputText,
     status,
     messageID: input.messageID || existing?.messageID,
+    backendTurnID: input.backendTurnID || existing?.backendTurnID,
     partID: existing?.partID ?? input.sourceID,
     toolCallID: input.toolCallID || existing?.toolCallID,
     ...(draftPatch ? { draftPatch: settleDraftPatchPreview(draftPatch, status) } : {}),
@@ -1242,6 +1317,8 @@ function buildTraceItemFromPart(
   input: unknown,
   options?: {
     debugEntries?: AssistantTraceDebugEntry[]
+    messageID?: string
+    backendTurnID?: string
   },
 ): AssistantTraceItem[] {
   const part = readRecord(input)
@@ -1251,10 +1328,17 @@ function buildTraceItemFromPart(
   const type = readString(part.type)
   const debugEntries = mergeDebugEntries(buildPartDebugEntries(part), options?.debugEntries)
   const timestamp = readCanonicalPartTimestamp(part)
+  const ownership = traceItemOwnershipFromPart(part, options)
+  const createPartTraceItem = (item: Parameters<typeof createTraceItem>[0]) =>
+    createTraceItem({
+      ...item,
+      messageID: item.messageID ?? ownership.messageID,
+      backendTurnID: item.backendTurnID ?? ownership.backendTurnID,
+    })
 
   if (type === "reasoning" || type === "text") {
     const renderedText = truncateStreamRenderText(readString(part.text), STREAM_TEXT_RENDER_LIMIT)
-    return [createTraceItem({
+    return [createPartTraceItem({
       id: sourceID,
       sourceID,
       kind: type,
@@ -1286,7 +1370,7 @@ function buildTraceItemFromPart(
                   ? "cancelled"
                   : "running"
     const toolName = readString(part.tool) || "Tool"
-    const messageID = readString(part.messageID)
+    const messageID = ownership.messageID
     const toolCallID = readString(part.callID)
     const rawToolInputText = createToolTraceInputText(status, state)
     const rawToolOutputText = createToolTraceOutputText(status, state)
@@ -1311,7 +1395,7 @@ function buildTraceItemFromPart(
     const questionPrompt = readAskUserQuestionPrompt(state?.metadata)
 
     if (questionPrompt && !questionPrompt.answered) {
-      return [createTraceItem({
+      return [createPartTraceItem({
         id: sourceID,
         sourceID,
         kind: "question",
@@ -1328,33 +1412,34 @@ function buildTraceItemFromPart(
     }
 
     return [
-      createTraceItem({
-      id: sourceID,
-      sourceID,
-      kind: "tool",
-      label: "Tool",
-      title: toolName,
-      text: toolOutputText ?? toolInputText,
-      detail: createToolTraceDetail(status, state),
-      toolInputText,
-      toolOutputText,
-      status,
-      messageID,
-      partID: sourceID,
-      toolCallID,
-      timestamp: timestamp ?? undefined,
-      ...(draftPatch ? { draftPatch } : {}),
-      section: "tools",
-      visibilityKey: "toolCalls",
-      isStreaming: status === "running" || status === "pending",
-      debugEntries: toolDebugEntries,
-    }),
-      ...buildToolAttachmentTraceItems(sourceID, state, toolDebugEntries),
+      createPartTraceItem({
+        id: sourceID,
+        sourceID,
+        kind: "tool",
+        label: "Tool",
+        title: toolName,
+        text: toolOutputText ?? toolInputText,
+        detail: createToolTraceDetail(status, state),
+        toolInputText,
+        toolOutputText,
+        status,
+        messageID,
+        backendTurnID: ownership.backendTurnID,
+        partID: sourceID,
+        toolCallID,
+        timestamp: timestamp ?? undefined,
+        ...(draftPatch ? { draftPatch } : {}),
+        section: "tools",
+        visibilityKey: "toolCalls",
+        isStreaming: status === "running" || status === "pending",
+        debugEntries: toolDebugEntries,
+      }),
+      ...applyTraceItemsOwnership(buildToolAttachmentTraceItems(sourceID, state, toolDebugEntries), ownership),
     ]
   }
 
   if (type === "source-url") {
-    return [createTraceItem({
+    return [createPartTraceItem({
       id: sourceID,
       sourceID,
       kind: "source",
@@ -1371,7 +1456,7 @@ function buildTraceItemFromPart(
 
   if (type === "source-document") {
     const detail = [readString(part.filename), readString(part.mediaType)].filter(Boolean).join(" | ")
-    return [createTraceItem({
+    return [createPartTraceItem({
       id: sourceID,
       sourceID,
       kind: "source",
@@ -1396,7 +1481,7 @@ function buildTraceItemFromPart(
     const dimensions = width && height ? `${width}x${height}` : ""
     const detail = [mime, dimensions].filter(Boolean).join(" | ")
 
-    return [createTraceItem({
+    return [createPartTraceItem({
       id: sourceID,
       sourceID,
       kind: type,
@@ -1448,7 +1533,7 @@ function buildTraceItemFromPart(
           ? "Model call patch metadata received from the backend."
           : "Patch metadata received from the backend."
 
-    return [createTraceItem({
+    return [createPartTraceItem({
       id: sourceID,
       sourceID,
       kind: "patch",
@@ -1487,7 +1572,7 @@ function buildTraceItemFromPart(
       220,
     ) || "The backend recorded a permission lifecycle update."
 
-    return [createTraceItem({
+    return [createPartTraceItem({
       id: sourceID,
       sourceID,
       kind: "system",
@@ -1503,7 +1588,7 @@ function buildTraceItemFromPart(
   }
 
   if (type === "subtask") {
-    return [createTraceItem({
+    return [createPartTraceItem({
       id: sourceID,
       sourceID,
       kind: "subtask",
@@ -1519,7 +1604,7 @@ function buildTraceItemFromPart(
   }
 
   if (type === "step-start") {
-    return [createTraceItem({
+    return [createPartTraceItem({
       id: sourceID,
       sourceID,
       kind: "step",
@@ -1535,7 +1620,7 @@ function buildTraceItemFromPart(
   }
 
   if (type === "step-finish") {
-    return [createTraceItem({
+    return [createPartTraceItem({
       id: sourceID,
       sourceID,
       kind: "step",
@@ -1551,7 +1636,7 @@ function buildTraceItemFromPart(
   }
 
   if (type === "retry") {
-    return [createTraceItem({
+    return [createPartTraceItem({
       id: sourceID,
       sourceID,
       kind: "retry",
@@ -1566,7 +1651,7 @@ function buildTraceItemFromPart(
   }
 
   if (type === "snapshot") {
-    return [createTraceItem({
+    return [createPartTraceItem({
       id: sourceID,
       sourceID,
       kind: "snapshot",
@@ -1582,7 +1667,7 @@ function buildTraceItemFromPart(
   }
 
   if (type === "agent") {
-    return [createTraceItem({
+    return [createPartTraceItem({
       id: sourceID,
       sourceID,
       kind: "system",
@@ -1597,24 +1682,29 @@ function buildTraceItemFromPart(
   }
 
   if (type === "compaction") {
-    return [createCompactionTraceItem({
-      sourceID,
-      auto: readBoolean(part.auto),
-      debugEntries,
-    })]
+    return [
+      applyTraceItemOwnership(
+        createCompactionTraceItem({
+          sourceID,
+          auto: readBoolean(part.auto),
+          debugEntries,
+        }),
+        ownership,
+      ),
+    ]
   }
 
   return []
 }
 
-function mergeTraceParts(items: AssistantTraceItem[], parts: unknown[]) {
+function mergeTraceParts(items: AssistantTraceItem[], parts: unknown[], ownership?: TraceItemOwnership) {
   return parts.reduce<AssistantTraceItem[]>((result, part) => {
-    const nextItems = buildTraceItemFromPart(part)
+    const nextItems = buildTraceItemFromPart(part, ownership)
     return nextItems.length > 0 ? upsertTraceItems(result, nextItems) : result
   }, items)
 }
 
-function alignAnonymousTraceItemsWithParts(items: AssistantTraceItem[], parts: unknown[]) {
+function alignAnonymousTraceItemsWithParts(items: AssistantTraceItem[], parts: unknown[], ownership?: TraceItemOwnership) {
   const nextItems = [...items]
   const anonymousIndices = {
     reasoning: [] as number[],
@@ -1628,7 +1718,7 @@ function alignAnonymousTraceItemsWithParts(items: AssistantTraceItem[], parts: u
   })
 
   for (const part of parts) {
-    const nextItem = buildTraceItemFromPart(part)[0]
+    const nextItem = buildTraceItemFromPart(part, ownership)[0]
     if (!nextItem || (nextItem.kind !== "reasoning" && nextItem.kind !== "text") || !nextItem.sourceID) {
       continue
     }
@@ -1663,6 +1753,7 @@ function appendSystemTrace(
   section: AssistantTraceSectionKey = "workflow",
   visibilityKey: AssistantTraceVisibilityKey = "workflow",
   timestamp?: number,
+  ownership?: TraceItemOwnership,
 ) {
   const nextItems = clearStreamingItems(settleQueuedPrompt(items, turnID))
   return appendTraceItem(
@@ -1674,6 +1765,8 @@ function appendSystemTrace(
       detail,
       status,
       timestamp,
+      messageID: ownership?.messageID,
+      backendTurnID: ownership?.backendTurnID,
       section,
       visibilityKey,
       debugEntries,
@@ -1969,12 +2062,90 @@ function isAssistantHistoryFailed(message: LoadedSessionHistoryMessage) {
   return Boolean(readAssistantHistoryFailure(message))
 }
 
+function hasAssistantHistoryCompletionMarker(items: AssistantTraceItem[]) {
+  return items.some(
+    (item) =>
+      item.kind === "system" &&
+      item.title === "Response complete" &&
+      item.status === "completed" &&
+      Boolean(item.sourceID?.endsWith(":complete")),
+  )
+}
+
+function resolveSettledAssistantHistoryPhase(
+  items: AssistantTraceItem[],
+  message: LoadedSessionHistoryMessage,
+): AssistantTurnPhase | null {
+  const turnStatus = readString(message.turn?.status).toLowerCase()
+  const infoStatus = readString(message.info.status).toLowerCase()
+
+  if (turnStatus === "running") return null
+  if (turnStatus === "blocked" || infoStatus === "blocked") return "blocked"
+  if (turnStatus === "continued_by_user" || infoStatus === "continued_by_user") return "continued_by_user"
+  if (
+    turnStatus === "completed" ||
+    infoStatus === "completed" ||
+    readNumber(message.info.completed) > 0 ||
+    hasAssistantHistoryCompletionMarker(items)
+  ) {
+    return "completed"
+  }
+
+  return null
+}
+
+function resolveRunningAssistantHistoryPhase(
+  items: AssistantTraceItem[],
+  message: LoadedSessionHistoryMessage,
+): AssistantTurnPhase | null {
+  const turnStatus = readString(message.turn?.status).toLowerCase()
+  if (turnStatus !== "running") return null
+
+  const turnPhase = readString(message.turn?.phase).toLowerCase()
+  switch (turnPhase) {
+    case "preparing":
+    case "waiting_llm":
+    case "reasoning":
+    case "waiting_approval":
+    case "responding":
+      return turnPhase
+    case "executing_tool":
+      return "tool_running"
+  }
+
+  if (items.some((item) => item.status === "running" || item.status === "pending")) return "tool_running"
+  if (items.some((item) => item.kind === "text")) return "responding"
+  if (items.some((item) => item.kind === "reasoning")) return "reasoning"
+  return "waiting_llm"
+}
+
+function assistantHistoryStateForRunningPhase(phase: AssistantTurnPhase | null) {
+  if (phase === "preparing") return "Preparing agent stream"
+  if (phase === "waiting_llm") return "Waiting for model stream"
+  if (phase === "reasoning") return "Agent is reasoning"
+  if (phase === "tool_running") return "Running tools"
+  if (phase === "waiting_approval") return "Waiting for permission approval"
+  if (phase === "responding") return "Streaming response"
+  return null
+}
+
+function assistantHistoryStateForSettledPhase(phase: AssistantTurnPhase | null) {
+  if (phase === "blocked") return "Backend response blocked"
+  if (phase === "continued_by_user") return "Continued by user input"
+  if (phase === "completed") return "Backend response received"
+  return null
+}
+
 function resolveAssistantHistoryState(items: AssistantTraceItem[], message: LoadedSessionHistoryMessage) {
   if (isAssistantHistoryCancelled(message) || items.some((item) => item.status === "cancelled")) return "Backend stream cancelled"
   if (isAssistantHistoryFailed(message)) return "Backend request failed"
   if (items.some((item) => item.kind === "question")) return "Waiting for your answer"
   if (items.some((item) => item.status === "waiting-approval")) return "Waiting for permission approval"
   if (items.some((item) => item.status === "denied")) return "Tool execution denied"
+  const runningState = assistantHistoryStateForRunningPhase(resolveRunningAssistantHistoryPhase(items, message))
+  if (runningState) return runningState
+  const settledState = assistantHistoryStateForSettledPhase(resolveSettledAssistantHistoryPhase(items, message))
+  if (settledState) return settledState
   if (items.some((item) => item.status === "running" || item.status === "pending")) return "Backend response in progress"
   if (items.some((item) => item.kind === "text")) return "Backend response received"
   if (items.some((item) => item.kind === "tool")) return "Tool history restored"
@@ -1986,9 +2157,21 @@ function resolveAssistantHistoryPhase(items: AssistantTraceItem[], message: Load
   if (isAssistantHistoryFailed(message)) return "failed"
   if (items.some((item) => item.kind === "question")) return "blocked"
   if (items.some((item) => item.status === "waiting-approval")) return "waiting_approval"
+  const runningPhase = resolveRunningAssistantHistoryPhase(items, message)
+  if (runningPhase) return runningPhase
+  const settledPhase = resolveSettledAssistantHistoryPhase(items, message)
+  if (settledPhase) return settledPhase
   if (items.some((item) => item.status === "running" || item.status === "pending")) return "tool_running"
   if (items.some((item) => item.kind === "text")) return "completed"
   return "completed"
+}
+
+function isStreamingAssistantHistoryPhase(phase: AssistantTurnPhase) {
+  return phase !== "completed" &&
+    phase !== "cancelled" &&
+    phase !== "failed" &&
+    phase !== "blocked" &&
+    phase !== "continued_by_user"
 }
 
 function resolveAssistantHistoryToolName(items: AssistantTraceItem[]) {
@@ -2041,10 +2224,12 @@ function buildUserTurnFromHistory(message: LoadedSessionHistoryMessage) {
 }
 
 function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
-  let items = mergeTraceParts([], message.parts)
+  const ownership = traceItemOwnershipFromHistoryMessage(message)
+  let items = mergeTraceParts([], message.parts, ownership)
   const failure = readAssistantHistoryFailure(message)
   const errorMessage = failure?.message ?? ""
   const isCancelled = isAssistantHistoryCancelled(message)
+  const isBackendTurnRunning = readString(message.turn?.status).toLowerCase() === "running"
 
   if (errorMessage) {
     items = appendTraceItem(
@@ -2055,11 +2240,13 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
         title: formatErrorTraceTitle("Backend request failed", failure),
         detail: errorMessage,
         status: "error",
+        messageID: ownership.messageID,
+        backendTurnID: ownership.backendTurnID,
       }),
     )
   }
 
-  if (!errorMessage && !isCancelled && readNumber(message.info.completed) > 0) {
+  if (!errorMessage && !isCancelled && !isBackendTurnRunning && readNumber(message.info.completed) > 0) {
     items = upsertTraceItem(
       items,
       buildCompletionTraceItem({
@@ -2067,6 +2254,8 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
         sourceID: `${message.info.id}:complete`,
         finishReason: message.info.finishReason,
         message: message.info,
+        messageID: ownership.messageID,
+        backendTurnID: ownership.backendTurnID,
       }),
     )
   }
@@ -2081,6 +2270,8 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
         detail: "Prompt cancellation requested.",
         status: "completed",
         sourceID: `${message.info.id}:cancelled`,
+        messageID: ownership.messageID,
+        backendTurnID: ownership.backendTurnID,
         section: "workflow",
         visibilityKey: "workflow",
       }),
@@ -2095,6 +2286,8 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
         title: "No visible output",
         detail: "The backend stored this assistant turn without replayable trace items.",
         status: "completed",
+        messageID: ownership.messageID,
+        backendTurnID: ownership.backendTurnID,
         section: "response",
         visibilityKey: "response",
       }),
@@ -2103,7 +2296,9 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
 
   const runtimePhase = resolveAssistantHistoryPhase(items, message)
   const createdAt = readNumber(message.info.created) || Date.now()
-  const completedAt = readNumber(message.info.completed) || createdAt
+  const completedAt = isBackendTurnRunning
+    ? readNumber(message.turn?.updatedAt) || readNumber(message.info.completed) || createdAt
+    : readNumber(message.info.completed) || createdAt
 
   return {
     id: message.info.id || createID("assistant"),
@@ -2121,7 +2316,7 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
     }),
     state: resolveAssistantHistoryState(items, message),
     items,
-    isStreaming: false,
+    isStreaming: isBackendTurnRunning && isStreamingAssistantHistoryPhase(runtimePhase),
   } satisfies Turn
 }
 
@@ -2137,14 +2332,18 @@ function isCompactionHistoryMessage(message: LoadedSessionHistoryMessage) {
 
 function buildCompactionItemsFromHistory(message: LoadedSessionHistoryMessage) {
   const compactionParts = message.parts.filter((part) => readString(readRecord(part)?.type) === "compaction")
-  const items = mergeTraceParts([], compactionParts)
+  const ownership = traceItemOwnershipFromHistoryMessage(message)
+  const items = mergeTraceParts([], compactionParts, ownership)
   if (items.length > 0) return items
 
   return [
-    createCompactionTraceItem({
-      sourceID: `${message.info.id || createID("trace")}:compaction`,
-      auto: true,
-    }),
+    applyTraceItemOwnership(
+      createCompactionTraceItem({
+        sourceID: `${message.info.id || createID("trace")}:compaction`,
+        auto: true,
+      }),
+      ownership,
+    ),
   ]
 }
 
@@ -2163,13 +2362,17 @@ function prependAssistantItems(turn: AssistantTurn, items: AssistantTraceItem[])
 
 function buildCompactionMarkerTurn(message: LoadedSessionHistoryMessage, items: AssistantTraceItem[]) {
   const createdAt = readNumber(message.info.created) || Date.now()
+  const ownership = traceItemOwnershipFromHistoryMessage(message)
   const nextItems = items.length > 0
     ? items
     : [
-        createCompactionTraceItem({
-          sourceID: `${message.info.id || createID("trace")}:compaction`,
-          auto: true,
-        }),
+        applyTraceItemOwnership(
+          createCompactionTraceItem({
+            sourceID: `${message.info.id || createID("trace")}:compaction`,
+            auto: true,
+          }),
+          ownership,
+        ),
       ]
 
   return {
@@ -2380,6 +2583,7 @@ export function finalizeStreamAssistantTurn(
     status?: string
     finishReason?: string
     message?: unknown
+    backendTurnID?: string
     debugEntries?: AssistantTraceDebugEntry[]
     updatedAt?: number
   },
@@ -2388,6 +2592,10 @@ export function finalizeStreamAssistantTurn(
   const waitingQuestion = items.find((item) => item.kind === "question")
   const messageTurn = applyAssistantMessageMetadata(turn, input?.message)
   const nextMessageID = messageTurn.messageID
+  const ownership = normalizeTraceItemOwnership({
+    messageID: nextMessageID,
+    backendTurnID: input?.backendTurnID,
+  })
   const lifecycleClock = input?.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }
 
   if (turn.runtime.phase === "failed") {
@@ -2433,6 +2641,8 @@ export function finalizeStreamAssistantTurn(
         id: `${turn.id}-blocked`,
         sourceID: `${turn.id}:blocked`,
         status: "pending",
+        messageID: ownership.messageID,
+        backendTurnID: ownership.backendTurnID,
         timestamp: input?.updatedAt,
         debugEntries: input?.debugEntries,
       }),
@@ -2513,6 +2723,8 @@ export function finalizeStreamAssistantTurn(
         sourceID: `${turn.id}:complete`,
         finishReason: input?.finishReason,
         message: input?.message,
+        messageID: ownership.messageID,
+        backendTurnID: ownership.backendTurnID,
         timestamp: input?.updatedAt,
         debugEntries: input?.debugEntries,
       }),
@@ -2641,6 +2853,11 @@ function applyRuntimeEventToTurn(
   const preparedItems = settleQueuedPrompt(turn.items, turn.id)
   const debugEntries = buildRuntimeEventDebugEntries(event, item.id)
   const eventTimestamp = event.timestamp > 0 ? event.timestamp : undefined
+  const eventBackendTurnID = event.turnID || undefined
+  const eventOwnership = (messageID?: string): TraceItemOwnership => ({
+    messageID: messageID || undefined,
+    backendTurnID: eventBackendTurnID,
+  })
   const updateRuntimeTurnLifecycle = (
     nextTurn: AssistantTurn,
     input: Parameters<typeof updateAssistantTurnLifecycle>[1],
@@ -2677,6 +2894,7 @@ function applyRuntimeEventToTurn(
         "workflow",
         "workflow",
         eventTimestamp,
+        eventOwnership(),
       ),
     )
   }
@@ -2739,6 +2957,8 @@ function applyRuntimeEventToTurn(
         delta: readString(payload.delta) || readString(payload.text),
         fullText: readString(payload.text) || undefined,
         sourceID: readString(payload.partID) || undefined,
+        messageID,
+        backendTurnID: eventBackendTurnID,
         timestamp: eventTimestamp,
         debugEntries: buildRuntimeEventDebugEntries(event, item.id, {
           "message.id": readString(payload.messageID),
@@ -2766,6 +2986,8 @@ function applyRuntimeEventToTurn(
         delta: readString(payload.delta) || readString(payload.text),
         fullText: readString(payload.text) || undefined,
         sourceID: readString(payload.partID) || undefined,
+        messageID,
+        backendTurnID: eventBackendTurnID,
         timestamp: eventTimestamp,
         debugEntries: buildRuntimeEventDebugEntries(event, item.id, {
           "message.id": readString(payload.messageID),
@@ -2801,6 +3023,7 @@ function applyRuntimeEventToTurn(
         delta,
         sourceID,
         messageID,
+        backendTurnID: eventBackendTurnID,
         toolCallID,
         toolName: readString(payload.toolName),
         status: isAlreadyCancelled ? "cancelled" : undefined,
@@ -2842,6 +3065,7 @@ function applyRuntimeEventToTurn(
       createTaskStateTraceItem({
         sourceID,
         taskState,
+        backendTurnID: eventBackendTurnID,
         timestamp: eventTimestamp,
         debugEntries,
       }),
@@ -2863,6 +3087,7 @@ function applyRuntimeEventToTurn(
 
     const traceItems = buildTraceItemFromPart(partRecord, {
       debugEntries,
+      backendTurnID: eventBackendTurnID,
     })
     if (traceItems.length === 0) return turn
 
@@ -2890,18 +3115,20 @@ function applyRuntimeEventToTurn(
     event.type === "patch.generated" ||
     event.type === "snapshot.captured"
   ) {
+    const partRecord = readRecord(part)
+    const messageID = readString(partRecord?.messageID) || resolvePayloadMessageID(payload) || turn.messageID
     const traceItems = buildTraceItemFromPart(part, {
       debugEntries,
+      messageID,
+      backendTurnID: eventBackendTurnID,
     })
     if (traceItems.length === 0) return turn
 
     let nextItems = upsertTraceItems(clearStreamingItems(preparedItems), traceItems)
     const primaryItem = traceItems[0]
-    const partRecord = readRecord(part)
     const partState = readRecord(partRecord?.state)
     const approvalRequestID = readString(partState?.approvalID) || null
     const isStreaming = !isSettledAssistantPhase(turn.runtime.phase)
-    const messageID = readString(partRecord?.messageID) || turn.messageID
 
     if (primaryItem?.kind === "tool") {
       const inferredLifecycle = inferToolLifecycleFromTraceItem(turn, primaryItem, approvalRequestID)
@@ -2934,12 +3161,15 @@ function applyRuntimeEventToTurn(
 
   if (event.type === "turn.completed") {
     const parts = Array.isArray(payload.parts) ? payload.parts : []
+    const messageID = resolvePayloadMessageID(payload) || turn.messageID
+    const ownership = eventOwnership(messageID)
     const baseItems = settleDraftPatchPreviews(preparedItems, "completed")
-    const finalizedItems = alignAnonymousTraceItemsWithParts(clearStreamingItems(baseItems), parts)
-    const nextItems = mergeTraceParts(finalizedItems, parts)
+    const finalizedItems = alignAnonymousTraceItemsWithParts(clearStreamingItems(baseItems), parts, ownership)
+    const nextItems = mergeTraceParts(finalizedItems, parts, ownership)
 
     return finalizeStreamAssistantTurn({
       ...turn,
+      messageID,
       runtime: eventTimestamp === undefined
         ? turn.runtime
         : {
@@ -2953,6 +3183,7 @@ function applyRuntimeEventToTurn(
       status: readString(payload.status) || undefined,
       finishReason: readString(payload.finishReason) || undefined,
       message: payload.message,
+      backendTurnID: eventBackendTurnID,
       debugEntries,
       updatedAt: eventTimestamp,
     })
@@ -2963,16 +3194,19 @@ function applyRuntimeEventToTurn(
     const failure = readHistoryErrorPresentation(payload.errorInfo)
     const message = failure?.message || readString(payload.error) || "Unknown backend error"
     const messageID = resolvePayloadMessageID(payload) || turn.messageID
+    const ownership = eventOwnership(messageID)
     const messageTurn = applyAssistantMessageMetadata(turn, payload.message)
     const baseItems = settleDraftPatchPreviews(preparedItems, "error")
     const nextItems = appendTraceItem(
-      mergeTraceParts(clearStreamingItems(baseItems), parts),
+      mergeTraceParts(clearStreamingItems(baseItems), parts, ownership),
       createTraceItem({
         kind: "error",
         label: "Error",
         title: formatErrorTraceTitle("Runtime turn failed", failure),
         detail: message,
         status: "error",
+        messageID: ownership.messageID,
+        backendTurnID: ownership.backendTurnID,
         debugEntries,
       }),
     )
@@ -2996,10 +3230,11 @@ function applyRuntimeEventToTurn(
     const parts = Array.isArray(payload.parts) ? payload.parts : []
     const detail = readString(payload.detail) || readString(payload.reason) || "The turn was cancelled."
     const messageID = resolvePayloadMessageID(payload) || turn.messageID
+    const ownership = eventOwnership(messageID)
     const cancelledTurn = markAssistantTurnInterrupted(applyAssistantMessageMetadata(turn, payload.message), detail)
     const cancelledItems = settleDraftPatchPreviews(cancelledTurn.items, "cancelled")
     const nextItems = upsertTraceItem(
-      mergeTraceParts(cancelledItems, parts),
+      mergeTraceParts(cancelledItems, parts, ownership),
       createTraceItem({
         kind: "system",
         label: "System",
@@ -3007,6 +3242,8 @@ function applyRuntimeEventToTurn(
         detail,
         status: "completed",
         sourceID: `${turn.id}:cancelled`,
+        messageID: ownership.messageID,
+        backendTurnID: ownership.backendTurnID,
         section: "workflow",
         visibilityKey: "workflow",
         timestamp: eventTimestamp,
@@ -3046,6 +3283,11 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
 
   const payload = readRecord(item.data)
   const preparedItems = settleQueuedPrompt(turn.items, turn.id)
+  const payloadBackendTurnID = readString(payload?.backendTurnID) || readString(payload?.turnID) || undefined
+  const payloadOwnership = (messageID?: string): TraceItemOwnership => ({
+    messageID: messageID || undefined,
+    backendTurnID: payloadBackendTurnID,
+  })
 
   if (item.event === "started") {
     const debugEntries = buildStreamEventDebugEntries("started", payload)
@@ -3066,6 +3308,10 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
         "Renderer subscribed to live backend updates.",
         "completed",
         debugEntries,
+        "workflow",
+        "workflow",
+        undefined,
+        payloadOwnership(),
       ),
     )
   }
@@ -3097,6 +3343,8 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
           delta,
           fullText: fullText || undefined,
           sourceID,
+          messageID,
+          backendTurnID: payloadBackendTurnID,
           debugEntries,
         }),
       )
@@ -3117,23 +3365,27 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
         delta,
         fullText: fullText || undefined,
         sourceID,
+        messageID,
+        backendTurnID: payloadBackendTurnID,
         debugEntries,
       }),
     )
   }
 
   if (item.event === "part") {
+    const partRecord = readRecord(payload?.part)
+    const messageID = readString(partRecord?.messageID) || resolvePayloadMessageID(payload ?? {}) || turn.messageID
     const traceItems = buildTraceItemFromPart(payload?.part, {
       debugEntries: buildStreamEventDebugEntries("part", payload),
+      messageID,
+      backendTurnID: payloadBackendTurnID,
     })
     if (traceItems.length === 0) return turn
     const nextItems = upsertTraceItems(clearStreamingItems(preparedItems), traceItems)
     const primaryItem = traceItems[0]
-    const partRecord = readRecord(payload?.part)
     const partState = readRecord(partRecord?.state)
     const approvalRequestID = readString(partState?.approvalID) || null
     const isStreaming = !isSettledAssistantPhase(turn.runtime.phase)
-    const messageID = readString(partRecord?.messageID) || turn.messageID
 
     if (primaryItem?.kind === "tool") {
       const inferredLifecycle = inferToolLifecycleFromTraceItem(turn, primaryItem, approvalRequestID)
@@ -3166,8 +3418,10 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
 
   if (item.event === "done") {
     const parts = Array.isArray(payload?.parts) ? payload.parts : []
-    const finalizedItems = alignAnonymousTraceItemsWithParts(clearStreamingItems(preparedItems), parts)
-    const nextItems = mergeTraceParts(finalizedItems, parts)
+    const messageID = resolvePayloadMessageID(payload ?? {}) || turn.messageID
+    const ownership = payloadOwnership(messageID)
+    const finalizedItems = alignAnonymousTraceItemsWithParts(clearStreamingItems(preparedItems), parts, ownership)
+    const nextItems = mergeTraceParts(finalizedItems, parts, ownership)
     const debugEntries = buildStreamEventDebugEntries("done", payload, {
       status: readString(payload?.status),
       finishReason: readString(payload?.finishReason),
@@ -3175,18 +3429,22 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
 
     return finalizeStreamAssistantTurn({
       ...turn,
+      messageID,
       state: "Backend response received",
       items: nextItems,
     }, {
       status: readString(payload?.status) || undefined,
       finishReason: readString(payload?.finishReason) || undefined,
       message: payload?.message,
+      backendTurnID: payloadBackendTurnID,
       debugEntries,
     })
   }
 
   if (item.event === "error") {
     const message = readString(payload?.message) || "Unknown backend error"
+    const messageID = resolvePayloadMessageID(payload ?? {}) || turn.messageID
+    const ownership = payloadOwnership(messageID)
     const debugEntries = buildStreamEventDebugEntries("error", payload)
     const nextItems = appendTraceItem(
       clearStreamingItems(preparedItems),
@@ -3196,6 +3454,8 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
         title: "API stream error",
         detail: message,
         status: "error",
+        messageID: ownership.messageID,
+        backendTurnID: ownership.backendTurnID,
         debugEntries,
       }),
     )
@@ -3203,6 +3463,7 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID,
         isStreaming: false,
       },
       {

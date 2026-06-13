@@ -510,6 +510,13 @@ function findMatchingTraceItemIndex(
   nextItem: AssistantTraceItem,
   usedIndices: Set<number>,
 ) {
+  if (nextItem.kind === "tool") {
+    const toolIdentityMatchIndex = previousItems.findIndex(
+      (item, index) => !usedIndices.has(index) && toolTraceItemsShareIdentity(item, nextItem),
+    )
+    if (toolIdentityMatchIndex !== -1) return toolIdentityMatchIndex
+  }
+
   if (nextItem.sourceID) {
     const sourceMatchIndex = previousItems.findIndex(
       (item, index) => !usedIndices.has(index) && item.sourceID === nextItem.sourceID,
@@ -609,6 +616,24 @@ function getToolTraceIdentity(item: AssistantTraceItem) {
   return null
 }
 
+function getToolTraceIdentities(item: AssistantTraceItem) {
+  if (item.kind !== "tool") return []
+
+  return [
+    item.partID ? `part:${item.partID}` : "",
+    item.sourceID ? `source:${item.sourceID}` : "",
+    item.messageID && item.toolCallID ? `tool:${item.messageID}:${item.toolCallID}` : "",
+    item.toolCallID ? `tool:${item.toolCallID}` : "",
+  ].filter(Boolean)
+}
+
+function toolTraceItemsShareIdentity(left: AssistantTraceItem, right: AssistantTraceItem) {
+  const leftIdentities = getToolTraceIdentities(left)
+  if (leftIdentities.length === 0) return false
+  const rightIdentities = new Set(getToolTraceIdentities(right))
+  return leftIdentities.some((identity) => rightIdentities.has(identity))
+}
+
 function isLateToolFailureForCancelledTurn(current: AssistantTurn, incoming: AssistantTurn) {
   if (incoming.runtime.phase !== "failed") return false
   if (incoming.items.some((item) => item.kind === "error")) return false
@@ -616,8 +641,7 @@ function isLateToolFailureForCancelledTurn(current: AssistantTurn, incoming: Ass
   const cancelledToolIdentities = new Set(
     current.items
       .filter((item) => item.kind === "tool" && item.status === "cancelled")
-      .map(getToolTraceIdentity)
-      .filter((identity): identity is string => Boolean(identity)),
+      .flatMap(getToolTraceIdentities),
   )
   if (cancelledToolIdentities.size === 0) return false
 
@@ -662,6 +686,7 @@ function mergeAssistantTraceItem(existing: AssistantTraceItem, nextItem: Assista
     return {
       ...existing,
       messageID: existing.messageID ?? nextItem.messageID,
+      backendTurnID: existing.backendTurnID ?? nextItem.backendTurnID,
       partID: existing.partID ?? nextItem.partID,
       toolCallID: existing.toolCallID ?? nextItem.toolCallID,
       debugEntries: mergeTraceDebugEntries(existing.debugEntries, nextItem.debugEntries),
@@ -672,6 +697,8 @@ function mergeAssistantTraceItem(existing: AssistantTraceItem, nextItem: Assista
     ...existing,
     ...nextItem,
     id: existing.id,
+    messageID: nextItem.messageID ?? existing.messageID,
+    backendTurnID: nextItem.backendTurnID ?? existing.backendTurnID,
     timestamp: Math.min(existing.timestamp, nextItem.timestamp),
     debugEntries: mergeTraceDebugEntries(existing.debugEntries, nextItem.debugEntries),
   }
@@ -703,7 +730,9 @@ function mergeAssistantTraceItem(existing: AssistantTraceItem, nextItem: Assista
 function upsertAssistantTraceItem(items: AssistantTraceItem[], nextItem: AssistantTraceItem) {
   const nextToolIdentity = getToolTraceIdentity(nextItem)
   const matchingIndices = items.reduce<number[]>((result, item, index) => {
-    const matchesToolIdentity = nextToolIdentity && getToolTraceIdentity(item) === nextToolIdentity
+    const matchesToolIdentity =
+      (nextToolIdentity && getToolTraceIdentity(item) === nextToolIdentity) ||
+      toolTraceItemsShareIdentity(item, nextItem)
     const matchesSource = nextItem.sourceID && item.sourceID && item.sourceID === nextItem.sourceID
     const matchesID = item.id === nextItem.id
     if (matchesToolIdentity || matchesSource || matchesID) {
@@ -806,6 +835,16 @@ function assistantRuntimeAfterTraceMerge(current: AssistantTurn, incoming: Assis
   }
 }
 
+function isTerminalAssistantRuntimePhase(phase: AssistantTurn["runtime"]["phase"]) {
+  return (
+    phase === "completed" ||
+    phase === "cancelled" ||
+    phase === "failed" ||
+    phase === "blocked" ||
+    phase === "continued_by_user"
+  )
+}
+
 function mergeAssistantTurnsByMessageID(current: AssistantTurn, incoming: AssistantTurn): AssistantTurn {
   const preserveCancellation = shouldPreserveCancelledTurn(current, incoming)
   const mergedItems = mergeAssistantTraceItems(current.items, incoming.items)
@@ -835,9 +874,9 @@ function mergeAssistantTurnsByMessageID(current: AssistantTurn, incoming: Assist
         : incoming.state || current.state,
     isStreaming: preserveCancellation
       ? false
-      : runtime.phase === "tool_running" || runtime.phase === "waiting_approval"
-        ? incoming.isStreaming
-        : false,
+      : isTerminalAssistantRuntimePhase(runtime.phase)
+        ? false
+        : Boolean(current.isStreaming || incoming.isStreaming),
     items,
   }
 }
@@ -845,19 +884,46 @@ function mergeAssistantTurnsByMessageID(current: AssistantTurn, incoming: Assist
 export function reconcileConversationTurns(turns: Turn[]) {
   const result: Turn[] = []
   const assistantIndexByMessageID = new Map<string, number>()
+  const assistantIndexByBackendTurnID = new Map<string, number>()
+
+  function registerAssistantTurnIndex(turn: AssistantTurn, index: number) {
+    if (turn.messageID) {
+      assistantIndexByMessageID.set(turn.messageID, index)
+    }
+    for (const backendTurnID of getAssistantTurnBackendTurnIDs(turn)) {
+      assistantIndexByBackendTurnID.set(backendTurnID, index)
+    }
+  }
+
+  function findExistingAssistantTurnIndex(turn: AssistantTurn) {
+    if (turn.messageID) {
+      const messageIndex = assistantIndexByMessageID.get(turn.messageID)
+      if (messageIndex !== undefined) return messageIndex
+    }
+
+    for (const backendTurnID of getAssistantTurnBackendTurnIDs(turn)) {
+      const backendTurnIndex = assistantIndexByBackendTurnID.get(backendTurnID)
+      if (backendTurnIndex !== undefined) return backendTurnIndex
+    }
+
+    return undefined
+  }
 
   for (const turn of turns) {
-    if (turn.kind !== "assistant" || !turn.messageID) {
+    if (turn.kind !== "assistant") {
       result.push(turn)
       continue
     }
 
-    const existingIndex = assistantIndexByMessageID.get(turn.messageID)
+    const existingIndex = findExistingAssistantTurnIndex(turn)
     if (existingIndex === undefined) {
-      assistantIndexByMessageID.set(turn.messageID, result.length)
-      result.push({
+      const nextTurn = {
         ...turn,
         items: removeStaleApprovalBlockers(turn.items),
+      }
+      registerAssistantTurnIndex(nextTurn, result.length)
+      result.push({
+        ...nextTurn,
       })
       continue
     }
@@ -868,7 +934,9 @@ export function reconcileConversationTurns(turns: Turn[]) {
       continue
     }
 
-    result[existingIndex] = mergeAssistantTurnsByMessageID(existingTurn, turn)
+    const mergedTurn = mergeAssistantTurnsByMessageID(existingTurn, turn)
+    result[existingIndex] = mergedTurn
+    registerAssistantTurnIndex(mergedTurn, existingIndex)
   }
 
   return result
@@ -890,8 +958,24 @@ function getAssistantTurnSourceIDs(turn: AssistantTurn) {
   )
 }
 
+function getAssistantTurnBackendTurnIDs(turn: AssistantTurn) {
+  return new Set(
+    turn.items
+      .map((item) => item.backendTurnID)
+      .filter((backendTurnID): backendTurnID is string => Boolean(backendTurnID)),
+  )
+}
+
 function assistantTurnsAreCompatible(previousTurn: AssistantTurn, nextTurn: AssistantTurn) {
   if (previousTurn.id === nextTurn.id) return true
+  if (previousTurn.messageID && nextTurn.messageID && previousTurn.messageID === nextTurn.messageID) return true
+
+  const previousBackendTurnIDs = getAssistantTurnBackendTurnIDs(previousTurn)
+  if (previousBackendTurnIDs.size > 0) {
+    for (const backendTurnID of getAssistantTurnBackendTurnIDs(nextTurn)) {
+      if (previousBackendTurnIDs.has(backendTurnID)) return true
+    }
+  }
 
   const previousSourceIDs = getAssistantTurnSourceIDs(previousTurn)
   if (previousSourceIDs.size > 0) {
@@ -1509,9 +1593,23 @@ export function useSessionStreamController({
   function findAssistantTurnIDByMessageID(sessionID: string, messageID: string | undefined) {
     if (!messageID) return undefined
     const turn = conversationStore.getSessionTurns(sessionID).find(
-      (candidate): candidate is AssistantTurn => candidate.kind === "assistant" && candidate.messageID === messageID,
+      (candidate): candidate is AssistantTurn =>
+        candidate.kind === "assistant" &&
+        (candidate.messageID === messageID || candidate.items.some((item) => item.messageID === messageID)),
     )
     return turn?.id
+  }
+
+  function findAssistantTurnIDByBackendTurnID(sessionID: string, backendTurnID: string | undefined) {
+    if (!backendTurnID) return undefined
+    const turns = conversationStore.getSessionTurns(sessionID)
+    for (let index = turns.length - 1; index >= 0; index -= 1) {
+      const turn = turns[index]
+      if (turn?.kind !== "assistant") continue
+      if (isTerminalAssistantRuntimePhase(turn.runtime.phase)) continue
+      if (turn.items.some((item) => item.backendTurnID === backendTurnID)) return turn.id
+    }
+    return undefined
   }
 
   function cleanupTurnTarget(backendSessionID: string | undefined, turnID: string | undefined) {
@@ -2256,6 +2354,7 @@ export function useSessionStreamController({
     const backendTurnID = resolveStreamTurnID(streamEvent)
     const streamMessageID = resolveStreamMessageID(streamEvent)
     const messageAssistantTurnID = findAssistantTurnIDByMessageID(target.sessionID, streamMessageID)
+    const backendAssistantTurnID = findAssistantTurnIDByBackendTurnID(target.sessionID, backendTurnID)
     if (backendTurnID) {
       const backendSessionID = target.backendSessionID ?? resolveBackendSessionID(target.sessionID)
       if (sessionEventRouterRef.current.hasBackendTurnSettled(backendSessionID, backendTurnID)) {
@@ -2271,11 +2370,11 @@ export function useSessionStreamController({
       target.backendTurnID = backendTurnID
       sessionEventRouterRef.current.setTurnTarget(backendSessionID, backendTurnID, {
         sessionID: target.sessionID,
-        assistantTurnID: messageAssistantTurnID ?? target.assistantTurnID,
+        assistantTurnID: messageAssistantTurnID ?? backendAssistantTurnID ?? target.assistantTurnID,
       })
     }
 
-    const assistantTurnID = messageAssistantTurnID ?? target.assistantTurnID
+    const assistantTurnID = messageAssistantTurnID ?? backendAssistantTurnID ?? target.assistantTurnID
     applyStreamEventToAssistantTurn(
       {
         sessionID: target.sessionID,
@@ -2406,12 +2505,13 @@ export function useSessionStreamController({
 
     const streamMessageID = resolveStreamMessageID(streamEvent)
     const messageAssistantTurnID = findAssistantTurnIDByMessageID(uiSessionID, streamMessageID)
-    const assistantTurnID = messageAssistantTurnID ?? ensureAssistantTurnForBackendTurn({
+    const backendAssistantTurnID = findAssistantTurnIDByBackendTurnID(uiSessionID, backendTurnID)
+    const assistantTurnID = messageAssistantTurnID ?? backendAssistantTurnID ?? ensureAssistantTurnForBackendTurn({
       uiSessionID,
       backendSessionID: streamEvent.sessionID,
       turnID: backendTurnID,
     })
-    if (!messageAssistantTurnID) {
+    if (!messageAssistantTurnID && !backendAssistantTurnID) {
       void mergeExternalTurnUserHistory({
         uiSessionID,
         backendSessionID: streamEvent.sessionID,
@@ -2419,10 +2519,10 @@ export function useSessionStreamController({
         assistantTurnID,
       })
     }
-    if (messageAssistantTurnID) {
+    if (messageAssistantTurnID || backendAssistantTurnID) {
       sessionEventRouterRef.current.setTurnTarget(streamEvent.sessionID, backendTurnID, {
         sessionID: uiSessionID,
-        assistantTurnID: messageAssistantTurnID,
+        assistantTurnID,
       })
     }
 

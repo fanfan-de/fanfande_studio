@@ -729,9 +729,6 @@ function SessionInfoMenuButton({
                 onClick={() => setIsSubagentsOpen((current) => !current)}
               >
                 <span className="task-progress-menu-title-row">
-                  <span className="task-progress-menu-icon" aria-hidden="true">
-                    <SessionRunningIcon />
-                  </span>
                   <span className="task-progress-menu-title">子 Agent</span>
                 </span>
                 <span className={isSubagentsOpen ? "task-progress-menu-chevron is-open" : "task-progress-menu-chevron"} aria-hidden="true">

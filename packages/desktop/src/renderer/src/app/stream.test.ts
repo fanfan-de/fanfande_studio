@@ -68,6 +68,139 @@ describe("stream trace reducer", () => {
     expect(turns.map((turn) => turn.id)).toEqual(["assistant-older", "assistant-newer"])
   })
 
+  it("annotates history trace items with message and backend turn ownership", () => {
+    const [turn] = buildTurnsFromHistory([
+      {
+        info: {
+          id: "message-history",
+          sessionID: "session-history",
+          role: "assistant",
+          created: 100,
+        },
+        turn: {
+          id: "turn-history",
+          sessionID: "session-history",
+          projectID: "project-history",
+          status: "completed",
+          createdAt: 100,
+          updatedAt: 200,
+        },
+        parts: [{ id: "part-history-text", type: "text", text: "History answer" }],
+      },
+    ])
+
+    expect(turn?.kind).toBe("assistant")
+    if (turn?.kind !== "assistant") return
+
+    const responseItem = turn.items.find((item) => item.kind === "text")
+    expect(responseItem?.messageID).toBe("message-history")
+    expect(responseItem?.backendTurnID).toBe("turn-history")
+  })
+
+  it("treats completed history as completed even when a workflow step-start remains pending", () => {
+    const [turn] = buildTurnsFromHistory([
+      {
+        info: {
+          id: "message-completed-with-step",
+          sessionID: "session-history",
+          role: "assistant",
+          created: 100,
+          completed: 200,
+          finishReason: "stop",
+        },
+        turn: {
+          id: "turn-completed-with-step",
+          sessionID: "session-history",
+          projectID: "project-history",
+          status: "completed",
+          phase: "completed",
+          lastMessageID: "message-completed-with-step",
+          createdAt: 100,
+          updatedAt: 200,
+          completedAt: 200,
+        },
+        parts: [
+          {
+            id: "part-step-start",
+            type: "step-start",
+          },
+          {
+            id: "part-response",
+            type: "text",
+            text: "Done.",
+          },
+        ],
+      },
+    ])
+
+    expect(turn?.kind).toBe("assistant")
+    if (turn?.kind !== "assistant") return
+
+    expect(turn.runtime.phase).toBe("completed")
+    expect(turn.state).toBe("Backend response received")
+    expect(turn.isStreaming).toBe(false)
+    expect(turn.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "step",
+          status: "pending",
+          title: "Model step started",
+        }),
+        expect.objectContaining({
+          kind: "system",
+          status: "completed",
+          title: "Response complete",
+        }),
+      ]),
+    )
+  })
+
+  it("keeps completed assistant messages streaming while their backend turn is still running", () => {
+    const [turn] = buildTurnsFromHistory([
+      {
+        info: {
+          id: "message-running-after-tool",
+          sessionID: "session-history",
+          role: "assistant",
+          created: 100,
+          completed: 180,
+          finishReason: "tool-calls",
+        },
+        turn: {
+          id: "turn-running-after-tool",
+          sessionID: "session-history",
+          projectID: "project-history",
+          status: "running",
+          phase: "waiting_llm",
+          lastMessageID: "message-running-after-tool",
+          createdAt: 100,
+          updatedAt: 200,
+        },
+        parts: [
+          {
+            id: "part-task-create",
+            type: "tool",
+            messageID: "message-running-after-tool",
+            callID: "call-task-create",
+            tool: "task_create",
+            state: {
+              status: "completed",
+              output: "Tasks created",
+            },
+          },
+        ],
+      },
+    ])
+
+    expect(turn?.kind).toBe("assistant")
+    if (turn?.kind !== "assistant") return
+
+    expect(turn.runtime.phase).toBe("waiting_llm")
+    expect(turn.state).toBe("Waiting for model stream")
+    expect(turn.isStreaming).toBe(true)
+    expect(turn.items.some((item) => item.kind === "system" && item.title === "Response complete")).toBe(false)
+  })
+
   it("truncates oversized live text items before rendering them", () => {
     let turn = buildStreamingAssistantTurn("Stream a large response")
     const oversizedText = "x".repeat(170_000)
@@ -161,7 +294,9 @@ describe("stream trace reducer", () => {
     expect(turn.runtime.phase).toBe("completed")
     expect(turn.messageID).toBe("message-runtime")
     expect(turn.isStreaming).toBe(false)
-    expect(turn.items.some((item) => item.kind === "text" && item.text === "Runtime answer")).toBe(true)
+    const responseItem = turn.items.find((item) => item.kind === "text" && item.text === "Runtime answer")
+    expect(responseItem?.messageID).toBe("message-runtime")
+    expect(responseItem?.backendTurnID).toBe("turn-runtime")
   })
 
   it("uses canonical runtime timestamps for replayed turn duration", () => {
@@ -1319,6 +1454,70 @@ describe("stream trace reducer", () => {
       toolInputText: "{\"path\":\"README.md\"}",
       text: "{\"path\":\"README.md\"}",
       isStreaming: true,
+    })
+  })
+
+  it("reconciles streamed tool input with a completed part by tool call id", () => {
+    let turn = buildStreamingAssistantTurn("Create tasks")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-task-input",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 200,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "stream-task-create",
+          toolCallID: "call-task-create",
+          toolName: "task_create",
+          delta: "{\"tasks\":[{\"subject\":\"Implement\"}]}",
+          rawLength: 37,
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-task-completed",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 220,
+        type: "tool.call.completed",
+        payload: {
+          part: {
+            id: "recorded-task-create",
+            sessionID: "session-runtime",
+            messageID: "message-runtime",
+            type: "tool",
+            callID: "call-task-create",
+            tool: "task_create",
+            state: {
+              status: "completed",
+              input: { tasks: [{ subject: "Implement" }] },
+              output: "Tasks created",
+              title: "Tasks created",
+              time: { start: 180, end: 220 },
+            },
+          },
+        },
+      },
+    })
+
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(toolItems[0]).toMatchObject({
+      id: "stream-task-create",
+      sourceID: "recorded-task-create",
+      partID: "recorded-task-create",
+      toolCallID: "call-task-create",
+      status: "completed",
+      toolOutputText: "Tasks created",
     })
   })
 

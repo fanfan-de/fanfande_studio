@@ -558,8 +558,12 @@ describe("SessionCanvasTopMenu task progress", () => {
 
     const menu = screen.getByRole("dialog", { name: "Session information" })
     expect(within(menu).getByText("子 Agent")).toBeInTheDocument()
+    expect(within(menu).getByRole("button", { name: "收起子 Agent" }).querySelector(".task-progress-menu-icon")).toBeNull()
 
-    fireEvent.click(within(menu).getByRole("button", { name: "打开子 Agent: Write intro doc" }))
+    const subagentRow = within(menu).getByRole("button", { name: "打开子 Agent: Write intro doc" })
+    expect(subagentRow.querySelector(".task-progress-menu-row-icon")).not.toBeNull()
+
+    fireEvent.click(subagentRow)
 
     expect(onOpenSubagentSession).toHaveBeenCalledWith("child-session", "Write intro doc")
   })

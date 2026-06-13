@@ -234,6 +234,80 @@ function cancelledRuntimePayload(error: unknown, reason: RuntimeEvent.RuntimeEve
   } satisfies RuntimeEvent.RuntimeEventPayloadByType["turn.cancelled"]
 }
 
+function isFinalFinishReason(finishReason?: string) {
+  return Boolean(finishReason && !["tool-calls", "unknown"].includes(finishReason))
+}
+
+function isBlockingToolPart(part: Message.Part) {
+  if (part.type !== "tool") return false
+  if (part.state.status === "waiting-approval") return true
+  const metadata = part.state.status === "completed" ? part.state.metadata : undefined
+  return Boolean(
+    metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    "kind" in metadata &&
+    metadata.kind === "ask-user-question" &&
+    metadata.answered !== true,
+  )
+}
+
+function findPersistedTerminalEvent(input: {
+  sessionID: string
+  turnID?: string
+}) {
+  if (!input.turnID) return undefined
+  return EventStore.listTurnEvents({
+    sessionID: input.sessionID,
+    turnID: input.turnID,
+  }).find(RuntimeEvent.isTerminalRuntimeEvent)
+}
+
+function createResolvedFallbackTerminalEvent(input: {
+  sessionID: string
+  turnID?: string
+  seq: number
+  resolved: SessionStreamResult
+}) {
+  const assistant = input.resolved.info.role === "assistant" ? input.resolved.info : undefined
+  const finishReason = assistant?.finishReason
+  const hasBlockingPart = input.resolved.parts.some(isBlockingToolPart)
+  const stoppedWithoutCompletion = assistant && !hasBlockingPart && !isFinalFinishReason(finishReason)
+
+  if (assistant?.error || stoppedWithoutCompletion) {
+    return createTransportTerminalEvent({
+      sessionID: input.sessionID,
+      turnID: input.turnID,
+      seq: input.seq,
+      type: "turn.failed",
+      payload: {
+        ...failedRuntimePayload(
+          assistant?.error
+            ? "Assistant turn failed."
+            : "Assistant turn stopped before producing a final response.",
+          "execution",
+          true,
+        ),
+        message: input.resolved.info,
+        parts: input.resolved.parts,
+      },
+    })
+  }
+
+  return createTransportTerminalEvent({
+    sessionID: input.sessionID,
+    turnID: input.turnID,
+    seq: input.seq,
+    type: "turn.completed",
+    payload: {
+      status: hasBlockingPart ? "blocked" : "completed",
+      finishReason,
+      message: input.resolved.info,
+      parts: input.resolved.parts,
+    },
+  })
+}
+
 export function createSessionExecutionErrorStream(input: {
   sessionID: string
   requestId?: string
@@ -570,19 +644,22 @@ export function createSessionExecutionStream(input: {
               sessionID: input.sessionID,
               requestId: input.requestId,
               assistantMessageID: resolved.info.id,
+              finishReason: resolved.info.role === "assistant" ? resolved.info.finishReason : undefined,
               partCount: resolved.parts.length,
             })
-            await sendRuntimeEvent(send, createTransportTerminalEvent({
+            const persistedTerminalEvent = findPersistedTerminalEvent({
               sessionID: input.sessionID,
               turnID: observedTurnID,
-              seq: observedSeq + 1,
-              type: "turn.completed",
-              payload: {
-                status: "completed",
-                message: resolved.info,
-                parts: resolved.parts,
-              },
-            }))
+            })
+            await sendRuntimeEvent(
+              send,
+              persistedTerminalEvent ?? createResolvedFallbackTerminalEvent({
+                sessionID: input.sessionID,
+                turnID: observedTurnID,
+                seq: observedSeq + 1,
+                resolved,
+              }),
+            )
           } else {
             log.error("session execution stream exited without result", {
               sessionID: input.sessionID,

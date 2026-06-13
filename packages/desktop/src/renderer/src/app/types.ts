@@ -1103,6 +1103,7 @@ export interface AssistantTraceItem {
   status?: AssistantTraceStatus
   sourceID?: string
   messageID?: string
+  backendTurnID?: string
   partID?: string
   toolCallID?: string
   section?: AssistantTraceSectionKey
