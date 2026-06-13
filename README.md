@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./packages/site/public/brand-mark.svg" width="120" height="120" alt="Anybox logo" />
+  <img src="./packages/mobile-app/assets/icon.png" width="128" height="128" alt="Anybox logo" />
 
   <h1>Anybox</h1>
 
@@ -9,6 +9,7 @@
   <p>
     English |
     <a href="./README.zh-CN.md">简体中文</a> |
+    <a href="https://fanfande-studio.pages.dev/">Official Site</a> |
     <a href="https://github.com/fanfan-de/anybox/releases/latest">Download</a> |
     <a href="./packages/site/src/docs/content">Documents</a> |
     <a href="./docs/anybox-third-party-plugin-development.md">Development</a> |
@@ -29,7 +30,7 @@
 
   <table>
     <tr>
-      <td align="center"><strong>Official Site</strong><br /><sub>Placeholder for public website URL</sub></td>
+      <td align="center"><a href="https://fanfande-studio.pages.dev/"><strong>Official Site</strong></a><br /><sub>Product website and downloads</sub></td>
       <td align="center"><strong>Community</strong><br /><sub>Placeholder for Discord, Telegram, or WeChat</sub></td>
       <td align="center"><strong>Showcase</strong><br /><sub>Placeholder for media, awards, or launch cards</sub></td>
     </tr>
@@ -184,7 +185,7 @@ pnpm site:build
 
 ## Roadmap
 
-- Replace the placeholder cards above with official website, community, and launch links.
+- Replace the remaining placeholder cards above with community and launch links.
 - Publish richer screenshots for chat, cowork, code, MCP, and Git workflows.
 - Continue polishing mobile companion workflows and desktop remote-control support.
 - Expand public documentation for plugin authors and connector developers.

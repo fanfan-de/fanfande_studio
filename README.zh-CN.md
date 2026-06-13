@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./packages/site/public/brand-mark.svg" width="120" height="120" alt="Anybox logo" />
+  <img src="./packages/mobile-app/assets/icon.png" width="128" height="128" alt="Anybox logo" />
 
   <h1>Anybox</h1>
 
@@ -9,6 +9,7 @@
   <p>
     <a href="./README.md">English</a> |
     简体中文 |
+    <a href="https://fanfande-studio.pages.dev/">官网</a> |
     <a href="https://github.com/fanfan-de/anybox/releases/latest">下载</a> |
     <a href="./packages/site/src/docs/content">文档</a> |
     <a href="./docs/anybox-third-party-plugin-development.md">开发</a> |
@@ -29,7 +30,7 @@
 
   <table>
     <tr>
-      <td align="center"><strong>官网</strong><br /><sub>占位：后续替换为正式官网链接</sub></td>
+      <td align="center"><a href="https://fanfande-studio.pages.dev/"><strong>官网</strong></a><br /><sub>产品介绍与下载安装入口</sub></td>
       <td align="center"><strong>社区</strong><br /><sub>占位：Discord、Telegram 或微信群</sub></td>
       <td align="center"><strong>展示</strong><br /><sub>占位：媒体推荐、奖项或发布卡片</sub></td>
     </tr>
@@ -184,7 +185,7 @@ pnpm site:build
 
 ## 路线图
 
-- 将顶部占位卡片替换为正式官网、社区和发布展示链接。
+- 将顶部剩余占位卡片替换为社区和发布展示链接。
 - 补充 chat、cowork、code、MCP、Git 工作流等更丰富的截图。
 - 继续完善移动端配套能力和桌面远程控制支持。
 - 扩展面向插件作者和连接器开发者的公开文档。
